@@ -6,6 +6,7 @@ publish_queue.jsonl
 alerts.log
 *.log
 n8n_tmp/
+exports/
 
 # 本地敏感 / 机器相关
 .env
