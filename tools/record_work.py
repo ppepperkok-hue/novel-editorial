@@ -149,6 +149,20 @@ def _upsert_summary(conn, novel_id, chapter_id, seq, ch):
     for name, state in (character_states or {}).items():
         if isinstance(state, str):
             state = {"changes": state}
+        change_log = state.get("changes") or state.get("current_state") or ""
+        if change_log:
+            conn.execute(
+                "INSERT INTO character_evolution(novel_id,chapter_id,name,snapshot,change_log,arc,created_at) "
+                "VALUES(?,?,?,?,?,?,datetime('now','localtime'))",
+                (
+                    novel_id,
+                    chapter_id,
+                    name,
+                    json.dumps(state, ensure_ascii=False),
+                    str(change_log),
+                    str(state.get("arc") or ""),
+                ),
+            )
         c = conn.execute(
             "SELECT id, state FROM characters WHERE novel_id=? AND name=?",
             (novel_id, name),

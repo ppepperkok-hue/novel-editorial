@@ -5,6 +5,7 @@ import subprocess
 import sys
 
 from novel_pipeline import config
+from novel_pipeline.services import audit
 from novel_pipeline.services import n8n
 from tools import render_workflow
 
@@ -86,7 +87,7 @@ def agents_list():
     return agents
 
 
-def agent_save(payload):
+def agent_save(payload, conn=None):
     f = str(payload.get("file") or "")
     if f not in set(render_workflow.AGENT_FILES.values()):
         return {"ok": False, "error": "unknown agent file"}
@@ -125,15 +126,28 @@ def agent_save(payload):
         )
     except OSError as e:
         return {"ok": False, "error": f"render/validate failed: {e}"}
-    return {
+    result = {
         "ok": True,
         "render": (rendered.stdout or rendered.stderr).strip()[-300:],
         "validation": validated.returncode == 0,
         "validation_output": (validated.stdout or validated.stderr).strip()[-300:],
     }
+    if conn is not None:
+        audit.log(
+            conn,
+            "agent",
+            "save",
+            target_type="agent",
+            target_id=f,
+            detail={"model": model, "temperature": temperature, "validation": result["validation"]},
+        )
+    return result
 
 
-def agent_deploy():
+def agent_deploy(conn=None):
     from novel_pipeline.services.control import deploy_workflow  # noqa: PLC0415
 
-    return deploy_workflow()
+    result = deploy_workflow()
+    if conn is not None:
+        audit.log(conn, "agent", "deploy", detail={"nodes": result.get("nodes"), "ok": result.get("ok")})
+    return result

@@ -151,6 +151,28 @@ CREATE TABLE IF NOT EXISTS weekly_meetings (
     report TEXT NOT NULL,
     status TEXT DEFAULT 'completed'
 );
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT DEFAULT '',
+    category TEXT NOT NULL,
+    action TEXT NOT NULL,
+    target_type TEXT DEFAULT '',
+    target_id TEXT DEFAULT '',
+    detail TEXT DEFAULT '{}',
+    source TEXT DEFAULT 'web'
+);
+
+CREATE TABLE IF NOT EXISTS character_evolution (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    novel_id INTEGER NOT NULL,
+    chapter_id INTEGER,
+    name TEXT NOT NULL,
+    snapshot TEXT DEFAULT '{}',
+    change_log TEXT DEFAULT '',
+    arc TEXT DEFAULT '',
+    created_at TEXT DEFAULT ''
+);
 """
 
 

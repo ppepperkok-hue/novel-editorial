@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from novel_pipeline import db  # noqa: E402
+from novel_pipeline.services import audit  # noqa: E402
 
 ENV_FILE = Path.home() / ".n8n" / ".env"
 UA = (
@@ -276,12 +277,17 @@ def main():
                 )
                 failures.append({"chapter": ch["seq"], "error": error})
             conn.commit()
-        print(
-            json.dumps(
-                {"ok": True, "target": target, "published": published, "failures": failures},
-                ensure_ascii=False,
-            )
+        summary = {"target": target, "published": published, "failures": failures}
+        audit.log(
+            conn,
+            "publish",
+            "stock_batch",
+            target_type="novel",
+            target_id=novel_id,
+            detail=summary,
+            source="publish",
         )
+        print(json.dumps({"ok": True, **summary}, ensure_ascii=False))
     finally:
         conn.close()
 

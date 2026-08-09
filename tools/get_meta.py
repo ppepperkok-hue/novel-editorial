@@ -105,6 +105,17 @@ def main():
         ).fetchall()
         plot_threads = [dict(t) for t in threads]
 
+        evolution = [
+            dict(e)
+            for e in conn.execute(
+                "SELECT name, chapter_id, change_log, arc, created_at "
+                "FROM character_evolution WHERE novel_id=? "
+                "ORDER BY id DESC LIMIT 10",
+                (row["id"],),
+            ).fetchall()
+        ]
+        evolution.reverse()
+
         existing_titles = [c["title"] for c in chapters if c["title"]]
         start_seq = (chapters[-1]["seq"] + 1) if chapters else 1
         settings = get_all(conn)
@@ -159,6 +170,7 @@ def main():
             "finish_status": row["status"],
             "finish_remaining": row["finish_remaining"],
             "target_chapters": row["target_chapters"],
+            "character_evolution": evolution,
             "last_chapter": {
                 "seq": last_chapter["seq"],
                 "title": last_chapter["title"],

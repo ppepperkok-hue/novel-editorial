@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from novel_pipeline import config
+from novel_pipeline.services import audit
 
 
 def ending_status(conn):
@@ -27,6 +28,7 @@ def confirm_next_book(conn, novel_id):
         return {"ok": False, "error": "找不到待确认的新书"}
     conn.execute("UPDATE novels SET status='ready' WHERE id=?", (novel_id,))
     conn.commit()
+    audit.log(conn, "ending", "confirm_next_book", target_type="novel", target_id=novel_id)
     return {"ok": True, "note": "新书创意已确认，请在番茄建书后绑定 book_id"}
 
 
@@ -62,4 +64,12 @@ def bind_book(conn, novel_id, book_id, volume_id=""):
     if not replaced["FANQIE_VOLUME_ID"]:
         lines.append(f"FANQIE_VOLUME_ID={volume_id}")
     env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    audit.log(
+        conn,
+        "ending",
+        "bind_book",
+        target_type="novel",
+        target_id=novel_id,
+        detail={"book_id": book_id, "volume_id": volume_id},
+    )
     return {"ok": True, "note": f"已绑定新书 {book_id}；重启 n8n 后日更自动切换"}

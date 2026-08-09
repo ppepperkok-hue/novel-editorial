@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT))
 from novel_pipeline import config, db  # noqa: E402
 from novel_pipeline.services import (  # noqa: E402
     agents as agents_service,
+    audit as audit_service,
     control as control_service,
     dashboard as dashboard_service,
     ending as ending_service,
@@ -159,6 +160,23 @@ def make_handler(db_path):
                         self._json(ending_service.ending_status(conn))
                     finally:
                         conn.close()
+                elif path == "/api/audit":
+                    conn = db.connect(db_path)
+                    try:
+                        qs = parse_qs(parsed.query)
+                        category = qs["category"][0] if qs.get("category") else None
+                        limit = int(qs["limit"][0]) if qs.get("limit") else 100
+                        self._json({"logs": audit_service.list_logs(conn, category, limit)})
+                    finally:
+                        conn.close()
+                elif path == "/api/characters/evolution":
+                    conn = db.connect(db_path)
+                    try:
+                        qs = parse_qs(parsed.query)
+                        novel_id = int(qs["novel_id"][0]) if qs.get("novel_id") else 0
+                        self._json(misc_service.character_evolution(conn, novel_id))
+                    finally:
+                        conn.close()
                 elif path == "/api/control":
                     conn = db.connect(db_path)
                     try:
@@ -213,9 +231,9 @@ def make_handler(db_path):
                 elif parsed.path == "/api/agents":
                     action = payload.get("action")
                     if action == "save":
-                        result = agents_service.agent_save(payload)
+                        result = agents_service.agent_save(payload, conn)
                     elif action == "deploy":
-                        result = agents_service.agent_deploy()
+                        result = agents_service.agent_deploy(conn)
                     else:
                         result = {"ok": False, "error": f"unknown action {action}"}
                     conn.close()

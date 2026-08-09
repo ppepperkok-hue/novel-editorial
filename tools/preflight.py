@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from novel_pipeline import db  # noqa: E402
+from novel_pipeline.services import audit  # noqa: E402
 from tools.app_settings import get_all, get_bool, get_float  # noqa: E402
 
 ENV_FILE = Path.home() / ".n8n" / ".env"
@@ -185,6 +186,20 @@ def main():
             if not locked:
                 reasons.append(lock_reason)
                 ok = False
+        audit.log(
+            conn,
+            "preflight",
+            "passed" if ok else "blocked",
+            target_type="novel",
+            detail={
+                "ok": ok,
+                "reasons": reasons,
+                "cookie_valid": cookie_ok,
+                "already_ran": already_ran,
+                "budget_ok": budget_ok,
+            },
+            source="preflight",
+        )
         print(
             json.dumps(
                 {

@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from novel_pipeline import db  # noqa: E402
+from novel_pipeline.services import audit  # noqa: E402
 
 
 def merge_blueprints(old, updates):
@@ -39,6 +40,25 @@ def apply_report(conn, novel_id, report):
     if isinstance(persona, dict) and persona.get("preference"):
         bible = outline.get("bible") or {}
         bible["reader_persona"] = persona
+        outline["bible"] = bible
+    char_updates = decisions.get("character_updates")
+    if isinstance(char_updates, list) and char_updates:
+        bible = outline.get("bible") or {}
+        chars = bible.get("characters") or []
+        by_name = {c.get("name"): c for c in chars}
+        for u in char_updates:
+            name = str(u.get("name") or "")
+            if not name:
+                continue
+            target = by_name.get(name)
+            if target is None:
+                target = {"name": name, "role": "supporting"}
+                chars.append(target)
+                by_name[name] = target
+            for k in ("personality", "current_state", "goals", "speech_style"):
+                if u.get(k):
+                    target[k] = str(u[k])
+        bible["characters"] = chars
         outline["bible"] = bible
     goal = decisions.get("volume_goal_adjust")
     if goal:
@@ -92,7 +112,7 @@ def apply_report(conn, novel_id, report):
         ),
     )
     conn.commit()
-    return {
+    result = {
         "ok": True,
         "blueprints": len(outline["blueprints"]),
         "reader_persona": bool(persona),
@@ -100,6 +120,22 @@ def apply_report(conn, novel_id, report):
         "finish": finish_note,
         "next_book_created": created_next,
     }
+    if char_updates:
+        result["character_updates"] = len(char_updates)
+    audit.log(
+        conn,
+        "meeting",
+        "apply_report",
+        target_type="novel",
+        target_id=novel_id,
+        detail={
+            "blueprints": result["blueprints"],
+            "finish": finish_note,
+            "next_book_created": created_next,
+        },
+        source="meeting",
+    )
+    return result
 
 
 def main():

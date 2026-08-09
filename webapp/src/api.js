@@ -108,3 +108,16 @@ export async function bindBook(novelId, bookId, volumeId) {
   });
   return r.json();
 }
+
+export async function getAudit(category) {
+  const q = category ? "?category=" + encodeURIComponent(category) : "";
+  const r = await fetch(API_BASE + "/api/audit" + q);
+  if (!r.ok) throw new Error("audit " + r.status);
+  return r.json();
+}
+
+export async function getCharacterEvolution(novelId) {
+  const r = await fetch(API_BASE + "/api/characters/evolution?novel_id=" + novelId);
+  if (!r.ok) throw new Error("evolution " + r.status);
+  return r.json();
+}

@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { bindBook, confirmNextBook, exportNovels, getEndingStatus } from "../api.js";
+import {
+  bindBook,
+  confirmNextBook,
+  exportNovels,
+  getCharacterEvolution,
+  getEndingStatus,
+} from "../api.js";
 import { useEffect } from "react";
 
 function Field({ label, children }) {
@@ -11,7 +17,8 @@ function Field({ label, children }) {
   );
 }
 
-function CharacterCard({ c }) {
+function CharacterCard({ c, evolutions }) {
+  const mine = (evolutions || []).filter((e) => e.name === c.name).slice(0, 3);
   return (
     <div className="rounded-lg border border-[var(--line)] bg-[var(--code-bg)] p-2.5">
       <div className="flex items-baseline gap-2">
@@ -25,6 +32,17 @@ function CharacterCard({ c }) {
       </div>
       {c.goals ? <div className="mt-1 text-xs text-amber-400/90">目标：{c.goals}</div> : null}
       {c.traits ? <div className="mt-0.5 text-xs text-slate-400">特质：{c.traits}</div> : null}
+      {mine.length ? (
+        <div className="mt-1.5 border-t border-[var(--line-soft)] pt-1.5">
+          <div className="mb-1 text-[11px] text-[var(--accent-text)]">成长轨迹</div>
+          {mine.map((e, i) => (
+            <div key={i} className="text-[11px] leading-relaxed text-slate-500">
+              · 第 {e.chapter_id ?? "?"} 章：{e.change_log}
+              {e.arc ? <span className="text-amber-400/80"> [{e.arc}]</span> : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -37,6 +55,7 @@ export default function WorksPage({ data, pushToast }) {
   const [binding, setBinding] = useState(null);
   const [bindBookId, setBindBookId] = useState("");
   const [bindVolumeId, setBindVolumeId] = useState("");
+  const [evoMap, setEvoMap] = useState({});
   const novels = data?.novels || [];
 
   useEffect(() => {
@@ -67,6 +86,16 @@ export default function WorksPage({ data, pushToast }) {
   const nextBook = ending.find((n) => n.status === "planning" || n.status === "ready");
   const finishing = ending.find((n) => n.status === "finishing");
   const finished = ending.find((n) => n.status === "finished");
+
+  const toggleWithEvo = (id) => {
+    const next = !open[id];
+    toggle(id);
+    if (next && !evoMap[id]) {
+      getCharacterEvolution(id)
+        .then((r) => setEvoMap((m) => ({ ...m, [id]: r.evolution || [] })))
+        .catch(() => {});
+    }
+  };
   const filtered = query.trim()
     ? novels.filter((n) => {
         const hay = [n.title, n.genre, n.status, n.abstract, n.premise, (n.tags || []).join(" ")]
@@ -177,10 +206,10 @@ export default function WorksPage({ data, pushToast }) {
         const o = n.outline || {};
         const bible = o.bible || {};
         const chars = (n.characters || []).map((c) => (
-          <CharacterCard key={c.name + c.role} c={c} />
+          <CharacterCard key={c.name + c.role} c={c} evolutions={evoMap[n.id]} />
         ));
         const bibleChars = (bible.characters || []).map((c) => (
-          <CharacterCard key={"b" + c.name + c.role} c={c} />
+          <CharacterCard key={"b" + c.name + c.role} c={c} evolutions={evoMap[n.id]} />
         ));
         const rels = (bible.relationships || []).map((r, i) => (
           <div key={i} className="rounded-md bg-[var(--code-bg)] px-2.5 py-1.5 text-xs text-slate-400">
@@ -203,7 +232,7 @@ export default function WorksPage({ data, pushToast }) {
         const isOpen = open[n.id];
         return (
           <section key={n.id} className="panel overflow-hidden">
-            <div className="flex cursor-pointer items-center justify-between gap-3 px-5 py-4" onClick={() => toggle(n.id)}>
+            <div className="flex cursor-pointer items-center justify-between gap-3 px-5 py-4" onClick={() => toggleWithEvo(n.id)}>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-base font-bold">{n.title}</h3>

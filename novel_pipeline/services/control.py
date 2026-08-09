@@ -5,6 +5,7 @@ import urllib.error
 import urllib.request
 
 from novel_pipeline import config
+from novel_pipeline.services import audit
 from novel_pipeline.services import n8n
 from tools.app_settings import set_many
 
@@ -107,6 +108,7 @@ def handle_control(conn, payload):
             if k in ALLOWED_SETTINGS
         }
         set_many(conn, values)
+        audit.log(conn, "settings", "save_settings", detail={"saved": values})
         return {"ok": True, "saved": values}
     if action == "run_now":
         if payload.get("workflow") == "daily":
@@ -119,14 +121,27 @@ def handle_control(conn, payload):
                     n = 0
                 if n:
                     set_many(conn, {"pending_publish": str(n)})
-        return run_workflow_now(payload.get("workflow") or "daily")
+        wf = payload.get("workflow") or "daily"
+        result = run_workflow_now(wf)
+        audit.log(
+            conn,
+            "operation",
+            "run_now",
+            target_type="workflow",
+            target_id=wf,
+            detail={"chapters": payload.get("chapters"), "ok": result.get("ok")},
+        )
+        return result
     if action == "apply_schedule":
         time_value = (payload.get("time") or "").strip()
         if time_value:
             set_many(conn, {"daily_run_time": time_value})
-        return apply_schedule(conn)
+        result = apply_schedule(conn)
+        audit.log(conn, "settings", "apply_schedule", detail={"time": time_value or None, "ok": result.get("ok")})
+        return result
     if action == "request_run":
         set_many(conn, {"manual_run_requested": "1"})
+        audit.log(conn, "operation", "request_run")
         return {"ok": True, "note": "将在下次定时触发时执行"}
     if action in ("pause", "resume"):
         wf_id = {
@@ -140,6 +155,14 @@ def handle_control(conn, payload):
             "POST",
             f"/workflows/{wf_id}/{endpoint}",
             body={} if action == "resume" else None,
+        )
+        audit.log(
+            conn,
+            "operation",
+            action,
+            target_type="workflow",
+            target_id=payload.get("workflow"),
+            detail={"ok": res is not None},
         )
         return {"ok": res is not None, "response": res}
     return {"ok": False, "error": f"unknown action {action}"}

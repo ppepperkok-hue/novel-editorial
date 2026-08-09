@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 
 from novel_pipeline import config, data_feedback, monitor
+from novel_pipeline.services import audit
 
 
 def load_alerts(conn):
@@ -66,13 +67,15 @@ def export_novels(conn):
     config.EXPORTS_DIR.mkdir(exist_ok=True)
     fname = f"novels_{datetime.now():%Y%m%d_%H%M%S}.md"
     (config.EXPORTS_DIR / fname).write_text(markdown, encoding="utf-8")
-    return {
+    result = {
         "ok": True,
         "path": str(config.EXPORTS_DIR / fname),
         "novels": len(novels),
         "chapters": total_chapters,
         "words": total_words,
     }
+    audit.log(conn, "export", "novels", detail={k: result[k] for k in ("novels", "chapters", "words")})
+    return result
 
 
 def load_meetings(conn, limit=20):
@@ -115,3 +118,12 @@ def ai_taste(conn, chapter_id):
     report = detect(row["content"] if row else "")
     report["chapter_id"] = chapter_id
     return report
+
+
+def character_evolution(conn, novel_id):
+    rows = conn.execute(
+        "SELECT name, chapter_id, change_log, arc, created_at "
+        "FROM character_evolution WHERE novel_id=? ORDER BY id DESC LIMIT 50",
+        (novel_id,),
+    ).fetchall()
+    return {"evolution": [dict(r) for r in rows]}
