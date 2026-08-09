@@ -37,6 +37,22 @@ def main():
         bible = outline.get("bible") or {}
         blueprints = outline.get("blueprints") or []
 
+        hot = {}
+        hot_file = ROOT / "hot_topics.json"
+        if hot_file.exists():
+            try:
+                hot_data = json.loads(hot_file.read_text(encoding="utf-8"))
+                all_titles = []
+                for src in hot_data.get("sources") or []:
+                    all_titles.extend(src.get("titles") or [])
+                hot = {
+                    "updated_at": hot_data.get("updated_at") or "",
+                    "top_keywords": hot_data.get("top_keywords") or [],
+                    "titles": all_titles[:30],
+                }
+            except (OSError, ValueError):
+                hot = {}
+
         chapters = conn.execute(
             "SELECT id, seq, title, outline, status FROM chapters WHERE novel_id=? ORDER BY seq",
             (row["id"],),
@@ -112,6 +128,7 @@ def main():
             "recent_summaries": recent_summaries,
             "prev_ending": prev_ending,
             "plot_threads": plot_threads,
+            "hot_topics": hot,
             "existing_titles": existing_titles,
             "start_seq": start_seq,
             "last_chapter": {
