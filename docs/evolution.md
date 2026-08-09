@@ -181,3 +181,23 @@ Toast 带图标、执行失败可查看原因弹窗、作品库搜索与批量�
 开发运行：`cd desktop && npm install && npm start`；
 安装依赖使用 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`。
 `novel_pipeline/desktop.py`（pywebview 版）保留作后备入口。
+
+## 11. v2.0 大版本（2026-08-10）
+
+- 双主题：CSS 变量令牌化（深色/浅色），跟随系统 + 手动切换（设置页/命令面板），
+  持久化到 localStorage，URL `?theme=dark|light` 可强制。
+- 命令面板：`Ctrl+K` 呼出，模糊搜索页面/刷新/立即更新/暂停恢复/主题切换，
+  键盘上下选择、回车执行、Esc 关闭。
+- 章节阅读器：正文落库 `chapter_content`（n8n 汇总节点携带正文 →
+  `record_work.py` 写入），`GET /api/chapter_content?chapter_id=`，
+  章节页「阅读」按钮打开弹窗，支持字号调节。
+- 实时推送：`GET /api/events`（SSE，5 秒快照：工作流状态/最近执行/健康/成本），
+  前端保留轮询降级。
+- Electron 桌面集成：托盘（显示/隐藏/立即更新/周会/退出）、执行完成系统通知、
+  单实例锁、关闭窗口最小化到托盘、设置页开机自启开关与退出按钮。
+- 工程化：electron-builder NSIS 安装包（带图标），安装版从
+  `resources/novel-pipeline` 运行 API、数据库放 `%APPDATA%`；
+  electron-updater 对接 GitHub Releases 自动更新；前端 Vitest 冒烟测试。
+
+安装包构建：`cd desktop && npm run dist`，产物在 `desktop/release/`。
+发布新版本：打 tag（如 v1.0.0）后构建并 `--publish always` 上传 GitHub Releases。
