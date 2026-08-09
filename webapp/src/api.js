@@ -54,3 +54,15 @@ export async function getChapterContent(chapterId) {
   if (!r.ok) throw new Error("chapter_content " + r.status);
   return r.json();
 }
+
+export function subscribeEvents(onSnapshot) {
+  const es = new EventSource(API_BASE + "/api/events");
+  es.onmessage = (e) => {
+    try {
+      onSnapshot(JSON.parse(e.data));
+    } catch {
+      // ignore malformed frames
+    }
+  };
+  return es;
+}

@@ -12,7 +12,7 @@ const STATUS = {
   crashed: ["崩溃", "chip-bad"],
 };
 
-export default function ExecutionsPage() {
+export default function ExecutionsPage({ snapshot }) {
   const [rows, setRows] = useState([]);
   const [error, setError] = useState("");
   const [detail, setDetail] = useState(null);
@@ -37,6 +37,13 @@ export default function ExecutionsPage() {
       clearInterval(t);
     };
   }, []);
+
+  useEffect(() => {
+    if (snapshot?.executions?.length) {
+      setRows(snapshot.executions);
+      setError("");
+    }
+  }, [snapshot]);
 
   const fmt = (t) => (t ? String(t).replace("T", " ").slice(5, 19) : "—");
   const duration = (start, stop) => {

@@ -17,3 +17,14 @@ global.ResizeObserver =
     unobserve() {}
     disconnect() {}
   };
+
+class MockEventSource {
+  constructor() {
+    this.readyState = 0;
+    this.onmessage = null;
+  }
+  close() {}
+  addEventListener() {}
+  removeEventListener() {}
+}
+global.EventSource = global.EventSource || MockEventSource;

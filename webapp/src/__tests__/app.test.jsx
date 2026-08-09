@@ -82,4 +82,14 @@ describe("App", () => {
     fireEvent.click(screen.getByText("Agent 管理"));
     expect(await screen.findByText("写作智能体")).toBeInTheDocument();
   });
+
+  it("navigates pages with number keys", async () => {
+    window.location.hash = "";
+    render(<App />);
+    await screen.findByText("连载作品");
+    fireEvent.keyDown(window, { key: "4" });
+    expect(await screen.findByText("写作智能体")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "1" });
+    expect(await screen.findByText("流水线实时总览：作品、质量、成本、健康与热点")).toBeInTheDocument();
+  });
 });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getControl, getDashboard } from "./api.js";
+import { getControl, getDashboard, subscribeEvents } from "./api.js";
 import { ErrorBoundary } from "./components/ui.jsx";
 import DashboardPage from "./components/DashboardPage.jsx";
 import WorksPage from "./components/WorksPage.jsx";
@@ -90,6 +90,8 @@ export default function App() {
   const [mini, setMini] = useState(() => localStorage.getItem("panel_mini") === "1");
   const [toasts, setToasts] = useState([]);
   const [now, setNow] = useState(new Date());
+  const [liveSnapshot, setLiveSnapshot] = useState(null);
+  const [helpOpen, setHelpOpen] = useState(false);
   const toastId = useRef(0);
   const [theme, setTheme] = useState(() => {
     const urlTheme = new URLSearchParams(location.search).get("theme");
@@ -136,11 +138,32 @@ export default function App() {
   }, [refresh, refreshControl]);
 
   useEffect(() => {
+    const es = subscribeEvents((snap) => {
+      setLiveSnapshot(snap);
+      setControl((prev) => (prev ? { ...prev, workflows: snap.workflows } : prev));
+    });
+    return () => es.close();
+  }, []);
+
+  useEffect(() => {
     const onHash = () => setPage(pageFromHash());
     const onKey = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "r") {
         e.preventDefault();
         refresh();
+        return;
+      }
+      if (e.key === "?") {
+        setHelpOpen((v) => !v);
+        return;
+      }
+      const tag = (e.target?.tagName || "").toLowerCase();
+      if (["input", "textarea", "select"].includes(tag) || e.ctrlKey || e.metaKey || e.altKey) {
+        return;
+      }
+      const num = Number(e.key);
+      if (num >= 1 && num <= NAV.length) {
+        go(NAV[num - 1].id);
       }
     };
     window.addEventListener("hashchange", onHash);
@@ -253,7 +276,7 @@ export default function App() {
           </div>
           {!mini && (
             <>
-              <div>数据更新 {data?.updated_at || "—"}</div>
+              <div>数据更新 {liveSnapshot?.updated_at || data?.updated_at || "—"}</div>
               <button className="sidebar-mini-btn" onClick={toggleMini}>⇤ 收起侧栏</button>
             </>
           )}
@@ -291,7 +314,7 @@ export default function App() {
             {page === "chapters" && <ChaptersPage data={data} />}
             {page === "agents" && <AgentsPage pushToast={pushToast} />}
             {page === "cost" && <CostPage data={data} />}
-            {page === "executions" && <ExecutionsPage />}
+            {page === "executions" && <ExecutionsPage snapshot={liveSnapshot} />}
             {page === "reader" && <ReaderPage data={data} />}
             {page === "settings" && <SettingsPage data={data} onRefresh={refresh} pushToast={pushToast} theme={theme} onThemeChange={changeTheme} />}
           </ErrorBoundary>
@@ -315,6 +338,35 @@ export default function App() {
         changeTheme={changeTheme}
         theme={theme}
       />
+
+      {helpOpen ? (
+        <div className="modal-mask" onMouseDown={(e) => e.target === e.currentTarget && setHelpOpen(false)}>
+          <div className="modal confirm-modal">
+            <div className="modal-head">
+              <div className="text-sm font-bold">键盘快捷键</div>
+              <button className="btn !px-2 !py-0.5 text-sm" onClick={() => setHelpOpen(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="flex flex-col gap-2 text-sm">
+                {[
+                  ["1 – 8", "切换页面"],
+                  ["Ctrl+K", "打开命令面板"],
+                  ["Ctrl+R", "刷新数据"],
+                  ["?", "显示/隐藏本帮助"],
+                ].map(([keys, desc]) => (
+                  <div key={keys} className="flex items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--code-bg)] px-3 py-2">
+                    <kbd className="code text-xs text-[var(--accent-text)]">{keys}</kbd>
+                    <span className="text-xs text-[var(--text)]">{desc}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="muted mt-4 text-xs leading-relaxed">
+                在输入框内打字时数字键不会触发页面切换。更多操作（立即更新、切换主题等）用 Ctrl+K 命令面板。
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
