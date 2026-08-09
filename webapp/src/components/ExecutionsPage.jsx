@@ -5,6 +5,7 @@ import { fmtRelative } from "./ui.jsx";
 const STATUS = {
   success: ["成功", "chip-ok"],
   failed: ["失败", "chip-bad"],
+  error: ["失败", "chip-bad"],
   running: ["运行中", "chip-warn"],
   waiting: ["等待中", "chip-warn"],
   canceled: ["已取消", "chip-bad"],
@@ -46,7 +47,8 @@ export default function ExecutionsPage() {
   const runningRows = rows.filter((r) => r.status === "running" || r.status === "waiting");
 
   const success = rows.filter((r) => r.status === "success").length;
-  const failed = rows.filter((r) => r.status === "failed" || r.status === "crashed").length;
+  const failed = rows.filter((r) => ["failed", "crashed", "error"].includes(r.status)).length;
+  const finished = success + failed;
 
   return (
     <div className="flex flex-col gap-4">
@@ -72,7 +74,8 @@ export default function ExecutionsPage() {
         </div>
         <div className="card kpi">
           <div className="kpi-label">成功率</div>
-          <div className="kpi-value">{rows.length ? Math.round((success / rows.length) * 100) : "—"}%</div>
+          <div className="kpi-value">{finished ? Math.round((success / finished) * 100) : "—"}%</div>
+          <div className="kpi-sub">按已完成执行计算</div>
         </div>
       </div>
 
@@ -94,15 +97,15 @@ export default function ExecutionsPage() {
                 const meta = STATUS[r.status] || [r.status, "chip-warn"];
                 const hasError = r.error && r.status !== "success";
                 return (
-                  <tr key={r.workflow + r.id} className={hasError ? "cursor-pointer" : ""} onClick={hasError ? () => setDetail(r) : undefined}>
+                  <tr key={r.workflow + r.id} className={`${hasError ? "cursor-pointer" : ""} align-middle`} onClick={hasError ? () => setDetail(r) : undefined}>
                     <td className="font-medium">{r.workflow}</td>
                     <td className="code text-xs">{r.id}</td>
                     <td><span className={`chip ${meta[1]}`}>{meta[0]}</span></td>
-                    <td className="tabular-nums">{fmtRelative(r.started_at)}</td>
-                    <td className="tabular-nums">{duration(r.started_at, r.stopped_at)}</td>
+                    <td className="whitespace-nowrap tabular-nums">{fmtRelative(r.started_at)}</td>
+                    <td className="whitespace-nowrap tabular-nums">{duration(r.started_at, r.stopped_at)}</td>
                     <td>
                       {hasError ? (
-                        <span className="chip chip-bad">查看原因</span>
+                        <span className="whitespace-nowrap chip chip-bad">查看原因</span>
                       ) : (
                         <span className="muted text-xs">—</span>
                       )}
