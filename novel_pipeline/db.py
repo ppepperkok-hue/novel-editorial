@@ -174,6 +174,21 @@ CREATE TABLE IF NOT EXISTS character_evolution (
     arc TEXT DEFAULT '',
     created_at TEXT DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS meeting_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT DEFAULT 'topic',
+    topic TEXT NOT NULL,
+    status TEXT DEFAULT 'running',
+    novel_id INTEGER DEFAULT 0,
+    current_round INTEGER DEFAULT 0,
+    attendees TEXT DEFAULT '[]',
+    transcript TEXT DEFAULT '[]',
+    instruction TEXT DEFAULT '',
+    report TEXT DEFAULT '',
+    created_at TEXT DEFAULT '',
+    updated_at TEXT DEFAULT ''
+);
 """
 
 

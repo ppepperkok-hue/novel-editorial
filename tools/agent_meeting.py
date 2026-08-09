@@ -159,13 +159,14 @@ def chair_pick(conn, novel_id, dry_run):
     return attendees, parsed.get("topics") or ["下一周规划"], parsed
 
 
-def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run):
+def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run, instruction=""):
     weekly = latest_weekly(conn, novel_id, agent)
     mood = mood_of(conn, novel_id, agent)
     brief = materials["agent_briefs"].get(agent, {})
     user = (
         f"现在是会议第 {round_no} 轮。"
         + (f"本次会议主题：{topic}。" if topic else "这是周会。")
+        + (f"用户指示：{instruction}。请优先响应并落实到你的发言中。" if instruction else "")
         + ("请先回应其他参会者的发言，再发表你的意见。" if round_no > 1 else "请基于你的周记先做本周小结，再发表意见。")
         + "我的本周简报：" + json.dumps(brief, ensure_ascii=False)
         + "；我的本周日记：" + json.dumps(weekly or {}, ensure_ascii=False)

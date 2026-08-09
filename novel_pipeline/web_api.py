@@ -22,6 +22,7 @@ from novel_pipeline.services import (  # noqa: E402
     control as control_service,
     dashboard as dashboard_service,
     ending as ending_service,
+    meeting_session as meeting_service,
     misc as misc_service,
     n8n as n8n_service,
 )
@@ -143,6 +144,18 @@ def make_handler(db_path):
                         self._json({"meetings": misc_service.load_meetings(conn)})
                     finally:
                         conn.close()
+                elif path == "/api/meetings/session":
+                    conn = db.connect(db_path)
+                    try:
+                        qs = parse_qs(parsed.query)
+                        session_id = int(qs["id"][0]) if qs.get("id") else None
+                        if session_id is None:
+                            self._json({"error": "id required"}, status=400)
+                        else:
+                            session = meeting_service.get_session(conn, session_id)
+                            self._json(session if session else {"error": "session not found"}, status=200 if session else 404)
+                    finally:
+                        conn.close()
                 elif path == "/api/ai_taste":
                     conn = db.connect(db_path)
                     try:
@@ -234,6 +247,7 @@ def make_handler(db_path):
                 "/api/diaries/update",
                 "/api/agent_states/update",
                 "/api/meetings/start",
+                "/api/meetings/advance",
             ):
                 self.send_error(404, "Not Found")
                 return
@@ -285,7 +299,14 @@ def make_handler(db_path):
                         conn.close()
                 elif parsed.path == "/api/meetings/start":
                     conn.close()
-                    result = misc_service.start_topic_meeting(payload.get("topic"))
+                    result = meeting_service.start_session_async(payload.get("topic"))
+                elif parsed.path == "/api/meetings/advance":
+                    try:
+                        result = meeting_service.advance_session(
+                            conn, payload.get("session_id"), payload.get("instruction", "")
+                        )
+                    finally:
+                        conn.close()
                 self._json(result)
             except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
                 return

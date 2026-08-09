@@ -88,6 +88,21 @@ export async function startMeeting(topic) {
   return r.json();
 }
 
+export async function getSession(id) {
+  const r = await fetch(API_BASE + "/api/meetings/session?id=" + id);
+  if (!r.ok) throw new Error("session " + r.status);
+  return r.json();
+}
+
+export async function advanceSession(id, instruction) {
+  const r = await fetch(API_BASE + "/api/meetings/advance", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: id, instruction }),
+  });
+  return r.json();
+}
+
 export async function getAiTaste(chapterId) {
   const r = await fetch(API_BASE + "/api/ai_taste?chapter_id=" + chapterId);
   if (!r.ok) throw new Error("ai_taste " + r.status);
