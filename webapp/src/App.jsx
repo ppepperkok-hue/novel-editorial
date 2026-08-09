@@ -309,7 +309,7 @@ export default function App() {
 
         <div className="content fade-page">
           <ErrorBoundary>
-            {page === "dashboard" && <DashboardPage data={data} error={error} onRefresh={refresh} pushToast={pushToast} />}
+            {page === "dashboard" && <DashboardPage data={data} error={error} onRefresh={refresh} pushToast={pushToast} snapshot={liveSnapshot} />}
             {page === "works" && <WorksPage data={data} />}
             {page === "chapters" && <ChaptersPage data={data} />}
             {page === "agents" && <AgentsPage pushToast={pushToast} />}

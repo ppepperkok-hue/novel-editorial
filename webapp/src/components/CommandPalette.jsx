@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getControl, postControl } from "../api.js";
+import { postControl } from "../api.js";
 
 const PAGE_CMDS = [
   { id: "dashboard", label: "打开仪表盘", group: "页面", icon: "◈" },

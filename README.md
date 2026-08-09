@@ -1,7 +1,7 @@
 # novel-pipeline
 
 AI 网文自动生成与发布流水线：n8n 定时编排 + DeepSeek 多 Agent 协作 + Python
-记忆层（SQLite）+ 番茄小说发布 + 零依赖监控面板。
+记忆层（SQLite）+ 番茄小说发布 + Electron 桌面控制台（深/浅双主题）。
 
 目标场景：**每天 08:00 自动生成两章并提交番茄审核**，月预算 100 元内，全程无人值守；
 出现 Cookie 失效、预算超限、重复触发等情况会自动熔断并写告警。
@@ -17,10 +17,10 @@ AI 网文自动生成与发布流水线：n8n 定时编排 + DeepSeek 多 Agent 
         └─ 发布（建草稿→保存→提交→复核→记录）→ 采集完读率
                               │
                               ▼
-            SQLite（圣经/章节/伏笔/角色/成本/发布日志）
+            SQLite（圣经/章节/正文/伏笔/角色/成本/发布日志）
                               │
                               ▼
-            监控面板 http://127.0.0.1:8000（5 秒轮询）
+      Electron 桌面控制台（SSE 实时推送 + 命令面板 Ctrl+K）
 ```
 
 ## 二、多 Agent 协作矩阵（9 类角色）
@@ -47,10 +47,11 @@ AI 网文自动生成与发布流水线：n8n 定时编排 + DeepSeek 多 Agent 
 - **记忆闭环**：每章发布前提取记忆写回 SQLite，次日记忆包自动带上
   （上一章结尾/角色状态/伏笔/热点/角色卡）。
 
-## 三、日更工作流（55 节点）
+## 三、日更工作流（56 节点）
 
 ```text
 每日触发(08:00)
+  或 Webhook 手动触发（面板「立即更新一章」）
   → 备份数据库（保留最近 3 份）
   → 预检（Cookie 实测 / 当日幂等 / 月度预算 100 元熔断）
   → 查章节号 → 读本地资料（记忆包）→ 生成/解析作品资料
@@ -71,7 +72,7 @@ AI 网文自动生成与发布流水线：n8n 定时编排 + DeepSeek 多 Agent 
 
 - `novels`：书名/简介/标签/主角/大纲（内含 **bible**：世界观/角色卡/关系/文风/
   金手指/读者画像；**blueprints**：章节蓝图）
-- `chapters` + `chapter_summaries`：章节正文元数据与逐章记忆
+- `chapters` + `chapter_summaries` + `chapter_content`：章节元数据、逐章记忆与正文
 - `characters`：角色状态快照（每章更新）
 - `plot_threads`：伏笔台账（埋设章/回收章/描述/状态）
 - `cost_logs`：LLM token 用量与折算成本（月度汇总/熔断依据）
@@ -89,7 +90,8 @@ AI 网文自动生成与发布流水线：n8n 定时编排 + DeepSeek 多 Agent 
 - Agent 提示词资产化在 `prompts/agents/*.md`（含 model/temperature），
   用 `tools/render_workflow.py` 渲染回 n8n，`tools/export_agent_prompts.py` 反向导出
 - 数据反馈回路：完读率/追读率自动采集 → 记忆包注入 `reader_feedback` → 架构师周会调整蓝图
-- 前端为 React + Vite 工程（`webapp/`），`npm run build` 后由监控服务自动托管
+- 前端为 React + Vite 工程（`webapp/`），`npm run build` 后由监控服务自动托管；
+  Electron 壳在 `desktop/`，安装包发布在 GitHub Releases 并支持自动更新
 
 详见 [docs/evolution.md](docs/evolution.md)。
 
@@ -99,7 +101,7 @@ AI 网文自动生成与发布流水线：n8n 定时编排 + DeepSeek 多 Agent 
 pip install -e .
 
 # 1. 配置 ~/.n8n/.env（见 .env.example）
-# 2. 启动监控面板
+# 2. 启动监控面板（或直接启动 Electron 桌面，见第七节）
 python -m novel_pipeline.web_api --db demo.db --port 8000
 # 3. 导入/更新 n8n 工作流：n8n/novel_workflow.json、n8n/architect_weekly.json
 # 4. 测试
@@ -112,18 +114,25 @@ python run_tests.py
 
 ## 七、桌面控制台（推荐）
 
-不想开浏览器时，可以用原生桌面窗口控制流水线（pywebview 窗口，自动拉起监控服务）：
+桌面端基于 Electron（frameless 窗口 + 自绘标题栏 + 托盘 + 系统通知），
+启动时自动拉起 API 服务；正式安装包通过 GitHub Releases 分发并自动更新：
 
 ```bash
-pip install -e ".[desktop]"
-python -m novel_pipeline.desktop            # 默认 127.0.0.1:8000，端口占用自动换 8010
-python -m novel_pipeline.desktop --smoke    # 自检：启动 3 秒后自动关闭
+cd desktop
+npm install                                  # 国内镜像：ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
+npm start                                    # 开发模式启动
+npm run dist                                 # 构建 NSIS 安装包（desktop/release/）
 ```
 
-控制台面板（8 个分区）支持：仪表盘总览、作品库设定查看、章节状态管理、
-Agent 提示词在线编辑（保存→渲染→校验→部署到 n8n）、成本按日/按节点统计、
-执行历史、完读率/追读率图表，以及暂停/恢复日更与周会、请求立即运行、
-调整月度预算/目标字数/风格微调等系统设置。
+控制台面板（8 个分区）支持：仪表盘总览（SSE 实时）、作品库设定查看、
+章节管理（正文阅读器）、Agent 提示词在线编辑（保存→渲染→校验→部署到 n8n）、
+成本按日/按节点统计、执行历史（失败详情）、完读率/追读率图表，以及
+暂停/恢复日更与周会、手动补更、调整每日更新时间/月度预算/目标字数/风格微调、
+深/浅主题切换、开机自启等设置。快捷键：`Ctrl+K` 命令面板、`1–8` 切页、
+`?` 快捷键帮助。
+
+发版：构建后打 tag 并上传 GitHub Releases（详见 docs/evolution.md 第 11 节），
+用户端应用内自动检查更新。
 
 ## 七之二、前端开发
 

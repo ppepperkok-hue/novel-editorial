@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getControl, postControl } from "../api.js";
 import { ConfirmDialog } from "./ui.jsx";
 
@@ -39,6 +39,8 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
   const [running, setRunning] = useState("");
   const [confirm, setConfirm] = useState(null);
   const [confirmRun, setConfirmRun] = useState(null);
+  const [autoLaunch, setAutoLaunch] = useState(false);
+  const autoLaunchInit = useRef(false);
 
   const refresh = async () => {
     try {
@@ -60,6 +62,13 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
 
   useEffect(() => {
     refresh();
+  }, []);
+
+  useEffect(() => {
+    if (desktopApi && !autoLaunchInit.current) {
+      autoLaunchInit.current = true;
+      desktopApi.getAutoLaunch().then(setAutoLaunch).catch(() => {});
+    }
   }, []);
 
   const action = async (payload, okMsg) => {
@@ -276,15 +285,11 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
               <input
                 type="checkbox"
                 className="h-4 w-4 accent-emerald-500"
-                defaultChecked={false}
-                ref={(el) => {
-                  if (el && !el.dataset.init) {
-                    el.dataset.init = "1";
-                    desktopApi.getAutoLaunch().then((v) => { el.checked = v; });
-                  }
-                }}
+                checked={autoLaunch}
                 onChange={(e) => {
+                  setAutoLaunch(e.target.checked);
                   desktopApi.setAutoLaunch(e.target.checked).then((v) => {
+                    setAutoLaunch(v);
                     pushToast(v ? "已开启开机自启" : "已关闭开机自启", "ok");
                   });
                 }}

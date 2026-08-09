@@ -48,7 +48,7 @@ function WorkflowCard({ label, wf, onAction, onPause }) {
   );
 }
 
-export default function DashboardPage({ data, error, onRefresh, pushToast }) {
+export default function DashboardPage({ data, error, onRefresh, pushToast, snapshot }) {
   const [control, setControl] = useState(null);
   const [running, setRunning] = useState(false);
   const [confirm, setConfirm] = useState(null);
@@ -100,6 +100,7 @@ export default function DashboardPage({ data, error, onRefresh, pushToast }) {
   const passRate = s.quality_total ? Math.round((s.quality_passed / s.quality_total) * 100) : "—";
   const wfs = control?.workflows || {};
   const issues = data?.health?.issues || [];
+  const liveIssueCount = snapshot?.issues ?? issues.length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -118,7 +119,7 @@ export default function DashboardPage({ data, error, onRefresh, pushToast }) {
         <Kpi label="质量通过率" value={`${passRate}%`} tone={s.quality_total && passRate < 70 ? "warn" : "ok"} />
         <Kpi label="发布失败" value={s.publish_failed ?? 0} tone={s.publish_failed ? "bad" : "ok"} />
         <Kpi label="本月成本" value={`¥${cost}`} sub={`预算 ¥${budget}`} tone={cost >= budget ? "bad" : "ok"} />
-        <Kpi label="健康问题" value={issues.length} tone={issues.length ? "bad" : "ok"} />
+        <Kpi label="健康问题" value={liveIssueCount} tone={liveIssueCount ? "bad" : "ok"} />
       </div>
 
       <section>
