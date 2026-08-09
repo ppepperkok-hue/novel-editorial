@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from novel_pipeline import db  # noqa: E402
+from tools.app_settings import get_all, get_bool, get_float  # noqa: E402
 
 ENV_FILE = Path.home() / ".n8n" / ".env"
 ALERTS_LOG = ROOT / "alerts.log"
@@ -109,19 +110,38 @@ def main():
         db_path = ROOT / db_path
     conn = db.connect(db_path)
     try:
+        settings = get_all(conn)
+        enabled = str(settings.get("daily_enabled", "true")).strip().lower() in ("1", "true", "yes", "on")
+        try:
+            budget = float(settings.get("monthly_budget", args.budget))
+        except (TypeError, ValueError):
+            budget = args.budget
+        manual_requested = str(settings.get("manual_run_requested", "0")) == "1"
+        if manual_requested:
+            conn.execute(
+                "INSERT INTO settings(key,value) VALUES('manual_run_requested','0') "
+                "ON CONFLICT(key) DO UPDATE SET value='0'"
+            )
+            conn.commit()
         cookie_ok, cookie_reason = check_cookie()
         already_ran = check_already_ran(conn)
-        budget_ok, spent = check_budget(conn, args.budget)
+        if manual_requested:
+            already_ran = False
+        budget_ok, spent = check_budget(conn, budget)
         reasons = []
+        if not enabled:
+            reasons.append("日更已暂停（可在监控面板恢复）")
         if not cookie_ok:
             reasons.append(cookie_reason)
             alert("预检失败：" + cookie_reason)
         if already_ran:
             reasons.append("今日已发布过章节，跳过防重复")
         if not budget_ok:
-            reasons.append(f"本月成本 {spent:.2f} 元已达预算 {args.budget:.2f} 元")
+            reasons.append(f"本月成本 {spent:.2f} 元已达预算 {budget:.2f} 元")
             alert(reasons[-1])
-        ok = cookie_ok and not already_ran and budget_ok
+        if manual_requested:
+            reasons.append("手动请求运行已生效")
+        ok = enabled and cookie_ok and not already_ran and budget_ok
         print(
             json.dumps(
                 {
@@ -129,9 +149,11 @@ def main():
                     "cookie_valid": cookie_ok,
                     "cookie_reason": cookie_reason,
                     "already_ran": already_ran,
+                    "manual_run_requested": manual_requested,
                     "budget_ok": budget_ok,
                     "spent": spent,
-                    "budget": args.budget,
+                    "budget": budget,
+                    "daily_enabled": enabled,
                     "reasons": reasons,
                 },
                 ensure_ascii=False,

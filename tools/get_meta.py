@@ -13,6 +13,7 @@ DB_PATH = ROOT / "demo.db"
 sys.path.insert(0, str(ROOT))
 
 from novel_pipeline import db  # noqa: E402
+from tools.app_settings import get_all  # noqa: E402
 
 
 def main():
@@ -106,6 +107,7 @@ def main():
 
         existing_titles = [c["title"] for c in chapters if c["title"]]
         start_seq = (chapters[-1]["seq"] + 1) if chapters else 1
+        settings = get_all(conn)
 
         meta = {
             "book_id": row["book_id"],
@@ -134,6 +136,8 @@ def main():
             "prev_ending": prev_ending,
             "plot_threads": plot_threads,
             "hot_topics": hot,
+            "target_words": settings.get("target_words", "2000"),
+            "style_tweak": settings.get("style_tweak", ""),
             "existing_titles": existing_titles,
             "start_seq": start_seq,
             "last_chapter": {

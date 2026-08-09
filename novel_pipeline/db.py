@@ -109,6 +109,11 @@ CREATE TABLE IF NOT EXISTS cost_logs (
     cost REAL DEFAULT 0,
     created_at TEXT DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 

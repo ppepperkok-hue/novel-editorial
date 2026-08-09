@@ -101,7 +101,20 @@ python run_tests.py
 [n8n/README.md](n8n/README.md)；架构决策见 [ARCHITECTURE.md](ARCHITECTURE.md)；
 多 Agent 与审查记录见 [docs/research/multiagent-and-audit.md](docs/research/multiagent-and-audit.md)。
 
-## 七、环境变量
+## 七、桌面控制台（推荐）
+
+不想开浏览器时，可以用原生桌面窗口控制流水线（pywebview 窗口，自动拉起监控服务）：
+
+```bash
+pip install -e ".[desktop]"
+python -m novel_pipeline.desktop            # 默认 127.0.0.1:8000，端口占用自动换 8010
+python -m novel_pipeline.desktop --smoke    # 自检：启动 3 秒后自动关闭
+```
+
+控制台面板支持：暂停/恢复日更与架构师周会、请求下次触发时立即运行、
+调整月度预算、目标字数、风格微调，并实时显示两个工作流的激活状态与最近一次执行。
+
+## 八、环境变量
 
 | 变量 | 说明 |
 | --- | --- |

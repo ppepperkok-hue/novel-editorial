@@ -74,6 +74,14 @@
 <main>
   <div class="cards" id="cards"></div>
 
+  <section>
+    <h2>控制台</h2>
+    <div class="grid2">
+      <div class="panel" id="ctrl-workflows"></div>
+      <div class="panel" id="ctrl-settings"></div>
+    </div>
+  </section>
+
   <section class="grid2">
     <section>
       <h2>健康检查</h2>
@@ -269,8 +277,86 @@ async function refresh() {
   }
 }
 
+const API_BASE = (location.protocol === "file:" || !location.host)
+  ? "http://localhost:8000"
+  : "";
+
+function wfCard(key, label, wf) {
+  const state = !wf.online
+    ? '<span class="bad">n8n 离线</span>'
+    : wf.active
+      ? '<span class="ok">● 运行中</span>'
+      : '<span class="bad">● 已暂停</span>';
+  const last = wf.last
+    ? `${esc(wf.last.status)} · ${esc((wf.last.stopped_at || wf.last.started_at || "").replace("T", " ").slice(0, 19))}`
+    : "暂无执行记录";
+  const btn = !wf.online
+    ? ""
+    : wf.active
+      ? `<button onclick="postControl({action:'pause',workflow:'${key}'})">暂停</button>`
+      : `<button onclick="postControl({action:'resume',workflow:'${key}'})">恢复</button>`;
+  return `<div class="row"><div class="lbl">${label}</div>${state} ${btn}` +
+    `<div class="work-meta">上次：${last}</div></div>`;
+}
+
+function renderControl(c) {
+  const wfs = c.workflows || {};
+  document.getElementById("ctrl-workflows").innerHTML =
+    wfCard("daily", "日更工作流", wfs.daily || {}) +
+    wfCard("weekly", "架构师周会", wfs.weekly || {}) +
+    '<div class="row"><button onclick="postControl({action:\'request_run\'})">请求立即运行（下次定时触发时执行）</button></div>';
+  const s = c.settings || {};
+  const checked = String(s.daily_enabled).toLowerCase() === "true" ? "checked" : "";
+  document.getElementById("ctrl-settings").innerHTML =
+    '<div class="row"><div class="lbl">日更开关</div>' +
+    `<label><input type="checkbox" id="set-daily" ${checked}> 启用每日自动更新</label></div>` +
+    '<div class="row"><div class="lbl">月度预算（元）</div><input type="number" id="set-budget" value="' +
+    esc(s.monthly_budget || 100) + '" style="width:110px"></div>' +
+    '<div class="row"><div class="lbl">目标字数/章</div><input type="number" id="set-words" value="' +
+    esc(s.target_words || 2000) + '" style="width:110px"></div>' +
+    '<div class="row"><div class="lbl">风格微调</div><input type="text" id="set-style" value="' +
+    esc(s.style_tweak || "") + '" placeholder="例：对话更简短，打脸更直接" style="width:100%"></div>' +
+    '<div class="row"><button onclick="saveSettings()">保存设置</button></div>';
+}
+
+function saveSettings() {
+  postControl({
+    action: "save_settings",
+    settings: {
+      daily_enabled: document.getElementById("set-daily").checked ? "true" : "false",
+      monthly_budget: document.getElementById("set-budget").value,
+      target_words: document.getElementById("set-words").value,
+      style_tweak: document.getElementById("set-style").value,
+    },
+  });
+}
+
+async function postControl(payload) {
+  try {
+    const resp = await fetch(API_BASE + "/api/control", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const r = await resp.json();
+    refreshControl();
+    if (!r.ok) alert("操作失败：" + (r.error || "未知错误"));
+  } catch (e) {
+    alert("操作失败：" + e);
+  }
+}
+
+async function refreshControl() {
+  try {
+    const resp = await fetch(API_BASE + "/api/control");
+    renderControl(await resp.json());
+  } catch (e) { /* n8n/服务暂不可达时保持上次状态 */ }
+}
+
 refresh();
+refreshControl();
 setInterval(refresh, 5000);
+setInterval(refreshControl, 30000);
 </script>
 </body>
 </html>

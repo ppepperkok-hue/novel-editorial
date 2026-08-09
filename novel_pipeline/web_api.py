@@ -11,6 +11,8 @@ import argparse
 import json
 import os
 import sys
+import urllib.error
+import urllib.request
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -25,6 +27,104 @@ WEB_DIR = ROOT / "web"
 ALERTS_LOG = ROOT / "alerts.log"
 HOT_TOPICS_JSON = ROOT / "hot_topics.json"
 READER_CSV = ROOT / "demo_data" / "reader_stats.csv"
+
+N8N_BASE = os.environ.get("N8N_BASE", "http://127.0.0.1:5678")
+N8N_WORKFLOW_DAILY = os.environ.get("N8N_WORKFLOW_DAILY", "SkLUnm3uRyBSY84F")
+N8N_WORKFLOW_WEEKLY = os.environ.get("N8N_WORKFLOW_WEEKLY", "TAScPjj0Oqtz1uy7")
+ALLOWED_SETTINGS = {"daily_enabled", "monthly_budget", "target_words", "style_tweak"}
+_N8N_KEY = None
+
+
+def _load_n8n_env():
+    global _N8N_KEY
+    if _N8N_KEY is None:
+        env_file = Path.home() / ".n8n" / ".env"
+        if env_file.exists():
+            for line in env_file.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line.startswith("N8N_API_KEY="):
+                    _N8N_KEY = line.split("=", 1)[1].strip()
+        _N8N_KEY = _N8N_KEY or os.environ.get("N8N_API_KEY", "")
+    return _N8N_KEY
+
+
+def n8n_api(method, path, body=None):
+    """Call the n8n public API; returns parsed JSON or None on any failure."""
+    key = _load_n8n_env()
+    if not key:
+        return None
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(
+        N8N_BASE + "/api/v1" + path,
+        data=data,
+        method=method,
+        headers={
+            "X-N8N-API-KEY": key,
+            "Content-Type": "application/json" if data else "text/plain",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=6) as r:
+            return json.loads(r.read().decode("utf-8", "ignore"))
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+
+def _workflow_status(wf_id):
+    info = n8n_api("GET", "/workflows/" + wf_id)
+    if info is None:
+        return {"online": False, "active": None, "last": None}
+    last = None
+    execs = n8n_api("GET", f"/executions?workflowId={wf_id}&limit=1")
+    if isinstance(execs, dict) and isinstance(execs.get("data"), list) and execs["data"]:
+        e = execs["data"][0]
+        last = {
+            "id": e.get("id"),
+            "status": e.get("status"),
+            "started_at": e.get("startedAt"),
+            "stopped_at": e.get("stoppedAt"),
+        }
+    return {"online": True, "active": bool(info.get("active")), "last": last}
+
+
+def _load_control(conn):
+    from tools.app_settings import get_all  # noqa: PLC0415
+
+    return {
+        "settings": get_all(conn),
+        "workflows": {
+            "daily": _workflow_status(N8N_WORKFLOW_DAILY),
+            "weekly": _workflow_status(N8N_WORKFLOW_WEEKLY),
+        },
+    }
+
+
+def _handle_control(conn, payload):
+    from tools.app_settings import set_many  # noqa: PLC0415
+
+    action = payload.get("action")
+    if action == "save_settings":
+        values = {
+            k: v
+            for k, v in (payload.get("settings") or {}).items()
+            if k in ALLOWED_SETTINGS
+        }
+        set_many(conn, values)
+        return {"ok": True, "saved": values}
+    if action == "request_run":
+        set_many(conn, {"manual_run_requested": "1"})
+        return {"ok": True, "note": "将在下次定时触发时执行"}
+    if action in ("pause", "resume"):
+        wf_id = {
+            "daily": N8N_WORKFLOW_DAILY,
+            "weekly": N8N_WORKFLOW_WEEKLY,
+        }.get(payload.get("workflow"))
+        if not wf_id:
+            return {"ok": False, "error": "workflow must be daily|weekly"}
+        endpoint = "deactivate" if action == "pause" else "activate"
+        res = n8n_api("POST", f"/workflows/{wf_id}/{endpoint}", body={} if action == "resume" else None)
+        return {"ok": res is not None, "response": res}
+    return {"ok": False, "error": f"unknown action {action}"}
 
 
 def _load_summary(conn):
@@ -161,6 +261,12 @@ def make_handler(db_path):
                         self._json({"chapters": _load_chapters(conn, novel_id)})
                     finally:
                         conn.close()
+                elif path == "/api/control":
+                    conn = db.connect(db_path)
+                    try:
+                        self._json(_load_control(conn))
+                    finally:
+                        conn.close()
                 elif path in ("/api/summary", "/api/novels", "/api/publish_logs",
                               "/api/alerts", "/api/reader_stats", "/api/hot_topics"):
                     conn = db.connect(db_path)
@@ -172,6 +278,24 @@ def make_handler(db_path):
                     self.send_error(404, "Not Found")
             except Exception as exc:  # noqa: BLE001
                 self._json({"error": str(exc)}, status=500)
+
+        def do_POST(self):  # noqa: N802
+            parsed = urlparse(self.path)
+            if parsed.path != "/api/control":
+                self.send_error(404, "Not Found")
+                return
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+                raw = self.rfile.read(length) if length else b"{}"
+                payload = json.loads(raw.decode("utf-8") or "{}")
+                conn = db.connect(db_path)
+                try:
+                    result = _handle_control(conn, payload)
+                finally:
+                    conn.close()
+                self._json(result)
+            except Exception as exc:  # noqa: BLE001
+                self._json({"ok": False, "error": str(exc)}, status=500)
 
         def _endpoint_data(self, name):
             conn = db.connect(db_path)
