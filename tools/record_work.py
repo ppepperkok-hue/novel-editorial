@@ -180,15 +180,38 @@ def _upsert_summary(conn, novel_id, chapter_id, seq, ch):
         )
         if ev.get("event_type") in ("foreshadow", "setup") and not ev.get("resolved"):
             conn.execute(
-                "INSERT INTO plot_threads(novel_id,planted_chapter,expected_recover_chapter,status) "
-                "VALUES(?,?,?,?)",
-                (novel_id, seq, seq + 10, "open"),
+                "INSERT INTO plot_threads(novel_id,planted_chapter,expected_recover_chapter,status,description) "
+                "VALUES(?,?,?,?,?)",
+                (novel_id, seq, seq + 10, "open", desc),
             )
         elif ev.get("resolved"):
             conn.execute(
                 "UPDATE plot_threads SET status='closed' WHERE novel_id=? AND planted_chapter=?",
                 (novel_id, seq),
             )
+    for p in summary.get("foreshadowing_planted") or []:
+        if not isinstance(p, dict):
+            continue
+        desc = str(p.get("description") or "").strip()
+        if not desc:
+            continue
+        expected = int(p.get("expected_recover") or 0) or (seq + 10)
+        conn.execute(
+            "INSERT INTO plot_threads(novel_id,planted_chapter,expected_recover_chapter,status,description) "
+            "VALUES(?,?,?,?,?)",
+            (novel_id, seq, expected, "open", desc),
+        )
+    for r in summary.get("foreshadowing_recovered") or []:
+        if not isinstance(r, dict):
+            continue
+        desc = str(r.get("description") or "").strip()
+        if not desc:
+            continue
+        conn.execute(
+            "UPDATE plot_threads SET status='closed' "
+            "WHERE novel_id=? AND status='open' AND description LIKE ?",
+            (novel_id, "%" + desc[:40] + "%"),
+        )
 
 
 def upsert_chapters(conn, novel_id, chapters):

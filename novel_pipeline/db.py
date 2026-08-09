@@ -133,6 +133,9 @@ def _migrate(conn):
     summary_cols = {r["name"] for r in conn.execute("PRAGMA table_info(chapter_summaries)")}
     if "ending_excerpt" not in summary_cols:
         conn.execute("ALTER TABLE chapter_summaries ADD COLUMN ending_excerpt TEXT DEFAULT ''")
+    thread_cols = {r["name"] for r in conn.execute("PRAGMA table_info(plot_threads)")}
+    if "description" not in thread_cols:
+        conn.execute("ALTER TABLE plot_threads ADD COLUMN description TEXT DEFAULT ''")
     conn.commit()
 
 

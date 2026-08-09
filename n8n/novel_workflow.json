@@ -90,7 +90,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({model:'deepseek-v4-pro', temperature:0.7, messages:[{role:'system',content:'你是网文策划编辑，只输出JSON，不要其他文字：{title,genre,premise,selling_point,volume_goal,keywords(5个),chapter_outlines(两个,每项含title(2-20字,全书唯一)/outline(100-200字,含本章小爽点)/scenes(3-5个)/emotion/hook_type(cliffhanger|revelation|question|twist|promise)/hook/pacing(快慢标注))}'},{role:'user',content:'premise：'+$json.premise+'；主角：'+$json.protagonist+'；日更两章，章纲要有钩子'+(($json.prev_meta&&$json.prev_meta.last_chapter)?'；上一章：'+JSON.stringify($json.prev_meta.last_chapter)+'，请接着剧情往后写两章；前情提要：'+$json.writing_context+'；可用蓝图：'+JSON.stringify((($json.prev_meta&&$json.prev_meta.blueprints)||[]).filter(b=>Number(b.seq)>=$json.start_num&&Number(b.seq)<$json.start_num+2))+'，若对应章节蓝图存在，必须优先采用其标题/大纲/钩子，不得另起炉灶':'' )}]}) }}",
+        "jsonBody": "={{ JSON.stringify({model:'deepseek-v4-pro', temperature:0.7, messages:[{role:'system',content:'你是网文策划编辑，只输出JSON，不要其他文字：{title,genre,premise,selling_point,volume_goal,keywords(5个),bible:{world_rules(3-6条世界观/力量体系/规则),characters(每项含name/role/identity/personality/speech_style/ooc_redline/current_state),relationships(每项含from/to/relation/note),style_guide(一句全书文风)},chapter_outlines(两个,每项含title(2-20字,全书唯一)/outline(100-200字,含本章小爽点)/scenes(3-5个)/emotion(本章读者情绪目标)/position(opening|setup|conflict|payoff|turning|cliffhanger)/hook_type(cliffhanger|revelation|question|twist|promise)/hook/pacing(快慢)/plant_foreshadow(本章新埋伏笔,没有就空)/recover_foreshadow(本章回收的伏笔,没有就空)/character_arc(出场角色的状态变化))}'},{role:'user',content:'premise：'+$json.premise+'；主角：'+$json.protagonist+'；日更两章，章纲要有钩子'+(($json.prev_meta&&$json.prev_meta.last_chapter)?'；上一章：'+JSON.stringify($json.prev_meta.last_chapter)+'，请接着剧情往后写两章；前情提要：'+$json.writing_context+'；已有圣经：'+JSON.stringify(($json.prev_meta&&$json.prev_meta.bible)||null)+'。已有圣经非空时必须沿用其角色/世界观/关系/风格，只做增量补充，不得另起炉灶；可用蓝图：'+JSON.stringify((($json.prev_meta&&$json.prev_meta.blueprints)||[]).filter(b=>Number(b.seq)>=$json.start_num&&Number(b.seq)<$json.start_num+2))+'，若对应章节蓝图存在，必须优先采用其标题/大纲/钩子，不得另起炉灶':'' )'}]}) }}",
         "options": {}
       },
       "id": "n-planner",
@@ -104,7 +104,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const raw = $input.first().json;\nconst data = typeof raw === 'string' ? JSON.parse(raw) : raw;\nconst msg = data.choices[0].message;\nconst content = (typeof msg.content === 'string' && msg.content.trim())\n  ? msg.content\n  : (typeof msg.reasoning_content === 'string' ? msg.reasoning_content : '');\nconst outline = JSON.parse(content.replace(/```json/g, '').replace(/```/g, '').trim());\nconst norm = (ch, i) => {\n  if (ch && typeof ch === 'object') {\n    const t = String(ch.title || ch.chapter_title || ('第' + (i + 1) + '章 开局'));\n    return { title: t, outline: String(ch.outline || ch.content || ch.summary || JSON.stringify(ch)), hook: String(ch.hook || ''), hook_type: String(ch.hook_type || ''), emotion: String(ch.emotion || ''), pacing: String(ch.pacing || ''), scenes: Array.isArray(ch.scenes) ? ch.scenes : [] };\n  }\n  const s = String(ch || ('第' + (i + 1) + '章 开局'));\n  return { title: s, outline: s, hook: '' };\n};\nconst arr = Array.isArray(outline.chapter_outlines) && outline.chapter_outlines.length >= 2\n  ? outline.chapter_outlines.map(norm)\n  : [{ title: '第1章 开局', outline: '主角获得金手指并定下目标', hook: '' }, { title: '第2章 转折', outline: '遭遇第一次危机并化解', hook: '' }];\nreturn [{ json: { premise: outline.premise || $json.premise, genre: outline.genre || '', title: outline.title || '', keywords: (outline.keywords || []).join(','), chapter1: arr[0], chapter2: arr[1] } }];"
+        "jsCode": "const raw = $input.first().json;\nconst data = typeof raw === 'string' ? JSON.parse(raw) : raw;\nconst msg = data.choices[0].message;\nconst content = (typeof msg.content === 'string' && msg.content.trim())\n  ? msg.content\n  : (typeof msg.reasoning_content === 'string' ? msg.reasoning_content : '');\nconst outline = JSON.parse(content.replace(/```json/g, '').replace(/```/g, '').trim());\nconst norm = (ch, i) => {\n  if (ch && typeof ch === 'object') {\n    const t = String(ch.title || ch.chapter_title || ('第' + (i + 1) + '章 开局'));\n    return { title: t, outline: String(ch.outline || ch.content || ch.summary || JSON.stringify(ch)), hook: String(ch.hook || ''), hook_type: String(ch.hook_type || ''), emotion: String(ch.emotion || ''), position: String(ch.position || ''), pacing: String(ch.pacing || ''), scenes: Array.isArray(ch.scenes) ? ch.scenes : [], plant_foreshadow: String(ch.plant_foreshadow || ''), recover_foreshadow: String(ch.recover_foreshadow || ''), character_arc: (ch.character_arc && typeof ch.character_arc === 'object') ? ch.character_arc : {} };\n  }\n  const s = String(ch || ('第' + (i + 1) + '章 开局'));\n  return { title: s, outline: s, hook: '' };\n};\nconst arr = Array.isArray(outline.chapter_outlines) && outline.chapter_outlines.length >= 2\n  ? outline.chapter_outlines.map(norm)\n  : [{ title: '第1章 开局', outline: '主角获得金手指并定下目标', hook: '' }, { title: '第2章 转折', outline: '遭遇第一次危机并化解', hook: '' }];\nconst meta = $('解析作品资料').first().json || {};\nconst prev = meta.prev_meta || {};\nconst mergeBible = (prevBible, nextBible) => {\n  if (!nextBible || typeof nextBible !== 'object') return prevBible || null;\n  const out = { ...(prevBible || {}), ...nextBible };\n  const byName = {};\n  const chars = [];\n  for (const c of (prevBible && prevBible.characters) || []) { if (c && c.name) { byName[c.name] = { ...c }; chars.push(byName[c.name]); } }\n  for (const c of (nextBible.characters || [])) { if (c && c.name) { if (byName[c.name]) { Object.assign(byName[c.name], c); } else { byName[c.name] = { ...c }; chars.push(byName[c.name]); } } }\n  if (chars.length) out.characters = chars;\n  const rel = [];\n  const seen = new Set();\n  for (const r of [...((prevBible && prevBible.relationships) || []), ...(nextBible.relationships || [])]) {\n    if (!r || !r.from || !r.to) continue;\n    const k = String(r.from) + '|' + String(r.to) + '|' + String(r.relation || '');\n    if (seen.has(k)) continue;\n    seen.add(k); rel.push(r);\n  }\n  if (rel.length) out.relationships = rel;\n  const wr = [...new Set([...((prevBible && prevBible.world_rules) || []), ...(nextBible.world_rules || [])].filter(Boolean))];\n  if (wr.length) out.world_rules = wr;\n  return out;\n};\nconst bible = mergeBible(prev.bible, outline.bible);\nreturn [{ json: { premise: outline.premise || meta.premise, genre: outline.genre || '', title: outline.title || '', keywords: (outline.keywords || []).join(','), bible: bible, chapter1: arr[0], chapter2: arr[1] } }];\n"
       },
       "id": "n-parse",
       "name": "解析大纲",
@@ -135,7 +135,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({model:'deepseek-v4-pro', temperature:0.85, messages:[{role:'system',content:'你是番茄网文写手，写2000字左右中文章节：按起承转爽节奏（章首承接上章≤500字→冲突升级→转折→本章小爽点+章末钩子）；每章至少1个小爽点；紧张段用短句；口语化有画面感；全角标点；正文分段（自然段间用空行，每段60-150字，长短交错，单句段占25-45%）；禁止「突然」超过1次，禁止「这一刻」「就在这时」开头，禁止「不由自主」「情不自禁」「微微一愣」「缓缓说道」「一股强大的气息」；四字成语每500字≤3；对话要有意图、不同角色口吻不同；结尾钩子有力；只输出正文。'},{role:'user',content:'主角：'+$('解析作品资料').first().json.protagonist+'；章纲：'+JSON.stringify($('解析大纲').item.json.chapter1)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；题材：'+$('解析大纲').item.json.genre+'；关键词：'+$('解析大纲').item.json.keywords}]}) }}",
+        "jsonBody": "={{ JSON.stringify({model:'deepseek-v4-pro', temperature:0.85, messages:[{role:'system',content:'你是番茄网文写手，写2000字左右中文章节：按起承转爽节奏（章首承接上章≤500字→冲突升级→转折→本章小爽点+章末钩子）；先服务本章情绪目标与章节定位，再铺情节；每章至少1个小爽点；紧张段用短句；口语化有画面感；全角标点；正文分段（自然段间用空行，每段60-150字，长短交错，单句段占25-45%）；人物必须贴合角色卡：性格/说话习惯/行为底线，禁止OOC，不同角色口吻可区分；世界观规则是硬约束，不得吃书；有回收伏笔时自然回收，有埋设伏笔时不着痕迹埋下；去AI味硬规则：禁止「突然」超过1次，禁止「这一刻」「就在这时」开头，禁止「不由自主」「情不自禁」「微微一愣」「缓缓说道」「一股强大的气息」，少用「不是…而是…」「对于…来说」「使得」等翻译腔句式，四字成语每500字≤3；结尾钩子有力；只输出正文。'},{role:'user',content:'主角：'+$('解析作品资料').first().json.protagonist+'；本章情绪目标：'+(($('解析大纲').item.json.chapter1||{}).emotion||'')+'；章节定位：'+(($('解析大纲').item.json.chapter1||{}).position||'')+'；章纲：'+JSON.stringify($('解析大纲').item.json.chapter1)+'；出场角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；题材：'+$('解析大纲').item.json.genre+'；关键词：'+$('解析大纲').item.json.keywords'}]}) }}",
         "options": {}
       },
       "id": "n-writer-a",
@@ -167,7 +167,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({model:'deepseek-v4-flash', temperature:0.5, messages:[{role:'system',content:'你是文字编辑：把初稿润色到2000字左右，保持剧情与人物不变，输出全文。去AI味硬规则：「突然」每章≤1次；删改「不由自主」「情不自禁」「微微一愣」「缓缓说道」「一股强大的气息」；四字成语每500字≤3；形容词克制；对话去掉标签要能区分角色；段落长短交错、单句段占25-45%；省略号每章≤5、感叹号≤8；修正全角标点与错别字；保留并加强章末钩子。'},{role:'user',content:'初稿：'+$('写手A').item.json.choices[0].message.content}]}) }}",
+        "jsonBody": "={{ JSON.stringify({model:'deepseek-v4-flash', temperature:0.5, messages:[{role:'system',content:'你是文字编辑：把初稿润色到2000字左右，保持剧情与人物不变，输出全文。去AI味硬规则：「突然」每章≤1次；删改「不由自主」「情不自禁」「微微一愣」「缓缓说道」「一股强大的气息」「与此同时」；拆翻译腔：少用「不是…而是…」「对于…来说」「基于」「使得」「值得注意的是」，不用长破折号「——」；删空泛大词与口号化收束（如「这一刻起，命运被改写了」）；不连续使用「首先/其次/最后」排比，列表能改叙述就改叙述；冒号每段≤1次；四字成语每500字≤3；形容词克制；对话去掉标签要能区分角色；段落长短交错、单句段占25-45%；省略号每章≤5、感叹号≤8；修正全角标点与错别字；保留并加强章末钩子；输出前默读一遍，确保像中文母语者写的。'},{role:'user',content:'初稿：'+$('写手A').item.json.choices[0].message.content}]}) }}",
         "options": {}
       },
       "id": "n-editor-a",
@@ -199,7 +199,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({model:'deepseek-v4-flash', temperature:0.2, messages:[{role:'system',content:'你是审稿编辑，只输出JSON：{scores:{words:0,plot:0,style:0,punctuation:0,coherence:0},passed:bool,issues:[],suggestions:[]}。检查项：章末钩子是否有力；本章是否至少1个小爽点；节奏是否太平（段落长短与短句紧张感）；AI高频词命中（突然/不由自主/情不自禁/微微一愣/缓缓说道/与此同时等）；对话是否有意图且角色口吻可区分；标点（省略号每章≤5、感叹号≤8、无？？！！）；与上一章结尾的衔接。passed要求：无critical问题且score≥7。'},{role:'user',content:'章纲：'+JSON.stringify($('解析大纲').item.json.chapter1)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+$('润色A').item.json.choices[0].message.content}]}) }}",
+        "jsonBody": "={{ JSON.stringify({model:'deepseek-v4-flash', temperature:0.2, messages:[{role:'system',content:'你是审稿编辑，只输出JSON：{scores:{words:0,plot:0,style:0,punctuation:0,coherence:0,character:0,world:0},passed:bool,issues:[{severity:critical|major|minor,type,desc}],suggestions:[]}。检查项：章末钩子是否有力；本章是否至少1个小爽点；节奏是否太平（段落长短与短句紧张感）；AI高频词与翻译腔命中（突然/不由自主/情不自禁/微微一愣/缓缓说道/与此同时/不是…而是…/值得注意的是/——）；对话是否有意图且角色口吻可区分；标点（省略号每章≤5、感叹号≤8、无？？！！）；与上一章结尾的衔接；六类底线问题：时间线矛盾、设定崩坏（与世界观规则冲突）、人物OOC（对照角色卡）、重复情节、信息泄露（角色知道不该知道的信息）、伏笔死结（埋了不收或回收突兀）；对照本章细纲是否跑偏。passed要求：无critical问题、无底线问题、major≤1且score≥7。'},{role:'user',content:'章纲：'+JSON.stringify($('解析大纲').item.json.chapter1)+'；角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+$('润色A').item.json.choices[0].message.content'}]}) }}",
         "options": {}
       },
       "id": "n-reviewer-a",
@@ -257,7 +257,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({model:'deepseek-v4-pro', temperature:0.85, messages:[{role:'system',content:'你是番茄网文写手，写2000字左右中文章节：按起承转爽节奏（章首承接上章≤500字→冲突升级→转折→本章小爽点+章末钩子）；每章至少1个小爽点；紧张段用短句；口语化有画面感；全角标点；正文分段（自然段间用空行，每段60-150字，长短交错，单句段占25-45%）；禁止「突然」超过1次，禁止「这一刻」「就在这时」开头，禁止「不由自主」「情不自禁」「微微一愣」「缓缓说道」「一股强大的气息」；四字成语每500字≤3；对话要有意图、不同角色口吻不同；结尾钩子有力；只输出正文。'},{role:'user',content:'主角：'+$('解析作品资料').first().json.protagonist+'；章纲：'+JSON.stringify($('解析大纲').item.json.chapter2)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；题材：'+$('解析大纲').item.json.genre+'；关键词：'+$('解析大纲').item.json.keywords}]}) }}",
+        "jsonBody": "={{ JSON.stringify({model:'deepseek-v4-pro', temperature:0.85, messages:[{role:'system',content:'你是番茄网文写手，写2000字左右中文章节：按起承转爽节奏（章首承接上章≤500字→冲突升级→转折→本章小爽点+章末钩子）；先服务本章情绪目标与章节定位，再铺情节；每章至少1个小爽点；紧张段用短句；口语化有画面感；全角标点；正文分段（自然段间用空行，每段60-150字，长短交错，单句段占25-45%）；人物必须贴合角色卡：性格/说话习惯/行为底线，禁止OOC，不同角色口吻可区分；世界观规则是硬约束，不得吃书；有回收伏笔时自然回收，有埋设伏笔时不着痕迹埋下；去AI味硬规则：禁止「突然」超过1次，禁止「这一刻」「就在这时」开头，禁止「不由自主」「情不自禁」「微微一愣」「缓缓说道」「一股强大的气息」，少用「不是…而是…」「对于…来说」「使得」等翻译腔句式，四字成语每500字≤3；结尾钩子有力；只输出正文。'},{role:'user',content:'主角：'+$('解析作品资料').first().json.protagonist+'；本章情绪目标：'+(($('解析大纲').item.json.chapter2||{}).emotion||'')+'；章节定位：'+(($('解析大纲').item.json.chapter2||{}).position||'')+'；章纲：'+JSON.stringify($('解析大纲').item.json.chapter2)+'；出场角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；题材：'+$('解析大纲').item.json.genre+'；关键词：'+$('解析大纲').item.json.keywords'}]}) }}",
         "options": {}
       },
       "id": "n-writer-b",
@@ -289,7 +289,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({model:'deepseek-v4-flash', temperature:0.5, messages:[{role:'system',content:'你是文字编辑：把初稿润色到2000字左右，保持剧情与人物不变，输出全文。去AI味硬规则：「突然」每章≤1次；删改「不由自主」「情不自禁」「微微一愣」「缓缓说道」「一股强大的气息」；四字成语每500字≤3；形容词克制；对话去掉标签要能区分角色；段落长短交错、单句段占25-45%；省略号每章≤5、感叹号≤8；修正全角标点与错别字；保留并加强章末钩子。'},{role:'user',content:'初稿：'+$('写手B').item.json.choices[0].message.content}]}) }}",
+        "jsonBody": "={{ JSON.stringify({model:'deepseek-v4-flash', temperature:0.5, messages:[{role:'system',content:'你是文字编辑：把初稿润色到2000字左右，保持剧情与人物不变，输出全文。去AI味硬规则：「突然」每章≤1次；删改「不由自主」「情不自禁」「微微一愣」「缓缓说道」「一股强大的气息」「与此同时」；拆翻译腔：少用「不是…而是…」「对于…来说」「基于」「使得」「值得注意的是」，不用长破折号「——」；删空泛大词与口号化收束（如「这一刻起，命运被改写了」）；不连续使用「首先/其次/最后」排比，列表能改叙述就改叙述；冒号每段≤1次；四字成语每500字≤3；形容词克制；对话去掉标签要能区分角色；段落长短交错、单句段占25-45%；省略号每章≤5、感叹号≤8；修正全角标点与错别字；保留并加强章末钩子；输出前默读一遍，确保像中文母语者写的。'},{role:'user',content:'初稿：'+$('写手B').item.json.choices[0].message.content}]}) }}",
         "options": {}
       },
       "id": "n-editor-b",
@@ -321,7 +321,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({model:'deepseek-v4-flash', temperature:0.2, messages:[{role:'system',content:'你是审稿编辑，只输出JSON：{scores:{words:0,plot:0,style:0,punctuation:0,coherence:0},passed:bool,issues:[],suggestions:[]}。检查项：章末钩子是否有力；本章是否至少1个小爽点；节奏是否太平（段落长短与短句紧张感）；AI高频词命中（突然/不由自主/情不自禁/微微一愣/缓缓说道/与此同时等）；对话是否有意图且角色口吻可区分；标点（省略号每章≤5、感叹号≤8、无？？！！）；与上一章结尾的衔接。passed要求：无critical问题且score≥7。'},{role:'user',content:'章纲：'+JSON.stringify($('解析大纲').item.json.chapter2)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+$('润色B').item.json.choices[0].message.content}]}) }}",
+        "jsonBody": "={{ JSON.stringify({model:'deepseek-v4-flash', temperature:0.2, messages:[{role:'system',content:'你是审稿编辑，只输出JSON：{scores:{words:0,plot:0,style:0,punctuation:0,coherence:0,character:0,world:0},passed:bool,issues:[{severity:critical|major|minor,type,desc}],suggestions:[]}。检查项：章末钩子是否有力；本章是否至少1个小爽点；节奏是否太平（段落长短与短句紧张感）；AI高频词与翻译腔命中（突然/不由自主/情不自禁/微微一愣/缓缓说道/与此同时/不是…而是…/值得注意的是/——）；对话是否有意图且角色口吻可区分；标点（省略号每章≤5、感叹号≤8、无？？！！）；与上一章结尾的衔接；六类底线问题：时间线矛盾、设定崩坏（与世界观规则冲突）、人物OOC（对照角色卡）、重复情节、信息泄露（角色知道不该知道的信息）、伏笔死结（埋了不收或回收突兀）；对照本章细纲是否跑偏。passed要求：无critical问题、无底线问题、major≤1且score≥7。'},{role:'user',content:'章纲：'+JSON.stringify($('解析大纲').item.json.chapter2)+'；角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+$('润色B').item.json.choices[0].message.content'}]}) }}",
         "options": {}
       },
       "id": "n-reviewer-b",
@@ -1083,7 +1083,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const raw = $input.first().json;\nlet prev = null;\ntry { prev = JSON.parse(raw.stdout || '{}'); } catch { prev = null; }\nif (!prev || typeof prev !== 'object' || !prev.book_name) prev = null;\nconst src = $('算章节号').first().json;\nconst pm = prev || {};\nconst bible = pm.bible || {};\nconst writingContext = [\n  '上一章结尾：' + (pm.prev_ending ? pm.prev_ending.slice(-800) : '本书第1章，无需承接前文'),\n  '最近摘要：' + JSON.stringify(pm.recent_summaries || []).slice(0, 1200),\n  '角色状态：' + JSON.stringify(pm.character_states || {}),\n  '活跃伏笔：' + JSON.stringify(pm.plot_threads || []),\n  '已有标题（不能重复）：' + JSON.stringify(pm.existing_titles || []),\n  '风格指南：' + (bible.style_guide || ''),\n  '卷目标：' + (pm.volume_goal || '')\n].join('；');\nreturn [{ json: { ...src, prev_meta: prev, writing_context: writingContext } }];"
+        "jsCode": "const raw = $input.first().json;\nlet prev = null;\ntry { prev = JSON.parse(raw.stdout || '{}'); } catch { prev = null; }\nif (!prev || typeof prev !== 'object' || !prev.book_name) prev = null;\nconst src = $('算章节号').first().json;\nconst pm = prev || {};\nconst bible = pm.bible || {};\nconst writingContext = [\n  '上一章结尾：' + (pm.prev_ending ? pm.prev_ending.slice(-800) : '本书第1章，无需承接前文'),\n  '最近摘要：' + JSON.stringify(pm.recent_summaries || []).slice(0, 1200),\n  '角色状态：' + JSON.stringify(pm.character_states || {}),\n  '活跃伏笔：' + JSON.stringify(pm.plot_threads || []),\n  '角色卡：' + JSON.stringify(bible.characters || []).slice(0, 1400),\n  '人物关系：' + JSON.stringify(bible.relationships || []).slice(0, 900),\n  '世界观规则：' + JSON.stringify(bible.world_rules || []).slice(0, 700),\n  '已有标题（不能重复）：' + JSON.stringify(pm.existing_titles || []),\n  '风格指南：' + (bible.style_guide || ''),\n  '卷目标：' + (pm.volume_goal || '')\n].join('；');\nreturn [{ json: { ...src, prev_meta: prev, writing_context: writingContext } }];\n"
       },
       "id": "n-parse-local",
       "name": "解析本地资料",
@@ -1269,7 +1269,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const meta = $('解析作品资料').first().json;\nconst outline = $('解析大纲').first().json;\nconst ch1 = outline.chapter1 || {};\nconst ch2 = outline.chapter2 || {};\nconst now = new Date().toISOString().slice(0, 19).replace('T', ' ');\nconst chapters = [];\nconst pubA = $('校验发布A').first().json;\nconst pubB = $('校验发布B').first().json;\nconst draftA = $('解析草稿A').first().json;\nconst draftB = $('解析草稿B').first().json;\nconst qa = $('质量门A').first().json;\nconst qb = $('质量门B').first().json;\nconst aOk = pubA && pubA.published;\nconst bOk = pubB && pubB.published;\nif (draftA && draftA.item_id) {\n  chapters.push({ seq: meta.start_num, title: draftA.title, outline: ch1.outline || '', status: aOk ? 'published' : 'draft', words: Number(qa.chars || 0), fanqie_item_id: draftA.item_id, published_at: aOk ? now : '', error: aOk ? '' : JSON.stringify(pubA || {}).slice(0, 200) });\n}\nif (draftB && draftB.item_id) {\n  chapters.push({ seq: meta.start_num + 1, title: draftB.title, outline: ch2.outline || '', status: bOk ? 'published' : 'draft', words: Number(qb.chars || 0), fanqie_item_id: draftB.item_id, published_at: bOk ? now : '', error: bOk ? '' : JSON.stringify(pubB || {}).slice(0, 200) });\n}\nconst payload = {\n  book_id: meta.book_id,\n  book_name: meta.book_name,\n  genre: outline.genre || '',\n  premise: outline.premise || meta.premise,\n  selling_point: '',\n  platform: meta.platform || 'fanqie',\n  tags: meta.tags || [],\n  abstract: meta.abstract || '',\n  protagonists: meta.protagonists || [],\n  volume_goal: meta.volume_goal || '',\n  outline: { premise: outline.premise, genre: outline.genre, title: outline.title, keywords: outline.keywords, chapter1: ch1, chapter2: ch2 },\n  chapters: chapters\n};\nreturn [{ json: { payload_b64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];"
+        "jsCode": "const meta = $('解析作品资料').first().json;\nconst outline = $('解析大纲').first().json;\nconst ch1 = outline.chapter1 || {};\nconst ch2 = outline.chapter2 || {};\nconst now = new Date().toISOString().slice(0, 19).replace('T', ' ');\nconst chapters = [];\nconst pubA = $('校验发布A').first().json;\nconst pubB = $('校验发布B').first().json;\nconst draftA = $('解析草稿A').first().json;\nconst draftB = $('解析草稿B').first().json;\nconst qa = $('质量门A').first().json;\nconst qb = $('质量门B').first().json;\nconst sumA = ($('整理剧情A').first().json.summary) || {};\nconst sumB = ($('整理剧情B').first().json.summary) || {};\nconst aOk = pubA && pubA.published;\nconst bOk = pubB && pubB.published;\nif (draftA && draftA.item_id) {\n  chapters.push({ seq: meta.start_num, title: draftA.title, outline: ch1.outline || '', status: aOk ? 'published' : 'draft', words: Number(qa.chars || 0), fanqie_item_id: draftA.item_id, published_at: aOk ? now : '', error: aOk ? '' : JSON.stringify(pubA || {}).slice(0, 200), summary: sumA, ending_excerpt: qa.editedText ? String(qa.editedText).slice(-220) : '' });\n}\nif (draftB && draftB.item_id) {\n  chapters.push({ seq: meta.start_num + 1, title: draftB.title, outline: ch2.outline || '', status: bOk ? 'published' : 'draft', words: Number(qb.chars || 0), fanqie_item_id: draftB.item_id, published_at: bOk ? now : '', error: bOk ? '' : JSON.stringify(pubB || {}).slice(0, 200), summary: sumB, ending_excerpt: qb.editedText ? String(qb.editedText).slice(-220) : '' });\n}\nconst payload = {\n  book_id: meta.book_id,\n  book_name: meta.book_name,\n  genre: outline.genre || '',\n  premise: outline.premise || meta.premise,\n  selling_point: '',\n  platform: meta.platform || 'fanqie',\n  tags: meta.tags || [],\n  abstract: meta.abstract || '',\n  protagonists: meta.protagonists || [],\n  volume_goal: meta.volume_goal || '',\n  outline: { premise: outline.premise, genre: outline.genre, title: outline.title, keywords: outline.keywords, bible: outline.bible || null, chapter1: ch1, chapter2: ch2 },\n  chapters: chapters\n};\nreturn [{ json: { payload_b64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];\n"
       },
       "id": "n-summary",
       "name": "汇总运行结果",
@@ -1307,6 +1307,94 @@
       "position": [
         1540,
         480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.deepseek.com/chat/completions",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.DEEPSEEK_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({model:'deepseek-v4-flash', temperature:0.3, messages:[{role:'system',content:'你是剧情记忆官，只输出JSON：{summary(80-150字本章核心剧情),character_updates(对象,键为角色名,每项含changes/current_state),plot_events(数组,每项含description/event_type(foreshadow|setup|resolve|world|item|character)/importance(1-5)/resolved),foreshadowing_planted(数组,每项含description/expected_recover),foreshadowing_recovered(数组,每项含description),next_hook(下一章必须承接的悬念)}。依据正文提取，不得编造；summary与event描述要具体。'},{role:'user',content:'章纲：'+JSON.stringify($('解析大纲').item.json.chapter1)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+(($('质量门A').first().json.editedText)||'')'}]}) }}"
+      },
+      "id": "n-extract-a",
+      "name": "提炼剧情A",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        -360
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst resp = typeof raw === 'string' ? JSON.parse(raw) : raw;\nconst msg = resp && resp.choices && resp.choices[0] && resp.choices[0].message;\nconst text = (msg && typeof msg.content === 'string' && msg.content.trim())\n  ? msg.content\n  : (msg && typeof msg.reasoning_content === 'string' ? msg.reasoning_content : '');\nconst t = String(text).replace(/```json/g, '').replace(/```/g, '').trim();\nlet summary = null;\ntry { summary = JSON.parse(t); } catch {\n  const m = t.match(/\\{[\\s\\S]*\\}/);\n  if (m) { try { summary = JSON.parse(m[0]); } catch {} }\n}\nconst gate = $('质量门A').first().json;\nreturn [{ json: { ...gate, summary: summary || { summary: '', character_updates: {}, plot_events: [], foreshadowing_planted: [], foreshadowing_recovered: [] } } }];\n"
+      },
+      "id": "n-tidy-a",
+      "name": "整理剧情A",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1820,
+        -360
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.deepseek.com/chat/completions",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.DEEPSEEK_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({model:'deepseek-v4-flash', temperature:0.3, messages:[{role:'system',content:'你是剧情记忆官，只输出JSON：{summary(80-150字本章核心剧情),character_updates(对象,键为角色名,每项含changes/current_state),plot_events(数组,每项含description/event_type(foreshadow|setup|resolve|world|item|character)/importance(1-5)/resolved),foreshadowing_planted(数组,每项含description/expected_recover),foreshadowing_recovered(数组,每项含description),next_hook(下一章必须承接的悬念)}。依据正文提取，不得编造；summary与event描述要具体。'},{role:'user',content:'章纲：'+JSON.stringify($('解析大纲').item.json.chapter2)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+(($('质量门B').first().json.editedText)||'')'}]}) }}"
+      },
+      "id": "n-extract-b",
+      "name": "提炼剧情B",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst resp = typeof raw === 'string' ? JSON.parse(raw) : raw;\nconst msg = resp && resp.choices && resp.choices[0] && resp.choices[0].message;\nconst text = (msg && typeof msg.content === 'string' && msg.content.trim())\n  ? msg.content\n  : (msg && typeof msg.reasoning_content === 'string' ? msg.reasoning_content : '');\nconst t = String(text).replace(/```json/g, '').replace(/```/g, '').trim();\nlet summary = null;\ntry { summary = JSON.parse(t); } catch {\n  const m = t.match(/\\{[\\s\\S]*\\}/);\n  if (m) { try { summary = JSON.parse(m[0]); } catch {} }\n}\nconst gate = $('质量门B').first().json;\nreturn [{ json: { ...gate, summary: summary || { summary: '', character_updates: {}, plot_events: [], foreshadowing_planted: [], foreshadowing_recovered: [] } } }];\n"
+      },
+      "id": "n-tidy-b",
+      "name": "整理剧情B",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1820,
+        40
       ]
     }
   ],
@@ -1397,7 +1485,7 @@
       "main": [
         [
           {
-            "node": "排版A",
+            "node": "提炼剧情A",
             "type": "main",
             "index": 0
           }
@@ -1452,7 +1540,7 @@
       "main": [
         [
           {
-            "node": "排版B",
+            "node": "提炼剧情B",
             "type": "main",
             "index": 0
           }
@@ -1702,6 +1790,50 @@
         [
           {
             "node": "汇总运行结果",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "提炼剧情A": {
+      "main": [
+        [
+          {
+            "node": "整理剧情A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "整理剧情A": {
+      "main": [
+        [
+          {
+            "node": "排版A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "提炼剧情B": {
+      "main": [
+        [
+          {
+            "node": "整理剧情B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "整理剧情B": {
+      "main": [
+        [
+          {
+            "node": "排版B",
             "type": "main",
             "index": 0
           }

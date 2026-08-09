@@ -139,10 +139,23 @@ function renderNovels(novels) {
       `<div class="ch-outline"><span class="ch-title">${esc(c.title || "")}</span><br>` +
       `${esc(c.outline || "")}` +
       (c.hook ? `<div class="work-meta">钩子：${esc(c.hook)}</div>` : "") + "</div>").join("");
+    const bible = o.bible || {};
+    const bibleChars = (bible.characters || []).map(c =>
+      `<div class="char"><span class="cname">${esc(c.name)}</span>` +
+      `<span class="work-meta">${esc(c.role || "")}</span>` +
+      `<span>${esc(c.personality || c.identity || "")}</span>` +
+      (c.speech_style ? `<span class="work-meta">口吻：${esc(c.speech_style)}</span>` : "") +
+      (c.current_state ? `<span class="work-meta">状态：${esc(c.current_state)}</span>` : "") + "</div>").join("");
+    const rels = (bible.relationships || []).map(r =>
+      `<div class="work-meta">${esc(r.from)} — ${esc(r.relation || "")} — ${esc(r.to)}${r.note ? "：" + esc(r.note) : ""}</div>`).join("");
+    const worldRules = (bible.world_rules || []).map(w => `<div class="work-meta">· ${esc(w)}</div>`).join("");
     const detail = `<details><summary>查看大纲 / 主角 / 简介</summary><div class="outline-block">
       <div class="row"><div class="lbl">简介</div>${esc(n.abstract || n.premise || "暂无")}</div>
       ${tags ? `<div class="row"><div class="lbl">标签</div><div class="chips">${tags}</div></div>` : ""}
       <div class="row"><div class="lbl">主角</div>${chars}</div>
+      ${bibleChars ? `<div class="row"><div class="lbl">角色卡</div>${bibleChars}</div>` : ""}
+      ${rels ? `<div class="row"><div class="lbl">人物关系</div>${rels}</div>` : ""}
+      ${worldRules ? `<div class="row"><div class="lbl">世界观规则</div>${worldRules}</div>` : ""}
       ${n.premise ? `<div class="row"><div class="lbl">核心创意</div>${esc(n.premise)}</div>` : ""}
       ${n.volume_goal ? `<div class="row"><div class="lbl">卷目标</div>${esc(n.volume_goal)}</div>` : ""}
       ${o.keywords ? `<div class="row"><div class="lbl">关键词</div>${esc(o.keywords)}</div>` : ""}

@@ -77,7 +77,7 @@ def main():
         }
 
         threads = conn.execute(
-            "SELECT planted_chapter, expected_recover_chapter, status FROM plot_threads "
+            "SELECT planted_chapter, expected_recover_chapter, status, description FROM plot_threads "
             "WHERE novel_id=? AND status='open' ORDER BY planted_chapter",
             (row["id"],),
         ).fetchall()
