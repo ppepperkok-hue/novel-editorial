@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState } from "react";
-import { getChapterContent } from "../api.js";
+import { getAiTaste, getChapterContent } from "../api.js";
 import { fmtNum } from "./ui.jsx";
 
 const STATUS_META = {
@@ -18,6 +18,8 @@ export default function ChaptersPage({ data }) {
   const [reader, setReader] = useState(null);
   const [readerBody, setReaderBody] = useState(null);
   const [fontSize, setFontSize] = useState(15);
+  const [taste, setTaste] = useState(null);
+  const [tasteLoading, setTasteLoading] = useState(false);
 
   const novels = data?.novels || [];
   const chapters = (data?.chapters || []).filter((c) => {
@@ -51,11 +53,24 @@ export default function ChaptersPage({ data }) {
     setReader(c);
     setReaderBody(null);
     setFontSize(15);
+    setTaste(null);
     try {
       const r = await getChapterContent(c.id);
       setReaderBody(r.content || "");
     } catch {
       setReaderBody("");
+    }
+  };
+
+  const checkTaste = async () => {
+    if (!reader || taste) return;
+    setTasteLoading(true);
+    try {
+      setTaste(await getAiTaste(reader.id));
+    } catch {
+      setTaste({ score: -1, notes: ["检测失败"] });
+    } finally {
+      setTasteLoading(false);
     }
   };
 
@@ -173,6 +188,9 @@ export default function ChaptersPage({ data }) {
                 <button className="btn !px-2 !py-1 text-xs" onClick={() => setFontSize((s) => Math.max(13, s - 1))}>A−</button>
                 <span className="muted text-xs">{fontSize}px</span>
                 <button className="btn !px-2 !py-1 text-xs" onClick={() => setFontSize((s) => Math.min(20, s + 1))}>A+</button>
+                <button className="btn !px-2 !py-1 text-xs" disabled={tasteLoading || taste !== null} onClick={checkTaste}>
+                  {tasteLoading ? "检测中…" : "AI 味检测"}
+                </button>
                 <button className="btn !px-2 !py-0.5 text-sm" onClick={() => setReader(null)}>✕</button>
               </div>
             </div>
@@ -190,6 +208,35 @@ export default function ChaptersPage({ data }) {
                   本章正文未落库（历史章节）。正文从下次日更开始自动保存，之后这里就能阅读。
                 </div>
               )}
+              {taste ? (
+                <div className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--code-bg)] p-3">
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="text-sm font-bold">
+                      AI 味指数：
+                      <span className={taste.score >= 60 ? "badge-bad" : taste.score >= 30 ? "badge-warn" : "badge-ok"}>
+                        {taste.score}/100
+                      </span>
+                    </span>
+                    <span className="muted text-xs">辞藻密度 {taste.density}/500字</span>
+                  </div>
+                  {taste.notes?.length ? (
+                    <ul className="flex flex-col gap-1 text-xs text-slate-400">
+                      {taste.notes.map((n, i) => (
+                        <li key={i}>· {n}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="text-xs text-emerald-400">未发现明显 AI 味问题</div>
+                  )}
+                  {taste.flowery && Object.keys(taste.flowery).length ? (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {Object.entries(taste.flowery).map(([w, n]) => (
+                        <span key={w} className="chip chip-bad">{w}×{n}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
         </div>

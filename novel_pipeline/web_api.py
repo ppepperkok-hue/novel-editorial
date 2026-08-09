@@ -661,6 +661,17 @@ def _load_meetings(conn, limit=20):
     return out
 
 
+def _ai_taste(conn, chapter_id):
+    row = conn.execute(
+        "SELECT content FROM chapter_content WHERE chapter_id=?", (chapter_id,)
+    ).fetchone()
+    from tools.ai_taste_check import detect  # noqa: PLC0415
+
+    report = detect(row["content"] if row else "")
+    report["chapter_id"] = chapter_id
+    return report
+
+
 def build_payload(conn):
     return {
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -735,6 +746,17 @@ def make_handler(db_path):
                     conn = db.connect(db_path)
                     try:
                         self._json({"meetings": _load_meetings(conn)})
+                    finally:
+                        conn.close()
+                elif path == "/api/ai_taste":
+                    conn = db.connect(db_path)
+                    try:
+                        qs = parse_qs(parsed.query)
+                        chapter_id = int(qs["chapter_id"][0]) if qs.get("chapter_id") else None
+                        if chapter_id is None:
+                            self._json({"error": "chapter_id required"}, status=400)
+                        else:
+                            self._json(_ai_taste(conn, chapter_id))
                     finally:
                         conn.close()
                 elif path in ("/api/summary", "/api/novels", "/api/publish_logs",

@@ -78,3 +78,9 @@ export async function getMeetings() {
   if (!r.ok) throw new Error("meetings " + r.status);
   return r.json();
 }
+
+export async function getAiTaste(chapterId) {
+  const r = await fetch(API_BASE + "/api/ai_taste?chapter_id=" + chapterId);
+  if (!r.ok) throw new Error("ai_taste " + r.status);
+  return r.json();
+}
