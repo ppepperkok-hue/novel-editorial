@@ -1,0 +1,29 @@
+# 运行时产物
+demo.db
+backups/
+hot_topics.json
+publish_queue.jsonl
+alerts.log
+*.log
+
+# 本地敏感 / 机器相关
+.env
+.env.local
+chrome-profile/
+
+# 内部历史与第三方参考（不随仓库发布）
+tools/archive/
+docs/research/references/
+tools/rewrite_bible.json
+tools/rewrite_blueprints.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

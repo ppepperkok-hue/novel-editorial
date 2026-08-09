@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>novel-pipeline 实时监控</title>
+<style>
+  :root { --bg:#0f1420; --card:#1a2233; --line:#2b3550; --fg:#e6ecf5; --muted:#8fa0b8;
+          --green:#37d39b; --amber:#f5b84c; --red:#ff6b6b; --blue:#5aa9ff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font-family:"Microsoft YaHei", system-ui, sans-serif; }
+  header { display:flex; align-items:center; justify-content:space-between;
+           padding:14px 20px; border-bottom:1px solid var(--line); }
+  header h1 { font-size:18px; margin:0; }
+  #updated { color:var(--muted); font-size:12px; }
+  main { padding:16px 20px; max-width:1280px; margin:0 auto; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px;
+          padding:12px 14px; }
+  .card .label { color:var(--muted); font-size:12px; }
+  .card .value { font-size:26px; font-weight:700; margin-top:4px; }
+  .ok { color:var(--green); } .warn { color:var(--amber); } .bad { color:var(--red); }
+  section { margin-top:18px; }
+  section h2 { font-size:15px; margin:0 0 8px; }
+  table { width:100%; border-collapse:collapse; background:var(--card);
+          border:1px solid var(--line); border-radius:10px; overflow:hidden; font-size:13px; }
+  th, td { padding:8px 10px; text-align:left; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:600; }
+  .status { padding:2px 8px; border-radius:999px; font-size:12px; }
+  .st-draft { background:#2a3145; color:var(--muted); }
+  .st-reviewed, .st-queued { background:#1f3a33; color:var(--green); }
+  .st-published, .st-running { background:#1d2c47; color:var(--blue); }
+  .st-failed { background:#3a2328; color:var(--red); }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .chips span { display:inline-block; background:#243050; color:var(--blue);
+                padding:3px 10px; border-radius:999px; margin:3px 4px 0 0; font-size:12px; }
+  .bars { display:flex; align-items:flex-end; gap:8px; height:120px; padding-top:8px; }
+  .bar-col { flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; }
+  .bar { width:100%; background:var(--blue); border-radius:4px 4px 0 0; }
+  .bar.follow { background:var(--green); }
+  .bar-label { font-size:11px; color:var(--muted); }
+  pre { margin:0; white-space:pre-wrap; font-size:12px; color:var(--muted); }
+  .empty { color:var(--muted); font-size:13px; padding:8px 2px; }
+  button { background:#243050; color:var(--fg); border:1px solid var(--line);
+           border-radius:8px; padding:6px 14px; cursor:pointer; }
+  button:hover { border-color:var(--blue); }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:900px) { .grid2 { grid-template-columns:1fr; } }
+  .work { margin-bottom:14px; }
+  .work-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .work-head h3 { margin:0; font-size:16px; }
+  .work-meta { color:var(--muted); font-size:12px; }
+  .work-body { margin-top:10px; font-size:13px; line-height:1.7; }
+  .work-body .row { margin-top:8px; }
+  .work-body .lbl { color:var(--muted); font-size:12px; margin-bottom:2px; }
+  .char { display:flex; gap:8px; padding:6px 0; border-bottom:1px dashed var(--line); }
+  .char:last-child { border-bottom:none; }
+  .char .cname { color:var(--blue); font-weight:600; white-space:nowrap; }
+  details { margin-top:8px; }
+  details summary { cursor:pointer; color:var(--blue); font-size:13px; }
+  details .outline-block { margin-top:8px; padding:10px; background:#141b2a;
+                           border:1px solid var(--line); border-radius:8px; }
+  .ch-outline { margin-top:8px; }
+  .ch-outline .ch-title { color:var(--amber); font-weight:600; }
+</style>
+</head>
+<body>
+<header>
+  <h1>novel-pipeline 实时监控</h1>
+  <div><button onclick="refresh()">刷新</button>
+       <span id="updated"></span></div>
+</header>
+<main>
+  <div class="cards" id="cards"></div>
+
+  <section class="grid2">
+    <section>
+      <h2>健康检查</h2>
+      <div class="panel" id="health"></div>
+    </section>
+    <section>
+      <h2>热点选题（网文榜单）</h2>
+      <div class="panel" id="topics"></div>
+    </section>
+  </section>
+
+  <section>
+    <h2>作品库</h2>
+    <div id="works"></div>
+  </section>
+
+  <section>
+    <h2>章节</h2>
+    <table><thead><tr><th>ID</th><th>书ID</th><th>序号</th><th>标题</th><th>章纲</th><th>状态</th>
+      <th>字数</th><th>评分</th><th>番茄章节ID</th><th>发布时间</th></tr></thead>
+      <tbody id="chapters"></tbody></table>
+  </section>
+
+  <section class="grid2">
+    <section>
+      <h2>完读率 / 追读率</h2>
+      <div class="panel" id="reader"></div>
+    </section>
+    <section>
+      <h2>发布日志（最近 20 条）</h2>
+      <table><thead><tr><th>章节</th><th>平台</th><th>动作</th><th>结果</th>
+        <th>AI声明</th></tr></thead><tbody id="logs"></tbody></table>
+    </section>
+  </section>
+</main>
+
+<script>
+const statusCls = {"draft":"st-draft","reviewed":"st-reviewed","queued":"st-reviewed",
+                   "published":"st-published","running":"st-running","failed":"st-failed"};
+
+function esc(s) {
+  const div = document.createElement("div");
+  div.textContent = s == null ? "" : String(s);
+  return div.innerHTML;
+}
+
+function renderNovels(novels) {
+  const el = document.getElementById("works");
+  if (!novels.length) {
+    el.innerHTML = '<span class="empty">暂无作品，等待第一次运行记录。</span>';
+    return;
+  }
+  el.innerHTML = novels.map(n => {
+    const tags = (n.tags || []).map(t => `<span>${esc(t)}</span>`).join("");
+    const chars = (n.characters && n.characters.length
+      ? n.characters.map(c =>
+          `<div class="char"><span class="cname">${esc(c.name)}</span>` +
+          `<span class="work-meta">${esc(c.role)}</span>` +
+          `<span>${esc(c.traits)}</span><span class="work-meta">${esc(c.goals)}</span></div>`).join("")
+      : '<span class="empty">暂无主角资料</span>');
+    const o = n.outline || {};
+    const chs = [o.chapter1, o.chapter2].filter(Boolean).map(c =>
+      `<div class="ch-outline"><span class="ch-title">${esc(c.title || "")}</span><br>` +
+      `${esc(c.outline || "")}` +
+      (c.hook ? `<div class="work-meta">钩子：${esc(c.hook)}</div>` : "") + "</div>").join("");
+    const detail = `<details><summary>查看大纲 / 主角 / 简介</summary><div class="outline-block">
+      <div class="row"><div class="lbl">简介</div>${esc(n.abstract || n.premise || "暂无")}</div>
+      ${tags ? `<div class="row"><div class="lbl">标签</div><div class="chips">${tags}</div></div>` : ""}
+      <div class="row"><div class="lbl">主角</div>${chars}</div>
+      ${n.premise ? `<div class="row"><div class="lbl">核心创意</div>${esc(n.premise)}</div>` : ""}
+      ${n.volume_goal ? `<div class="row"><div class="lbl">卷目标</div>${esc(n.volume_goal)}</div>` : ""}
+      ${o.keywords ? `<div class="row"><div class="lbl">关键词</div>${esc(o.keywords)}</div>` : ""}
+      ${chs ? `<div class="row"><div class="lbl">本章大纲</div>${chs}</div>` : ""}
+    </div></details>`;
+    return `<div class="panel work">
+      <div class="work-head"><h3>${esc(n.title)}</h3>
+        <span class="status ${statusCls[n.status] || "st-draft"}">${esc(n.status)}</span>
+        <span class="work-meta">${esc(n.platform)}</span>
+        <span class="work-meta">${esc(n.genre || "")}</span>
+        <span class="work-meta">章节 ${n.chapters} · 已发布 ${n.published}</span>
+        ${n.last_chapter_title ? `<span class="work-meta">最新章节：${esc(n.last_chapter_title)}</span>` : ""}
+        <span class="work-meta">${esc(n.updated_at || "")}</span>
+      </div>
+      <div class="work-body">${esc(n.abstract || n.premise || "")}</div>
+      ${detail}
+    </div>`;
+  }).join("");
+}
+
+function render(data) {
+  document.getElementById("updated").textContent = "更新于 " + data.updated_at;
+  const s = data.summary;
+  const passRate = s.quality_total ? (s.quality_passed / s.quality_total * 100).toFixed(1) : "—";
+  const cards = [
+    ["小说", s.novels, ""], ["章节总数", s.chapters_total, ""],
+    ["已发布", s.chapters_published, "ok"], ["待发布", s.chapters_ready, "warn"],
+    ["草稿", s.chapters_draft, "warn"], ["质量通过率", passRate + "%", "ok"],
+    ["发布失败", s.publish_failed, s.publish_failed ? "bad" : "ok"],
+    ["健康问题", data.health.issues.length, data.health.issues.length ? "bad" : "ok"],
+  ];
+  document.getElementById("cards").innerHTML = cards.map(c =>
+    `<div class="card"><div class="label">${c[0]}</div>` +
+    `<div class="value ${c[2]}">${c[1]}</div></div>`).join("");
+
+  const healthEl = document.getElementById("health");
+  healthEl.innerHTML = data.health.issues.length
+    ? data.health.issues.map(i => `<div class="bad">● ${esc(i)}</div>`).join("")
+    : '<span class="ok">● 全部正常</span>';
+  if (data.health.log_tail.length) {
+    healthEl.innerHTML += "<pre>" + esc(data.health.log_tail.join("\n")) + "</pre>";
+  }
+
+  const tEl = document.getElementById("topics");
+  if (!data.hot_topics.present) {
+    tEl.innerHTML = '<span class="empty">暂无热点数据，运行 ' +
+      '<code>python -m novel_pipeline.hot_topics --refresh</code> 生成。</span>';
+  } else {
+    const kw = data.hot_topics.top_keywords || [];
+    tEl.innerHTML = '<div class="chips">' +
+      kw.map(k => `<span>${esc(k[0])} ×${k[1]}</span>`).join("") + "</div>";
+    tEl.innerHTML += (data.hot_topics.sources || []).map(src =>
+      `<h3 style="font-size:13px;margin:10px 0 4px;">${esc(src.source)}（${src.count || 0} 本）</h3>` +
+      (src.error ? `<div class="bad">抓取失败：${esc(src.error)}</div>` : "") +
+      '<div style="font-size:12px;color:var(--muted);line-height:1.7;">' +
+      (src.titles || []).slice(0, 10).map(t => esc(t)).join("、") + "</div>").join("");
+  }
+
+  renderNovels(data.novels || []);
+
+  document.getElementById("chapters").innerHTML = data.chapters.map(c =>
+    `<tr><td>${c.id}</td><td>${c.novel_id}</td><td>${c.seq}</td>` +
+    `<td>${esc(c.title || "")}</td><td>${esc(c.outline)}</td>` +
+    `<td><span class="status ${statusCls[c.status] || "st-draft"}">${esc(c.status)}</span></td>` +
+    `<td>${c.words}</td><td>${c.score ?? "—"}</td>` +
+    `<td>${esc(c.fanqie_item_id || "—")}</td>` +
+    `<td>${esc(c.published_at || "—")}</td></tr>`).join("") ||
+    '<tr><td colspan="10" class="empty">暂无章节</td></tr>';
+
+  const rs = data.reader_stats;
+  const rEl = document.getElementById("reader");
+  if (!rs.present || !rs.rows.length) {
+    rEl.innerHTML = '<div class="empty">暂无真实阅读数据。完读率 / 追读率需要从番茄作者后台导出，' +
+      '按 <code>demo_data/reader_stats.example.csv</code> 的格式（chapter,finish_rate,follow_rate）' +
+      '保存为 <code>demo_data/reader_stats.csv</code>，面板每 5 秒自动刷新。</div>';
+  } else {
+    const max = Math.max(0.05, ...rs.rows.map(r => Math.max(r.finish_rate, r.follow_rate)));
+    const avgF = rs.report ? (rs.report.avg_finish * 100).toFixed(1) : "—";
+    const avgL = rs.report ? (rs.report.avg_follow * 100).toFixed(1) : "—";
+    const low = rs.report && rs.report.low_chapters.length
+      ? rs.report.low_chapters.map(c => "第" + c + "章").join("、")
+      : "无";
+    rEl.innerHTML = '<div class="bars">' + rs.rows.map(r => {
+      const fh = Math.round(r.finish_rate / max * 100);
+      const lh = Math.round(r.follow_rate / max * 100);
+      return `<div class="bar-col"><div style="height:${fh}px" class="bar"></div>` +
+             `<div style="height:${lh}px" class="bar follow"></div>` +
+             `<div class="bar-label">${r.chapter}</div></div>`;
+    }).join("") + '</div><div style="font-size:12px;color:var(--muted);margin-top:6px;">' +
+      '蓝=完读率 绿=追读率。平均完读率 ' + avgF + '% · 平均追读率 ' + avgL + '% · 低质章节：' + low +
+      '</div>';
+  }
+
+  document.getElementById("logs").innerHTML = data.publish_logs.slice(0, 20).map(l =>
+    `<tr><td>${l.chapter_id}</td><td>${esc(l.platform)}</td><td>${esc(l.action)}</td>` +
+    `<td class="${l.result === "failed" ? "bad" : "ok"}">${esc(l.result)}</td>` +
+    `<td>${l.ai_declared ? "是" : "否"}</td></tr>`).join("") ||
+    '<tr><td colspan="5" class="empty">暂无发布日志</td></tr>';
+}
+
+async function refresh() {
+  try {
+    const resp = await fetch("/api/dashboard");
+    render(await resp.json());
+  } catch (e) {
+    document.getElementById("updated").textContent = "加载失败：" + e;
+  }
+}
+
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>
