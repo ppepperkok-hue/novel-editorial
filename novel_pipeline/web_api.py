@@ -35,7 +35,13 @@ READER_CSV = ROOT / "demo_data" / "reader_stats.csv"
 N8N_BASE = os.environ.get("N8N_BASE", "http://127.0.0.1:5678")
 N8N_WORKFLOW_DAILY = os.environ.get("N8N_WORKFLOW_DAILY", "SkLUnm3uRyBSY84F")
 N8N_WORKFLOW_WEEKLY = os.environ.get("N8N_WORKFLOW_WEEKLY", "TAScPjj0Oqtz1uy7")
-ALLOWED_SETTINGS = {"daily_enabled", "monthly_budget", "target_words", "style_tweak"}
+ALLOWED_SETTINGS = {
+    "daily_enabled",
+    "monthly_budget",
+    "target_words",
+    "style_tweak",
+    "daily_run_time",
+}
 _N8N_KEY = None
 AGENTS_DIR = ROOT / "prompts" / "agents"
 WORKFLOW_JSON = ROOT / "n8n" / "novel_workflow.json"
@@ -77,7 +83,7 @@ def _load_n8n_env():
     return _N8N_KEY
 
 
-def n8n_api(method, path, body=None):
+def n8n_api(method, path, body=None, timeout=6):
     """Call the n8n public API; returns parsed JSON or None on any failure."""
     key = _load_n8n_env()
     if not key:
@@ -93,7 +99,7 @@ def n8n_api(method, path, body=None):
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=6) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read().decode("utf-8", "ignore"))
     except (urllib.error.URLError, OSError, ValueError):
         return None
@@ -241,6 +247,76 @@ def _agent_deploy():
     return {"ok": True, "nodes": len(wf["nodes"]), "active": bool(res.get("active"))}
 
 
+WEBHOOK_PATHS = {
+    "daily": "novel-manual-run",
+    "weekly": "novel-weekly-run",
+}
+
+
+def _run_workflow_now(workflow):
+    """Manually trigger a workflow through its webhook entry (n8n 2.x has
+    no public run endpoint, so each workflow carries a Webhook trigger)."""
+    hook_path = WEBHOOK_PATHS.get(workflow)
+    if not hook_path:
+        return {"ok": False, "error": "workflow must be daily|weekly"}
+    req = urllib.request.Request(
+        N8N_BASE + "/webhook/" + hook_path,
+        data=b"{}",
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            payload = r.read().decode("utf-8", "ignore")
+        return {"ok": True, "response": payload, "workflow": workflow}
+    except urllib.error.HTTPError as e:
+        return {
+            "ok": False,
+            "error": f"webhook trigger failed: HTTP {e.code}",
+        }
+    except (urllib.error.URLError, OSError) as e:
+        return {"ok": False, "error": f"n8n unreachable: {e}"}
+
+
+def _apply_schedule(conn):
+    """Write daily_run_time into the schedule trigger and deploy to n8n."""
+    row = conn.execute(
+        "SELECT value FROM settings WHERE key='daily_run_time'"
+    ).fetchone()
+    value = (row["value"] if row else "08:00").strip()
+    parts = value.split(":")
+    if len(parts) != 2:
+        return {"ok": False, "error": f"daily_run_time must be HH:MM, got {value!r}"}
+    try:
+        hour = int(parts[0])
+        minute = int(parts[1])
+    except ValueError:
+        return {"ok": False, "error": f"daily_run_time must be HH:MM, got {value!r}"}
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return {"ok": False, "error": "time out of range (00:00-23:59)"}
+
+    wf = json.loads(WORKFLOW_JSON.read_text(encoding="utf-8"))
+    found = False
+    for node in wf["nodes"]:
+        if node.get("type") == "n8n-nodes-base.scheduleTrigger":
+            rule = node.setdefault("parameters", {}).setdefault("rule", {})
+            for item in rule.get("interval", []):
+                item["triggerAtHour"] = hour
+                item["triggerAtMinute"] = minute
+                found = True
+    if not found:
+        return {"ok": False, "error": "schedule trigger node not found in workflow"}
+    WORKFLOW_JSON.write_text(
+        json.dumps(wf, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    deployed = _agent_deploy()
+    return {
+        "ok": deployed["ok"],
+        "time": f"{hour:02d}:{minute:02d}",
+        "deploy": deployed,
+    }
+
+
 def _cost_summary(conn):
     by_day = [
         dict(r)
@@ -295,6 +371,13 @@ def _handle_control(conn, payload):
         }
         set_many(conn, values)
         return {"ok": True, "saved": values}
+    if action == "run_now":
+        return _run_workflow_now(payload.get("workflow") or "daily")
+    if action == "apply_schedule":
+        time_value = (payload.get("time") or "").strip()
+        if time_value:
+            set_many(conn, {"daily_run_time": time_value})
+        return _apply_schedule(conn)
     if action == "request_run":
         set_many(conn, {"manual_run_requested": "1"})
         return {"ok": True, "note": "将在下次定时触发时执行"}

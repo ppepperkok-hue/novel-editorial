@@ -29,11 +29,18 @@ def main():
     except (AttributeError, ValueError):
         pass
     ap = argparse.ArgumentParser(description="落盘架构师周会结果")
-    ap.add_argument("payload_b64")
+    ap.add_argument("payload_b64", nargs="?")
+    ap.add_argument("--file")
     ap.add_argument("--db", default="demo.db")
     args = ap.parse_args()
 
-    payload = json.loads(base64.b64decode(args.payload_b64).decode("utf-8"))
+    if args.file:
+        with open(args.file, encoding="utf-8") as f:
+            payload = json.load(f)
+    elif args.payload_b64:
+        payload = json.loads(base64.b64decode(args.payload_b64).decode("utf-8"))
+    else:
+        raise SystemExit("usage: apply_architect.py <base64-json> | --file <json-file>")
     db_path = Path(args.db)
     if not db_path.is_absolute():
         db_path = ROOT / db_path

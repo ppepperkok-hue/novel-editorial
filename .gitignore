@@ -5,6 +5,7 @@ hot_topics.json
 publish_queue.jsonl
 alerts.log
 *.log
+n8n_tmp/
 
 # 本地敏感 / 机器相关
 .env

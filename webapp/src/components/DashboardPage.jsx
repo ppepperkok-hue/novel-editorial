@@ -49,6 +49,7 @@ function WorkflowCard({ label, wf, onAction }) {
 
 export default function DashboardPage({ data, error, onRefresh, pushToast }) {
   const [control, setControl] = useState(null);
+  const [running, setRunning] = useState(false);
 
   const refreshControl = async () => {
     try {
@@ -69,6 +70,23 @@ export default function DashboardPage({ data, error, onRefresh, pushToast }) {
     pushToast(r.ok ? okMsg : `失败：${r.error || "未知"}`, r.ok ? "ok" : "bad");
     refreshControl();
     onRefresh();
+  };
+
+  const runNow = async () => {
+    setRunning(true);
+    try {
+      const r = await postControl({ action: "run_now", workflow: "daily" });
+      pushToast(
+        r.ok
+          ? "日更流水线已启动，正在后台执行（真实发布，可到执行记录看进度）"
+          : "启动失败：" + (r.error || "未知"),
+        r.ok ? "ok" : "bad",
+      );
+      refreshControl();
+      onRefresh();
+    } finally {
+      setRunning(false);
+    }
   };
 
   const s = data?.summary || {};
@@ -105,10 +123,10 @@ export default function DashboardPage({ data, error, onRefresh, pushToast }) {
           <WorkflowCard label="日更工作流（55 节点）" wf={wfs.daily} onAction={(a) => action({ action: a, workflow: "daily" }, a === "pause" ? "日更已暂停" : "日更已恢复")} />
           <WorkflowCard label="架构师周会（5 节点）" wf={wfs.weekly} onAction={(a) => action({ action: a, workflow: "weekly" }, a === "pause" ? "周会已暂停" : "周会已恢复")} />
           <div className="panel panel-hover p-4">
-            <div className="text-sm font-semibold">立即运行</div>
-            <div className="muted mt-1 text-xs">写入运行请求，下次定时触发时自动执行</div>
-            <button className="btn btn-primary mt-3" onClick={() => action({ action: "request_run" }, "已请求运行，将在下个触发点执行")}>
-              ⟶ 请求立即运行
+            <div className="text-sm font-semibold">手动补更</div>
+            <div className="muted mt-1 text-xs">机器关机错过定时后，开机点这里立即执行完整日更（真实发布）</div>
+            <button className="btn btn-ok mt-3" disabled={running} onClick={runNow}>
+              {running ? "正在启动…" : "▶ 立即更新一章"}
             </button>
           </div>
         </div>

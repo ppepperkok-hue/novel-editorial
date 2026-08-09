@@ -23,7 +23,7 @@
     },
     {
       "parameters": {
-        "command": "python tools/architect_weekly.py --db demo.db",
+        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline/tools/architect_weekly.py --db demo.db",
         "options": {
           "cwd": "C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline"
         }
@@ -72,7 +72,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const raw = $input.first().json;\nconst resp = typeof raw === 'string' ? JSON.parse(raw) : raw;\nconst msg = resp && resp.choices && resp.choices[0] && resp.choices[0].message;\nconst text = (msg && typeof msg.content === 'string' && msg.content.trim()) ? msg.content : (msg && typeof msg.reasoning_content === 'string' ? msg.reasoning_content : '');\nconst t = String(text).replace(/```json/g, '').replace(/```/g, '').trim();\nlet plan = null;\ntry { plan = JSON.parse(t); } catch { const m = t.match(/\\{[\\s\\S]*\\}/); if (m) { try { plan = JSON.parse(m[0]); } catch {} } }\nif (!plan) { const ctx0 = JSON.parse(($('读上下文').first().json.stdout || '{}')); return [{ json: { payload_b64: Buffer.from(JSON.stringify({ book_id: (ctx0.context && ctx0.context.book_id) || '', blueprint_updates: [], reader_persona: null, volume_goal: '' })).toString('base64') } }]; }\nconst ctx = JSON.parse($('读上下文').first().json.stdout || '{}');\nconst payload = { book_id: (ctx.context && ctx.context.book_id) || '', blueprint_updates: plan.blueprint_updates || [], reader_persona: plan.reader_persona || null, volume_goal: plan.volume_goal_adjust || '' };\nreturn [{ json: { payload_b64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];\n"
+        "jsCode": "const raw = $input.first().json;\nconst resp = typeof raw === 'string' ? JSON.parse(raw) : raw;\nconst msg = resp && resp.choices && resp.choices[0] && resp.choices[0].message;\nconst text = (msg && typeof msg.content === 'string' && msg.content.trim()) ? msg.content : (msg && typeof msg.reasoning_content === 'string' ? msg.reasoning_content : '');\nconst t = String(text).replace(/```json/g, '').replace(/```/g, '').trim();\nlet plan = null;\ntry { plan = JSON.parse(t); } catch { const m = t.match(/\\{[\\s\\S]*\\}/); if (m) { try { plan = JSON.parse(m[0]); } catch {} } }\nif (!plan) { const ctx0 = JSON.parse(($('读上下文').first().json.stdout || '{}')); const payload = { book_id: (ctx0.context && ctx0.context.book_id) || '', blueprint_updates: [], reader_persona: null, volume_goal: '' };\nconst fs = require('fs');\nconst blueprintFile = 'C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline/n8n_tmp/weekly_blueprint.json';\nfs.mkdirSync(blueprintFile.slice(0, blueprintFile.lastIndexOf('/')), { recursive: true });\nfs.writeFileSync(blueprintFile, JSON.stringify(payload));\nreturn [{ json: { payload_b64: Buffer.from(JSON.stringify(payload)).toString('base64'), blueprint_file: blueprintFile } }]; }\nconst ctx = JSON.parse($('读上下文').first().json.stdout || '{}');\nconst payload = { book_id: (ctx.context && ctx.context.book_id) || '', blueprint_updates: plan.blueprint_updates || [], reader_persona: plan.reader_persona || null, volume_goal: plan.volume_goal_adjust || '' };\nconst fs = require('fs');\nconst blueprintFile = 'C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline/n8n_tmp/weekly_blueprint.json';\nfs.mkdirSync(blueprintFile.slice(0, blueprintFile.lastIndexOf('/')), { recursive: true });\nfs.writeFileSync(blueprintFile, JSON.stringify(payload));\nreturn [{ json: { payload_b64: Buffer.from(JSON.stringify(payload)).toString('base64'), blueprint_file: blueprintFile } }];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -85,7 +85,7 @@
     },
     {
       "parameters": {
-        "command": "={{ 'python tools/apply_architect.py ' + $json.payload_b64 }}",
+        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline/tools/apply_architect.py --file C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline/n8n_tmp/weekly_blueprint.json",
         "options": {
           "cwd": "C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline"
         }
@@ -98,6 +98,23 @@
         800,
         0
       ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "novel-weekly-run",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "n-manual-run",
+      "name": "手动触发",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.2,
+      "position": [
+        -220,
+        0
+      ],
+      "webhookId": "wh-804f2eb78ade47ce"
     }
   ],
   "connections": {
@@ -139,6 +156,17 @@
         [
           {
             "node": "落盘蓝图",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "手动触发": {
+      "main": [
+        [
+          {
+            "node": "读上下文",
             "type": "main",
             "index": 0
           }

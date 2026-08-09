@@ -317,8 +317,12 @@ def main():
     except (AttributeError, ValueError):
         pass
     if len(sys.argv) < 2:
-        raise SystemExit("usage: record_work.py <base64-json>")
-    payload = json.loads(base64.b64decode(sys.argv[1]).decode("utf-8"))
+        raise SystemExit("usage: record_work.py <base64-json> | --file <json-file>")
+    if sys.argv[1] == "--file":
+        with open(sys.argv[2], encoding="utf-8") as f:
+            payload = json.load(f)
+    else:
+        payload = json.loads(base64.b64decode(sys.argv[1]).decode("utf-8"))
     conn = db.connect(DB_PATH)
     try:
         novel_id = upsert_novel(conn, payload)

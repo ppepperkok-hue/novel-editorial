@@ -33,6 +33,7 @@ export default function SettingsPage({ data, onRefresh, pushToast }) {
   const [control, setControl] = useState(null);
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [running, setRunning] = useState("");
 
   const refresh = async () => {
     try {
@@ -44,6 +45,7 @@ export default function SettingsPage({ data, onRefresh, pushToast }) {
           monthly_budget: c.settings?.monthly_budget || 100,
           target_words: c.settings?.target_words || 2000,
           style_tweak: c.settings?.style_tweak || "",
+          daily_run_time: c.settings?.daily_run_time || "08:00",
         },
       );
     } catch {
@@ -72,13 +74,42 @@ export default function SettingsPage({ data, onRefresh, pushToast }) {
           monthly_budget: String(form.monthly_budget),
           target_words: String(form.target_words),
           style_tweak: form.style_tweak,
+          daily_run_time: form.daily_run_time,
         },
       });
-      pushToast(r.ok ? "设置已保存" : "保存失败：" + (r.error || "未知"), r.ok ? "ok" : "bad");
+      if (!r.ok) {
+        pushToast("保存失败：" + (r.error || "未知"), "bad");
+        return;
+      }
+      const sched = await postControl({
+        action: "apply_schedule",
+        time: form.daily_run_time,
+      });
+      if (sched.ok) {
+        pushToast(`设置已保存，日更时间已改为每天 ${sched.time}`, "ok");
+      } else {
+        pushToast("设置已保存，但更新时间应用失败：" + (sched.error || "未知"), "warn");
+      }
       refresh();
       onRefresh();
     } finally {
       setSaving(false);
+    }
+  };
+
+  const runNow = async (workflow, label) => {
+    setRunning(workflow);
+    try {
+      const r = await postControl({ action: "run_now", workflow });
+      if (r.ok) {
+        pushToast(`${label}已启动，正在后台执行，可到「执行记录」查看进度`, "ok");
+      } else {
+        pushToast(`${label}启动失败：${r.error || "未知"}`, "bad");
+      }
+      refresh();
+      onRefresh();
+    } finally {
+      setRunning("");
     }
   };
 
@@ -95,6 +126,26 @@ export default function SettingsPage({ data, onRefresh, pushToast }) {
           <button className="btn btn-primary" onClick={() => action({ action: "request_run" }, "已请求运行，将在下个定时触发点执行")}>
             ⟶ 请求立即运行
           </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              className="btn btn-ok"
+              disabled={running !== ""}
+              onClick={() => runNow("daily", "日更流水线")}
+            >
+              {running === "daily" ? "启动中…" : "▶ 立即更新一章"}
+            </button>
+            <button
+              className="btn"
+              disabled={running !== ""}
+              onClick={() => runNow("weekly", "架构师周会")}
+            >
+              {running === "weekly" ? "启动中…" : "▶ 立即跑周会"}
+            </button>
+          </div>
+          <div className="rounded-lg border border-amber-900/50 bg-amber-950/20 px-3 py-2 text-xs leading-relaxed text-amber-300/90">
+            「立即更新一章」会真实执行完整写作流水线并发布到番茄（消耗 API 额度）。
+            机器关机错过定时时，开机后点这里即可补更。
+          </div>
           <div className="muted text-xs leading-relaxed">
             当前 {wfs.daily?.active ? "日更运行中" : "日更暂停"} · 周会{wfs.weekly?.active ? "运行中" : "已暂停"}
           </div>
@@ -147,6 +198,18 @@ export default function SettingsPage({ data, onRefresh, pushToast }) {
                 onChange={(e) => setForm({ ...form, style_tweak: e.target.value })}
               />
               <div className="muted mt-1 text-xs">为空时使用 Agent 提示词自带的风格。</div>
+            </div>
+            <div>
+              <label className="label">每日更新时间（时:分）</label>
+              <input
+                type="time"
+                className="input !w-40"
+                value={form.daily_run_time}
+                onChange={(e) => setForm({ ...form, daily_run_time: e.target.value })}
+              />
+              <div className="muted mt-1 text-xs">
+                保存后立即重新部署定时器；机器关机时段会被错过，开机后请用手动更新补更。
+              </div>
             </div>
             <div className="flex items-center gap-3">
               <button className="btn btn-ok" disabled={saving} onClick={save}>

@@ -102,3 +102,27 @@ Agent 管理链路：`prompts/agents/*.md` → 保存时 `render_workflow.py` �
 
 新增 API：`GET/POST /api/agents`（列表/保存/部署）、`GET /api/cost`、
 `GET /api/executions`。前端支持 `#分区` hash 直达，刷新后停留在当前页。
+
+## 7. 手动补更与更新时间（2026-08-10）
+
+机器会关机，定时触发可能错过，因此给两个工作流各加了一个 Webhook 触发节点：
+
+| 工作流 | Webhook 路径 | 入口 |
+| --- | --- | --- |
+| 日更 | `POST /webhook/novel-manual-run` | 手动触发 → 备份数据库 → 预检 → … |
+| 周会 | `POST /webhook/novel-weekly-run` | 手动触发 → 读上下文 → 架构师规划 → … |
+
+面板「系统设置」的「立即更新一章 / 立即跑周会」直接打这两个 webhook；
+「每日更新时间」修改 `n8n/novel_workflow.json` 的 schedule trigger 后重新部署。
+
+本轮同时修掉了三个让流水线在 Windows 上断掉的问题：
+
+- **python 不在 PATH**：所有 ExecuteCommand 的 `python` 换成
+  `C:/Users/.../Python311/python.exe` 绝对路径。
+- **cwd 漂移**：n8n 进程工作目录是 `~/.n8n`，所有相对脚本路径改为绝对路径；
+  大 payload（周会蓝图/日更结果）不再走命令行（超过 cmd.exe 8191 字符限制），
+  改为 code 节点写 `n8n_tmp/*.json`，Python 端用 `--file` 读取。
+- **Code 节点模块限制**：`~/.n8n/.env` 增加 `NODE_FUNCTION_ALLOW_BUILTIN=fs`。
+
+开机自启：`shell:startup` 下放了三个 vbs（n8n、8000/8001 面板服务），
+登录后自动拉起，无需管理员权限。

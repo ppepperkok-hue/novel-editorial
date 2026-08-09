@@ -19,6 +19,7 @@ DEFAULTS = {
     "monthly_budget": "100",
     "target_words": "2000",
     "style_tweak": "",
+    "daily_run_time": "08:00",
 }
 
 
