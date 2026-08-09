@@ -201,3 +201,27 @@ Toast 带图标、执行失败可查看原因弹窗、作品库搜索与批量�
 
 安装包构建：`cd desktop && npm run dist`，产物在 `desktop/release/`。
 发布新版本：打 tag（如 v1.0.0）后构建并 `--publish always` 上传 GitHub Releases。
+
+## 12. 人格化多 Agent 周会系统（2026-08-10）
+
+周会从单 Agent 规划升级为多 Agent 会议制，全部 10 个 Agent 人格化：
+
+- **人格档案**：每个 `prompts/agents/*.md` 增加人物档案（姓名/身份/性格/说话风格/
+  价值观/关注点/情绪基线）与「日记模式」「周记模式」「会议模式」，日常任务不变。
+- **两级记忆**：日更后「全员写日记」节点让每个 Agent 自述当日日记
+  （`agent_diaries`，daily）；周会前每个 Agent 回顾本周日记与简报写「本周日记」
+  （weekly），参考上周周记形成连续记忆；保留 8 周自动清理。
+- **情绪状态**：周记同一次调用自述心情 `{satisfaction, concern, excitement, fatigue}`
+  写入 `agent_states`；会议发言带「我的感受」。
+- **会议引擎** `tools/agent_meeting.py`：主席（eic）点将（动态阵容≤8）→ 固定 3 轮
+  相互通气（每 Agent 上下文 = 材料 + 本人简报 + 本周日记 + 心情 + 历史发言）→
+  主席总结报告；发言六段结构 `本周小结→感受→意见→顾虑→提案→优先级`。
+- **周会材料** `architect_weekly.py` 输出 context（20 字段）+ 每个 Agent 的
+  `agent_briefs`（本周数据聚合）。
+- **落盘与档案**：`apply_architect.apply_report` 合并蓝图/读者画像/卷目标；
+  `weekly_meetings` 表存档完整会议；前端新增「周会档案」页（导航第 9 项）+ 仪表盘
+  最近周会摘要；`GET /api/meetings`。
+- **成本**：日记与会议调用按 Agent 记入 `cost_logs`（node_name `日记:*` / `会议:*`）。
+
+后续待办（完成后提醒）：完结机制（ending_judge 接入点将）、统一留痕
+（`audit_logs`）、人物卡进化（`character_evolution`）。

@@ -121,6 +121,33 @@ CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS agent_diaries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent TEXT NOT NULL,
+    novel_id INTEGER,
+    diary_type TEXT NOT NULL DEFAULT 'daily',
+    content TEXT NOT NULL,
+    created_at TEXT DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS agent_states (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent TEXT NOT NULL,
+    novel_id INTEGER,
+    mood TEXT NOT NULL,
+    updated_at TEXT DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS weekly_meetings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    held_at TEXT DEFAULT '',
+    novel_id INTEGER,
+    attendees TEXT DEFAULT '[]',
+    topics TEXT DEFAULT '[]',
+    report TEXT NOT NULL,
+    status TEXT DEFAULT 'completed'
+);
 """
 
 

@@ -23,6 +23,44 @@ def merge_blueprints(old, updates):
     return [by_seq[k] for k in sorted(by_seq)]
 
 
+def apply_report(conn, novel_id, report):
+    """Persist a meeting report: blueprints, reader persona, volume goal."""
+    decisions = report.get("decisions") or {}
+    row = conn.execute(
+        "SELECT id, outline, volume_goal FROM novels WHERE id=?", (novel_id,)
+    ).fetchone()
+    if row is None:
+        return {"ok": False, "error": "no novel"}
+    outline = json.loads(row["outline"] or "{}")
+    outline["blueprints"] = merge_blueprints(
+        outline.get("blueprints") or [], decisions.get("blueprint_updates") or []
+    )
+    persona = decisions.get("reader_persona")
+    if isinstance(persona, dict) and persona.get("preference"):
+        bible = outline.get("bible") or {}
+        bible["reader_persona"] = persona
+        outline["bible"] = bible
+    goal = decisions.get("volume_goal_adjust")
+    if goal:
+        outline["volume_goal"] = str(goal)
+    conn.execute(
+        "UPDATE novels SET outline=?, volume_goal=?, updated_at=? WHERE id=?",
+        (
+            json.dumps(outline, ensure_ascii=False),
+            str(goal or row["volume_goal"] or ""),
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            novel_id,
+        ),
+    )
+    conn.commit()
+    return {
+        "ok": True,
+        "blueprints": len(outline["blueprints"]),
+        "reader_persona": bool(persona),
+        "volume_goal": str(goal or ""),
+    }
+
+
 def main():
     try:
         sys.stdout.reconfigure(encoding="utf-8")

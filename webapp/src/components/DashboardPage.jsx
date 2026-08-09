@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getControl, postControl } from "../api.js";
 import ReaderChart from "./ReaderChart.jsx";
 import { ConfirmDialog, fmtRelative } from "./ui.jsx";
+import { getMeetings } from "../api.js";
 
 function Kpi({ label, value, sub, tone }) {
   return (
@@ -54,6 +55,7 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
   const [confirm, setConfirm] = useState(null);
   const [runChapters, setRunChapters] = useState(2);
   const [logDetail, setLogDetail] = useState(null);
+  const [latestMeeting, setLatestMeeting] = useState(null);
 
   const refreshControl = async () => {
     try {
@@ -67,6 +69,12 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
     refreshControl();
     const t = setInterval(refreshControl, 30000);
     return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    getMeetings()
+      .then((r) => setLatestMeeting(r.meetings?.[0] || null))
+      .catch(() => {});
   }, []);
 
   const action = async (payload, okMsg) => {
@@ -170,6 +178,20 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
           </div>
         </div>
       </section>
+
+      {latestMeeting ? (
+        <section className="panel p-4">
+          <div className="section-title !mb-2">最近周会</div>
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-semibold">#{latestMeeting.id}</span>
+            <span className="muted text-xs">{fmtTime(latestMeeting.held_at)}</span>
+            <span className="muted text-xs">参会：{latestMeeting.attendees.join("、")}</span>
+            {latestMeeting.blueprint_count ? <span className="chip chip-info">蓝图 {latestMeeting.blueprint_count} 条</span> : null}
+            {latestMeeting.volume_goal_adjust ? <span className="chip chip-warn">卷目标已调整</span> : null}
+            <span className="muted ml-auto text-xs truncate max-w-[40%]">{latestMeeting.summary}</span>
+          </div>
+        </section>
+      ) : null}
 
       <div className="kpi-grid">
         <Kpi label="连载作品" value={s.novels ?? "—"} sub="全部连载中" />

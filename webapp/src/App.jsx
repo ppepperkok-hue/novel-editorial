@@ -10,6 +10,7 @@ import ExecutionsPage from "./components/ExecutionsPage.jsx";
 import ReaderPage from "./components/ReaderPage.jsx";
 import SettingsPage from "./components/SettingsPage.jsx";
 import CommandPalette from "./components/CommandPalette.jsx";
+import MeetingsPage from "./components/MeetingsPage.jsx";
 
 const NAV = [
   { id: "dashboard", label: "仪表盘", icon: "◈" },
@@ -20,6 +21,7 @@ const NAV = [
   { id: "executions", label: "执行记录", icon: "⏱" },
   { id: "reader", label: "阅读数据", icon: "◔" },
   { id: "settings", label: "系统设置", icon: "⚙" },
+  { id: "meetings", label: "周会档案", icon: "▦" },
 ];
 
 const PAGE_META = {
@@ -31,6 +33,7 @@ const PAGE_META = {
   executions: ["执行记录", "日更与周会工作流的最近执行历史与失败详情"],
   reader: ["阅读数据", "完读率、追读率趋势与读者反馈报告"],
   settings: ["系统设置", "运行开关、预算、目标字数、更新时间与风格微调"],
+  meetings: ["周会档案", "多 Agent 周会的历次会议记录与决策"],
 };
 
 const TOAST_ICON = { ok: "✓", bad: "✕", warn: "!" };
@@ -317,6 +320,7 @@ export default function App() {
             {page === "executions" && <ExecutionsPage snapshot={liveSnapshot} />}
             {page === "reader" && <ReaderPage data={data} />}
             {page === "settings" && <SettingsPage data={data} onRefresh={refresh} pushToast={pushToast} theme={theme} onThemeChange={changeTheme} />}
+            {page === "meetings" && <MeetingsPage />}
           </ErrorBoundary>
         </div>
       </main>

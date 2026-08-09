@@ -630,6 +630,37 @@ def _export_novels(conn):
     }
 
 
+def _load_meetings(conn, limit=20):
+    rows = conn.execute(
+        "SELECT id, held_at, novel_id, attendees, topics, report, status "
+        "FROM weekly_meetings ORDER BY id DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    out = []
+    for r in rows:
+        try:
+            report = json.loads(r["report"] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            report = {}
+        decisions = report.get("decisions") or {}
+        out.append(
+            {
+                "id": r["id"],
+                "held_at": r["held_at"],
+                "novel_id": r["novel_id"],
+                "attendees": json.loads(r["attendees"] or "[]"),
+                "topics": json.loads(r["topics"] or "[]"),
+                "status": r["status"],
+                "summary": report.get("discussion_summary", ""),
+                "blueprint_count": len(decisions.get("blueprint_updates") or []),
+                "volume_goal_adjust": decisions.get("volume_goal_adjust", ""),
+                "action_items": report.get("action_items", []),
+                "report": report,
+            }
+        )
+    return out
+
+
 def build_payload(conn):
     return {
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -698,6 +729,12 @@ def make_handler(db_path):
                     conn = db.connect(db_path)
                     try:
                         self._json(_export_novels(conn))
+                    finally:
+                        conn.close()
+                elif path == "/api/meetings":
+                    conn = db.connect(db_path)
+                    try:
+                        self._json({"meetings": _load_meetings(conn)})
                     finally:
                         conn.close()
                 elif path in ("/api/summary", "/api/novels", "/api/publish_logs",

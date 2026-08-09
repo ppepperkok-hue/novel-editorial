@@ -72,3 +72,9 @@ export async function exportNovels() {
   if (!r.ok) throw new Error("export " + r.status);
   return r.json();
 }
+
+export async function getMeetings() {
+  const r = await fetch(API_BASE + "/api/meetings");
+  if (!r.ok) throw new Error("meetings " + r.status);
+  return r.json();
+}
