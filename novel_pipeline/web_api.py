@@ -233,6 +233,7 @@ def make_handler(db_path):
                 "/api/ending/bind",
                 "/api/diaries/update",
                 "/api/agent_states/update",
+                "/api/meetings/start",
             ):
                 self.send_error(404, "Not Found")
                 return
@@ -282,6 +283,9 @@ def make_handler(db_path):
                         )
                     finally:
                         conn.close()
+                elif parsed.path == "/api/meetings/start":
+                    conn.close()
+                    result = misc_service.start_topic_meeting(payload.get("topic"))
                 self._json(result)
             except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
                 return

@@ -149,7 +149,8 @@ CREATE TABLE IF NOT EXISTS weekly_meetings (
     attendees TEXT DEFAULT '[]',
     topics TEXT DEFAULT '[]',
     report TEXT NOT NULL,
-    status TEXT DEFAULT 'completed'
+    status TEXT DEFAULT 'completed',
+    kind TEXT DEFAULT 'weekly'
 );
 
 CREATE TABLE IF NOT EXISTS audit_logs (

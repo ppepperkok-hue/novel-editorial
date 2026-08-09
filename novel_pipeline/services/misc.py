@@ -1,6 +1,9 @@
 """Misc data endpoints: alerts, reader stats, hot topics, export, meetings, taste."""
 
 import json
+import subprocess
+import sys
+import threading
 from datetime import datetime
 
 from novel_pipeline import config, data_feedback, monitor
@@ -80,7 +83,7 @@ def export_novels(conn):
 
 def load_meetings(conn, limit=20):
     rows = conn.execute(
-        "SELECT id, held_at, novel_id, attendees, topics, report, status "
+        "SELECT id, held_at, novel_id, attendees, topics, report, status, kind "
         "FROM weekly_meetings ORDER BY id DESC LIMIT ?",
         (limit,),
     ).fetchall()
@@ -104,9 +107,42 @@ def load_meetings(conn, limit=20):
                 "volume_goal_adjust": decisions.get("volume_goal_adjust", ""),
                 "action_items": report.get("action_items", []),
                 "report": report,
+                "kind": r["kind"] if "kind" in r.keys() else "weekly",
             }
         )
     return out
+
+
+def start_topic_meeting(topic):
+    """Launch a topic meeting in a background thread."""
+    if not topic or not str(topic).strip():
+        return {"ok": False, "error": "topic 不能为空"}
+
+    def _run():
+        try:
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(config.ROOT / "tools" / "agent_meeting.py"),
+                    "--db",
+                    "demo.db",
+                    "--topic",
+                    str(topic).strip(),
+                    "--kind",
+                    "topic",
+                ],
+                cwd=config.ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=3600,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"ok": True, "note": "专题会议已启动，完成后可在周会档案查看"}
 
 
 def ai_taste(conn, chapter_id):

@@ -135,7 +135,8 @@ def chair_pick(conn, novel_id, dry_run):
     user = (
         "你是会议主席，请根据会议材料与各位 Agent 的本周心情，决定本次参会名单（最多 8 人，必须包含你自己 eic）"
         "与讨论议题。只输出JSON：{attendees(数组, 从这些名字中选: planner,guard,writer,editor,reviewer,reader,memory,work_meta,ending_judge), topics(数组, 2-4个议题)}。"
-        f"完结指标：{json.dumps(finish_metrics, ensure_ascii=False)}；"
+        + (f"本次是专题会议，用户指定的主题为「{topic}」，topics 必须以它为核心展开（可补充相关子议题）。" if topic else "")
+        + f"完结指标：{json.dumps(finish_metrics, ensure_ascii=False)}；"
         "规则：若已发布章数达到目标章数的 80% 以上（目标>0），或活跃伏笔回收过半、剧情明显进入终局，参会名单必须包含 ending_judge。"
         "会议材料：" + json.dumps(materials["context"], ensure_ascii=False)
         + "；全员心情：" + json.dumps(
@@ -163,7 +164,8 @@ def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run):
     mood = mood_of(conn, novel_id, agent)
     brief = materials["agent_briefs"].get(agent, {})
     user = (
-        f"现在是周会第 {round_no} 轮。"
+        f"现在是会议第 {round_no} 轮。"
+        + (f"本次会议主题：{topic}。" if topic else "这是周会。")
         + ("请先回应其他参会者的发言，再发表你的意见。" if round_no > 1 else "请基于你的周记先做本周小结，再发表意见。")
         + "我的本周简报：" + json.dumps(brief, ensure_ascii=False)
         + "；我的本周日记：" + json.dumps(weekly or {}, ensure_ascii=False)
@@ -220,9 +222,12 @@ def main():
     ap.add_argument("--novel-id", type=int, default=0)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--rounds", type=int, default=3)
+    ap.add_argument("--topic", default="")
+    ap.add_argument("--kind", choices=["weekly", "topic"], default="weekly")
     args = ap.parse_args()
 
-    global materials
+    global materials, topic
+    topic = args.topic
     db_path = Path(args.db)
     if not db_path.is_absolute():
         db_path = ROOT / db_path
@@ -236,8 +241,11 @@ def main():
             print(json.dumps({"ok": False, "error": "no novel"}, ensure_ascii=False))
             return
         materials = build_materials_dict(conn, novel_id)
-        write_weekly_diaries(conn, novel_id, args.dry_run)
+        if args.kind == "weekly":
+            write_weekly_diaries(conn, novel_id, args.dry_run)
         attendees, topics, pick = chair_pick(conn, novel_id, args.dry_run)
+        if topic:
+            topics = [topic] + [t for t in (topics or []) if t != topic]
         transcript = []
         for round_no in range(1, args.rounds + 1):
             for agent in attendees:
@@ -253,11 +261,12 @@ def main():
         report.setdefault("disagreements", [])
         report.setdefault("action_items", [])
         report.setdefault("discussion_summary", "")
+        report["kind"] = args.kind
 
         # archive
         conn.execute(
-            "INSERT INTO weekly_meetings(held_at,novel_id,attendees,topics,report,status) "
-            "VALUES(?,?,?,?,?,?)",
+            "INSERT INTO weekly_meetings(held_at,novel_id,attendees,topics,report,status,kind) "
+            "VALUES(?,?,?,?,?,?,?)",
             (
                 report["date"],
                 novel_id,
@@ -265,9 +274,30 @@ def main():
                 json.dumps(topics, ensure_ascii=False),
                 json.dumps(report, ensure_ascii=False),
                 "completed",
+                args.kind,
             ),
         )
         conn.commit()
+
+        # topic meetings write a meeting memory per attendee
+        if args.kind == "topic":
+            for agent in attendees:
+                speech = next(
+                    (s["speech"] for s in transcript if s["agent"] == agent),
+                    {},
+                )
+                memory = {
+                    "topic": topic,
+                    "my_speech": speech,
+                    "conclusions": report.get("action_items", []),
+                    "date": report["date"],
+                }
+                conn.execute(
+                    "INSERT INTO agent_diaries(agent,novel_id,diary_type,content,created_at) "
+                    "VALUES(?,?,?,?,datetime('now','localtime'))",
+                    (agent, novel_id, "meeting", json.dumps(memory, ensure_ascii=False)),
+                )
+            conn.commit()
 
         # persist decisions
         try:
@@ -293,6 +323,7 @@ def main():
                     "ok": True,
                     "attendees": attendees,
                     "topics": topics,
+                    "kind": args.kind,
                     "rounds": args.rounds,
                     "transcript_len": len(transcript),
                     "archive": str(out),
