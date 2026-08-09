@@ -188,6 +188,18 @@ def main():
     conn = db.connect(db_path)
     env = load_env()
     try:
+        first = conn.execute(
+            "SELECT novel_id FROM chapters WHERE status='reviewed' ORDER BY seq LIMIT 1"
+        ).fetchone()
+        novel_id = first["novel_id"] if first else None
+        novel = None
+        if novel_id:
+            novel = conn.execute(
+                "SELECT id, status, finish_remaining FROM novels WHERE id=?", (novel_id,)
+            ).fetchone()
+        if novel and novel["status"] == "finished":
+            print(json.dumps({"ok": True, "published": 0, "note": "作品已完结，停止发布"}, ensure_ascii=False))
+            return
         settings = {
             r["key"]: r["value"]
             for r in conn.execute("SELECT key, value FROM settings").fetchall()
@@ -235,6 +247,27 @@ def main():
                     (ch["id"], "fanqie", "publish", "success", "", 1),
                 )
                 published += 1
+                if novel and novel["finish_remaining"] and novel["finish_remaining"] > 0:
+                    remaining = novel["finish_remaining"] - 1
+                    if remaining <= 0:
+                        conn.execute(
+                            "UPDATE novels SET status='finished', finish_remaining=0 WHERE id=?",
+                            (novel["id"],),
+                        )
+                        conn.execute(
+                            "UPDATE settings SET value='false' WHERE key='daily_enabled'"
+                        )
+                        alerts = ROOT / "alerts.log"
+                        with alerts.open("a", encoding="utf-8") as f:
+                            f.write(
+                                f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
+                                "小说已完结：收尾完成，日更已自动停止，请到番茄后台标记完结\n"
+                            )
+                    else:
+                        conn.execute(
+                            "UPDATE novels SET finish_remaining=? WHERE id=?",
+                            (remaining, novel["id"]),
+                        )
             else:
                 conn.execute(
                     "INSERT INTO publish_logs(chapter_id,platform,action,result,error,ai_declared,created_at) "

@@ -14,7 +14,7 @@ ROOT = Path(r"E:\code\novel-pipeline")
 sys.path.insert(0, str(ROOT))
 
 from novel_pipeline import db  # noqa: E402
-from tools.paragraphs import to_html  # noqa: E402
+from tools.debug.paragraphs import to_html  # noqa: E402
 
 BOOK_ID = os.environ.get("FANQIE_BOOK_ID", "YOUR_FANQIE_BOOK_ID")
 VOLUME_ID = os.environ.get("FANQIE_VOLUME_ID", "YOUR_FANQIE_VOLUME_ID")

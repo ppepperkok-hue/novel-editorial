@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { exportNovels } from "../api.js";
+import { bindBook, confirmNextBook, exportNovels, getEndingStatus } from "../api.js";
+import { useEffect } from "react";
 
 function Field({ label, children }) {
   return (
@@ -32,7 +33,17 @@ export default function WorksPage({ data, pushToast }) {
   const [open, setOpen] = useState({});
   const [query, setQuery] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [ending, setEnding] = useState([]);
+  const [binding, setBinding] = useState(null);
+  const [bindBookId, setBindBookId] = useState("");
+  const [bindVolumeId, setBindVolumeId] = useState("");
   const novels = data?.novels || [];
+
+  useEffect(() => {
+    getEndingStatus()
+      .then((r) => setEnding(r.novels || []))
+      .catch(() => {});
+  }, []);
 
   const toggle = (id) => setOpen((o) => ({ ...o, [id]: !o[id] }));
   const allOpen = novels.length > 0 && novels.every((n) => open[n.id]);
@@ -52,6 +63,10 @@ export default function WorksPage({ data, pushToast }) {
       setExporting(false);
     }
   };
+
+  const nextBook = ending.find((n) => n.status === "planning" || n.status === "ready");
+  const finishing = ending.find((n) => n.status === "finishing");
+  const finished = ending.find((n) => n.status === "finished");
   const filtered = query.trim()
     ? novels.filter((n) => {
         const hay = [n.title, n.genre, n.status, n.abstract, n.premise, (n.tags || []).join(" ")]
@@ -67,6 +82,81 @@ export default function WorksPage({ data, pushToast }) {
 
   return (
     <div className="flex flex-col gap-4">
+      {finishing || finished ? (
+        <div className={`panel p-4 ${finished ? "" : "border-amber-900/50"}`}>
+          <div className="flex flex-wrap items-center gap-2">
+            {finishing ? (
+              <>
+                <span className="chip chip-warn">收尾中</span>
+                <span className="text-sm">「{finishing.title}」还剩 {finishing.finish_remaining} 章收尾</span>
+              </>
+            ) : (
+              <>
+                <span className="chip chip-ok">已完结</span>
+                <span className="text-sm">「{finished.title}」已完成</span>
+                <span className="chip chip-warn">请到番茄后台标记完结</span>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {nextBook ? (
+        <div className="panel p-4">
+          <div className="mb-2 flex items-center gap-2">
+            <span className="chip chip-info">新书创意</span>
+            <span className="text-sm font-bold">{nextBook.title || "未命名"}</span>
+            <span className="muted text-xs">{nextBook.status === "ready" ? "已确认，待绑定" : "待确认"}</span>
+          </div>
+          <div className="muted mb-2 text-xs">{nextBook.premise || nextBook.abstract}</div>
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            {(JSON.parse(nextBook.tags || "[]") || []).map((t) => (
+              <span key={t} className="chip">{t}</span>
+            ))}
+            {nextBook.selling_point ? <span className="chip chip-info">卖点：{nextBook.selling_point.slice(0, 40)}</span> : null}
+          </div>
+          {nextBook.status === "planning" ? (
+            <button
+              className="btn btn-primary"
+              onClick={async () => {
+                const r = await confirmNextBook(nextBook.id);
+                pushToast(r.ok ? r.note : "失败：" + (r.error || "未知"), r.ok ? "ok" : "bad");
+                getEndingStatus().then((x) => setEnding(x.novels || []));
+              }}
+            >
+              确认创意，准备绑定番茄新书
+            </button>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-end gap-2">
+                <label className="text-xs muted">
+                  番茄 book_id
+                  <input className="input mt-1 !w-64" value={bindBookId} onChange={(e) => setBindBookId(e.target.value)} placeholder="在番茄后台建书后填写" />
+                </label>
+                <label className="text-xs muted">
+                  volume_id（可选）
+                  <input className="input mt-1 !w-40" value={bindVolumeId} onChange={(e) => setBindVolumeId(e.target.value)} />
+                </label>
+                <button
+                  className="btn btn-ok"
+                  disabled={!bindBookId || binding === nextBook.id}
+                  onClick={async () => {
+                    setBinding(nextBook.id);
+                    const r = await bindBook(nextBook.id, bindBookId.trim(), bindVolumeId.trim());
+                    pushToast(r.ok ? r.note : "绑定失败：" + (r.error || "未知"), r.ok ? "ok" : "bad");
+                    setBinding(null);
+                    getEndingStatus().then((x) => setEnding(x.novels || []));
+                  }}
+                >
+                  {binding === nextBook.id ? "绑定中…" : "绑定新书"}
+                </button>
+              </div>
+              <div className="muted text-xs">绑定后需重启 n8n，日更将自动切换到新书。</div>
+            </div>
+          )}
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap items-center gap-2">
         <input
           className="input !w-64"

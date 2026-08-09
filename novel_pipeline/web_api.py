@@ -25,18 +25,18 @@ from urllib.parse import parse_qs, urlparse
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import data_feedback, db, monitor
+from novel_pipeline import config, data_feedback, db, monitor
 from tools import render_workflow
 
-WEB_DIR = ROOT / "web"
-WEBAPP_DIST = ROOT / "webapp" / "dist"
-ALERTS_LOG = ROOT / "alerts.log"
-HOT_TOPICS_JSON = ROOT / "hot_topics.json"
-READER_CSV = ROOT / "demo_data" / "reader_stats.csv"
+WEB_DIR = config.ROOT / "web"
+WEBAPP_DIST = config.ROOT / "webapp" / "dist"
+ALERTS_LOG = config.ALERTS_LOG
+HOT_TOPICS_JSON = config.HOT_TOPICS_JSON
+READER_CSV = config.READER_CSV
 
-N8N_BASE = os.environ.get("N8N_BASE", "http://127.0.0.1:5678")
-N8N_WORKFLOW_DAILY = os.environ.get("N8N_WORKFLOW_DAILY", "SkLUnm3uRyBSY84F")
-N8N_WORKFLOW_WEEKLY = os.environ.get("N8N_WORKFLOW_WEEKLY", "TAScPjj0Oqtz1uy7")
+N8N_BASE = config.N8N_BASE
+N8N_WORKFLOW_DAILY = config.N8N_WORKFLOW_DAILY
+N8N_WORKFLOW_WEEKLY = config.N8N_WORKFLOW_WEEKLY
 ALLOWED_SETTINGS = {
     "daily_enabled",
     "monthly_budget",
@@ -44,15 +44,16 @@ ALLOWED_SETTINGS = {
     "style_tweak",
     "daily_run_time",
     "daily_chapters",
+    "target_chapters",
 }
 _N8N_KEY = None
 _EXEC_ERROR_CACHE = {}
 _SNAPSHOT = {}
 _SNAPSHOT_LOCK = threading.Lock()
 _SNAPSHOT_THREAD_STARTED = False
-AGENTS_DIR = ROOT / "prompts" / "agents"
-WORKFLOW_JSON = ROOT / "n8n" / "novel_workflow.json"
-VALIDATE_JS = ROOT / "tools" / "validate_workflow_deep.mjs"
+AGENTS_DIR = config.AGENTS_DIR
+WORKFLOW_JSON = config.WORKFLOW_JSON
+VALIDATE_JS = config.VALIDATE_JS
 AGENT_DISPLAY = {
     "planner.md": "策划官",
     "guard.md": "世界观守护",
@@ -80,12 +81,7 @@ AGENT_DESC = {
 def _load_n8n_env():
     global _N8N_KEY
     if _N8N_KEY is None:
-        env_file = Path.home() / ".n8n" / ".env"
-        if env_file.exists():
-            for line in env_file.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if line.startswith("N8N_API_KEY="):
-                    _N8N_KEY = line.split("=", 1)[1].strip()
+        _N8N_KEY = config.env_value("N8N_API_KEY", "")
         _N8N_KEY = _N8N_KEY or os.environ.get("N8N_API_KEY", "")
     return _N8N_KEY
 
@@ -672,6 +668,72 @@ def _ai_taste(conn, chapter_id):
     return report
 
 
+def _ending_status(conn):
+    novels = conn.execute(
+        "SELECT id, title, status, book_id, target_chapters, finish_remaining, finish_note, updated_at "
+        "FROM novels ORDER BY id"
+    ).fetchall()
+    out = []
+    for n in novels:
+        d = dict(n)
+        if n["status"] == "planning":
+            d["next_book_pending"] = True
+        else:
+            d["next_book_pending"] = False
+        out.append(d)
+    return {"novels": out}
+
+
+def _confirm_next_book(conn, novel_id):
+    row = conn.execute(
+        "SELECT id FROM novels WHERE id=? AND status='planning'", (novel_id,)
+    ).fetchone()
+    if row is None:
+        return {"ok": False, "error": "找不到待确认的新书"}
+    conn.execute("UPDATE novels SET status='ready' WHERE id=?", (novel_id,))
+    conn.commit()
+    return {"ok": True, "note": "新书创意已确认，请在番茄建书后绑定 book_id"}
+
+
+def _bind_book(conn, novel_id, book_id, volume_id=""):
+    row = conn.execute(
+        "SELECT id, title FROM novels WHERE id=? AND status='ready'", (novel_id,)
+    ).fetchone()
+    if row is None:
+        return {"ok": False, "error": "新书未确认（先确认创意）"}
+    book_id = str(book_id or "").strip()
+    if not book_id:
+        return {"ok": False, "error": "book_id 不能为空"}
+    conn.execute(
+        "UPDATE novels SET book_id=?, status='publishing' WHERE id=?",
+        (book_id, novel_id),
+    )
+    conn.commit()
+    # update n8n env file
+    env_file = Path.home() / ".n8n" / ".env"
+    lines = []
+    replaced = {"FANQIE_BOOK_ID": False, "FANQIE_VOLUME_ID": False}
+    if env_file.exists():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            if line.startswith("FANQIE_BOOK_ID="):
+                lines.append(f"FANQIE_BOOK_ID={book_id}")
+                replaced["FANQIE_BOOK_ID"] = True
+            elif line.startswith("FANQIE_VOLUME_ID="):
+                lines.append(f"FANQIE_VOLUME_ID={volume_id}")
+                replaced["FANQIE_VOLUME_ID"] = True
+            else:
+                lines.append(line)
+    if not replaced["FANQIE_BOOK_ID"]:
+        lines.append(f"FANQIE_BOOK_ID={book_id}")
+    if not replaced["FANQIE_VOLUME_ID"]:
+        lines.append(f"FANQIE_VOLUME_ID={volume_id}")
+    env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return {
+        "ok": True,
+        "note": f"已绑定新书 {book_id}；重启 n8n 后日更自动切换",
+    }
+
+
 def build_payload(conn):
     return {
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -759,6 +821,12 @@ def make_handler(db_path):
                             self._json(_ai_taste(conn, chapter_id))
                     finally:
                         conn.close()
+                elif path == "/api/ending/status":
+                    conn = db.connect(db_path)
+                    try:
+                        self._json(_ending_status(conn))
+                    finally:
+                        conn.close()
                 elif path in ("/api/summary", "/api/novels", "/api/publish_logs",
                               "/api/alerts", "/api/reader_stats", "/api/hot_topics",
                               "/api/agents", "/api/cost", "/api/executions"):
@@ -778,20 +846,25 @@ def make_handler(db_path):
 
         def do_POST(self):  # noqa: N802
             parsed = urlparse(self.path)
-            if parsed.path not in ("/api/control", "/api/agents"):
+            if parsed.path not in (
+                "/api/control",
+                "/api/agents",
+                "/api/ending/confirm",
+                "/api/ending/bind",
+            ):
                 self.send_error(404, "Not Found")
                 return
             try:
                 length = int(self.headers.get("Content-Length") or 0)
                 raw = self.rfile.read(length) if length else b"{}"
                 payload = json.loads(raw.decode("utf-8") or "{}")
+                conn = db.connect(db_path)
                 if parsed.path == "/api/control":
-                    conn = db.connect(db_path)
                     try:
                         result = _handle_control(conn, payload)
                     finally:
                         conn.close()
-                else:
+                elif parsed.path == "/api/agents":
                     action = payload.get("action")
                     if action == "save":
                         result = _agent_save(payload)
@@ -799,6 +872,22 @@ def make_handler(db_path):
                         result = _agent_deploy()
                     else:
                         result = {"ok": False, "error": f"unknown action {action}"}
+                    conn.close()
+                elif parsed.path == "/api/ending/confirm":
+                    try:
+                        result = _confirm_next_book(conn, payload.get("novel_id"))
+                    finally:
+                        conn.close()
+                elif parsed.path == "/api/ending/bind":
+                    try:
+                        result = _bind_book(
+                            conn,
+                            payload.get("novel_id"),
+                            payload.get("book_id"),
+                            payload.get("volume_id", ""),
+                        )
+                    finally:
+                        conn.close()
                 self._json(result)
             except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
                 return

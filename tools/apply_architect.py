@@ -27,7 +27,7 @@ def apply_report(conn, novel_id, report):
     """Persist a meeting report: blueprints, reader persona, volume goal."""
     decisions = report.get("decisions") or {}
     row = conn.execute(
-        "SELECT id, outline, volume_goal FROM novels WHERE id=?", (novel_id,)
+        "SELECT id, outline, volume_goal, status FROM novels WHERE id=?", (novel_id,)
     ).fetchone()
     if row is None:
         return {"ok": False, "error": "no novel"}
@@ -43,6 +43,45 @@ def apply_report(conn, novel_id, report):
     goal = decisions.get("volume_goal_adjust")
     if goal:
         outline["volume_goal"] = str(goal)
+    finish = decisions.get("finish_decision") or {}
+    finish_note = ""
+    if finish.get("should_finish") and row["status"] not in ("finished",):
+        conn.execute(
+            "UPDATE novels SET status='finishing', finish_remaining=?, finish_note=? WHERE id=?",
+            (
+                int(finish.get("remaining_chapters") or 0),
+                json.dumps(finish.get("reasons") or [], ensure_ascii=False),
+                novel_id,
+            ),
+        )
+        finish_note = "finishing"
+    next_book = decisions.get("next_book")
+    created_next = False
+    if isinstance(next_book, dict) and next_book.get("book_name") and row["status"] == "finished":
+        dup = conn.execute(
+            "SELECT id FROM novels WHERE title=? AND status='planning'",
+            (str(next_book["book_name"]),),
+        ).fetchone()
+        if dup is None:
+            protagonists = json.dumps(
+                [{"name": str(next_book.get("protagonist") or "主角"), "role": "主角"}],
+                ensure_ascii=False,
+            )
+            conn.execute(
+                "INSERT INTO novels(title,genre,premise,selling_point,platform,status,abstract,protagonists,updated_at) "
+                "VALUES(?,?,?,?,?,?,?,?,datetime('now','localtime'))",
+                (
+                    str(next_book["book_name"])[:50],
+                    str(next_book.get("genre") or "都市"),
+                    str(next_book.get("abstract") or ""),
+                    str(next_book.get("selling_point") or ""),
+                    "fanqie",
+                    "planning",
+                    str(next_book.get("abstract") or ""),
+                    protagonists,
+                ),
+            )
+            created_next = True
     conn.execute(
         "UPDATE novels SET outline=?, volume_goal=?, updated_at=? WHERE id=?",
         (
@@ -58,6 +97,8 @@ def apply_report(conn, novel_id, report):
         "blueprints": len(outline["blueprints"]),
         "reader_persona": bool(persona),
         "volume_goal": str(goal or ""),
+        "finish": finish_note,
+        "next_book_created": created_next,
     }
 
 

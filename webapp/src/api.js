@@ -84,3 +84,27 @@ export async function getAiTaste(chapterId) {
   if (!r.ok) throw new Error("ai_taste " + r.status);
   return r.json();
 }
+
+export async function getEndingStatus() {
+  const r = await fetch(API_BASE + "/api/ending/status");
+  if (!r.ok) throw new Error("ending " + r.status);
+  return r.json();
+}
+
+export async function confirmNextBook(novelId) {
+  const r = await fetch(API_BASE + "/api/ending/confirm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ novel_id: novelId }),
+  });
+  return r.json();
+}
+
+export async function bindBook(novelId, bookId, volumeId) {
+  const r = await fetch(API_BASE + "/api/ending/bind", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ novel_id: novelId, book_id: bookId, volume_id: volumeId }),
+  });
+  return r.json();
+}

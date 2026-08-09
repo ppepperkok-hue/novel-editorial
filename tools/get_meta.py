@@ -156,6 +156,9 @@ def main():
             "reader_feedback": reader_feedback,
             "existing_titles": existing_titles,
             "start_seq": start_seq,
+            "finish_status": row["status"],
+            "finish_remaining": row["finish_remaining"],
+            "target_chapters": row["target_chapters"],
             "last_chapter": {
                 "seq": last_chapter["seq"],
                 "title": last_chapter["title"],

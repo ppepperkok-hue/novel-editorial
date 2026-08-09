@@ -22,6 +22,7 @@ DEFAULTS = {
     "daily_run_time": "08:00",
     "daily_chapters": "2",
     "pending_publish": "0",
+    "target_chapters": "0",
 }
 
 

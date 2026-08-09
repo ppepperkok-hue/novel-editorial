@@ -42,7 +42,7 @@ class DiaryTests(unittest.TestCase):
             "concerns": [],
             "thoughts": "继续",
         }
-        with mock.patch("tools.write_diaries.llm.chat") as chat:
+        with mock.patch("tools.write_diaries.chat_deepseek") as chat:
             chat.return_value = {
                 "text": json.dumps(payload, ensure_ascii=False),
                 "usage": {"prompt_tokens": 10, "completion_tokens": 5},
@@ -71,7 +71,7 @@ class DiaryTests(unittest.TestCase):
             "next_week_focus": "观察",
             "mood": {"satisfaction": 0.7, "concern": 0.3, "excitement": 0.6, "fatigue": 0.4, "note": ""},
         }
-        with mock.patch("tools.write_diaries.llm.chat") as chat:
+        with mock.patch("tools.write_diaries.chat_deepseek") as chat:
             chat.return_value = {
                 "text": json.dumps(payload, ensure_ascii=False),
                 "usage": {"prompt_tokens": 10, "completion_tokens": 5},
@@ -158,6 +158,53 @@ class ApplyReportTests(unittest.TestCase):
             outline = json.loads(row["outline"])
             self.assertEqual(len(outline["blueprints"]), 1)
             self.assertEqual(outline["bible"]["reader_persona"]["preference"], "爽")
+        finally:
+            conn.close()
+
+    def test_apply_report_finish_and_next_book(self):
+        path = make_db()
+        from tools import apply_architect
+
+        report = {
+            "decisions": {
+                "blueprint_updates": [],
+                "finish_decision": {
+                    "should_finish": True,
+                    "remaining_chapters": 8,
+                    "reasons": ["主线收束"],
+                },
+            }
+        }
+        conn = db.connect(path)
+        try:
+            r = apply_architect.apply_report(conn, 1, report)
+            self.assertTrue(r["ok"])
+            row = conn.execute(
+                "SELECT status, finish_remaining FROM novels WHERE id=1"
+            ).fetchone()
+            self.assertEqual(row["status"], "finishing")
+            self.assertEqual(row["finish_remaining"], 8)
+
+            # finish it, then next book from report
+            conn.execute("UPDATE novels SET status='finished' WHERE id=1")
+            conn.commit()
+            report2 = {
+                "decisions": {
+                    "next_book": {
+                        "book_name": "下一本",
+                        "genre": "玄幻",
+                        "abstract": "新书简介",
+                        "selling_point": "卖点",
+                        "protagonist": "主角乙",
+                    }
+                }
+            }
+            r2 = apply_architect.apply_report(conn, 1, report2)
+            self.assertTrue(r2["next_book_created"])
+            nb = conn.execute(
+                "SELECT title, genre, status FROM novels WHERE status='planning'"
+            ).fetchone()
+            self.assertEqual(nb["title"], "下一本")
         finally:
             conn.close()
 

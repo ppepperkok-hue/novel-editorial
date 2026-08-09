@@ -15,7 +15,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from novel_pipeline import db  # noqa: E402
-from tools import architect_weekly, llm, write_diaries  # noqa: E402
+from novel_pipeline.llm_client import chat_deepseek  # noqa: E402
+from tools import architect_weekly, write_diaries  # noqa: E402
 
 AGENTS_DIR = ROOT / "prompts" / "agents"
 CORE_AGENTS = ["planner", "guard", "writer", "reader", "memory", "eic"]
@@ -74,7 +75,7 @@ def mood_of(conn, novel_id, agent):
 def ask(conn, novel_id, agent, user, temperature, dry_run, mock_text, max_tokens=1600):
     if dry_run:
         return mock_text, {"prompt_tokens": 0, "completion_tokens": 0}, "dry-run"
-    resp = llm.chat("deepseek-v4-flash", agent_md(agent), user, temperature=temperature, max_tokens=max_tokens)
+    resp = chat_deepseek("deepseek-v4-flash", agent_md(agent), user, temperature=temperature, max_tokens=max_tokens)
     record_cost(conn, novel_id, agent, resp["usage"], resp["model"])
     return resp["text"], resp["usage"], resp["model"]
 
@@ -124,9 +125,18 @@ def write_weekly_diaries(conn, novel_id, dry_run):
 
 
 def chair_pick(conn, novel_id, dry_run):
+    ctx = materials["context"]
+    finish_metrics = {
+        "published": ctx.get("published_chapters", 0),
+        "target": ctx.get("target_chapters", 0),
+        "open_plot_threads": len(ctx.get("open_plot_threads") or []),
+        "last_chapter_seq": ctx.get("last_chapter_seq", 0),
+    }
     user = (
         "你是会议主席，请根据会议材料与各位 Agent 的本周心情，决定本次参会名单（最多 8 人，必须包含你自己 eic）"
         "与讨论议题。只输出JSON：{attendees(数组, 从这些名字中选: planner,guard,writer,editor,reviewer,reader,memory,work_meta,ending_judge), topics(数组, 2-4个议题)}。"
+        f"完结指标：{json.dumps(finish_metrics, ensure_ascii=False)}；"
+        "规则：若已发布章数达到目标章数的 80% 以上（目标>0），或活跃伏笔回收过半、剧情明显进入终局，参会名单必须包含 ending_judge。"
         "会议材料：" + json.dumps(materials["context"], ensure_ascii=False)
         + "；全员心情：" + json.dumps(
             {a: mood_of(conn, novel_id, a) for a in ALL_AGENTS}, ensure_ascii=False
@@ -182,7 +192,9 @@ def chair_summary(conn, novel_id, attendees, topics, transcript, dry_run):
         + "；全部发言：" + json.dumps(transcript, ensure_ascii=False)
         + "。报告格式：{meeting_id, date, attendees, topics, discussion_summary, "
         "decisions{blueprint_updates(数组,每项含seq/title/outline/hook_type/hook/emotion), "
-        "volume_goal_adjust(字符串,可空), reader_persona({age_range,preference,avoid},可空)}, "
+        "volume_goal_adjust(字符串,可空), reader_persona({age_range,preference,avoid},可空), "
+        "finish_decision({should_finish(bool), remaining_chapters(5-30,不收尾则为0), reasons(数组)},可空), "
+        "next_book({book_name, genre, abstract, selling_point, protagonist},仅当作品已完结时输出)}, "
         "disagreements(数组), action_items(数组)}"
     )
     text, _, _ = ask(

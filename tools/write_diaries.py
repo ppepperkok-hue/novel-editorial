@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from novel_pipeline import db  # noqa: E402
-from tools import llm  # noqa: E402
+from novel_pipeline.llm_client import chat_deepseek  # noqa: E402
 
 AGENTS_DIR = ROOT / "prompts" / "agents"
 AGENTS = [
@@ -156,7 +156,7 @@ def write(conn, novel_id, mode, dry_run=False):
             usage = {"prompt_tokens": 0, "completion_tokens": 0}
             model = "dry-run"
         else:
-            resp = llm.chat("deepseek-v4-flash", system, user, temperature=0.6, max_tokens=1200)
+            resp = chat_deepseek("deepseek-v4-flash", system, user, temperature=0.6, max_tokens=1200)
             content = parse_json(resp["text"]) or {"raw": resp["text"][:2000]}
             usage = resp["usage"]
             model = resp["model"]

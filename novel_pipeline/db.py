@@ -20,7 +20,10 @@ CREATE TABLE IF NOT EXISTS novels (
     protagonists TEXT DEFAULT '[]',
     outline TEXT DEFAULT '{}',
     volume_goal TEXT DEFAULT '',
-    updated_at TEXT DEFAULT ''
+    updated_at TEXT DEFAULT '',
+    target_chapters INTEGER DEFAULT 0,
+    finish_remaining INTEGER DEFAULT 0,
+    finish_note TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS volumes (
@@ -170,6 +173,13 @@ def _migrate(conn):
         "outline": "TEXT DEFAULT '{}'",
         "volume_goal": "TEXT DEFAULT ''",
         "updated_at": "TEXT DEFAULT ''",
+    }.items():
+        if col not in novel_cols:
+            conn.execute(f"ALTER TABLE novels ADD COLUMN {col} {ddl}")
+    for col, ddl in {
+        "target_chapters": "INTEGER DEFAULT 0",
+        "finish_remaining": "INTEGER DEFAULT 0",
+        "finish_note": "TEXT DEFAULT ''",
     }.items():
         if col not in novel_cols:
             conn.execute(f"ALTER TABLE novels ADD COLUMN {col} {ddl}")

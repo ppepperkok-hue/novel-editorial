@@ -9,6 +9,8 @@ import time
 import urllib.error
 import urllib.request
 
+from novel_pipeline import config  # noqa: E402
+
 MODEL_TIERS = ("planning", "writing", "editing", "reviewing", "memory")
 
 
@@ -99,3 +101,42 @@ class MockLLMClient(LLMClient):
         if resp is not None:
             return resp
         return f"[mock:{tier}]"
+
+
+def chat_deepseek(model, system, user, temperature=0.5, max_tokens=1600):
+    """Direct DeepSeek chat call used by meeting/diary tools.
+
+    Reads DEEPSEEK_API_KEY from ~/.n8n/.env or process env. Returns
+    {text, usage, model}. Raises RuntimeError when the key is missing.
+    """
+    env = config.load_env()
+    key = env.get("DEEPSEEK_API_KEY", "")
+    if not key:
+        raise RuntimeError("DEEPSEEK_API_KEY missing")
+    body = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "response_format": {"type": "json_object"},
+    }
+    req = urllib.request.Request(
+        "https://api.deepseek.com/chat/completions",
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + key,
+        },
+    )
+    with urllib.request.urlopen(req, timeout=120) as r:
+        data = json.loads(r.read().decode("utf-8"))
+    choice = data["choices"][0]["message"]
+    text = choice.get("content") or choice.get("reasoning_content") or ""
+    return {
+        "text": text,
+        "usage": data.get("usage", {}),
+        "model": model,
+    }
