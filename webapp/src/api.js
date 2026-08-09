@@ -66,3 +66,9 @@ export function subscribeEvents(onSnapshot) {
   };
   return es;
 }
+
+export async function exportNovels() {
+  const r = await fetch(API_BASE + "/api/export/novels");
+  if (!r.ok) throw new Error("export " + r.status);
+  return r.json();
+}

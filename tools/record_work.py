@@ -265,8 +265,8 @@ def upsert_chapters(conn, novel_id, chapters):
             ).fetchone()
             if dup is None:
                 conn.execute(
-                    "INSERT INTO publish_logs(chapter_id,platform,action,result,error,ai_declared) "
-                    "VALUES(?,?,?,?,?,?)",
+                    "INSERT INTO publish_logs(chapter_id,platform,action,result,error,ai_declared,created_at) "
+                    "VALUES(?,?,?,?,?,?,datetime('now','localtime'))",
                     (chapter_id, "fanqie", "publish", "success", None, 1),
                 )
         elif status == "draft" and ch.get("error"):

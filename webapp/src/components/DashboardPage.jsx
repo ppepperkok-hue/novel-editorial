@@ -101,6 +101,28 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
   const wfs = control?.workflows || {};
   const issues = data?.health?.issues || [];
   const liveIssueCount = snapshot?.issues ?? issues.length;
+  const daily = wfs.daily || {};
+  const liveExecs = snapshot?.executions || [];
+  const runningNow = liveExecs.some((e) => e.status === "running" || e.status === "waiting");
+  const lastExec = liveExecs[0];
+
+  const today = new Date().toISOString().slice(0, 10);
+  const todayPublished = (data?.chapters || []).filter(
+    (c) => c.status === "published" && (c.published_at || "").slice(0, 10) === today,
+  ).length;
+  const todayFailed = (data?.publish_logs || []).filter(
+    (l) => l.result === "failed" && (l.created_at || "").slice(0, 10) === today,
+  ).length;
+
+  const pipelineState = !daily.online
+    ? { text: "n8n 离线", cls: "bad", desc: "工作流服务不可达，请检查 n8n 是否启动" }
+    : runningNow
+      ? { text: "流水线运行中", cls: "ok", desc: "正在后台生成并发布章节，可在执行记录查看进度" }
+      : !daily.active
+        ? { text: "日更已暂停", cls: "warn", desc: "定时更新已暂停，可到系统设置恢复" }
+        : { text: "待命", cls: "ok", desc: `每日 ${control?.settings?.daily_run_time || "08:00"} 自动更新，可随时手动补更` };
+
+  const stateDot = { ok: "online", bad: "offline", warn: "paused" }[pipelineState.cls];
 
   return (
     <div className="flex flex-col gap-6">
@@ -109,6 +131,43 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
           后端连接失败：{error}
         </div>
       ) : null}
+
+      <section className="panel overflow-hidden">
+        <div className="grid grid-cols-1 gap-0 md:grid-cols-[1.2fr_1fr_1fr]">
+          <div className="flex items-center gap-4 p-5">
+            <span className={`status-dot ${stateDot} !h-4 !w-4`} />
+            <div>
+              <div className={`text-xl font-bold ${pipelineState.cls === "bad" ? "badge-bad" : pipelineState.cls === "warn" ? "badge-warn" : "badge-ok"}`}>
+                {pipelineState.text}
+              </div>
+              <div className="muted mt-1 text-xs leading-relaxed">{pipelineState.desc}</div>
+            </div>
+          </div>
+          <div className="border-t border-[var(--line-soft)] p-5 md:border-l md:border-t-0">
+            <div className="kpi-label">今日任务</div>
+            <div className="mt-1 flex items-baseline gap-2">
+              <span className="text-2xl font-bold">{todayPublished}</span>
+              <span className="muted text-xs">章已发布</span>
+            </div>
+            <div className="muted mt-1.5 text-xs">
+              {todayPublished > 0
+                ? `今天已完成日更${todayFailed ? `，另有 ${todayFailed} 条发布失败` : ""}`
+                : lastExec
+                  ? `今日尚未发布${todayFailed ? `，${todayFailed} 条发布失败待处理` : "，等待定时或手动触发"}`
+                  : "今天还没有执行记录"}
+            </div>
+          </div>
+          <div className="border-t border-[var(--line-soft)] p-5 md:border-l md:border-t-0">
+            <div className="kpi-label">上次执行</div>
+            <div className="mt-1 text-base font-semibold">
+              {lastExec ? `${lastExec.workflow === "日更" ? "日更" : "周会"} · ${lastExec.status === "success" ? "成功" : lastExec.status === "running" ? "运行中" : "失败"}` : "暂无"}
+            </div>
+            <div className="muted mt-1.5 text-xs">
+              {lastExec ? `${new Date(lastExec.started_at).toLocaleString("zh-CN", { hour12: false })}` : "运行后自动记录"}
+            </div>
+          </div>
+        </div>
+      </section>
 
       <div className="kpi-grid">
         <Kpi label="连载作品" value={s.novels ?? "—"} sub="全部连载中" />

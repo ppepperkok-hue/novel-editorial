@@ -537,7 +537,7 @@ def _load_chapters(conn, novel_id=None):
 
 def _load_publish_logs(conn, limit=50):
     rows = conn.execute(
-        "SELECT id, chapter_id, platform, action, result, error, ai_declared "
+        "SELECT id, chapter_id, platform, action, result, error, ai_declared, created_at "
         "FROM publish_logs ORDER BY id DESC LIMIT ?",
         (limit,),
     ).fetchall()
@@ -565,6 +565,56 @@ def _load_hot_topics():
     payload = json.loads(HOT_TOPICS_JSON.read_text(encoding="utf-8"))
     payload["present"] = True
     return payload
+
+
+def _export_novels(conn):
+    """Export all novels + chapter content to a Markdown archive on disk."""
+    novels = _load_novels(conn)
+    lines = []
+    total_chapters = 0
+    total_words = 0
+    for n in novels:
+        lines.append(f"# {n['title']}")
+        lines.append("")
+        lines.append(
+            f"- 类型：{n['genre']} · 平台：{n['platform']} · 状态：{n['status']}"
+        )
+        lines.append(f"- 简介：{(n['abstract'] or n['premise'] or '').strip()}")
+        lines.append(f"- 标签：{', '.join(n['tags'] or [])}")
+        chapters = conn.execute(
+            "SELECT * FROM chapters WHERE novel_id=? ORDER BY seq", (n["id"],)
+        ).fetchall()
+        for c in chapters:
+            content_row = conn.execute(
+                "SELECT content FROM chapter_content WHERE chapter_id=?",
+                (c["id"],),
+            ).fetchone()
+            content = (content_row["content"] if content_row else "") or ""
+            total_words += len(content)
+            lines.append("")
+            lines.append(f"## 第 {c['seq']} 章 {c['title']}")
+            lines.append("")
+            lines.append(
+                f"状态：{c['status']} · 字数：{c['words']} · "
+                f"发布时间：{c['published_at'] or '—'}"
+            )
+            lines.append("")
+            lines.append(content if content else "（正文未存档）")
+            total_chapters += 1
+    if not novels:
+        lines.append("（暂无作品）")
+    markdown = "\n".join(lines)
+    out_dir = ROOT / "exports"
+    out_dir.mkdir(exist_ok=True)
+    fname = f"novels_{datetime.now():%Y%m%d_%H%M%S}.md"
+    (out_dir / fname).write_text(markdown, encoding="utf-8")
+    return {
+        "ok": True,
+        "path": str(out_dir / fname),
+        "novels": len(novels),
+        "chapters": total_chapters,
+        "words": total_words,
+    }
 
 
 def build_payload(conn):
@@ -631,6 +681,12 @@ def make_handler(db_path):
                         conn.close()
                 elif path == "/api/events":
                     self._sse()
+                elif path == "/api/export/novels":
+                    conn = db.connect(db_path)
+                    try:
+                        self._json(_export_novels(conn))
+                    finally:
+                        conn.close()
                 elif path in ("/api/summary", "/api/novels", "/api/publish_logs",
                               "/api/alerts", "/api/reader_stats", "/api/hot_topics",
                               "/api/agents", "/api/cost", "/api/executions"):

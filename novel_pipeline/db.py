@@ -87,7 +87,8 @@ CREATE TABLE IF NOT EXISTS publish_logs (
     action TEXT NOT NULL,
     result TEXT NOT NULL,
     error TEXT,
-    ai_declared INTEGER DEFAULT 1
+    ai_declared INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS chapter_summaries (
@@ -152,6 +153,9 @@ def _migrate(conn):
     }.items():
         if col not in chapter_cols:
             conn.execute(f"ALTER TABLE chapters ADD COLUMN {col} {ddl}")
+    log_cols = {r["name"] for r in conn.execute("PRAGMA table_info(publish_logs)")}
+    if "created_at" not in log_cols:
+        conn.execute("ALTER TABLE publish_logs ADD COLUMN created_at TEXT DEFAULT ''")
     summary_cols = {r["name"] for r in conn.execute("PRAGMA table_info(chapter_summaries)")}
     if "ending_excerpt" not in summary_cols:
         conn.execute("ALTER TABLE chapter_summaries ADD COLUMN ending_excerpt TEXT DEFAULT ''")
@@ -206,7 +210,8 @@ def add_quality_report(conn, chapter_id, scores, passed, revision_count=0):
 
 def add_publish_log(conn, chapter_id, platform, action, result, error=None, ai_declared=1):
     cur = conn.execute(
-        "INSERT INTO publish_logs(chapter_id,platform,action,result,error,ai_declared) VALUES(?,?,?,?,?,?)",
+        "INSERT INTO publish_logs(chapter_id,platform,action,result,error,ai_declared,created_at) "
+        "VALUES(?,?,?,?,?,?,datetime('now','localtime'))",
         (chapter_id, platform, action, result, error, int(ai_declared)),
     )
     conn.commit()

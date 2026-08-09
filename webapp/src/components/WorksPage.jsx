@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { exportNovels } from "../api.js";
 
 function Field({ label, children }) {
   return (
@@ -27,14 +28,30 @@ function CharacterCard({ c }) {
   );
 }
 
-export default function WorksPage({ data }) {
+export default function WorksPage({ data, pushToast }) {
   const [open, setOpen] = useState({});
   const [query, setQuery] = useState("");
+  const [exporting, setExporting] = useState(false);
   const novels = data?.novels || [];
 
   const toggle = (id) => setOpen((o) => ({ ...o, [id]: !o[id] }));
   const allOpen = novels.length > 0 && novels.every((n) => open[n.id]);
   const setAll = (v) => setOpen(Object.fromEntries(novels.map((n) => [n.id, v])));
+  const doExport = async () => {
+    setExporting(true);
+    try {
+      const r = await exportNovels();
+      if (r.ok) {
+        pushToast(`已存档 ${r.novels} 部 · ${r.chapters} 章 · ${r.words.toLocaleString()} 字 → ${r.path}`, "ok");
+      } else {
+        pushToast("导出失败：" + (r.error || "未知"), "bad");
+      }
+    } catch (e) {
+      pushToast("导出请求失败：" + e, "bad");
+    } finally {
+      setExporting(false);
+    }
+  };
   const filtered = query.trim()
     ? novels.filter((n) => {
         const hay = [n.title, n.genre, n.status, n.abstract, n.premise, (n.tags || []).join(" ")]
@@ -59,6 +76,9 @@ export default function WorksPage({ data }) {
         />
         <button className="btn ml-auto" onClick={() => setAll(!allOpen)}>
           {allOpen ? "全部收起" : "全部展开"}
+        </button>
+        <button className="btn btn-primary" disabled={exporting} onClick={doExport}>
+          {exporting ? "存档中…" : "⬇ 导出存档"}
         </button>
         <span className="muted text-xs">共 {filtered.length} 部</span>
       </div>
