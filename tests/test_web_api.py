@@ -41,7 +41,10 @@ class WebApiTests(unittest.TestCase):
     def test_index_served(self):
         with urlopen(self.base + "/", timeout=10) as resp:
             html = resp.read().decode("utf-8")
-        self.assertIn("novel-pipeline 实时监控", html)
+        self.assertTrue(
+            "<div id=\"root\">" in html or "novel-pipeline 实时监控" in html,
+            "监控页应返回 React 控制台或旧版 HTML",
+        )
 
     def test_chapters_filter_by_novel(self):
         with urlopen(f"{self.base}/api/chapters?novel_id=1", timeout=10) as resp:

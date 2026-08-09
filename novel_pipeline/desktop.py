@@ -17,6 +17,11 @@ sys.path.insert(0, str(ROOT))
 from novel_pipeline.web_api import make_handler  # noqa: E402
 
 
+def log(*args):
+    if sys.stdout:
+        print(*args)
+
+
 def pick_port(preferred):
     for port in (preferred, preferred + 10, preferred + 20):
         with socket.socket() as s:
@@ -39,7 +44,7 @@ def main():
     server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(args.db))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    print(f"控制台服务 http://127.0.0.1:{port}/")
+    log(f"控制台服务 http://127.0.0.1:{port}/")
 
     import webview  # imported lazily so headless/CLI use does not require it
 
@@ -60,7 +65,7 @@ def main():
 
     webview.start(_smoke_close if args.smoke else None, debug=False)
     if args.smoke:
-        print("smoke ok")
+        log("smoke ok")
 
 
 if __name__ == "__main__":

@@ -84,6 +84,15 @@ AI 网文自动生成与发布流水线：n8n 定时编排 + DeepSeek 多 Agent 
 - 每日自动备份数据库；Cookie 失效/预算超限自动熔断并写 `alerts.log`
 - LLM JSON 输出容错解析；A/B 分支相互隔离，不会因单章失败丢记录
 
+## 五之二、进化能力
+
+- Agent 提示词资产化在 `prompts/agents/*.md`（含 model/temperature），
+  用 `tools/render_workflow.py` 渲染回 n8n，`tools/export_agent_prompts.py` 反向导出
+- 数据反馈回路：完读率/追读率自动采集 → 记忆包注入 `reader_feedback` → 架构师周会调整蓝图
+- 前端为 React + Vite 工程（`webapp/`），`npm run build` 后由监控服务自动托管
+
+详见 [docs/evolution.md](docs/evolution.md)。
+
 ## 六、快速开始
 
 ```bash
@@ -113,6 +122,15 @@ python -m novel_pipeline.desktop --smoke    # 自检：启动 3 秒后自动关�
 
 控制台面板支持：暂停/恢复日更与架构师周会、请求下次触发时立即运行、
 调整月度预算、目标字数、风格微调，并实时显示两个工作流的激活状态与最近一次执行。
+
+## 七之二、前端开发
+
+```bash
+cd webapp
+npm install
+npm run dev     # 开发热更新（默认 http://localhost:5173，API 走 8000）
+npm run build   # 产物 dist，由 web_api / 桌面控制台自动托管
+```
 
 ## 八、环境变量
 

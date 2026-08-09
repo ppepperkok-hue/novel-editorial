@@ -12,7 +12,7 @@ ROOT = Path(r"C:\Users\Administrator\Documents\Codex\2026-08-09\new-chat-2\outpu
 DB_PATH = ROOT / "demo.db"
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import db  # noqa: E402
+from novel_pipeline import data_feedback, db  # noqa: E402
 from tools.app_settings import get_all  # noqa: E402
 
 
@@ -108,6 +108,21 @@ def main():
         existing_titles = [c["title"] for c in chapters if c["title"]]
         start_seq = (chapters[-1]["seq"] + 1) if chapters else 1
         settings = get_all(conn)
+        reader_feedback = {}
+        reader_csv = ROOT / "demo_data" / "reader_stats.csv"
+        if reader_csv.exists():
+            try:
+                rows = data_feedback.load_reader_stats(reader_csv)
+                if rows:
+                    report = data_feedback.feedback_report(rows)
+                    reader_feedback = {
+                        "low_chapters": report.get("low_chapters") or [],
+                        "avg_finish": report.get("avg_finish"),
+                        "avg_follow": report.get("avg_follow"),
+                        "chapters": report.get("chapters"),
+                    }
+            except (OSError, ValueError):
+                reader_feedback = {}
 
         meta = {
             "book_id": row["book_id"],
@@ -138,6 +153,7 @@ def main():
             "hot_topics": hot,
             "target_words": settings.get("target_words", "2000"),
             "style_tweak": settings.get("style_tweak", ""),
+            "reader_feedback": reader_feedback,
             "existing_titles": existing_titles,
             "start_seq": start_seq,
             "last_chapter": {

@@ -9,6 +9,7 @@
 
 import argparse
 import json
+import mimetypes
 import os
 import sys
 import urllib.error
@@ -24,6 +25,7 @@ sys.path.insert(0, str(ROOT))
 from novel_pipeline import data_feedback, db, monitor
 
 WEB_DIR = ROOT / "web"
+WEBAPP_DIST = ROOT / "webapp" / "dist"
 ALERTS_LOG = ROOT / "alerts.log"
 HOT_TOPICS_JSON = ROOT / "hot_topics.json"
 READER_CSV = ROOT / "demo_data" / "reader_stats.csv"
@@ -275,6 +277,8 @@ def make_handler(db_path):
                     finally:
                         conn.close()
                 else:
+                    if self._serve_static(path):
+                        return
                     self.send_error(404, "Not Found")
             except Exception as exc:  # noqa: BLE001
                 self._json({"error": str(exc)}, status=500)
@@ -305,6 +309,8 @@ def make_handler(db_path):
                 conn.close()
 
         def _serve_index(self):
+            if WEBAPP_DIST.exists() and self._serve_static("/index.html"):
+                return
             index = WEB_DIR / "index.html"
             if not index.exists():
                 self.send_error(404, "index.html missing")
@@ -316,6 +322,28 @@ def make_handler(db_path):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+
+        def _serve_static(self, path):
+            if not WEBAPP_DIST.exists():
+                return False
+            rel = path.lstrip("/") or "index.html"
+            root = WEBAPP_DIST.resolve()
+            target = (root / rel).resolve()
+            if not str(target).startswith(str(root)):
+                return False
+            if target.is_dir():
+                target = target / "index.html"
+            if not target.is_file():
+                return False
+            ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+            data = target.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return True
 
         def _json(self, payload, status=200):
             data = json.dumps(payload, ensure_ascii=False).encode("utf-8")

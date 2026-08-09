@@ -23,6 +23,10 @@ __pycache__/
 *.pyc
 .venv/
 
+# 前端工程
+webapp/node_modules/
+webapp/dist/
+
 # 编辑器 / 系统
 .vscode/
 .idea/
