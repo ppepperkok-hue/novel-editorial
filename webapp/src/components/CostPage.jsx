@@ -12,6 +12,7 @@ import { getCost } from "../api.js";
 
 export default function CostPage({ data }) {
   const [cost, setCost] = useState(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     let alive = true;
@@ -19,8 +20,9 @@ export default function CostPage({ data }) {
       try {
         const r = await getCost();
         if (alive) setCost(r);
-      } catch {
+      } catch (e) {
         if (alive) setCost(null);
+        if (alive) setError(String(e));
       }
     };
     load();
@@ -44,6 +46,11 @@ export default function CostPage({ data }) {
 
   return (
     <div className="flex flex-col gap-4">
+      {error ? (
+        <div className="rounded-lg border border-red-900 bg-red-950/40 px-4 py-2.5 text-sm text-red-400">
+          成本数据加载失败：{error}
+        </div>
+      ) : null}
       <div className="kpi-grid">
         <div className="card kpi">
           <div className="kpi-label">本月已用</div>

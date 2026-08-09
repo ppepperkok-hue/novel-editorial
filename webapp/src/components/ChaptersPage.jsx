@@ -1,4 +1,5 @@
 import { Fragment, useMemo, useState } from "react";
+import { fmtNum } from "./ui.jsx";
 
 const STATUS_META = {
   draft: ["草稿", "chip-warn"],
@@ -29,12 +30,25 @@ export default function ChaptersPage({ data }) {
 
   const titleFor = (novelId) => novels.find((n) => String(n.id) === String(novelId))?.title || `书 ${novelId}`;
 
+  const stats = useMemo(() => {
+    const list = data?.chapters || [];
+    return {
+      total: list.length,
+      words: list.reduce((a, c) => a + Number(c.words || 0), 0),
+      scored: list.filter((c) => c.score != null).length,
+      avg: (() => {
+        const scored = list.filter((c) => c.score != null);
+        return scored.length ? (scored.reduce((a, c) => a + Number(c.score || 0), 0) / scored.length).toFixed(1) : "—";
+      })(),
+    };
+  }, [data]);
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
         <span className="chip" onClick={() => setFilter("all")} style={{ cursor: "pointer" }}>全部 {data?.chapters?.length || 0}</span>
         {Object.entries(STATUS_META).map(([st, [label, cls]]) => (
-          <span key={st} className={`chip ${cls} ${filter === st ? "!border-sky-500 !text-sky-300" : ""}`} onClick={() => setFilter(st)} style={{ cursor: "pointer" }}>
+          <span key={st} className={`chip ${cls} ${filter === st ? "!border-[#5ba4d4] !text-[#7db9dd]" : ""}`} onClick={() => setFilter(st)} style={{ cursor: "pointer" }}>
             {label} {counts[st] || 0}
           </span>
         ))}
@@ -44,6 +58,25 @@ export default function ChaptersPage({ data }) {
             <option key={n.id} value={String(n.id)}>{n.title}</option>
           ))}
         </select>
+      </div>
+
+      <div className="kpi-grid !grid-cols-2 lg:!grid-cols-4">
+        <div className="card kpi">
+          <div className="kpi-label">当前筛选章节</div>
+          <div className="kpi-value">{chapters.length}</div>
+        </div>
+        <div className="card kpi">
+          <div className="kpi-label">筛选字数合计</div>
+          <div className="kpi-value">{fmtNum(chapters.reduce((a, c) => a + Number(c.words || 0), 0))}</div>
+        </div>
+        <div className="card kpi">
+          <div className="kpi-label">已评分 / 平均分</div>
+          <div className="kpi-value">{stats.avg} <span className="text-sm muted">/ {stats.scored}</span></div>
+        </div>
+        <div className="card kpi">
+          <div className="kpi-label">全部章节</div>
+          <div className="kpi-value">{stats.total}</div>
+        </div>
       </div>
 
       <div className="panel overflow-hidden">

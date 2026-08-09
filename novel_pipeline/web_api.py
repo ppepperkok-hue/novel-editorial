@@ -43,6 +43,7 @@ ALLOWED_SETTINGS = {
     "daily_run_time",
 }
 _N8N_KEY = None
+_EXEC_ERROR_CACHE = {}
 AGENTS_DIR = ROOT / "prompts" / "agents"
 WORKFLOW_JSON = ROOT / "n8n" / "novel_workflow.json"
 VALIDATE_JS = ROOT / "tools" / "validate_workflow_deep.mjs"
@@ -213,6 +214,7 @@ def _agent_save(payload):
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",
             timeout=60,
         )
         validated = subprocess.run(
@@ -221,6 +223,7 @@ def _agent_save(payload):
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",
             timeout=60,
         )
     except OSError as e:
@@ -356,7 +359,39 @@ def _executions():
                     }
                 )
     rows.sort(key=lambda r: r.get("started_at") or "", reverse=True)
-    return rows[:30]
+    rows = rows[:30]
+    # Attach a short error summary for failed runs (cached 60s so the
+    # executions page can show why a run failed without hammering n8n).
+    now = datetime.now().timestamp()
+    for row in rows:
+        if row["status"] in ("success", "running", "waiting", None):
+            continue
+        exec_id = row.get("id")
+        if exec_id is None:
+            continue
+        cached = _EXEC_ERROR_CACHE.get(exec_id)
+        if cached and now - cached[0] < 60:
+            row["error"] = cached[1]
+            continue
+        detail = n8n_api("GET", f"/executions/{exec_id}?includeData=true", timeout=3)
+        error = None
+        try:
+            if detail and detail.get("data", {}).get("resultData", {}).get("error"):
+                err = detail["data"]["resultData"]["error"]
+                message = str(err.get("message") or "")
+                node = (
+                    (err.get("node") or {}).get("name")
+                    if isinstance(err.get("node"), dict)
+                    else None
+                )
+                if node:
+                    message = f"[{node}] {message}"
+                error = message[:500]
+        except (TypeError, AttributeError):
+            error = None
+        _EXEC_ERROR_CACHE[exec_id] = (now, error)
+        row["error"] = error
+    return rows
 
 
 def _handle_control(conn, payload):

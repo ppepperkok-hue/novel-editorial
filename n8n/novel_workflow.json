@@ -1563,7 +1563,7 @@
     },
     {
       "parameters": {
-        "jsCode": "return [];"
+        "jsCode": "try { require('fs').unlinkSync('C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline/n8n_tmp/daily.lock'); } catch (e) {} return [];"
       },
       "id": "n-stop",
       "name": "结束",
@@ -1750,7 +1750,7 @@
     },
     {
       "parameters": {
-        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline/tools/collect_reader_stats.py --db demo.db",
+        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline/tools/collect_reader_stats.py --db demo.db & C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline/tools/release_lock.py",
         "options": {
           "cwd": "C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline"
         }

@@ -115,7 +115,9 @@ export default function ReaderPage({ data }) {
                 <div className="flex flex-col gap-2">
                   {low.map((l, i) => (
                     <div key={i} className="rounded-lg border border-red-900/60 bg-red-950/25 px-3 py-2 text-xs leading-relaxed text-red-300">
-                      {typeof l === "object" ? JSON.stringify(l) : l}
+                      {typeof l === "object"
+                        ? `第 ${l.chapter ?? "?"} 章 · 完读 ${(Number(l.finish_rate ?? 0) * 100).toFixed(1)}% · 追读 ${(Number(l.follow_rate ?? 0) * 100).toFixed(1)}%${l.note ? " · " + l.note : ""}`
+                        : l}
                     </div>
                   ))}
                 </div>

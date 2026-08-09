@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getControl, postControl } from "../api.js";
 import ReaderChart from "./ReaderChart.jsx";
+import { ConfirmDialog, fmtRelative } from "./ui.jsx";
 
 function Kpi({ label, value, sub, tone }) {
   return (
@@ -14,14 +15,14 @@ function Kpi({ label, value, sub, tone }) {
   );
 }
 
-function WorkflowCard({ label, wf, onAction }) {
+function WorkflowCard({ label, wf, onAction, onPause }) {
   const state = !wf?.online
     ? { text: "n8n 离线", cls: "chip-bad" }
     : wf.active
       ? { text: "● 运行中", cls: "chip-ok" }
       : { text: "● 已暂停", cls: "chip-bad" };
   const last = wf?.last
-    ? `${wf.last.status} · ${(wf.last.stopped_at || wf.last.started_at || "").replace("T", " ").slice(5, 19)}`
+    ? `${wf.last.status} · ${fmtRelative(wf.last.stopped_at || wf.last.started_at)}`
     : "暂无执行记录";
   return (
     <div className="panel panel-hover p-4">
@@ -33,7 +34,7 @@ function WorkflowCard({ label, wf, onAction }) {
       <div className="mt-3 flex gap-2">
         {wf?.online && (
           wf.active ? (
-            <button className="btn btn-danger !px-3 !py-1 text-xs" onClick={() => onAction("pause")}>
+            <button className="btn btn-danger !px-3 !py-1 text-xs" onClick={onPause}>
               暂停
             </button>
           ) : (
@@ -50,6 +51,8 @@ function WorkflowCard({ label, wf, onAction }) {
 export default function DashboardPage({ data, error, onRefresh, pushToast }) {
   const [control, setControl] = useState(null);
   const [running, setRunning] = useState(false);
+  const [confirm, setConfirm] = useState(null);
+  const [logDetail, setLogDetail] = useState(null);
 
   const refreshControl = async () => {
     try {
@@ -74,6 +77,7 @@ export default function DashboardPage({ data, error, onRefresh, pushToast }) {
 
   const runNow = async () => {
     setRunning(true);
+    setConfirm(null);
     try {
       const r = await postControl({ action: "run_now", workflow: "daily" });
       pushToast(
@@ -106,7 +110,7 @@ export default function DashboardPage({ data, error, onRefresh, pushToast }) {
       ) : null}
 
       <div className="kpi-grid">
-        <Kpi label="连载作品" value={s.novels ?? "—"} sub="novels 表" />
+        <Kpi label="连载作品" value={s.novels ?? "—"} sub="全部连载中" />
         <Kpi label="章节总数" value={s.chapters_total ?? "—"} />
         <Kpi label="已发布" value={s.chapters_published ?? "—"} tone="ok" />
         <Kpi label="待发布" value={s.chapters_ready ?? "—"} tone="warn" />
@@ -120,12 +124,12 @@ export default function DashboardPage({ data, error, onRefresh, pushToast }) {
       <section>
         <div className="section-title">工作流状态</div>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <WorkflowCard label="日更工作流（55 节点）" wf={wfs.daily} onAction={(a) => action({ action: a, workflow: "daily" }, a === "pause" ? "日更已暂停" : "日更已恢复")} />
-          <WorkflowCard label="架构师周会（5 节点）" wf={wfs.weekly} onAction={(a) => action({ action: a, workflow: "weekly" }, a === "pause" ? "周会已暂停" : "周会已恢复")} />
+          <WorkflowCard label="日更工作流（56 节点）" wf={wfs.daily} onAction={(a) => action({ action: a, workflow: "daily" }, "日更已恢复")} onPause={() => setConfirm("pause-daily")} />
+          <WorkflowCard label="架构师周会（6 节点）" wf={wfs.weekly} onAction={(a) => action({ action: a, workflow: "weekly" }, "周会已恢复")} onPause={() => setConfirm("pause-weekly")} />
           <div className="panel panel-hover p-4">
             <div className="text-sm font-semibold">手动补更</div>
             <div className="muted mt-1 text-xs">机器关机错过定时后，开机点这里立即执行完整日更（真实发布）</div>
-            <button className="btn btn-ok mt-3" disabled={running} onClick={runNow}>
+            <button className="btn btn-ok mt-3" disabled={running} onClick={() => setConfirm("run")}>
               {running ? "正在启动…" : "▶ 立即更新一章"}
             </button>
           </div>
@@ -152,7 +156,7 @@ export default function DashboardPage({ data, error, onRefresh, pushToast }) {
           {issues.length ? (
             <ul className="flex flex-col gap-1.5 text-sm text-red-400">
               {issues.map((i, k) => (
-                <li key={k} className="rounded-md bg-red-950/30 px-2.5 py-1.5">● {i}</li>
+                <li key={k} className="break-words rounded-md bg-red-950/30 px-2.5 py-1.5 leading-relaxed">● {i}</li>
               ))}
             </ul>
           ) : (
@@ -185,7 +189,7 @@ export default function DashboardPage({ data, error, onRefresh, pushToast }) {
                     {src.source}（{src.count || 0} 本）
                     {src.error ? <span className="badge-bad"> · {src.error}</span> : ""}
                   </div>
-                  <div className="mt-0.5 text-xs leading-relaxed text-slate-400">
+              <div className="mt-0.5 break-words text-xs leading-relaxed text-slate-400">
                     {(src.titles || []).slice(0, 8).join("、")}
                   </div>
                 </div>
@@ -218,7 +222,7 @@ export default function DashboardPage({ data, error, onRefresh, pushToast }) {
               </thead>
               <tbody>
                 {(data?.publish_logs || []).slice(0, 20).map((l) => (
-                  <tr key={l.id}>
+                  <tr key={l.id} className={l.error ? "cursor-pointer" : ""} onClick={l.error ? () => setLogDetail(l) : undefined} title={l.error ? "点击查看错误详情" : undefined}>
                     <td>#{l.chapter_id}</td>
                     <td>{l.platform}</td>
                     <td>{l.action}</td>
@@ -236,6 +240,48 @@ export default function DashboardPage({ data, error, onRefresh, pushToast }) {
           </div>
         </section>
       </div>
+
+      <ConfirmDialog
+        open={confirm === "run"}
+        title="立即执行完整日更？"
+        body="这会真实运行整条写作流水线（消耗 DeepSeek API 额度），并尝试把新章节发布到番茄小说。确认在预检通过的前提下继续。"
+        confirmText="立即更新一章"
+        busy={running}
+        onCancel={() => setConfirm(null)}
+        onConfirm={runNow}
+      />
+
+      <ConfirmDialog
+        open={confirm === "pause-daily" || confirm === "pause-weekly"}
+        title="暂停工作流？"
+        body="暂停后定时触发将停止，需要手动恢复。"
+        confirmText="暂停"
+        onCancel={() => setConfirm(null)}
+        onConfirm={() => {
+          const workflow = confirm === "pause-daily" ? "daily" : "weekly";
+          setConfirm(null);
+          action({ action: "pause", workflow }, "已暂停");
+        }}
+      />
+
+      {logDetail ? (
+        <div className="modal-mask" onMouseDown={(e) => e.target === e.currentTarget && setLogDetail(null)}>
+          <div className="modal confirm-modal">
+            <div className="modal-head">
+              <div className="text-sm font-bold">发布失败详情 #{logDetail.chapter_id}</div>
+              <button className="btn !px-2 !py-0.5 text-sm" onClick={() => setLogDetail(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="mb-2 text-xs text-slate-400">
+                {logDetail.platform} · {logDetail.action} · {logDetail.result}
+              </div>
+              <pre className="code max-h-72 overflow-auto rounded-lg bg-[#1e1e1e] p-3 text-xs leading-relaxed text-red-300">
+                {logDetail.error}
+              </pre>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -126,3 +126,24 @@ Agent 管理链路：`prompts/agents/*.md` → 保存时 `render_workflow.py` �
 
 开机自启：`shell:startup` 下放了三个 vbs（n8n、8000/8001 面板服务），
 登录后自动拉起，无需管理员权限。
+
+## 8. 前端高完成度与后端健壮性（2026-08-10）
+
+面板交互升级：侧边栏可折叠（状态记忆）、Ctrl+R 刷新、首次加载骨架屏、
+页面级错误边界、危险操作确认对话框（补更/暂停/部署/切 Agent 丢修改）、
+Toast 带图标、执行失败可查看原因弹窗、作品库搜索与批量展开、
+章节统计卡、设置表单前端校验、刷新/时间显示、AstrBot 深色主题统一。
+
+后端修复三个真实缺陷：
+
+- `_agent_save` 的子进程输出用 `errors="replace"`，避免中文输出在
+  Windows 管道编码下抛 UnicodeDecodeError。
+- `_executions` 为失败执行附加错误摘要（n8n `includeData`，60 秒缓存），
+  前端执行记录页可直接看到失败节点与原因。
+- 日更并发锁：`tools/preflight.py` 预检通过时原子创建
+  `n8n_tmp/daily.lock`（O_EXCL），阻止定时与手动触发同时通过预检导致双发；
+  正常路径（采集阅读数据）与失败路径（结束）都会释放，PID 失效自动回收；
+  `tools/release_lock.py` 可手动释放。
+
+另修复 `tools/apply_architect.py` 的 `volume_goal` 查询缺字段问题
+（蓝图不带卷目标时崩溃），SQL 改为显式选取 `volume_goal`。

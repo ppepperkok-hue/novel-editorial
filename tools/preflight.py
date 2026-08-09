@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -26,6 +27,7 @@ from tools.app_settings import get_all, get_bool, get_float  # noqa: E402
 
 ENV_FILE = Path.home() / ".n8n" / ".env"
 ALERTS_LOG = ROOT / "alerts.log"
+LOCK_FILE = ROOT / "n8n_tmp" / "daily.lock"
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
@@ -93,6 +95,42 @@ def check_budget(conn, budget):
     return spent < budget, spent
 
 
+def acquire_lock():
+    """Atomically claim the daily run lock (O_EXCL) to prevent concurrent
+    scheduled + manual runs from both passing preflight and double-publishing."""
+    LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        fd = os.open(LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, f"{os.getpid()} {datetime.now():%Y-%m-%d %H:%M:%S}".encode("utf-8"))
+        os.close(fd)
+        return True, ""
+    except FileExistsError:
+        try:
+            pid = int(LOCK_FILE.read_text(encoding="utf-8").split()[0])
+            try:
+                os.kill(pid, 0)  # Windows: check process liveness
+                alive = True
+            except (ProcessLookupError, PermissionError) as e:
+                # PermissionError -> process exists but not accessible -> alive
+                alive = isinstance(e, PermissionError)
+        except Exception:
+            alive = time.time() - LOCK_FILE.stat().st_mtime < 3600
+        if not alive:
+            try:
+                LOCK_FILE.unlink()
+                return acquire_lock()
+            except OSError:
+                pass
+        return False, "已有日更运行在途中（运行锁占用），本次跳过防双发"
+
+
+def release_lock():
+    try:
+        LOCK_FILE.unlink()
+    except OSError:
+        pass
+
+
 def main():
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -142,6 +180,11 @@ def main():
         if manual_requested:
             reasons.append("手动请求运行已生效")
         ok = enabled and cookie_ok and not already_ran and budget_ok
+        if ok:
+            locked, lock_reason = acquire_lock()
+            if not locked:
+                reasons.append(lock_reason)
+                ok = False
         print(
             json.dumps(
                 {

@@ -50,10 +50,14 @@ def main():
         row = None
         if book_id:
             row = conn.execute(
-                "SELECT id, outline FROM novels WHERE book_id=? ORDER BY id DESC LIMIT 1", (book_id,)
+                "SELECT id, outline, volume_goal FROM novels "
+                "WHERE book_id=? ORDER BY id DESC LIMIT 1",
+                (book_id,),
             ).fetchone()
         if row is None:
-            row = conn.execute("SELECT id, outline FROM novels ORDER BY id DESC LIMIT 1").fetchone()
+            row = conn.execute(
+                "SELECT id, outline, volume_goal FROM novels ORDER BY id DESC LIMIT 1"
+            ).fetchone()
         if row is None:
             print(json.dumps({"ok": False, "error": "no novel"}, ensure_ascii=False))
             return

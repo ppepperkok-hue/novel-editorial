@@ -2,7 +2,7 @@ import { useState } from "react";
 
 function Field({ label, children }) {
   return (
-    <div className="rounded-lg border border-[#1a2332] bg-[#0a0f18] p-3">
+    <div className="rounded-lg border border-[#333333] bg-[#1e1e1e] p-3">
       <div className="label !mb-2">{label}</div>
       <div className="text-sm leading-relaxed text-slate-300">{children || <span className="muted">暂无</span>}</div>
     </div>
@@ -11,7 +11,7 @@ function Field({ label, children }) {
 
 function CharacterCard({ c }) {
   return (
-    <div className="rounded-lg border border-[#1a2332] bg-[#0a0f18] p-2.5">
+    <div className="rounded-lg border border-[#333333] bg-[#1e1e1e] p-2.5">
       <div className="flex items-baseline gap-2">
         <span className="text-sm font-semibold text-sky-400">{c.name}</span>
         <span className="muted text-xs">{c.role}</span>
@@ -29,9 +29,20 @@ function CharacterCard({ c }) {
 
 export default function WorksPage({ data }) {
   const [open, setOpen] = useState({});
+  const [query, setQuery] = useState("");
   const novels = data?.novels || [];
 
   const toggle = (id) => setOpen((o) => ({ ...o, [id]: !o[id] }));
+  const allOpen = novels.length > 0 && novels.every((n) => open[n.id]);
+  const setAll = (v) => setOpen(Object.fromEntries(novels.map((n) => [n.id, v])));
+  const filtered = query.trim()
+    ? novels.filter((n) => {
+        const hay = [n.title, n.genre, n.status, n.abstract, n.premise, (n.tags || []).join(" ")]
+          .join(" ")
+          .toLowerCase();
+        return hay.includes(query.trim().toLowerCase());
+      })
+    : novels;
 
   if (!novels.length) {
     return <div className="panel"><div className="empty">暂无作品，等待流水线第一次运行后自动创建。</div></div>;
@@ -39,7 +50,20 @@ export default function WorksPage({ data }) {
 
   return (
     <div className="flex flex-col gap-4">
-      {novels.map((n) => {
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          className="input !w-64"
+          placeholder="搜索书名 / 类型 / 标签 / 简介…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <button className="btn ml-auto" onClick={() => setAll(!allOpen)}>
+          {allOpen ? "全部收起" : "全部展开"}
+        </button>
+        <span className="muted text-xs">共 {filtered.length} 部</span>
+      </div>
+
+      {filtered.map((n) => {
         const o = n.outline || {};
         const bible = o.bible || {};
         const chars = (n.characters || []).map((c) => (
@@ -49,7 +73,7 @@ export default function WorksPage({ data }) {
           <CharacterCard key={"b" + c.name + c.role} c={c} />
         ));
         const rels = (bible.relationships || []).map((r, i) => (
-          <div key={i} className="rounded-md bg-[#0a0f18] px-2.5 py-1.5 text-xs text-slate-400">
+          <div key={i} className="rounded-md bg-[#1e1e1e] px-2.5 py-1.5 text-xs text-slate-400">
             {r.from} <span className="text-sky-400">— {r.relation || "关系"} —</span> {r.to}
             {r.note ? <span className="muted">：{r.note}</span> : ""}
           </div>
@@ -58,7 +82,7 @@ export default function WorksPage({ data }) {
           <div key={i} className="text-xs text-slate-400">· {w}</div>
         ));
         const chs = [o.chapter1, o.chapter2].filter(Boolean).map((c) => (
-          <div key={c.title} className="rounded-lg border border-[#1a2332] bg-[#0a0f18] p-2.5">
+          <div key={c.title} className="rounded-lg border border-[#333333] bg-[#1e1e1e] p-2.5">
             <div className="text-sm font-semibold text-amber-400">{c.title}</div>
             <div className="muted mt-0.5 text-xs leading-relaxed">{c.outline}</div>
             {c.hook ? <div className="mt-1 text-xs text-emerald-400">钩子：{c.hook}</div> : null}
@@ -86,7 +110,7 @@ export default function WorksPage({ data }) {
             </div>
 
             {isOpen ? (
-              <div className="flex flex-col gap-4 border-t border-[#1a2332] px-5 py-4">
+              <div className="flex flex-col gap-4 border-t border-[#333333] px-5 py-4">
                 <div className="flex flex-wrap gap-1.5">
                   {(n.tags || []).map((t) => (
                     <span key={t} className="chip chip-info">{t}</span>
@@ -154,6 +178,9 @@ export default function WorksPage({ data }) {
           </section>
         );
       })}
+      {!filtered.length ? (
+        <div className="panel"><div className="empty">没有匹配「{query}」的作品</div></div>
+      ) : null}
     </div>
   );
 }

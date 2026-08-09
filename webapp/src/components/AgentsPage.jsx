@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getAgents, postAgents } from "../api.js";
+import { ConfirmDialog } from "./ui.jsx";
 
 const AVATAR_COLORS = [
   "linear-gradient(135deg,#38bdf8,#0ea5e9)",
@@ -22,6 +23,8 @@ export default function AgentsPage({ pushToast }) {
   const [selected, setSelected] = useState(null);
   const [busy, setBusy] = useState("");
   const [log, setLog] = useState([]);
+  const [pendingPick, setPendingPick] = useState(null);
+  const [confirmDeploy, setConfirmDeploy] = useState(false);
   const logRef = useRef(null);
 
   const load = async () => {
@@ -63,10 +66,26 @@ export default function AgentsPage({ pushToast }) {
     );
   }, [selected, agents]);
 
-  const pick = (a) => {
+  const applyPick = (a) => {
     setSelected({ ...a });
     setLog([]);
   };
+
+  const pick = (a) => {
+    if (dirty && selected && a.file !== selected.file) {
+      setPendingPick(a);
+      return;
+    }
+    applyPick(a);
+  };
+
+  const tempValue = Number(selected?.temperature);
+  const tempValid =
+    selected != null &&
+    selected.temperature !== "" &&
+    !Number.isNaN(tempValue) &&
+    tempValue >= 0 &&
+    tempValue <= 2;
 
   const save = async () => {
     if (!selected) return;
@@ -87,7 +106,7 @@ export default function AgentsPage({ pushToast }) {
       }
       addLog(`渲染完成：${r.render || "（无输出）"}`);
       if (r.validation) {
-        addLog("工作流校验通过（55 节点 JS/引用/连接全部有效）", "ok");
+        addLog("工作流校验通过（56 节点 JS/引用/连接全部有效）", "ok");
         pushToast(`${selected.name} 已保存并通过校验`, "ok");
       } else {
         addLog(`校验未通过：${r.validation_output}`, "bad");
@@ -128,7 +147,7 @@ export default function AgentsPage({ pushToast }) {
   return (
     <div className="grid h-[calc(100vh-150px)] grid-cols-1 gap-4 xl:grid-cols-[330px_1fr]">
       <div className="panel overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between border-b border-[#1a2332] px-4 py-3">
+        <div className="flex items-center justify-between border-b border-[#333333] px-4 py-3">
           <div className="text-sm font-semibold">写作智能体</div>
           <button className="btn !px-2.5 !py-1 text-xs" onClick={load}>⟳</button>
         </div>
@@ -179,10 +198,10 @@ export default function AgentsPage({ pushToast }) {
               </div>
               <div className="ml-auto flex items-center gap-2">
                 {dirty ? <span className="chip chip-warn">有未保存修改</span> : null}
-                <button className="btn btn-ok" disabled={busy !== ""} onClick={save}>
+                <button className="btn btn-ok" disabled={busy !== "" || !tempValid} onClick={save}>
                   {busy === "save" ? "渲染校验中…" : "💾 保存并校验"}
                 </button>
-                <button className="btn btn-primary" disabled={busy !== "" || dirty} onClick={deploy}>
+                <button className="btn btn-primary" disabled={busy !== "" || dirty} onClick={() => setConfirmDeploy(true)}>
                   {busy === "deploy" ? "部署中…" : "▲ 部署到 n8n"}
                 </button>
               </div>
@@ -210,15 +229,17 @@ export default function AgentsPage({ pushToast }) {
                     value={selected.temperature}
                     onChange={(e) => setSelected({ ...selected, temperature: e.target.value })}
                   />
-                  <div className="muted mt-1 text-xs">越低越稳定，越高越有发散性</div>
+                  <div className={`mt-1 text-xs ${tempValid ? "muted" : "text-red-400"}`}>
+                    {tempValid ? "越低越稳定，越高越有发散性" : "温度必须是 0–2 之间的数字"}
+                  </div>
                 </div>
-                <div className="rounded-lg border border-[#1a2332] bg-[#0a0f18] p-3">
+                <div className="rounded-lg border border-[#333333] bg-[#1e1e1e] p-3">
                   <div className="label !mb-2">Agent 说明</div>
                   <div className="text-xs leading-relaxed text-slate-400">{selected.description}</div>
                 </div>
-                <div className="rounded-lg border border-[#1a2332] bg-[#0a0f18] p-3">
+                <div className="rounded-lg border border-[#333333] bg-[#1e1e1e] p-3">
                   <div className="label !mb-2">提示词占位符</div>
-                  <div className="code text-xs text-sky-400">{"{TARGET_WORDS}"}</div>
+                  <div className="code w-fit rounded-md border border-[#5ba4d4]/40 bg-[#1e3a5f]/40 px-2 py-1 text-xs text-[#8cc9f0]">{"{TARGET_WORDS}"}</div>
                   <div className="muted mt-1 text-xs">渲染时会替换为工作流里的目标字数表达式，请保留在提示词中。</div>
                 </div>
               </div>
@@ -235,9 +256,9 @@ export default function AgentsPage({ pushToast }) {
               </div>
             </div>
 
-            <div className="border-t border-[#1a2332] px-5 py-3">
+            <div className="border-t border-[#333333] px-5 py-3">
               <div className="label !mb-1.5">操作日志</div>
-              <div ref={logRef} className="code max-h-28 overflow-y-auto rounded-lg bg-[#0a0f18] px-3 py-2 text-[11.5px] leading-relaxed">
+              <div ref={logRef} className="code max-h-28 overflow-y-auto rounded-lg bg-[#1e1e1e] px-3 py-2 text-xs leading-relaxed">
                 {log.length ? (
                   log.map((l, i) => (
                     <div key={i} className={l.kind === "bad" ? "text-red-400" : l.kind === "ok" ? "text-emerald-400" : "text-slate-400"}>
@@ -254,6 +275,32 @@ export default function AgentsPage({ pushToast }) {
           <div className="empty flex-1">从左侧选择一个 Agent</div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={pendingPick !== null}
+        title="放弃未保存的修改？"
+        body={`当前「${selected?.name}」的修改尚未保存，切换后会丢失。`}
+        confirmText="放弃并切换"
+        onCancel={() => setPendingPick(null)}
+        onConfirm={() => {
+          applyPick(pendingPick);
+          setPendingPick(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirmDeploy}
+        title="部署到 n8n？"
+        body="会用当前工作流 JSON 覆盖 n8n 线上的日更工作流节点配置。提示词资产与线上将保持一致。"
+        confirmText="部署"
+        tone="primary"
+        busy={busy === "deploy"}
+        onCancel={() => setConfirmDeploy(false)}
+        onConfirm={() => {
+          setConfirmDeploy(false);
+          deploy();
+        }}
+      />
     </div>
   );
 }

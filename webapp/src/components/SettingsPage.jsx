@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { getControl, postControl } from "../api.js";
+import { ConfirmDialog } from "./ui.jsx";
 
-function WorkflowCard({ label, wf, onAction }) {
+function WorkflowCard({ label, wf, onAction, onPause }) {
   const state = !wf?.online
     ? { text: "n8n 离线", cls: "chip-bad" }
     : wf.active
@@ -20,7 +21,7 @@ function WorkflowCard({ label, wf, onAction }) {
       <div className="mt-1 flex gap-2">
         {wf?.online &&
           (wf.active ? (
-            <button className="btn btn-danger !px-3 !py-1 text-xs" onClick={() => onAction("pause")}>暂停</button>
+            <button className="btn btn-danger !px-3 !py-1 text-xs" onClick={onPause}>暂停</button>
           ) : (
             <button className="btn btn-ok !px-3 !py-1 text-xs" onClick={() => onAction("resume")}>恢复</button>
           ))}
@@ -34,6 +35,8 @@ export default function SettingsPage({ data, onRefresh, pushToast }) {
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState("");
+  const [confirm, setConfirm] = useState(null);
+  const [confirmRun, setConfirmRun] = useState(null);
 
   const refresh = async () => {
     try {
@@ -98,6 +101,7 @@ export default function SettingsPage({ data, onRefresh, pushToast }) {
   };
 
   const runNow = async (workflow, label) => {
+    setConfirmRun(null);
     setRunning(workflow);
     try {
       const r = await postControl({ action: "run_now", workflow });
@@ -113,6 +117,17 @@ export default function SettingsPage({ data, onRefresh, pushToast }) {
     }
   };
 
+  const budgetNum = Number(form?.monthly_budget);
+  const wordsNum = Number(form?.target_words);
+  const formValid =
+    form != null &&
+    !Number.isNaN(budgetNum) &&
+    budgetNum > 0 &&
+    !Number.isNaN(wordsNum) &&
+    wordsNum >= 500 &&
+    wordsNum <= 10000 &&
+    /^\d{2}:\d{2}$/.test(form.daily_run_time || "");
+
   const wfs = control?.workflows || {};
   const s = control?.settings || {};
 
@@ -121,23 +136,20 @@ export default function SettingsPage({ data, onRefresh, pushToast }) {
       <section className="panel p-4">
         <div className="section-title !mb-3">工作流控制</div>
         <div className="flex flex-col gap-3">
-          <WorkflowCard label="日更工作流（55 节点）" wf={wfs.daily} onAction={(a) => action({ action: a, workflow: "daily" }, a === "pause" ? "日更已暂停" : "日更已恢复")} />
-          <WorkflowCard label="架构师周会（5 节点）" wf={wfs.weekly} onAction={(a) => action({ action: a, workflow: "weekly" }, a === "pause" ? "周会已暂停" : "周会已恢复")} />
-          <button className="btn btn-primary" onClick={() => action({ action: "request_run" }, "已请求运行，将在下个定时触发点执行")}>
-            ⟶ 请求立即运行
-          </button>
+          <WorkflowCard label="日更工作流（56 节点）" wf={wfs.daily} onAction={(a) => action({ action: a, workflow: "daily" }, "日更已恢复")} onPause={() => setConfirm("pause-daily")} />
+          <WorkflowCard label="架构师周会（6 节点）" wf={wfs.weekly} onAction={(a) => action({ action: a, workflow: "weekly" }, "周会已恢复")} onPause={() => setConfirm("pause-weekly")} />
           <div className="grid grid-cols-2 gap-2">
             <button
               className="btn btn-ok"
               disabled={running !== ""}
-              onClick={() => runNow("daily", "日更流水线")}
+              onClick={() => setConfirmRun("daily")}
             >
               {running === "daily" ? "启动中…" : "▶ 立即更新一章"}
             </button>
             <button
               className="btn"
               disabled={running !== ""}
-              onClick={() => runNow("weekly", "架构师周会")}
+              onClick={() => setConfirmRun("weekly")}
             >
               {running === "weekly" ? "启动中…" : "▶ 立即跑周会"}
             </button>
@@ -175,6 +187,9 @@ export default function SettingsPage({ data, onRefresh, pushToast }) {
                   value={form.monthly_budget}
                   onChange={(e) => setForm({ ...form, monthly_budget: e.target.value })}
                 />
+                <div className={`mt-1 text-xs ${budgetNum > 0 ? "muted" : "text-red-400"}`}>
+                  预算必须大于 0
+                </div>
               </div>
               <div>
                 <label className="label">目标字数 / 章</label>
@@ -186,6 +201,9 @@ export default function SettingsPage({ data, onRefresh, pushToast }) {
                   value={form.target_words}
                   onChange={(e) => setForm({ ...form, target_words: e.target.value })}
                 />
+                <div className={`mt-1 text-xs ${wordsNum >= 500 && wordsNum <= 10000 ? "muted" : "text-red-400"}`}>
+                  目标字数建议 500–10000
+                </div>
               </div>
             </div>
             <div>
@@ -212,7 +230,7 @@ export default function SettingsPage({ data, onRefresh, pushToast }) {
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <button className="btn btn-ok" disabled={saving} onClick={save}>
+              <button className="btn btn-ok" disabled={saving || !formValid} onClick={save}>
                 {saving ? "保存中…" : "💾 保存设置"}
               </button>
               <span className="muted text-xs">
@@ -242,6 +260,33 @@ export default function SettingsPage({ data, onRefresh, pushToast }) {
           </div>
         </div>
       </section>
+
+      <ConfirmDialog
+        open={confirm === "pause-daily" || confirm === "pause-weekly"}
+        title="暂停工作流？"
+        body="暂停后定时触发将停止，需要手动恢复。"
+        confirmText="暂停"
+        onCancel={() => setConfirm(null)}
+        onConfirm={() => {
+          const workflow = confirm === "pause-daily" ? "daily" : "weekly";
+          setConfirm(null);
+          action({ action: "pause", workflow }, "已暂停");
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirmRun === "daily" || confirmRun === "weekly"}
+        title={confirmRun === "daily" ? "立即执行完整日更？" : "立即执行架构师周会？"}
+        body={
+          confirmRun === "daily"
+            ? "这会真实运行整条写作流水线（消耗 DeepSeek API 额度），并尝试把新章节发布到番茄小说。"
+            : "周会会调用架构师模型生成蓝图并写入作品设定，耗时约 2 分钟。"
+        }
+        confirmText={confirmRun === "daily" ? "立即更新一章" : "立即跑周会"}
+        busy={running !== ""}
+        onCancel={() => setConfirmRun(null)}
+        onConfirm={() => runNow(confirmRun, confirmRun === "daily" ? "日更流水线" : "架构师周会")}
+      />
     </div>
   );
 }
