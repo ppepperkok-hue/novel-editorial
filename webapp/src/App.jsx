@@ -1,31 +1,52 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getDashboard } from "./api.js";
-import ControlPanel from "./components/ControlPanel.jsx";
-import WorksSection from "./components/WorksSection.jsx";
-import ReaderChart from "./components/ReaderChart.jsx";
+import DashboardPage from "./components/DashboardPage.jsx";
+import WorksPage from "./components/WorksPage.jsx";
+import ChaptersPage from "./components/ChaptersPage.jsx";
+import AgentsPage from "./components/AgentsPage.jsx";
+import CostPage from "./components/CostPage.jsx";
+import ExecutionsPage from "./components/ExecutionsPage.jsx";
+import ReaderPage from "./components/ReaderPage.jsx";
+import SettingsPage from "./components/SettingsPage.jsx";
 
-const statusCls = {
-  draft: "badge-warn",
-  reviewed: "badge-ok",
-  queued: "badge-ok",
-  published: "badge-ok",
-  running: "badge-warn",
-  failed: "badge-bad",
-  pending: "badge-warn",
+const NAV = [
+  { id: "dashboard", label: "仪表盘", icon: "◈" },
+  { id: "works", label: "作品库", icon: "▤" },
+  { id: "chapters", label: "章节管理", icon: "≡" },
+  { id: "agents", label: "Agent 管理", icon: "◇" },
+  { id: "cost", label: "成本中心", icon: "¥" },
+  { id: "executions", label: "执行记录", icon: "⏱" },
+  { id: "reader", label: "阅读数据", icon: "◔" },
+  { id: "settings", label: "系统设置", icon: "⚙" },
+];
+
+const PAGE_META = {
+  dashboard: ["仪表盘", "流水线实时总览：作品、质量、成本、健康与热点"],
+  works: ["作品库", "每部作品的完整设定：大纲、主角、角色卡与世界规则"],
+  chapters: ["章节管理", "全部章节的写作状态、评分与发布进度"],
+  agents: ["Agent 管理", "编辑每个写作智能体的提示词、模型与温度，保存后一键部署"],
+  cost: ["成本中心", "API 花费按日与按节点统计，控制月预算"],
+  executions: ["执行记录", "日更与周会工作流的最近执行历史"],
+  reader: ["阅读数据", "完读率、追读率趋势与读者反馈报告"],
+  settings: ["系统设置", "运行开关、预算、目标字数与风格微调"],
 };
 
-function Card({ label, value, cls }) {
-  return (
-    <div className="card">
-      <div className="muted text-xs">{label}</div>
-      <div className={`mt-1 text-xl font-semibold ${cls || ""}`}>{value}</div>
-    </div>
-  );
-}
-
 export default function App() {
+  const pageFromHash = () => {
+    const h = (location.hash || "").replace("#", "");
+    return NAV.some((n) => n.id === h) ? h : "dashboard";
+  };
+  const [page, setPage] = useState(pageFromHash);
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const [toasts, setToasts] = useState([]);
+  const toastId = useRef(0);
+
+  const pushToast = useCallback((text, kind = "ok") => {
+    const id = ++toastId.current;
+    setToasts((t) => [...t, { id, text, kind }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4200);
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -42,195 +63,88 @@ export default function App() {
     return () => clearInterval(t);
   }, [refresh]);
 
-  const s = data?.summary || {};
-  const passRate = s.quality_total ? ((s.quality_passed / s.quality_total) * 100).toFixed(1) : "—";
-  const cards = [
-    ["小说", s.novels ?? "—", ""],
-    ["章节总数", s.chapters_total ?? "—", ""],
-    ["已发布", s.chapters_published ?? "—", "badge-ok"],
-    ["待发布", s.chapters_ready ?? "—", "badge-warn"],
-    ["草稿", s.chapters_draft ?? "—", "badge-warn"],
-    ["质量通过率", passRate + "%", "badge-ok"],
-    ["发布失败", s.publish_failed ?? 0, s.publish_failed ? "badge-bad" : "badge-ok"],
-    [
-      "本月成本",
-      "¥" + (s.monthly_cost ?? 0) + " / " + (data?.cost_budget ?? 100),
-      (s.monthly_cost ?? 0) >= (data?.cost_budget ?? 100) ? "badge-bad" : "badge-ok",
-    ],
-    [
-      "健康问题",
-      data?.health?.issues?.length ?? "—",
-      data?.health?.issues?.length ? "badge-bad" : "badge-ok",
-    ],
-  ];
+  useEffect(() => {
+    const onHash = () => setPage(pageFromHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  const go = (id) => {
+    setPage(id);
+    if (location.hash !== "#" + id) location.hash = id;
+  };
+
+  const wf = data?.health?.workflows;
+  const online = wf?.daily?.online;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6">
-      <header className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold">小说流水线控制台</h1>
-          <div className="muted text-xs">更新于 {data?.updated_at || "—"}</div>
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brand-logo">笔</div>
+          <div>
+            <div className="brand-name">小说流水线</div>
+            <div className="brand-sub">Novel Pipeline Console</div>
+          </div>
         </div>
-        <button
-          className="rounded-md border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800"
-          onClick={refresh}
-        >
-          刷新
-        </button>
-      </header>
 
-      {error ? (
-        <div className="mb-4 rounded-md border border-red-900 bg-red-950/40 px-4 py-2 text-sm text-red-400">
-          加载失败：{error}
+        <nav>
+          {NAV.map((n) => (
+            <div
+              key={n.id}
+              className={`nav-item ${page === n.id ? "active" : ""}`}
+              onClick={() => go(n.id)}
+            >
+              <span className="nav-icon">{n.icon}</span>
+              {n.label}
+            </div>
+          ))}
+        </nav>
+
+        <div className="sidebar-foot">
+          <div className="mb-2 flex items-center">
+            <span className="dot" style={{ background: online ? "#34d399" : "#f87171" }} />
+            n8n {online ? "在线" : "离线"}
+          </div>
+          <div>数据更新 {data?.updated_at || "—"}</div>
         </div>
-      ) : null}
+      </aside>
 
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {cards.map(([label, value, cls]) => (
-          <Card key={label} label={label} value={value} cls={cls} />
+      <main className="main">
+        <header className="topbar">
+          <div>
+            <div className="topbar-title">{PAGE_META[page][0]}</div>
+            <div className="topbar-sub">{PAGE_META[page][1]}</div>
+          </div>
+          <div className="flex items-center gap-2">
+            {error ? (
+              <span className="chip chip-bad">连接失败</span>
+            ) : (
+              <span className="chip chip-ok">● 实时</span>
+            )}
+            <button className="btn" onClick={refresh}>
+              ⟳ 刷新
+            </button>
+          </div>
+        </header>
+
+        <div className="content fade-page">
+          {page === "dashboard" && <DashboardPage data={data} error={error} onRefresh={refresh} pushToast={pushToast} />}
+          {page === "works" && <WorksPage data={data} />}
+          {page === "chapters" && <ChaptersPage data={data} />}
+          {page === "agents" && <AgentsPage pushToast={pushToast} />}
+          {page === "cost" && <CostPage data={data} />}
+          {page === "executions" && <ExecutionsPage />}
+          {page === "reader" && <ReaderPage data={data} />}
+          {page === "settings" && <SettingsPage data={data} onRefresh={refresh} pushToast={pushToast} />}
+        </div>
+      </main>
+
+      <div className="toast-wrap">
+        {toasts.map((t) => (
+          <div key={t.id} className={`toast toast-${t.kind}`}>{t.text}</div>
         ))}
       </div>
-
-      <div className="mb-6">
-        <ControlPanel onChanged={refresh} />
-      </div>
-
-      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="panel p-4">
-          <h2 className="mb-2 text-sm font-semibold">健康检查</h2>
-          {(data?.health?.issues || []).length ? (
-            <ul className="list-disc pl-5 text-sm text-red-400">
-              {(data.health.issues || []).map((i, k) => (
-                <li key={k}>{i}</li>
-              ))}
-            </ul>
-          ) : (
-            <div className="badge-ok text-sm">● 全部正常</div>
-          )}
-          {data?.health?.log_tail?.length ? (
-            <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-slate-950 p-2 text-xs text-slate-400">
-              {data.health.log_tail.join("\n")}
-            </pre>
-          ) : null}
-        </div>
-
-        <div className="panel p-4">
-          <h2 className="mb-2 text-sm font-semibold">热点选题（网文榜单）</h2>
-          {data?.hot_topics?.present ? (
-            <>
-              <div className="mb-2 flex flex-wrap gap-1.5">
-                {(data.hot_topics.top_keywords || []).map(([k, n]) => (
-                  <span key={k} className="rounded-full bg-slate-800 px-2 py-0.5 text-xs">
-                    {k} ×{n}
-                  </span>
-                ))}
-              </div>
-              {(data.hot_topics.sources || []).map((src) => (
-                <div key={src.source} className="mb-2">
-                  <div className="muted text-xs">
-                    {src.source}（{src.count || 0} 本）
-                    {src.error ? ` · 抓取失败：${src.error}` : ""}
-                  </div>
-                  <div className="text-xs text-slate-400">
-                    {(src.titles || []).slice(0, 10).join("、")}
-                  </div>
-                </div>
-              ))}
-            </>
-          ) : (
-            <div className="muted text-sm">暂无热点数据。</div>
-          )}
-        </div>
-      </div>
-
-      <section className="mb-6">
-        <h2 className="mb-2 text-sm font-semibold">作品库</h2>
-        <WorksSection novels={data?.novels} />
-      </section>
-
-      <section className="mb-6">
-        <h2 className="mb-2 text-sm font-semibold">章节</h2>
-        <div className="panel overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="muted border-b border-slate-800 text-left text-xs">
-              <tr>
-                <th className="px-3 py-2">ID</th>
-                <th className="px-3 py-2">书ID</th>
-                <th className="px-3 py-2">序号</th>
-                <th className="px-3 py-2">标题</th>
-                <th className="px-3 py-2">章纲</th>
-                <th className="px-3 py-2">状态</th>
-                <th className="px-3 py-2">字数</th>
-                <th className="px-3 py-2">评分</th>
-                <th className="px-3 py-2">番茄章节ID</th>
-                <th className="px-3 py-2">发布时间</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(data?.chapters || []).map((c) => (
-                <tr key={c.id} className="border-b border-slate-800/60 last:border-0">
-                  <td className="px-3 py-1.5">{c.id}</td>
-                  <td className="px-3 py-1.5">{c.novel_id}</td>
-                  <td className="px-3 py-1.5">{c.seq}</td>
-                  <td className="px-3 py-1.5">{c.title}</td>
-                  <td className="px-3 py-1.5 text-xs text-slate-400">{c.outline}</td>
-                  <td className={`px-3 py-1.5 text-xs ${statusCls[c.status] || "badge-warn"}`}>
-                    {c.status}
-                  </td>
-                  <td className="px-3 py-1.5">{c.words}</td>
-                  <td className="px-3 py-1.5">{c.score ?? "—"}</td>
-                  <td className="px-3 py-1.5 text-xs">{c.fanqie_item_id || "—"}</td>
-                  <td className="px-3 py-1.5 text-xs">{c.published_at || "—"}</td>
-                </tr>
-              ))}
-              {!(data?.chapters || []).length ? (
-                <tr>
-                  <td colSpan={10} className="px-3 py-4 text-center muted">暂无章节</td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="panel p-4">
-          <h2 className="mb-2 text-sm font-semibold">完读率 / 追读率</h2>
-          <ReaderChart stats={data?.reader_stats} />
-        </div>
-        <div className="panel p-4">
-          <h2 className="mb-2 text-sm font-semibold">发布日志（最近 20 条）</h2>
-          <table className="w-full text-sm">
-            <thead className="muted border-b border-slate-800 text-left text-xs">
-              <tr>
-                <th className="py-2 pr-3">章节</th>
-                <th className="py-2 pr-3">平台</th>
-                <th className="py-2 pr-3">动作</th>
-                <th className="py-2 pr-3">结果</th>
-                <th className="py-2">AI声明</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(data?.publish_logs || []).slice(0, 20).map((l) => (
-                <tr key={l.id} className="border-b border-slate-800/60 last:border-0">
-                  <td className="py-1.5 pr-3">{l.chapter_id}</td>
-                  <td className="py-1.5 pr-3">{l.platform}</td>
-                  <td className="py-1.5 pr-3">{l.action}</td>
-                  <td className={`py-1.5 pr-3 ${l.result === "failed" ? "badge-bad" : "badge-ok"}`}>
-                    {l.result}
-                  </td>
-                  <td className="py-1.5">{l.ai_declared ? "是" : "否"}</td>
-                </tr>
-              ))}
-              {!(data?.publish_logs || []).length ? (
-                <tr>
-                  <td colSpan={5} className="py-4 text-center muted">暂无发布日志</td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </section>
     </div>
   );
 }

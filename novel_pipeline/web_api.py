@@ -11,6 +11,7 @@ import argparse
 import json
 import mimetypes
 import os
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -23,6 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from novel_pipeline import data_feedback, db, monitor
+from tools import render_workflow
 
 WEB_DIR = ROOT / "web"
 WEBAPP_DIST = ROOT / "webapp" / "dist"
@@ -35,6 +37,31 @@ N8N_WORKFLOW_DAILY = os.environ.get("N8N_WORKFLOW_DAILY", "SkLUnm3uRyBSY84F")
 N8N_WORKFLOW_WEEKLY = os.environ.get("N8N_WORKFLOW_WEEKLY", "TAScPjj0Oqtz1uy7")
 ALLOWED_SETTINGS = {"daily_enabled", "monthly_budget", "target_words", "style_tweak"}
 _N8N_KEY = None
+AGENTS_DIR = ROOT / "prompts" / "agents"
+WORKFLOW_JSON = ROOT / "n8n" / "novel_workflow.json"
+VALIDATE_JS = ROOT / "tools" / "validate_workflow_deep.mjs"
+AGENT_DISPLAY = {
+    "planner.md": "策划官",
+    "guard.md": "世界观守护",
+    "writer.md": "叙事写手",
+    "editor.md": "文字编辑",
+    "reviewer.md": "逻辑审稿",
+    "reader.md": "读者体验审稿",
+    "eic.md": "主编终审",
+    "memory.md": "记忆官",
+    "work_meta.md": "作品资料",
+}
+AGENT_DESC = {
+    "planner.md": "生成/增量更新故事圣经与两章细纲",
+    "guard.md": "动笔前拦截 OOC/吃书/伏笔矛盾，输出约束与角色言行要点",
+    "writer.md": "按细纲+角色卡+守护约束写正文（A/B 共用）",
+    "editor.md": "去 AI 味、翻译腔、标点、节奏收紧（A/B 共用）",
+    "reviewer.md": "六类底线问题 + 风格检查（A/B 共用）",
+    "reader.md": "追读欲/钩子/情绪满足评分（A/B 共用）",
+    "eic.md": "仲裁逻辑审稿与读者审稿，输出 verdict 与 must_fix（A/B 共用）",
+    "memory.md": "提取摘要、角色状态、事件、伏笔台账（A/B 共用）",
+    "work_meta.md": "书名/简介/标签/主角/卷目标",
+}
 
 
 def _load_n8n_env():
@@ -99,6 +126,161 @@ def _load_control(conn):
             "weekly": _workflow_status(N8N_WORKFLOW_WEEKLY),
         },
     }
+
+
+def _extract_node_system(body):
+    start = body.find("{role:'system',content:'")
+    end = body.find("'},{role:'user'", start)
+    if start < 0 or end < 0:
+        return None
+    return body[start + len("{role:'system',content:'") : end]
+
+
+def _agent_files():
+    files = sorted(set(render_workflow.AGENT_FILES.values()))
+    return [f for f in files if (AGENTS_DIR / f).exists()]
+
+
+def _agents_list():
+    wf = json.loads(WORKFLOW_JSON.read_text(encoding="utf-8"))
+    nodes = {n["name"]: n for n in wf["nodes"]}
+    agents = []
+    for f in _agent_files():
+        meta, prompt = render_workflow.parse_asset(AGENTS_DIR / f)
+        mapped = [
+            name for name, fn in render_workflow.AGENT_FILES.items() if fn == f
+        ]
+        synced = True
+        for name in mapped:
+            node = nodes.get(name)
+            if node is None:
+                synced = False
+                continue
+            body = node["parameters"]["jsonBody"]
+            system = _extract_node_system(body)
+            if system is None:
+                synced = False
+                continue
+            norm = system.replace(
+                render_workflow.TARGET_WORDS_EXPR,
+                render_workflow.TARGET_WORDS_PLACEHOLDER,
+            ).replace("\\'", "'").replace('\\"', '"').replace("\\\\", "\\")
+            if norm != prompt:
+                synced = False
+        agents.append(
+            {
+                "file": f,
+                "name": AGENT_DISPLAY.get(f, f),
+                "description": AGENT_DESC.get(f, ""),
+                "model": meta.get("model", ""),
+                "temperature": meta.get("temperature", ""),
+                "prompt": prompt,
+                "nodes": mapped,
+                "synced": synced,
+            }
+        )
+    return agents
+
+
+def _agent_save(payload):
+    f = str(payload.get("file") or "")
+    if f not in set(render_workflow.AGENT_FILES.values()):
+        return {"ok": False, "error": "unknown agent file"}
+    model = str(payload.get("model") or "").strip()
+    try:
+        temperature = float(payload.get("temperature"))
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "temperature must be a number"}
+    if not (0 <= temperature <= 2):
+        return {"ok": False, "error": "temperature must be 0-2"}
+    prompt = str(payload.get("prompt") or "").strip()
+    if len(prompt) < 20:
+        return {"ok": False, "error": "prompt too short"}
+    (AGENTS_DIR / f).write_text(
+        f"---\nmodel: {model}\ntemperature: {temperature}\n---\n\n{prompt}\n",
+        encoding="utf-8",
+    )
+    try:
+        rendered = subprocess.run(
+            [sys.executable, str(ROOT / "tools" / "render_workflow.py")],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=60,
+        )
+        validated = subprocess.run(
+            ["node", str(VALIDATE_JS)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=60,
+        )
+    except OSError as e:
+        return {"ok": False, "error": f"render/validate failed: {e}"}
+    return {
+        "ok": True,
+        "render": (rendered.stdout or rendered.stderr).strip()[-300:],
+        "validation": validated.returncode == 0,
+        "validation_output": (validated.stdout or validated.stderr).strip()[-300:],
+    }
+
+
+def _agent_deploy():
+    wf = json.loads(WORKFLOW_JSON.read_text(encoding="utf-8"))
+    body = {
+        "name": wf["name"],
+        "nodes": wf["nodes"],
+        "connections": wf["connections"],
+        "settings": wf.get("settings", {}),
+    }
+    res = n8n_api("PUT", "/workflows/" + N8N_WORKFLOW_DAILY, body)
+    if res is None:
+        return {"ok": False, "error": "n8n deploy failed (offline or API key missing)"}
+    return {"ok": True, "nodes": len(wf["nodes"]), "active": bool(res.get("active"))}
+
+
+def _cost_summary(conn):
+    by_day = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT substr(created_at,1,10) AS day, ROUND(SUM(cost),4) AS cost "
+            "FROM cost_logs WHERE created_at >= date('now','localtime','start of month') "
+            "GROUP BY day ORDER BY day"
+        ).fetchall()
+    ]
+    by_node = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT node_name, model, SUM(prompt_tokens) AS prompt_tokens, "
+            "SUM(completion_tokens) AS completion_tokens, ROUND(SUM(cost),4) AS cost "
+            "FROM cost_logs GROUP BY node_name ORDER BY cost DESC"
+        ).fetchall()
+    ]
+    return {"by_day": by_day, "by_node": by_node}
+
+
+def _executions():
+    rows = []
+    for label, wf_id in (
+        ("日更", N8N_WORKFLOW_DAILY),
+        ("周会", N8N_WORKFLOW_WEEKLY),
+    ):
+        res = n8n_api("GET", f"/executions?workflowId={wf_id}&limit=20")
+        if isinstance(res, dict) and isinstance(res.get("data"), list):
+            for e in res["data"]:
+                rows.append(
+                    {
+                        "workflow": label,
+                        "id": e.get("id"),
+                        "status": e.get("status"),
+                        "started_at": e.get("startedAt"),
+                        "stopped_at": e.get("stoppedAt"),
+                    }
+                )
+    rows.sort(key=lambda r: r.get("started_at") or "", reverse=True)
+    return rows[:30]
 
 
 def _handle_control(conn, payload):
@@ -270,7 +452,8 @@ def make_handler(db_path):
                     finally:
                         conn.close()
                 elif path in ("/api/summary", "/api/novels", "/api/publish_logs",
-                              "/api/alerts", "/api/reader_stats", "/api/hot_topics"):
+                              "/api/alerts", "/api/reader_stats", "/api/hot_topics",
+                              "/api/agents", "/api/cost", "/api/executions"):
                     conn = db.connect(db_path)
                     try:
                         self._json(_endpoint(conn, path.split("/")[-1]))
@@ -285,18 +468,27 @@ def make_handler(db_path):
 
         def do_POST(self):  # noqa: N802
             parsed = urlparse(self.path)
-            if parsed.path != "/api/control":
+            if parsed.path not in ("/api/control", "/api/agents"):
                 self.send_error(404, "Not Found")
                 return
             try:
                 length = int(self.headers.get("Content-Length") or 0)
                 raw = self.rfile.read(length) if length else b"{}"
                 payload = json.loads(raw.decode("utf-8") or "{}")
-                conn = db.connect(db_path)
-                try:
-                    result = _handle_control(conn, payload)
-                finally:
-                    conn.close()
+                if parsed.path == "/api/control":
+                    conn = db.connect(db_path)
+                    try:
+                        result = _handle_control(conn, payload)
+                    finally:
+                        conn.close()
+                else:
+                    action = payload.get("action")
+                    if action == "save":
+                        result = _agent_save(payload)
+                    elif action == "deploy":
+                        result = _agent_deploy()
+                    else:
+                        result = {"ok": False, "error": f"unknown action {action}"}
                 self._json(result)
             except Exception as exc:  # noqa: BLE001
                 self._json({"ok": False, "error": str(exc)}, status=500)
@@ -373,6 +565,12 @@ def _endpoint(conn, name):
         return _load_reader_stats()
     if name == "hot_topics":
         return _load_hot_topics()
+    if name == "agents":
+        return {"agents": _agents_list()}
+    if name == "cost":
+        return _cost_summary(conn)
+    if name == "executions":
+        return {"executions": _executions()}
     return {"error": f"未知端点 {name}"}
 
 

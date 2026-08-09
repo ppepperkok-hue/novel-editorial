@@ -11,7 +11,7 @@ import {
 export default function ReaderChart({ stats }) {
   if (!stats?.present) {
     return (
-      <div className="muted text-sm">
+      <div className="muted text-sm leading-relaxed">
         暂无真实阅读数据。完读率/追读率由每日「采集阅读数据」自动写入。
       </div>
     );

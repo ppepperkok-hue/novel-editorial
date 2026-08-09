@@ -22,6 +22,7 @@ tools/rewrite_blueprints.json
 __pycache__/
 *.pyc
 .venv/
+*.egg-info/
 
 # 前端工程
 webapp/node_modules/

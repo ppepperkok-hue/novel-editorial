@@ -13,3 +13,8 @@ desktop = ["pywebview>=5.0"]
 
 [tool.setuptools.packages.find]
 include = ["novel_pipeline*"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+]
