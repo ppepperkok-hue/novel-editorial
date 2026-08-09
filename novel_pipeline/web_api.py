@@ -447,6 +447,10 @@ def _handle_control(conn, payload):
         set_many(conn, values)
         return {"ok": True, "saved": values}
     if action == "run_now":
+        if payload.get("workflow") == "daily":
+            # Manual runs must bypass the "already published today" guard,
+            # while still honoring cookie/budget/enabled preflight checks.
+            set_many(conn, {"manual_run_requested": "1"})
         return _run_workflow_now(payload.get("workflow") or "daily")
     if action == "apply_schedule":
         time_value = (payload.get("time") or "").strip()
