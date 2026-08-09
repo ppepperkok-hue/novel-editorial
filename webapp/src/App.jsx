@@ -33,6 +33,37 @@ const PAGE_META = {
 };
 
 const TOAST_ICON = { ok: "✓", bad: "✕", warn: "!" };
+const desktopApi = typeof window !== "undefined" ? window.desktopApi || null : null;
+
+function TitleBar() {
+  const [maximized, setMaximized] = useState(false);
+  useEffect(() => {
+    desktopApi?.isMaximized?.().then(setMaximized).catch(() => {});
+  }, []);
+  return (
+    <header className="titlebar">
+      <div className="titlebar-brand">
+        <span className="titlebar-logo">笔</span>
+        <span className="titlebar-name">小说流水线</span>
+        <span className="titlebar-sub">Novel Pipeline Console</span>
+      </div>
+      <div className="titlebar-controls">
+        <button className="win-btn" title="最小化" onClick={() => desktopApi.minimize()}>─</button>
+        <button
+          className="win-btn"
+          title={maximized ? "还原" : "最大化"}
+          onClick={async () => {
+            await desktopApi.maximize();
+            setMaximized(await desktopApi.isMaximized());
+          }}
+        >
+          {maximized ? "❐" : "▢"}
+        </button>
+        <button className="win-btn win-close" title="关闭" onClick={() => desktopApi.close()}>✕</button>
+      </div>
+    </header>
+  );
+}
 
 function SidebarSkeleton() {
   return (
@@ -133,37 +164,42 @@ export default function App() {
   if (!data) {
     return (
       <div className="app-shell">
-        <SidebarSkeleton />
-        <main className="main">
-          <div className="topbar">
-            <div className="skeleton h-6 w-40" />
-            <div className="skeleton h-8 w-28" />
-          </div>
-          <div className="content">
-            <div className="kpi-grid">
-              {Array.from({ length: 9 }).map((_, i) => (
-                <div key={i} className="card kpi">
-                  <div className="skeleton mb-2 h-3 w-16" />
-                  <div className="skeleton h-7 w-20" />
-                </div>
-              ))}
+        {desktopApi ? <TitleBar /> : null}
+        <div className="app-body">
+          <SidebarSkeleton />
+          <main className="main">
+            <div className="topbar">
+              <div className="skeleton h-6 w-40" />
+              <div className="skeleton h-8 w-28" />
             </div>
-            <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-3">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="panel p-4">
-                  <div className="skeleton mb-3 h-4 w-32" />
-                  <div className="skeleton h-24 w-full" />
-                </div>
-              ))}
+            <div className="content">
+              <div className="kpi-grid">
+                {Array.from({ length: 9 }).map((_, i) => (
+                  <div key={i} className="card kpi">
+                    <div className="skeleton mb-2 h-3 w-16" />
+                    <div className="skeleton h-7 w-20" />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="panel p-4">
+                    <div className="skeleton mb-3 h-4 w-32" />
+                    <div className="skeleton h-24 w-full" />
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        </main>
+          </main>
+        </div>
       </div>
     );
   }
 
   return (
     <div className={`app-shell ${mini ? "mini-sidebar" : ""}`}>
+      {desktopApi ? <TitleBar /> : null}
+      <div className="app-body">
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-logo">笔</div>
@@ -240,6 +276,7 @@ export default function App() {
           </ErrorBoundary>
         </div>
       </main>
+      </div>
 
       <div className="toast-wrap">
         {toasts.map((t) => (

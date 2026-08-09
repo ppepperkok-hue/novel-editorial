@@ -164,3 +164,20 @@ Toast 带图标、执行失败可查看原因弹窗、作品库搜索与批量�
 
 注意：Windows 浅色主题下窗口边缘仍有系统阴影光晕，开启系统深色模式后
 完全消失；面板本身在任何主题下都是深色。
+
+## 10. Electron 桌面壳（2026-08-10）
+
+为获得真正的现代软件窗口体验（无系统标题栏、自绘深色标题栏、圆角），
+桌面壳从 pywebview 切换到 Electron（与 Codex 桌面同类引擎）：
+
+- `desktop/main.js`：frameless 窗口（1320x880），启动时自动拉起
+  `pythonw -m novel_pipeline.web_api`（8000 被占用则复用），窗口关闭时
+  回收自起的 API 进程；IPC 处理最小化/最大化/关闭。
+- `desktop/preload.js`：`contextBridge` 暴露 `window.desktopApi`。
+- 前端在 Electron 环境渲染 42px 自绘标题栏（`app-region: drag` 拖动 +
+  品牌区 + 最小化/最大化/关闭按钮），浏览器访问时自动隐藏。
+- `launch_desktop.vbs` 启动器 + 桌面快捷方式（wscript → vbs → electron）。
+
+开发运行：`cd desktop && npm install && npm start`；
+安装依赖使用 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`。
+`novel_pipeline/desktop.py`（pywebview 版）保留作后备入口。

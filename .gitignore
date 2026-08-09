@@ -28,6 +28,9 @@ __pycache__/
 # 前端工程
 webapp/node_modules/
 webapp/dist/
+desktop/node_modules/
+desktop/dist/
+desktop/out/
 
 # 编辑器 / 系统
 .vscode/
