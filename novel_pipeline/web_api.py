@@ -1,22 +1,12 @@
-"""实时监控 Web API：读取 SQLite 与监控产物，供前端轮询展示。
-
-端点：
-  /                 监控面板（web/index.html）
-  /api/dashboard    汇总负载（一次拉全，前端每 5 秒轮询）
-  /api/summary /api/novels /api/chapters /api/publish_logs
-  /api/health /api/reader_stats /api/hot_topics /api/alerts
-"""
+"""实时监控 Web API：路由层，业务逻辑在 novel_pipeline.services。"""
 
 import argparse
 import json
 import mimetypes
 import os
-import subprocess
 import sys
 import threading
 import time
-import urllib.error
-import urllib.request
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -25,379 +15,22 @@ from urllib.parse import parse_qs, urlparse
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import config, data_feedback, db, monitor
-from tools import render_workflow
+from novel_pipeline import config, db  # noqa: E402
+from novel_pipeline.services import (  # noqa: E402
+    agents as agents_service,
+    control as control_service,
+    dashboard as dashboard_service,
+    ending as ending_service,
+    misc as misc_service,
+    n8n as n8n_service,
+)
 
-WEB_DIR = config.ROOT / "web"
-WEBAPP_DIST = config.ROOT / "webapp" / "dist"
-ALERTS_LOG = config.ALERTS_LOG
-HOT_TOPICS_JSON = config.HOT_TOPICS_JSON
-READER_CSV = config.READER_CSV
-
-N8N_BASE = config.N8N_BASE
-N8N_WORKFLOW_DAILY = config.N8N_WORKFLOW_DAILY
-N8N_WORKFLOW_WEEKLY = config.N8N_WORKFLOW_WEEKLY
-ALLOWED_SETTINGS = {
-    "daily_enabled",
-    "monthly_budget",
-    "target_words",
-    "style_tweak",
-    "daily_run_time",
-    "daily_chapters",
-    "target_chapters",
-}
-_N8N_KEY = None
-_EXEC_ERROR_CACHE = {}
 _SNAPSHOT = {}
 _SNAPSHOT_LOCK = threading.Lock()
 _SNAPSHOT_THREAD_STARTED = False
-AGENTS_DIR = config.AGENTS_DIR
-WORKFLOW_JSON = config.WORKFLOW_JSON
-VALIDATE_JS = config.VALIDATE_JS
-AGENT_DISPLAY = {
-    "planner.md": "策划官",
-    "guard.md": "世界观守护",
-    "writer.md": "叙事写手",
-    "editor.md": "文字编辑",
-    "reviewer.md": "逻辑审稿",
-    "reader.md": "读者体验审稿",
-    "eic.md": "主编终审",
-    "memory.md": "记忆官",
-    "work_meta.md": "作品资料",
-}
-AGENT_DESC = {
-    "planner.md": "生成/增量更新故事圣经与两章细纲",
-    "guard.md": "动笔前拦截 OOC/吃书/伏笔矛盾，输出约束与角色言行要点",
-    "writer.md": "按细纲+角色卡+守护约束写正文（A/B 共用）",
-    "editor.md": "去 AI 味、翻译腔、标点、节奏收紧（A/B 共用）",
-    "reviewer.md": "六类底线问题 + 风格检查（A/B 共用）",
-    "reader.md": "追读欲/钩子/情绪满足评分（A/B 共用）",
-    "eic.md": "仲裁逻辑审稿与读者审稿，输出 verdict 与 must_fix（A/B 共用）",
-    "memory.md": "提取摘要、角色状态、事件、伏笔台账（A/B 共用）",
-    "work_meta.md": "书名/简介/标签/主角/卷目标",
-}
-
-
-def _load_n8n_env():
-    global _N8N_KEY
-    if _N8N_KEY is None:
-        _N8N_KEY = config.env_value("N8N_API_KEY", "")
-        _N8N_KEY = _N8N_KEY or os.environ.get("N8N_API_KEY", "")
-    return _N8N_KEY
-
-
-def n8n_api(method, path, body=None, timeout=6):
-    """Call the n8n public API; returns parsed JSON or None on any failure."""
-    key = _load_n8n_env()
-    if not key:
-        return None
-    data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(
-        N8N_BASE + "/api/v1" + path,
-        data=data,
-        method=method,
-        headers={
-            "X-N8N-API-KEY": key,
-            "Content-Type": "application/json" if data else "text/plain",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return json.loads(r.read().decode("utf-8", "ignore"))
-    except (urllib.error.URLError, OSError, ValueError):
-        return None
-
-
-def _workflow_status(wf_id):
-    info = n8n_api("GET", "/workflows/" + wf_id)
-    if info is None:
-        return {"online": False, "active": None, "last": None}
-    last = None
-    execs = n8n_api("GET", f"/executions?workflowId={wf_id}&limit=1")
-    if isinstance(execs, dict) and isinstance(execs.get("data"), list) and execs["data"]:
-        e = execs["data"][0]
-        last = {
-            "id": e.get("id"),
-            "status": e.get("status"),
-            "started_at": e.get("startedAt"),
-            "stopped_at": e.get("stoppedAt"),
-        }
-    return {"online": True, "active": bool(info.get("active")), "last": last}
-
-
-def _load_control(conn):
-    from tools.app_settings import get_all  # noqa: PLC0415
-
-    return {
-        "settings": get_all(conn),
-        "workflows": {
-            "daily": _workflow_status(N8N_WORKFLOW_DAILY),
-            "weekly": _workflow_status(N8N_WORKFLOW_WEEKLY),
-        },
-    }
-
-
-def _extract_node_system(body):
-    start = body.find("{role:'system',content:'")
-    end = body.find("'},{role:'user'", start)
-    if start < 0 or end < 0:
-        return None
-    return body[start + len("{role:'system',content:'") : end]
-
-
-def _agent_files():
-    files = sorted(set(render_workflow.AGENT_FILES.values()))
-    return [f for f in files if (AGENTS_DIR / f).exists()]
-
-
-def _agents_list():
-    wf = json.loads(WORKFLOW_JSON.read_text(encoding="utf-8"))
-    nodes = {n["name"]: n for n in wf["nodes"]}
-    agents = []
-    for f in _agent_files():
-        meta, prompt = render_workflow.parse_asset(AGENTS_DIR / f)
-        mapped = [
-            name for name, fn in render_workflow.AGENT_FILES.items() if fn == f
-        ]
-        synced = True
-        for name in mapped:
-            node = nodes.get(name)
-            if node is None:
-                synced = False
-                continue
-            body = node["parameters"]["jsonBody"]
-            system = _extract_node_system(body)
-            if system is None:
-                synced = False
-                continue
-            norm = system.replace(
-                render_workflow.TARGET_WORDS_EXPR,
-                render_workflow.TARGET_WORDS_PLACEHOLDER,
-            ).replace("\\'", "'").replace('\\"', '"').replace("\\\\", "\\")
-            if norm != prompt:
-                synced = False
-        agents.append(
-            {
-                "file": f,
-                "name": AGENT_DISPLAY.get(f, f),
-                "description": AGENT_DESC.get(f, ""),
-                "model": meta.get("model", ""),
-                "temperature": meta.get("temperature", ""),
-                "prompt": prompt,
-                "nodes": mapped,
-                "synced": synced,
-            }
-        )
-    return agents
-
-
-def _agent_save(payload):
-    f = str(payload.get("file") or "")
-    if f not in set(render_workflow.AGENT_FILES.values()):
-        return {"ok": False, "error": "unknown agent file"}
-    model = str(payload.get("model") or "").strip()
-    try:
-        temperature = float(payload.get("temperature"))
-    except (TypeError, ValueError):
-        return {"ok": False, "error": "temperature must be a number"}
-    if not (0 <= temperature <= 2):
-        return {"ok": False, "error": "temperature must be 0-2"}
-    prompt = str(payload.get("prompt") or "").strip()
-    if len(prompt) < 20:
-        return {"ok": False, "error": "prompt too short"}
-    (AGENTS_DIR / f).write_text(
-        f"---\nmodel: {model}\ntemperature: {temperature}\n---\n\n{prompt}\n",
-        encoding="utf-8",
-    )
-    try:
-        rendered = subprocess.run(
-            [sys.executable, str(ROOT / "tools" / "render_workflow.py")],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=60,
-        )
-        validated = subprocess.run(
-            ["node", str(VALIDATE_JS)],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=60,
-        )
-    except OSError as e:
-        return {"ok": False, "error": f"render/validate failed: {e}"}
-    return {
-        "ok": True,
-        "render": (rendered.stdout or rendered.stderr).strip()[-300:],
-        "validation": validated.returncode == 0,
-        "validation_output": (validated.stdout or validated.stderr).strip()[-300:],
-    }
-
-
-def _agent_deploy():
-    wf = json.loads(WORKFLOW_JSON.read_text(encoding="utf-8"))
-    body = {
-        "name": wf["name"],
-        "nodes": wf["nodes"],
-        "connections": wf["connections"],
-        "settings": wf.get("settings", {}),
-    }
-    res = n8n_api("PUT", "/workflows/" + N8N_WORKFLOW_DAILY, body)
-    if res is None:
-        return {"ok": False, "error": "n8n deploy failed (offline or API key missing)"}
-    return {"ok": True, "nodes": len(wf["nodes"]), "active": bool(res.get("active"))}
-
-
-WEBHOOK_PATHS = {
-    "daily": "novel-manual-run",
-    "weekly": "novel-weekly-run",
-}
-
-
-def _run_workflow_now(workflow):
-    """Manually trigger a workflow through its webhook entry (n8n 2.x has
-    no public run endpoint, so each workflow carries a Webhook trigger)."""
-    hook_path = WEBHOOK_PATHS.get(workflow)
-    if not hook_path:
-        return {"ok": False, "error": "workflow must be daily|weekly"}
-    req = urllib.request.Request(
-        N8N_BASE + "/webhook/" + hook_path,
-        data=b"{}",
-        method="POST",
-        headers={"Content-Type": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=10) as r:
-            payload = r.read().decode("utf-8", "ignore")
-        return {"ok": True, "response": payload, "workflow": workflow}
-    except urllib.error.HTTPError as e:
-        return {
-            "ok": False,
-            "error": f"webhook trigger failed: HTTP {e.code}",
-        }
-    except (urllib.error.URLError, OSError) as e:
-        return {"ok": False, "error": f"n8n unreachable: {e}"}
-
-
-def _apply_schedule(conn):
-    """Write daily_run_time into the schedule trigger and deploy to n8n."""
-    row = conn.execute(
-        "SELECT value FROM settings WHERE key='daily_run_time'"
-    ).fetchone()
-    value = (row["value"] if row else "08:00").strip()
-    parts = value.split(":")
-    if len(parts) != 2:
-        return {"ok": False, "error": f"daily_run_time must be HH:MM, got {value!r}"}
-    try:
-        hour = int(parts[0])
-        minute = int(parts[1])
-    except ValueError:
-        return {"ok": False, "error": f"daily_run_time must be HH:MM, got {value!r}"}
-    if not (0 <= hour <= 23 and 0 <= minute <= 59):
-        return {"ok": False, "error": "time out of range (00:00-23:59)"}
-
-    wf = json.loads(WORKFLOW_JSON.read_text(encoding="utf-8"))
-    found = False
-    for node in wf["nodes"]:
-        if node.get("type") == "n8n-nodes-base.scheduleTrigger":
-            rule = node.setdefault("parameters", {}).setdefault("rule", {})
-            for item in rule.get("interval", []):
-                item["triggerAtHour"] = hour
-                item["triggerAtMinute"] = minute
-                found = True
-    if not found:
-        return {"ok": False, "error": "schedule trigger node not found in workflow"}
-    WORKFLOW_JSON.write_text(
-        json.dumps(wf, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    deployed = _agent_deploy()
-    return {
-        "ok": deployed["ok"],
-        "time": f"{hour:02d}:{minute:02d}",
-        "deploy": deployed,
-    }
-
-
-def _cost_summary(conn):
-    by_day = [
-        dict(r)
-        for r in conn.execute(
-            "SELECT substr(created_at,1,10) AS day, ROUND(SUM(cost),4) AS cost "
-            "FROM cost_logs WHERE created_at >= date('now','localtime','start of month') "
-            "GROUP BY day ORDER BY day"
-        ).fetchall()
-    ]
-    by_node = [
-        dict(r)
-        for r in conn.execute(
-            "SELECT node_name, model, SUM(prompt_tokens) AS prompt_tokens, "
-            "SUM(completion_tokens) AS completion_tokens, ROUND(SUM(cost),4) AS cost "
-            "FROM cost_logs GROUP BY node_name ORDER BY cost DESC"
-        ).fetchall()
-    ]
-    return {"by_day": by_day, "by_node": by_node}
-
-
-def _executions():
-    rows = []
-    for label, wf_id in (
-        ("日更", N8N_WORKFLOW_DAILY),
-        ("周会", N8N_WORKFLOW_WEEKLY),
-    ):
-        res = n8n_api("GET", f"/executions?workflowId={wf_id}&limit=20")
-        if isinstance(res, dict) and isinstance(res.get("data"), list):
-            for e in res["data"]:
-                rows.append(
-                    {
-                        "workflow": label,
-                        "id": e.get("id"),
-                        "status": e.get("status"),
-                        "started_at": e.get("startedAt"),
-                        "stopped_at": e.get("stoppedAt"),
-                    }
-                )
-    rows.sort(key=lambda r: r.get("started_at") or "", reverse=True)
-    rows = rows[:30]
-    # Attach a short error summary for failed runs (cached 60s so the
-    # executions page can show why a run failed without hammering n8n).
-    now = datetime.now().timestamp()
-    for row in rows:
-        if row["status"] in ("success", "running", "waiting", None):
-            continue
-        exec_id = row.get("id")
-        if exec_id is None:
-            continue
-        cached = _EXEC_ERROR_CACHE.get(exec_id)
-        if cached and now - cached[0] < 60:
-            row["error"] = cached[1]
-            continue
-        detail = n8n_api("GET", f"/executions/{exec_id}?includeData=true", timeout=3)
-        error = None
-        try:
-            if detail and detail.get("data", {}).get("resultData", {}).get("error"):
-                err = detail["data"]["resultData"]["error"]
-                message = str(err.get("message") or "")
-                node = (
-                    (err.get("node") or {}).get("name")
-                    if isinstance(err.get("node"), dict)
-                    else None
-                )
-                if node:
-                    message = f"[{node}] {message}"
-                error = message[:500]
-        except (TypeError, AttributeError):
-            error = None
-        _EXEC_ERROR_CACHE[exec_id] = (now, error)
-        row["error"] = error
-    return rows
 
 
 def _snapshot_loop(db_path):
-    """Background aggregator: keeps a small JSON snapshot fresh for SSE."""
     while True:
         try:
             conn = db.connect(db_path)
@@ -405,12 +38,12 @@ def _snapshot_loop(db_path):
                 snapshot = {
                     "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "workflows": {
-                        "daily": _workflow_status(N8N_WORKFLOW_DAILY),
-                        "weekly": _workflow_status(N8N_WORKFLOW_WEEKLY),
+                        "daily": n8n_service.workflow_status(config.N8N_WORKFLOW_DAILY),
+                        "weekly": n8n_service.workflow_status(config.N8N_WORKFLOW_WEEKLY),
                     },
-                    "executions": _executions()[:5],
-                    "issues": len(_load_alerts(conn)["issues"]),
-                    "monthly_cost": _load_summary(conn)["monthly_cost"],
+                    "executions": n8n_service.executions()[:5],
+                    "issues": len(misc_service.load_alerts(conn)["issues"]),
+                    "monthly_cost": dashboard_service.load_summary(conn)["monthly_cost"],
                 }
             finally:
                 conn.close()
@@ -426,326 +59,29 @@ def _ensure_snapshot_thread(db_path):
     with _SNAPSHOT_LOCK:
         if not _SNAPSHOT_THREAD_STARTED:
             _SNAPSHOT_THREAD_STARTED = True
-            threading.Thread(
-                target=_snapshot_loop, args=(db_path,), daemon=True
-            ).start()
+            threading.Thread(target=_snapshot_loop, args=(db_path,), daemon=True).start()
 
 
-def _handle_control(conn, payload):
-    from tools.app_settings import set_many  # noqa: PLC0415
-
-    action = payload.get("action")
-    if action == "save_settings":
-        values = {
-            k: v
-            for k, v in (payload.get("settings") or {}).items()
-            if k in ALLOWED_SETTINGS
-        }
-        set_many(conn, values)
-        return {"ok": True, "saved": values}
-    if action == "run_now":
-        if payload.get("workflow") == "daily":
-            # Manual runs must bypass the "already published today" guard,
-            # while still honoring cookie/budget/enabled preflight checks.
-            set_many(conn, {"manual_run_requested": "1"})
-            chapters = payload.get("chapters")
-            if chapters:
-                try:
-                    n = max(1, min(int(chapters), 10))
-                except (TypeError, ValueError):
-                    n = 0
-                if n:
-                    set_many(conn, {"pending_publish": str(n)})
-        return _run_workflow_now(payload.get("workflow") or "daily")
-    if action == "apply_schedule":
-        time_value = (payload.get("time") or "").strip()
-        if time_value:
-            set_many(conn, {"daily_run_time": time_value})
-        return _apply_schedule(conn)
-    if action == "request_run":
-        set_many(conn, {"manual_run_requested": "1"})
-        return {"ok": True, "note": "将在下次定时触发时执行"}
-    if action in ("pause", "resume"):
-        wf_id = {
-            "daily": N8N_WORKFLOW_DAILY,
-            "weekly": N8N_WORKFLOW_WEEKLY,
-        }.get(payload.get("workflow"))
-        if not wf_id:
-            return {"ok": False, "error": "workflow must be daily|weekly"}
-        endpoint = "deactivate" if action == "pause" else "activate"
-        res = n8n_api("POST", f"/workflows/{wf_id}/{endpoint}", body={} if action == "resume" else None)
-        return {"ok": res is not None, "response": res}
-    return {"ok": False, "error": f"unknown action {action}"}
-
-
-def _load_summary(conn):
-    queries = {
-        "novels": "SELECT COUNT(*) c FROM novels",
-        "chapters_total": "SELECT COUNT(*) c FROM chapters",
-        "chapters_draft": "SELECT COUNT(*) c FROM chapters WHERE status='draft'",
-        "chapters_ready": "SELECT COUNT(*) c FROM chapters WHERE status IN ('reviewed','queued')",
-        "chapters_published": "SELECT COUNT(*) c FROM chapters WHERE status='published'",
-        "quality_total": "SELECT COUNT(*) c FROM quality_reports",
-        "quality_passed": "SELECT COUNT(*) c FROM quality_reports WHERE passed=1",
-        "publish_failed": "SELECT COUNT(*) c FROM publish_logs WHERE result='failed'",
-    }
-    summary = {key: conn.execute(sql).fetchone()["c"] for key, sql in queries.items()}
-    cost_row = conn.execute(
-        "SELECT COALESCE(SUM(cost),0) s FROM cost_logs "
-        "WHERE created_at >= date('now','localtime','start of month')"
-    ).fetchone()
-    summary["monthly_cost"] = round(cost_row["s"] or 0.0, 4)
-    return summary
-
-
-def _load_novels(conn):
-    rows = conn.execute(
-        "SELECT n.id, n.title, n.genre, n.platform, n.status, "
-        "n.book_id, n.tags, n.abstract, n.protagonists, n.outline, "
-        "n.volume_goal, n.premise, n.selling_point, n.updated_at, "
-        "(SELECT COUNT(*) FROM chapters c WHERE c.novel_id=n.id) AS chapters, "
-        "(SELECT COUNT(*) FROM chapters c WHERE c.novel_id=n.id "
-        " AND c.status='published') AS published "
-        " , (SELECT title FROM chapters c WHERE c.novel_id=n.id "
-        " ORDER BY c.seq DESC LIMIT 1) AS last_chapter_title "
-        "FROM novels n ORDER BY n.id"
-    ).fetchall()
-    novels = []
-    for r in rows:
-        d = dict(r)
-        for key in ("tags", "protagonists", "outline"):
-            try:
-                d[key] = json.loads(d[key] or "{}" if key == "outline" else d[key] or "[]")
-            except (TypeError, json.JSONDecodeError):
-                d[key] = [] if key != "outline" else {}
-        chars = conn.execute(
-            "SELECT name, role, traits, goals FROM characters "
-            "WHERE novel_id=? ORDER BY id",
-            (d["id"],),
-        ).fetchall()
-        d["characters"] = [dict(c) for c in chars]
-        novels.append(d)
-    return novels
-
-
-def _load_chapters(conn, novel_id=None):
-    sql = (
-        "SELECT c.id, c.novel_id, c.seq, c.outline, c.title, c.status, c.words, c.score, "
-        "c.published_at, c.fanqie_item_id, "
-        "(SELECT r.revision_count FROM quality_reports r "
-        " WHERE r.chapter_id=c.id ORDER BY r.id DESC LIMIT 1) AS revisions "
-        "FROM chapters c"
-    )
-    params = []
-    if novel_id:
-        sql += " WHERE c.novel_id=?"
-        params.append(novel_id)
-    sql += " ORDER BY c.novel_id, c.seq"
-    return [dict(r) for r in conn.execute(sql, params).fetchall()]
-
-
-def _load_publish_logs(conn, limit=50):
-    rows = conn.execute(
-        "SELECT id, chapter_id, platform, action, result, error, ai_declared, created_at "
-        "FROM publish_logs ORDER BY id DESC LIMIT ?",
-        (limit,),
-    ).fetchall()
-    return [dict(r) for r in rows]
-
-
-def _load_alerts(conn):
-    issues = monitor.run_checks(conn)
-    tail = []
-    if ALERTS_LOG.exists():
-        tail = ALERTS_LOG.read_text(encoding="utf-8").strip().splitlines()[-20:]
-    return {"issues": issues, "log_tail": tail}
-
-
-def _load_reader_stats():
-    if not READER_CSV.exists():
-        return {"present": False, "rows": [], "report": None}
-    rows = data_feedback.load_reader_stats(READER_CSV)
-    return {"present": True, "rows": rows, "report": data_feedback.feedback_report(rows)}
-
-
-def _load_hot_topics():
-    if not HOT_TOPICS_JSON.exists():
-        return {"present": False}
-    payload = json.loads(HOT_TOPICS_JSON.read_text(encoding="utf-8"))
-    payload["present"] = True
-    return payload
-
-
-def _export_novels(conn):
-    """Export all novels + chapter content to a Markdown archive on disk."""
-    novels = _load_novels(conn)
-    lines = []
-    total_chapters = 0
-    total_words = 0
-    for n in novels:
-        lines.append(f"# {n['title']}")
-        lines.append("")
-        lines.append(
-            f"- 类型：{n['genre']} · 平台：{n['platform']} · 状态：{n['status']}"
-        )
-        lines.append(f"- 简介：{(n['abstract'] or n['premise'] or '').strip()}")
-        lines.append(f"- 标签：{', '.join(n['tags'] or [])}")
-        chapters = conn.execute(
-            "SELECT * FROM chapters WHERE novel_id=? ORDER BY seq", (n["id"],)
-        ).fetchall()
-        for c in chapters:
-            content_row = conn.execute(
-                "SELECT content FROM chapter_content WHERE chapter_id=?",
-                (c["id"],),
-            ).fetchone()
-            content = (content_row["content"] if content_row else "") or ""
-            total_words += len(content)
-            lines.append("")
-            lines.append(f"## 第 {c['seq']} 章 {c['title']}")
-            lines.append("")
-            lines.append(
-                f"状态：{c['status']} · 字数：{c['words']} · "
-                f"发布时间：{c['published_at'] or '—'}"
-            )
-            lines.append("")
-            lines.append(content if content else "（正文未存档）")
-            total_chapters += 1
-    if not novels:
-        lines.append("（暂无作品）")
-    markdown = "\n".join(lines)
-    out_dir = ROOT / "exports"
-    out_dir.mkdir(exist_ok=True)
-    fname = f"novels_{datetime.now():%Y%m%d_%H%M%S}.md"
-    (out_dir / fname).write_text(markdown, encoding="utf-8")
-    return {
-        "ok": True,
-        "path": str(out_dir / fname),
-        "novels": len(novels),
-        "chapters": total_chapters,
-        "words": total_words,
-    }
-
-
-def _load_meetings(conn, limit=20):
-    rows = conn.execute(
-        "SELECT id, held_at, novel_id, attendees, topics, report, status "
-        "FROM weekly_meetings ORDER BY id DESC LIMIT ?",
-        (limit,),
-    ).fetchall()
-    out = []
-    for r in rows:
-        try:
-            report = json.loads(r["report"] or "{}")
-        except (TypeError, json.JSONDecodeError):
-            report = {}
-        decisions = report.get("decisions") or {}
-        out.append(
-            {
-                "id": r["id"],
-                "held_at": r["held_at"],
-                "novel_id": r["novel_id"],
-                "attendees": json.loads(r["attendees"] or "[]"),
-                "topics": json.loads(r["topics"] or "[]"),
-                "status": r["status"],
-                "summary": report.get("discussion_summary", ""),
-                "blueprint_count": len(decisions.get("blueprint_updates") or []),
-                "volume_goal_adjust": decisions.get("volume_goal_adjust", ""),
-                "action_items": report.get("action_items", []),
-                "report": report,
-            }
-        )
-    return out
-
-
-def _ai_taste(conn, chapter_id):
-    row = conn.execute(
-        "SELECT content FROM chapter_content WHERE chapter_id=?", (chapter_id,)
-    ).fetchone()
-    from tools.ai_taste_check import detect  # noqa: PLC0415
-
-    report = detect(row["content"] if row else "")
-    report["chapter_id"] = chapter_id
-    return report
-
-
-def _ending_status(conn):
-    novels = conn.execute(
-        "SELECT id, title, status, book_id, target_chapters, finish_remaining, finish_note, updated_at "
-        "FROM novels ORDER BY id"
-    ).fetchall()
-    out = []
-    for n in novels:
-        d = dict(n)
-        if n["status"] == "planning":
-            d["next_book_pending"] = True
-        else:
-            d["next_book_pending"] = False
-        out.append(d)
-    return {"novels": out}
-
-
-def _confirm_next_book(conn, novel_id):
-    row = conn.execute(
-        "SELECT id FROM novels WHERE id=? AND status='planning'", (novel_id,)
-    ).fetchone()
-    if row is None:
-        return {"ok": False, "error": "找不到待确认的新书"}
-    conn.execute("UPDATE novels SET status='ready' WHERE id=?", (novel_id,))
-    conn.commit()
-    return {"ok": True, "note": "新书创意已确认，请在番茄建书后绑定 book_id"}
-
-
-def _bind_book(conn, novel_id, book_id, volume_id=""):
-    row = conn.execute(
-        "SELECT id, title FROM novels WHERE id=? AND status='ready'", (novel_id,)
-    ).fetchone()
-    if row is None:
-        return {"ok": False, "error": "新书未确认（先确认创意）"}
-    book_id = str(book_id or "").strip()
-    if not book_id:
-        return {"ok": False, "error": "book_id 不能为空"}
-    conn.execute(
-        "UPDATE novels SET book_id=?, status='publishing' WHERE id=?",
-        (book_id, novel_id),
-    )
-    conn.commit()
-    # update n8n env file
-    env_file = Path.home() / ".n8n" / ".env"
-    lines = []
-    replaced = {"FANQIE_BOOK_ID": False, "FANQIE_VOLUME_ID": False}
-    if env_file.exists():
-        for line in env_file.read_text(encoding="utf-8").splitlines():
-            if line.startswith("FANQIE_BOOK_ID="):
-                lines.append(f"FANQIE_BOOK_ID={book_id}")
-                replaced["FANQIE_BOOK_ID"] = True
-            elif line.startswith("FANQIE_VOLUME_ID="):
-                lines.append(f"FANQIE_VOLUME_ID={volume_id}")
-                replaced["FANQIE_VOLUME_ID"] = True
-            else:
-                lines.append(line)
-    if not replaced["FANQIE_BOOK_ID"]:
-        lines.append(f"FANQIE_BOOK_ID={book_id}")
-    if not replaced["FANQIE_VOLUME_ID"]:
-        lines.append(f"FANQIE_VOLUME_ID={volume_id}")
-    env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return {
-        "ok": True,
-        "note": f"已绑定新书 {book_id}；重启 n8n 后日更自动切换",
-    }
-
-
-def build_payload(conn):
-    return {
-        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "summary": _load_summary(conn),
-        "cost_budget": float(os.environ.get("MONTHLY_BUDGET", "100")),
-        "novels": _load_novels(conn),
-        "chapters": _load_chapters(conn),
-        "publish_logs": _load_publish_logs(conn),
-        "health": _load_alerts(conn),
-        "reader_stats": _load_reader_stats(),
-        "hot_topics": _load_hot_topics(),
-    }
+def _endpoint(conn, name):
+    if name == "summary":
+        return dashboard_service.load_summary(conn)
+    if name == "novels":
+        return dashboard_service.load_novels(conn)
+    if name == "publish_logs":
+        return dashboard_service.load_publish_logs(conn)
+    if name == "alerts":
+        return misc_service.load_alerts(conn)
+    if name == "reader_stats":
+        return misc_service.load_reader_stats()
+    if name == "hot_topics":
+        return misc_service.load_hot_topics()
+    if name == "agents":
+        return {"agents": agents_service.agents_list()}
+    if name == "cost":
+        return dashboard_service.cost_summary(conn)
+    if name == "executions":
+        return {"executions": n8n_service.executions()}
+    return {"error": f"未知端点 {name}"}
 
 
 def make_handler(db_path):
@@ -761,7 +97,7 @@ def make_handler(db_path):
                 elif path == "/api/dashboard":
                     conn = db.connect(db_path)
                     try:
-                        self._json(build_payload(conn))
+                        self._json(dashboard_service.build_payload(conn))
                     finally:
                         conn.close()
                 elif path == "/api/chapters":
@@ -769,7 +105,7 @@ def make_handler(db_path):
                     try:
                         qs = parse_qs(parsed.query)
                         novel_id = int(qs["novel_id"][0]) if qs.get("novel_id") else None
-                        self._json({"chapters": _load_chapters(conn, novel_id)})
+                        self._json({"chapters": dashboard_service.load_chapters(conn, novel_id)})
                     finally:
                         conn.close()
                 elif path == "/api/chapter_content":
@@ -786,14 +122,10 @@ def make_handler(db_path):
                                 (chapter_id,),
                             ).fetchone()
                             self._json(
-                                dict(row) if row else {"chapter_id": chapter_id, "content": "", "updated_at": ""}
+                                dict(row)
+                                if row
+                                else {"chapter_id": chapter_id, "content": "", "updated_at": ""}
                             )
-                    finally:
-                        conn.close()
-                elif path == "/api/control":
-                    conn = db.connect(db_path)
-                    try:
-                        self._json(_load_control(conn))
                     finally:
                         conn.close()
                 elif path == "/api/events":
@@ -801,13 +133,13 @@ def make_handler(db_path):
                 elif path == "/api/export/novels":
                     conn = db.connect(db_path)
                     try:
-                        self._json(_export_novels(conn))
+                        self._json(misc_service.export_novels(conn))
                     finally:
                         conn.close()
                 elif path == "/api/meetings":
                     conn = db.connect(db_path)
                     try:
-                        self._json({"meetings": _load_meetings(conn)})
+                        self._json({"meetings": misc_service.load_meetings(conn)})
                     finally:
                         conn.close()
                 elif path == "/api/ai_taste":
@@ -818,18 +150,32 @@ def make_handler(db_path):
                         if chapter_id is None:
                             self._json({"error": "chapter_id required"}, status=400)
                         else:
-                            self._json(_ai_taste(conn, chapter_id))
+                            self._json(misc_service.ai_taste(conn, chapter_id))
                     finally:
                         conn.close()
                 elif path == "/api/ending/status":
                     conn = db.connect(db_path)
                     try:
-                        self._json(_ending_status(conn))
+                        self._json(ending_service.ending_status(conn))
                     finally:
                         conn.close()
-                elif path in ("/api/summary", "/api/novels", "/api/publish_logs",
-                              "/api/alerts", "/api/reader_stats", "/api/hot_topics",
-                              "/api/agents", "/api/cost", "/api/executions"):
+                elif path == "/api/control":
+                    conn = db.connect(db_path)
+                    try:
+                        self._json(control_service.load_control(conn))
+                    finally:
+                        conn.close()
+                elif path in (
+                    "/api/summary",
+                    "/api/novels",
+                    "/api/publish_logs",
+                    "/api/alerts",
+                    "/api/reader_stats",
+                    "/api/hot_topics",
+                    "/api/agents",
+                    "/api/cost",
+                    "/api/executions",
+                ):
                     conn = db.connect(db_path)
                     try:
                         self._json(_endpoint(conn, path.split("/")[-1]))
@@ -861,26 +207,26 @@ def make_handler(db_path):
                 conn = db.connect(db_path)
                 if parsed.path == "/api/control":
                     try:
-                        result = _handle_control(conn, payload)
+                        result = control_service.handle_control(conn, payload)
                     finally:
                         conn.close()
                 elif parsed.path == "/api/agents":
                     action = payload.get("action")
                     if action == "save":
-                        result = _agent_save(payload)
+                        result = agents_service.agent_save(payload)
                     elif action == "deploy":
-                        result = _agent_deploy()
+                        result = agents_service.agent_deploy()
                     else:
                         result = {"ok": False, "error": f"unknown action {action}"}
                     conn.close()
                 elif parsed.path == "/api/ending/confirm":
                     try:
-                        result = _confirm_next_book(conn, payload.get("novel_id"))
+                        result = ending_service.confirm_next_book(conn, payload.get("novel_id"))
                     finally:
                         conn.close()
                 elif parsed.path == "/api/ending/bind":
                     try:
-                        result = _bind_book(
+                        result = ending_service.bind_book(
                             conn,
                             payload.get("novel_id"),
                             payload.get("book_id"),
@@ -894,17 +240,11 @@ def make_handler(db_path):
             except Exception as exc:  # noqa: BLE001
                 self._json({"ok": False, "error": str(exc)}, status=500)
 
-        def _endpoint_data(self, name):
-            conn = db.connect(db_path)
-            try:
-                return _endpoint(conn, name)
-            finally:
-                conn.close()
-
         def _serve_index(self):
-            if WEBAPP_DIST.exists() and self._serve_static("/index.html"):
+            dist = config.ROOT / "webapp" / "dist"
+            if dist.exists() and self._serve_static("/index.html"):
                 return
-            index = WEB_DIR / "index.html"
+            index = config.ROOT / "web" / "index.html"
             if not index.exists():
                 self.send_error(404, "index.html missing")
                 return
@@ -915,6 +255,29 @@ def make_handler(db_path):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+
+        def _serve_static(self, path):
+            dist = (config.ROOT / "webapp" / "dist").resolve()
+            if not dist.exists():
+                return False
+            rel = path.lstrip("/") or "index.html"
+            root = dist
+            target = (root / rel).resolve()
+            if not str(target).startswith(str(root)):
+                return False
+            if target.is_dir():
+                target = target / "index.html"
+            if not target.is_file():
+                return False
+            ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+            data = target.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return True
 
         def _sse(self):
             self.send_response(200)
@@ -938,28 +301,6 @@ def make_handler(db_path):
                         return
                 time.sleep(1)
 
-        def _serve_static(self, path):
-            if not WEBAPP_DIST.exists():
-                return False
-            rel = path.lstrip("/") or "index.html"
-            root = WEBAPP_DIST.resolve()
-            target = (root / rel).resolve()
-            if not str(target).startswith(str(root)):
-                return False
-            if target.is_dir():
-                target = target / "index.html"
-            if not target.is_file():
-                return False
-            ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
-            data = target.read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-            return True
-
         def _json(self, payload, status=200):
             data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
             self.send_response(status)
@@ -973,28 +314,6 @@ def make_handler(db_path):
             pass
 
     return Handler
-
-
-def _endpoint(conn, name):
-    if name == "summary":
-        return _load_summary(conn)
-    if name == "novels":
-        return _load_novels(conn)
-    if name == "publish_logs":
-        return _load_publish_logs(conn)
-    if name == "alerts":
-        return _load_alerts(conn)
-    if name == "reader_stats":
-        return _load_reader_stats()
-    if name == "hot_topics":
-        return _load_hot_topics()
-    if name == "agents":
-        return {"agents": _agents_list()}
-    if name == "cost":
-        return _cost_summary(conn)
-    if name == "executions":
-        return {"executions": _executions()}
-    return {"error": f"未知端点 {name}"}
 
 
 def main():

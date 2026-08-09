@@ -1,0 +1,65 @@
+"""Ending lifecycle: status, next-book confirmation, book binding."""
+
+import json
+from pathlib import Path
+
+from novel_pipeline import config
+
+
+def ending_status(conn):
+    novels = conn.execute(
+        "SELECT id, title, status, book_id, target_chapters, finish_remaining, finish_note, updated_at "
+        "FROM novels ORDER BY id"
+    ).fetchall()
+    out = []
+    for n in novels:
+        d = dict(n)
+        d["next_book_pending"] = n["status"] == "planning"
+        out.append(d)
+    return {"novels": out}
+
+
+def confirm_next_book(conn, novel_id):
+    row = conn.execute(
+        "SELECT id FROM novels WHERE id=? AND status='planning'", (novel_id,)
+    ).fetchone()
+    if row is None:
+        return {"ok": False, "error": "找不到待确认的新书"}
+    conn.execute("UPDATE novels SET status='ready' WHERE id=?", (novel_id,))
+    conn.commit()
+    return {"ok": True, "note": "新书创意已确认，请在番茄建书后绑定 book_id"}
+
+
+def bind_book(conn, novel_id, book_id, volume_id=""):
+    row = conn.execute(
+        "SELECT id, title FROM novels WHERE id=? AND status='ready'", (novel_id,)
+    ).fetchone()
+    if row is None:
+        return {"ok": False, "error": "新书未确认（先确认创意）"}
+    book_id = str(book_id or "").strip()
+    if not book_id:
+        return {"ok": False, "error": "book_id 不能为空"}
+    conn.execute(
+        "UPDATE novels SET book_id=?, status='publishing' WHERE id=?",
+        (book_id, novel_id),
+    )
+    conn.commit()
+    env_file = config.N8N_ENV_FILE
+    lines = []
+    replaced = {"FANQIE_BOOK_ID": False, "FANQIE_VOLUME_ID": False}
+    if env_file.exists():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            if line.startswith("FANQIE_BOOK_ID="):
+                lines.append(f"FANQIE_BOOK_ID={book_id}")
+                replaced["FANQIE_BOOK_ID"] = True
+            elif line.startswith("FANQIE_VOLUME_ID="):
+                lines.append(f"FANQIE_VOLUME_ID={volume_id}")
+                replaced["FANQIE_VOLUME_ID"] = True
+            else:
+                lines.append(line)
+    if not replaced["FANQIE_BOOK_ID"]:
+        lines.append(f"FANQIE_BOOK_ID={book_id}")
+    if not replaced["FANQIE_VOLUME_ID"]:
+        lines.append(f"FANQIE_VOLUME_ID={volume_id}")
+    env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return {"ok": True, "note": f"已绑定新书 {book_id}；重启 n8n 后日更自动切换"}

@@ -55,6 +55,7 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
           style_tweak: c.settings?.style_tweak || "",
           daily_run_time: c.settings?.daily_run_time || "08:00",
           daily_chapters: c.settings?.daily_chapters || 2,
+          target_chapters: c.settings?.target_chapters || 0,
         },
       );
     } catch {
@@ -92,6 +93,7 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
           style_tweak: form.style_tweak,
           daily_run_time: form.daily_run_time,
           daily_chapters: String(form.daily_chapters),
+          target_chapters: String(form.target_chapters),
         },
       });
       if (!r.ok) {
@@ -134,6 +136,7 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
   const budgetNum = Number(form?.monthly_budget);
   const wordsNum = Number(form?.target_words);
   const chaptersNum = Number(form?.daily_chapters);
+  const targetNum = Number(form?.target_chapters);
   const formValid =
     form != null &&
     !Number.isNaN(budgetNum) &&
@@ -143,6 +146,8 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
     wordsNum <= 10000 &&
     chaptersNum >= 1 &&
     chaptersNum <= 4 &&
+    targetNum >= 0 &&
+    targetNum <= 5000 &&
     /^\d{2}:\d{2}$/.test(form.daily_run_time || "");
 
   const wfs = control?.workflows || {};
@@ -258,6 +263,20 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
               />
               <div className="muted mt-1 text-xs">
                 每天先发存稿池里的章节，不够再现场生成补足；多出来的章节会存着下次发。
+              </div>
+            </div>
+            <div>
+              <label className="label">目标总章数（0 = 不限，达到 90% 后周会评估收尾）</label>
+              <input
+                type="number"
+                min="0"
+                max="5000"
+                className="input !w-32"
+                value={form.target_chapters}
+                onChange={(e) => setForm({ ...form, target_chapters: e.target.value })}
+              />
+              <div className="muted mt-1 text-xs">
+                设了上限后，完结评估 Agent 会在临近目标时建议收尾；0 表示只看剧情判断。
               </div>
             </div>
             <div className="flex items-center gap-3">

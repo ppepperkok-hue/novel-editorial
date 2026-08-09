@@ -4,42 +4,60 @@
 
 ```text
 novel-pipeline/
-├── novel_pipeline/          # Python 库：db / web_api / monitor / data_feedback / planner / publisher ...
-├── web/                     # 监控前端（index.html，5 秒轮询 /api/dashboard）
-├── prompts/                 # 提示词资产：writer / reviewer / editor / memory / writing_techniques
-├── tools/                   # 运维脚本（n8n Execute Command 与手动运维均指向这里）
-│   └── archive/             # 历史补丁与一次性脚本（保留备查）
-├── docs/research/           # 调研资料：GitHub 参考项目、写作技巧原始文档
-├── n8n/                     # n8n 工作流 JSON + 运维说明 README
-├── demo_data/               # 样例数据（reader_stats.example.csv 等）
-├── demo.db                  # SQLite 数据库（作品/章节/角色/摘要/伏笔/发布日志）
-├── hot_topics.json          # 热点选题缓存
-├── run_tests.py / pyproject.toml
-└── README.md
+├── novel_pipeline/          # Python 库
+│   ├── config.py            # 集中配置：路径 / env 加载 / 常量
+│   ├── db.py                # SQLite 数据层与迁移
+│   ├── llm_client.py        # 统一 LLM 客户端（DeepSeek 直连 + 旧兼容类）
+│   ├── web_api.py           # HTTP 路由壳（业务在 services/）
+│   ├── services/            # 服务层：n8n / control / dashboard / agents / ending / misc
+│   ├── monitor.py / data_feedback.py / publisher.py ...  # 领域逻辑
+│   └── desktop.py           # pywebview 后备桌面入口
+├── prompts/agents/          # 10 个人格化 Agent（人物档案 + 日常/日记/周记/会议模式）
+├── tools/                   # 流水线脚本
+│   ├── render_workflow.py / export_agent_prompts.py   # Agent 资产 ↔ 工作流
+│   ├── preflight.py / publish_stock.py / check_stock.py  # 日更控制
+│   ├── agent_meeting.py / write_diaries.py / architect_weekly.py / apply_architect.py  # 周会系统
+│   ├── ai_taste_check.py / get_meta.py / record_work.py / collect_reader_stats.py ...
+│   └── debug/               # 一次性调试/探索脚本（probe_*、cdp_*、query_* 等）
+├── webapp/                  # React + Vite 前端（Electron 桌面壳加载）
+├── desktop/                 # Electron 壳（main/preload/release.js）
+├── n8n/                     # n8n 工作流 JSON（日更 60 节点 / 周会 5 节点）
+├── docs/                    # evolution / planning / research
+├── tests/                   # 52 个后端测试 + 前端 Vitest
+└── demo.db / exports / n8n_tmp / backups  # 运行数据
 ```
 
 ## 数据流
 
 ```text
-n8n 每日 08:00
+n8n 每日 08:00 或 Webhook 手动补更
   → 查章节号（番茄 book_list）
   → 读本地资料 tools/get_meta.py（记忆包：故事圣经/蓝图/摘要/角色状态/伏笔/已有标题）
   → 生成作品资料（DeepSeek，仅默认书名时提交修改）
   → 生成两章章纲（Planner，带钩子类型/节奏标注）
-  → 写手A/B（记忆包 + 章纲 + 网文节奏与去AI味规则）
+  → 写手A/B（记忆包 + 章纲 + 去 AI 味/辞藻平实规则）
   → 润色/审稿/质量门（连贯性 + 爽点 + AI 词检查）
-  → 发布番茄（new_article → cover_article → publish_article）
-  → 记录入库 tools/record_work.py（章节/摘要/角色状态/事件/伏笔 → demo.db）
-  → 前端 web_api 展示作品库（书名/简介/标签/主角/大纲/蓝图/章节/发布日志）
+  → 章节入存稿池（status=reviewed）
+  → tools/publish_stock.py 按「每批发布章数」从存稿池发布番茄（存稿优先）
+  → tools/write_diaries.py 全员写当日日记（agent_diaries）
+  → 前端 web_api（services 层）展示作品库/章节/成本/执行/阅读数据
+
+n8n 每周日 08:10（或手动）
+  → tools/agent_meeting.py 多 Agent 会议：
+     全员写周记（含心情）→ 主席点将 → 3 轮通气 → 主席总结报告
+  → weekly_meetings 存档；蓝图/卷目标落盘供日更消费
 ```
 
 ## 关键脚本
 
 - `tools/get_meta.py`：组装记忆包，供写前上下文使用
 - `tools/record_work.py`：运行结果入库（含章节摘要与角色状态沉淀）
-- `tools/paragraphs.py`：正文分段兜底（无换行时按句读自动断段）
-- `tools/rewrite_book.py` / `refix_chapters.py`：整书重写 / 章节重发
-- `tools/n8n_api.py`：n8n 工作流管理（登录/更新/运行/查询执行）
+- `tools/publish_stock.py`：存稿池发布 + 收尾章数递减
+- `tools/agent_meeting.py` / `tools/write_diaries.py`：多 Agent 会议与两级记忆
+- `tools/ai_taste_check.py`：AI 味检测（华丽辞藻/填充词/密度评分）
+- `tools/preflight.py`：日更预检（Cookie/预算/幂等/并发锁）
+- `novel_pipeline/llm_client.py`：统一 DeepSeek 客户端
+- `tools/debug/`：一次性调试脚本（probe_*/cdp_*/query_* 等）
 
 ## 记忆与连贯性
 
