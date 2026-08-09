@@ -21,6 +21,8 @@ from tools import architect_weekly, write_diaries  # noqa: E402
 AGENTS_DIR = ROOT / "prompts" / "agents"
 CORE_AGENTS = ["planner", "guard", "writer", "reader", "memory", "eic"]
 ALL_AGENTS = CORE_AGENTS + ["editor", "reviewer", "work_meta", "ending_judge"]
+materials = {"context": {}, "agent_briefs": {}}
+topic = ""
 
 
 def parse_json(text):
@@ -126,16 +128,24 @@ def write_weekly_diaries(conn, novel_id, dry_run):
 
 def chair_pick(conn, novel_id, dry_run):
     ctx = materials["context"]
+    planning = bool(ctx.get("new_book_planning"))
     finish_metrics = {
         "published": ctx.get("published_chapters", 0),
         "target": ctx.get("target_chapters", 0),
         "open_plot_threads": len(ctx.get("open_plot_threads") or []),
         "last_chapter_seq": ctx.get("last_chapter_seq", 0),
     }
+    meeting_note = (
+        "当前还没有作品，这是一次新书选题会：讨论写什么书、题材与卖点、读者定位、开篇钩子、"
+        "主角与世界观方向。参会名单应包含 planner、reader、memory、guard、writer、eic 等策划向成员。"
+        if planning
+        else ""
+    )
     user = (
         "你是会议主席，请根据会议材料与各位 Agent 的本周心情，决定本次参会名单（最多 8 人，必须包含你自己 eic）"
         "与讨论议题。只输出JSON：{attendees(数组, 从这些名字中选: planner,guard,writer,editor,reviewer,reader,memory,work_meta,ending_judge), topics(数组, 2-4个议题)}。"
         + (f"本次是专题会议，用户指定的主题为「{topic}」，topics 必须以它为核心展开（可补充相关子议题）。" if topic else "")
+        + meeting_note
         + f"完结指标：{json.dumps(finish_metrics, ensure_ascii=False)}；"
         "规则：若已发布章数达到目标章数的 80% 以上（目标>0），或活跃伏笔回收过半、剧情明显进入终局，参会名单必须包含 ending_judge。"
         "会议材料：" + json.dumps(materials["context"], ensure_ascii=False)
@@ -163,9 +173,16 @@ def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run, i
     weekly = latest_weekly(conn, novel_id, agent)
     mood = mood_of(conn, novel_id, agent)
     brief = materials["agent_briefs"].get(agent, {})
+    planning = bool((materials.get("context") or {}).get("new_book_planning"))
     user = (
         f"现在是会议第 {round_no} 轮。"
         + (f"本次会议主题：{topic}。" if topic else "这是周会。")
+        + (
+            "当前没有作品，这是新书选题会：请围绕题材选择、市场热点、读者定位、主角与世界观、"
+            "书名与开篇钩子、连载可行性发表意见，并给出可落地的提案。"
+            if planning
+            else ""
+        )
         + (f"用户指示：{instruction}。请优先响应并落实到你的发言中。" if instruction else "")
         + ("请先回应其他参会者的发言，再发表你的意见。" if round_no > 1 else "请基于你的周记先做本周小结，再发表意见。")
         + "我的本周简报：" + json.dumps(brief, ensure_ascii=False)
@@ -189,6 +206,13 @@ def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run, i
 
 
 def chair_summary(conn, novel_id, attendees, topics, transcript, dry_run):
+    planning = bool((materials.get("context") or {}).get("new_book_planning"))
+    decision_note = (
+        "本次是新书选题会：decisions.next_book 必须输出完整的选题提案"
+        "（book_name, genre, abstract, selling_point, protagonist, 可加 opening_hook 与 target_readers）。"
+        if planning
+        else ""
+    )
     user = (
         "你是会议主席，请总结本次周会并输出报告。参会者：" + json.dumps(attendees, ensure_ascii=False)
         + "；议题：" + json.dumps(topics, ensure_ascii=False)
@@ -199,6 +223,7 @@ def chair_summary(conn, novel_id, attendees, topics, transcript, dry_run):
         "finish_decision({should_finish(bool), remaining_chapters(5-30,不收尾则为0), reasons(数组)},可空), "
         "next_book({book_name, genre, abstract, selling_point, protagonist},仅当作品已完结时输出)}, "
         "disagreements(数组), action_items(数组)}"
+        + decision_note
     )
     text, _, _ = ask(
         conn, novel_id, "eic", user, temperature=0.2, dry_run=dry_run,

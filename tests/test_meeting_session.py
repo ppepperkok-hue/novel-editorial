@@ -2,6 +2,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -19,12 +20,107 @@ class MeetingSessionTests(unittest.TestCase):
     def tearDown(self):
         self.conn.close()
 
-    def test_create_requires_topic_and_novel(self):
+    def test_create_requires_topic(self):
         r = meeting_session.create_session(self.conn, "  ")
         self.assertFalse(r["ok"])
-        r2 = meeting_session.create_session(self.conn, "剧情讨论")
-        self.assertFalse(r2["ok"])
-        self.assertIn("作品", r2["error"])
+        r2 = meeting_session.create_session(self.conn, "第一本书写什么")
+        self.assertTrue(r2["ok"])
+
+    def test_create_without_novel_is_planning_meeting(self):
+        r = meeting_session.create_session(self.conn, "讨论新书选题")
+        self.assertTrue(r["ok"])
+        s = meeting_session.get_session(self.conn, r["session_id"])
+        self.assertEqual(s["novel_id"], 0)
+        self.assertEqual(s["status"], "running")
+
+    def test_planning_meeting_full_chain_without_novel(self):
+        import json
+
+        from tools import agent_meeting
+
+        r = meeting_session.create_session(self.conn, "第一本书写什么")
+        self.assertTrue(r["ok"])
+        sid = r["session_id"]
+
+        def fake_ask(conn, novel_id, agent, user, temperature, dry_run, mock_text, max_tokens=1600):
+            if agent == "eic" and "决定本次参会名单" in user:
+                text = json.dumps(
+                    {
+                        "attendees": ["planner", "reader", "memory", "guard", "writer", "eic"],
+                        "topics": ["新书选题", "卖点", "开篇钩子"],
+                    },
+                    ensure_ascii=False,
+                )
+            elif agent == "eic" and "请总结本次周会" in user:
+                text = json.dumps(
+                    {
+                        "meeting_id": "t",
+                        "date": "2026-08-10 10:00:00",
+                        "attendees": [],
+                        "topics": [],
+                        "discussion_summary": "选题会结论：写都市脑洞文",
+                        "decisions": {
+                            "blueprint_updates": [],
+                            "volume_goal_adjust": "",
+                            "next_book": {
+                                "book_name": "测试新书",
+                                "genre": "都市",
+                                "abstract": "x",
+                                "selling_point": "y",
+                                "protagonist": "z",
+                            },
+                        },
+                        "disagreements": [],
+                        "action_items": [],
+                    },
+                    ensure_ascii=False,
+                )
+            else:
+                text = json.dumps(
+                    {
+                        "weekly_summary": f"{agent} 选题会小结",
+                        "feelings": "期待",
+                        "opinion": "支持新书方向",
+                        "concerns": [],
+                        "proposals": ["确定题材后建书"],
+                        "priority": "高",
+                    },
+                    ensure_ascii=False,
+                )
+            return text, {"prompt_tokens": 1, "completion_tokens": 1}, "mock"
+
+        waits = {"n": 0}
+
+        def fake_sleep(secs):
+            # Each pause between rounds: advance the session as a user would.
+            waits["n"] += 1
+            if waits["n"] <= 2:
+                self.conn.execute(
+                    "UPDATE meeting_sessions SET status='running', instruction='继续', "
+                    "updated_at=datetime('now','localtime') WHERE id=?",
+                    (sid,),
+                )
+                self.conn.commit()
+
+        with (
+            mock.patch("tools.agent_meeting.ask", side_effect=fake_ask),
+            mock.patch("time.sleep", side_effect=fake_sleep),
+        ):
+            meeting_session._run_locked(self.conn, sid)
+
+        s = meeting_session.get_session(self.conn, sid)
+        self.assertEqual(s["status"], "finished")
+        self.assertEqual(len(s["transcript"]), 18)
+        row = self.conn.execute(
+            "SELECT novel_id, report FROM weekly_meetings ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        self.assertEqual(row["novel_id"], 0)
+        report = json.loads(row["report"])
+        self.assertEqual(report["decisions"]["next_book"]["book_name"], "测试新书")
+        n = self.conn.execute(
+            "SELECT COUNT(*) c FROM agent_diaries WHERE diary_type='meeting'"
+        ).fetchone()["c"]
+        self.assertEqual(n, 6)
 
     def test_create_and_advance_state_machine(self):
         self.conn.execute(

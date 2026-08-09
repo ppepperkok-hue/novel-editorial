@@ -223,6 +223,7 @@ export default function MeetingLive({ onArchived }) {
       {msg ? <div className="text-xs text-red-400">{msg}</div> : null}
       <div className="muted text-xs leading-relaxed">
         与周会共用引擎：主席点将、3 轮相互通气、主席总结；会议结论写入每位 Agent 的记忆。每轮结束后可插话指示。
+        还没有作品时直接开会，就是新书选题会——先讨论写什么，结论存档后再建书。
       </div>
     </div>
   );

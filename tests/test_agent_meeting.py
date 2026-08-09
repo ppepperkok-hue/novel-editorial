@@ -102,6 +102,20 @@ class MaterialsTests(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_planning_materials_without_novel(self):
+        path = make_db()
+        from tools import architect_weekly
+
+        conn = db.connect(path)
+        try:
+            self.assertIsNone(architect_weekly.build_materials(conn, 0))
+            m = architect_weekly.build_materials(conn, 0, allow_empty=True)
+            self.assertTrue(m["context"]["new_book_planning"])
+            self.assertEqual(m["context"]["published_chapters"], 0)
+            self.assertEqual(len(m["agent_briefs"]), 10)
+        finally:
+            conn.close()
+
 
 class MeetingDryRunTests(unittest.TestCase):
     def test_meeting_dry_run_full_chain(self):

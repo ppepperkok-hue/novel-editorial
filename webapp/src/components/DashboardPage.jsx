@@ -182,7 +182,14 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
 
       <section className="panel p-4">
         <div className="section-title !mb-3">会议中心</div>
-        <MeetingLive onArchived={onRefresh} />
+        <MeetingLive
+          onArchived={() => {
+            onRefresh();
+            getMeetings()
+              .then((r) => setLatestMeeting(r.meetings?.[0] || null))
+              .catch(() => {});
+          }}
+        />
         {latestMeeting ? (
           <div className="mt-3 border-t border-[var(--line)] pt-3">
             <div className="mb-2 flex flex-wrap items-center gap-2 text-sm">

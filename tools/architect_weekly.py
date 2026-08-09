@@ -50,11 +50,68 @@ def load_hot_topics():
         return {}
 
 
-def build_materials(conn, novel_id):
+def build_planning_materials():
+    """Materials for a new-book planning meeting (no novel yet)."""
+    reader_rows = load_reader_stats()
+    latest_reader = reader_rows[-1] if reader_rows else None
+    context = {
+        "book_name": "",
+        "book_id": "",
+        "genre": "",
+        "premise": "",
+        "volume_goal": "",
+        "status": "planning",
+        "new_book_planning": True,
+        "bible": {
+            "style_guide": "",
+            "characters": [],
+            "world_settings": [],
+            "golden_finger": "",
+            "main_plot": "",
+        },
+        "recent_summaries": [],
+        "open_plot_threads": [],
+        "existing_blueprints": [],
+        "reader_stats": reader_rows,
+        "hot_topics": load_hot_topics(),
+        "last_chapter_seq": 0,
+        "published_chapters": 0,
+        "stock_chapters": 0,
+        "monthly_cost_tokens": {"prompt": 0, "completion": 0},
+        "daily_chapters": 2,
+        "target_chapters": 0,
+        "character_states": [],
+        "quality_summary": {"total": 0, "passed": 0, "avg_score": 0},
+    }
+    agent_briefs = {
+        "planner": {
+            "blueprints_total": 0,
+            "blueprints_upcoming": 0,
+            "outline_updated_at": "",
+            "recent_summaries_count": 0,
+        },
+        "guard": {"open_plot_threads": 0, "chapters_this_week": 0, "setting_conflicts_seen": 0},
+        "writer": {"chapters_this_week": 0, "words_total": 0, "avg_score": 0, "quality_pass_rate": 0},
+        "editor": {"chapters_this_week": 0, "avg_score": 0},
+        "reviewer": {"quality_total": 0, "quality_passed": 0, "avg_score": 0},
+        "reader": {
+            "latest_finish_rate": latest_reader.get("finish_rate") if latest_reader else None,
+            "latest_follow_rate": latest_reader.get("follow_rate") if latest_reader else None,
+            "avg_score": 0,
+        },
+        "memory": {"summaries_count": 0, "open_plot_threads": 0, "character_state_count": 0},
+        "work_meta": {"tags": [], "abstract": "", "volume_goal": ""},
+        "eic": {"quality_total": 0, "quality_passed": 0},
+        "ending_judge": {"published": 0, "target": 0, "open_plot_threads": 0, "last_chapter_seq": 0},
+    }
+    return {"context": context, "agent_briefs": agent_briefs}
+
+
+def build_materials(conn, novel_id, allow_empty=False):
     """Build meeting materials + per-agent weekly briefs."""
     row = conn.execute("SELECT * FROM novels WHERE id=?", (novel_id,)).fetchone()
     if row is None:
-        return None
+        return build_planning_materials() if allow_empty else None
     outline = json.loads(row["outline"] or "{}")
     bible = outline.get("bible") or {}
     blueprints = outline.get("blueprints") or []

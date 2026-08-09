@@ -23,8 +23,6 @@ def create_session(conn, topic, novel_id=0):
     if not novel_id:
         row = conn.execute("SELECT id FROM novels ORDER BY id DESC LIMIT 1").fetchone()
         novel_id = row["id"] if row else 0
-    if not novel_id:
-        return {"ok": False, "error": "请先绑定/创建作品后再开会"}
     cur = conn.execute(
         "INSERT INTO meeting_sessions(kind,topic,status,novel_id,created_at,updated_at) "
         "VALUES('topic',?,?,?,?,?)",
@@ -92,7 +90,9 @@ def _run_locked(conn, session_id):
             return
         novel_id = row["novel_id"]
         topic = row["topic"]
-        materials = architect_weekly.build_materials(conn, novel_id)
+        materials = architect_weekly.build_materials(
+            conn, novel_id, allow_empty=(novel_id == 0)
+        )
         if materials is None:
             conn.execute("UPDATE meeting_sessions SET status='failed' WHERE id=?", (session_id,))
             conn.commit()
