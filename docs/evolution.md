@@ -147,3 +147,20 @@ Toast 带图标、执行失败可查看原因弹窗、作品库搜索与批量�
 
 另修复 `tools/apply_architect.py` 的 `volume_goal` 查询缺字段问题
 （蓝图不带卷目标时崩溃），SQL 改为显式选取 `volume_goal`。
+
+## 9. 桌面壳稳定化（2026-08-10）
+
+此前尝试 pywebview 无边框窗口 + 自绘标题栏 + 手动拖动，在 WebView2 上
+不稳定（CSS app-region 不生效、手动 move 高频调用、窗口偶发退出）。
+已整体重写为稳定方案：
+
+- 恢复系统窗口边框：拖动、缩放、关闭全部由 Windows 原生处理。
+- 深色标题栏/边框/文字：窗口就绪回调（UI 线程）里通过 DWM
+  `DWMWA_USE_IMMERSIVE_DARK_MODE`（20/19）+ Win11 的边框/标题/文字色
+  属性（34/35/36）设置为 `#1a1a1a` 深色，消除白框。
+- 移除前端自定义窗口控制按钮与拖动逻辑；`index.html` 内联深色背景 +
+  `color-scheme: dark`，页面加载瞬间也不白闪。
+- 原生控件（select 下拉、time picker、autofill、number spinner）全部深色化。
+
+注意：Windows 浅色主题下窗口边缘仍有系统阴影光晕，开启系统深色模式后
+完全消失；面板本身在任何主题下都是深色。

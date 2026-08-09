@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 :root {
+  color-scheme: dark;
   --bg: #1a1a1a;
   --bg-soft: #1f1f1f;
   --panel: #242424;
@@ -145,6 +146,50 @@ body {
 .input::placeholder { color: #475569; }
 
 select.input { appearance: none; }
+
+/* native dark-mode coverage: dropdowns, spinners, autofill, details */
+select.input option,
+select option {
+  background: #242424;
+  color: #e8eaed;
+}
+
+input::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.8);
+  cursor: pointer;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  opacity: 0.6;
+  filter: invert(0.8);
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #e8eaed;
+  -webkit-box-shadow: 0 0 0 1000px #1d1d1d inset;
+  box-shadow: 0 0 0 1000px #1d1d1d inset;
+  caret-color: #e8eaed;
+}
+
+details summary::-webkit-details-marker {
+  color: #9aa0a6;
+}
+
+/* any unstyled element must never flash white */
+body,
+#root,
+.app-shell,
+.sidebar,
+.main,
+.topbar,
+.content {
+  background-color: transparent;
+}
 
 textarea.input {
   resize: vertical;
@@ -394,6 +439,7 @@ textarea.input {
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line-soft);
 }
+
 .topbar-title {
   font-size: 17px;
   font-weight: 700;

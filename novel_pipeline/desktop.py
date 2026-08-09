@@ -1,13 +1,18 @@
 """Desktop control panel (pywebview) for the novel pipeline.
 
-Starts the monitoring API on 127.0.0.1 and opens a native window.
+Uses a normal system-framed window (stable drag/resize/close) with a
+dark title bar via the Windows DWM immersive-dark-mode attribute, so the
+panel never flashes a white frame.
+
 Run: python -m novel_pipeline.desktop
 """
 
 import argparse
+import ctypes
 import socket
 import sys
 import threading
+import time
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -15,6 +20,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from novel_pipeline.web_api import make_handler  # noqa: E402
+
+# DWMWA_USE_IMMERSIVE_DARK_MODE: 20 on Win10 2004+/Win11, 19 on older builds
+DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+_dwmapi = ctypes.windll.dwmapi
 
 
 def log(*args):
@@ -31,6 +40,31 @@ def pick_port(preferred):
             except OSError:
                 continue
     return preferred + 100
+
+
+def _dark_titlebar(handle):
+    """Dark title bar + border + caption text (Win11 22H2+ supports attrs 34-36)."""
+    h = ctypes.c_void_p(int(handle))
+    enabled = ctypes.c_int(1)
+    for attr in (20, 19):  # immersive dark mode
+        try:
+            _dwmapi.DwmSetWindowAttribute(
+                h,
+                attr,
+                ctypes.byref(enabled),
+                ctypes.sizeof(enabled),
+            )
+        except (OSError, AttributeError):
+            pass
+    bg = ctypes.c_int(0x001A1A1A)  # COLORREF RGB(26,26,26)
+    fg = ctypes.c_int(0x00EDEAE8)  # COLORREF RGB(232,234,237)
+    for attr, val in ((34, bg), (35, bg), (36, fg)):
+        try:
+            _dwmapi.DwmSetWindowAttribute(
+                h, attr, ctypes.byref(val), ctypes.sizeof(val)
+            )
+        except (OSError, AttributeError):
+            pass
 
 
 def main():
@@ -56,14 +90,20 @@ def main():
         min_size=(1024, 700),
     )
 
-    def _smoke_close():
-        import time
+    def _on_ready():
+        # Runs on the UI thread: WinForms handle access is only valid here.
+        try:
+            native = window.native
+            if native is not None and native.Handle:
+                _dark_titlebar(native.Handle)
+        except Exception:  # noqa: BLE001
+            pass
+        if args.smoke:
+            time.sleep(3)
+            window.destroy()
+            server.shutdown()
 
-        time.sleep(3)
-        window.destroy()
-        server.shutdown()
-
-    webview.start(_smoke_close if args.smoke else None, debug=False)
+    webview.start(_on_ready, debug=False)
     if args.smoke:
         log("smoke ok")
 
