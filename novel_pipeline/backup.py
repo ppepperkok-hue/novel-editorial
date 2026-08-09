@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 DEFAULT_KEEP = 3
+ROOT = Path(__file__).resolve().parent.parent
 
 
 def backup_db(db_path, backup_dir, keep=DEFAULT_KEEP):
@@ -32,7 +33,13 @@ def main():
     ap.add_argument("--backup-dir", default="backups")
     ap.add_argument("--keep", type=int, default=DEFAULT_KEEP)
     args = ap.parse_args()
-    print(backup_db(args.db, args.backup_dir, args.keep))
+    db_path = Path(args.db)
+    if not db_path.is_absolute():
+        db_path = ROOT / db_path
+    backup_dir = Path(args.backup_dir)
+    if not backup_dir.is_absolute():
+        backup_dir = ROOT / backup_dir
+    print(backup_db(db_path, backup_dir, args.keep))
 
 
 if __name__ == "__main__":
