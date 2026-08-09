@@ -185,6 +185,7 @@ function render(data) {
     ["已发布", s.chapters_published, "ok"], ["待发布", s.chapters_ready, "warn"],
     ["草稿", s.chapters_draft, "warn"], ["质量通过率", passRate + "%", "ok"],
     ["发布失败", s.publish_failed, s.publish_failed ? "bad" : "ok"],
+    ["本月成本", "¥" + (s.monthly_cost ?? 0) + " / " + (data.cost_budget ?? 100), s.monthly_cost >= (data.cost_budget ?? 100) ? "bad" : "ok"],
     ["健康问题", data.health.issues.length, data.health.issues.length ? "bad" : "ok"],
   ];
   document.getElementById("cards").innerHTML = cards.map(c =>

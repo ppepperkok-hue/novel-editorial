@@ -98,6 +98,17 @@ CREATE TABLE IF NOT EXISTS chapter_summaries (
     world_events TEXT DEFAULT '[]',
     ending_excerpt TEXT DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS cost_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    novel_id INTEGER,
+    node_name TEXT DEFAULT '',
+    model TEXT DEFAULT '',
+    prompt_tokens INTEGER DEFAULT 0,
+    completion_tokens INTEGER DEFAULT 0,
+    cost REAL DEFAULT 0,
+    created_at TEXT DEFAULT ''
+);
 """
 
 

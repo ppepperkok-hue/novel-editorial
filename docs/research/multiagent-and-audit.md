@@ -72,3 +72,22 @@
   输出 5 条约束；读者审稿 score=8 / would_read_next=true / hook=9。
 - n8n 重启后工作流仍激活（45 节点），仅监听 127.0.0.1。
 - 仓库测试：46 项中 45 项通过（monitor Cookie 用例为环境相关老问题）。
+
+## 四、第二轮加固（全部已知限制收口）
+
+1. **Cookie 失效自动阻断**：新增 `tools/preflight.py`，每天运行前实测 book_list；
+   失效/预算超限/当日已运行都会写 alerts.log 并让工作流跳到「结束」，不再白烧 LLM。
+2. **幂等护栏**：preflight 检查当日是否已有 published 章节，防手动重复触发。
+3. **完读率/追读率自动采集**：发现番茄作者后台真实接口
+   `GET /api/author/stats/chapter_list_v1/v0/`（字段 read_completion_rate /
+   follow_read_rate），新增 `tools/collect_reader_stats.py`，每天运行后写入
+   `demo_data/reader_stats.csv`，前端自动展示。
+4. **发布复核**：发布后调用 `/api/author/chapter/chapter_list/v1` 核对 item_id
+   与 article_status，状态落库为 published / pending，不再盲信 code===0。
+5. **成本熔断与台账**：新增 cost_logs 表，汇总节点收集所有 LLM 节点的 usage
+   token 写入成本台账（单价可经 COST_PRO_PER_1K / COST_FLASH_PER_1K 环境变量
+   调整）；preflight 按月预算 100 元熔断；前端新增「本月成本」卡片。
+6. **n8n 管理员密码强化**：重置为 18 位随机强密码（已单独告知），建议登录后在
+   Settings → Security 再改一次。
+
+已知限制闭环后，剩余唯一手工步骤是 Cookie 过期后从作者后台重抓一次。

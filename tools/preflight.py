@@ -1,0 +1,145 @@
+"""Run preflight checks before a daily n8n run.
+
+Checks:
+1. Fanqie cookie still works (otherwise the whole run would waste LLM budget).
+2. The day has not already published chapters (idempotency guard).
+3. Monthly LLM cost is below budget.
+
+Outputs a single JSON object; exit code is always 0 so n8n can branch on "ok".
+"""
+
+import argparse
+import json
+import os
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from datetime import datetime
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from novel_pipeline import db  # noqa: E402
+
+ENV_FILE = Path.home() / ".n8n" / ".env"
+ALERTS_LOG = ROOT / "alerts.log"
+UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
+)
+
+
+def load_env(env_file):
+    if not Path(env_file).exists():
+        return
+    for line in Path(env_file).read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and "=" in line:
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip())
+
+
+def alert(message):
+    with ALERTS_LOG.open("a", encoding="utf-8") as f:
+        f.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {message}\n")
+
+
+def check_cookie():
+    if not (os.environ.get("FANQIE_COOKIE") and os.environ.get("FANQIE_CSRF_TOKEN")):
+        return False, "Cookie/CSRF 环境变量缺失"
+    qs = urllib.parse.urlencode(
+        {"aid": "2503", "app_name": "muye_novel", "page_index": "0", "page_count": "20"}
+    )
+    req = urllib.request.Request(
+        "https://fanqienovel.com/api/author/book/book_list/v0?" + qs,
+        headers={
+            "Cookie": os.environ["FANQIE_COOKIE"],
+            "X-Secsdk-Csrf-Token": os.environ["FANQIE_CSRF_TOKEN"],
+            "User-Agent": UA,
+            "Accept": "application/json, text/plain, */*",
+            "Origin": "https://fanqienovel.com",
+            "Referer": "https://fanqienovel.com/main/writer/",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            body = json.loads(r.read().decode("utf-8", "ignore"))
+        if body.get("code") == 0:
+            return True, ""
+        return False, "Cookie 失效：" + str(body.get("message") or body)[:120]
+    except urllib.error.HTTPError as e:
+        return False, f"Cookie 请求被拒 HTTP {e.code}"
+    except Exception as e:  # noqa: BLE001
+        return False, f"Cookie 检测异常：{str(e)[:120]}"
+
+
+def check_already_ran(conn):
+    row = conn.execute(
+        "SELECT COUNT(*) c FROM chapters "
+        "WHERE status='published' AND published_at >= date('now','localtime')"
+    ).fetchone()
+    return row["c"] > 0
+
+
+def check_budget(conn, budget):
+    row = conn.execute(
+        "SELECT COALESCE(SUM(cost),0) s FROM cost_logs "
+        "WHERE created_at >= date('now','localtime','start of month')"
+    ).fetchone()
+    spent = round(row["s"] or 0.0, 4)
+    return spent < budget, spent
+
+
+def main():
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+    ap = argparse.ArgumentParser(description="日更运行前预检")
+    ap.add_argument("--db", default="demo.db")
+    ap.add_argument("--budget", type=float, default=100.0)
+    ap.add_argument("--env-file", default=str(ENV_FILE))
+    args = ap.parse_args()
+
+    load_env(args.env_file)
+    db_path = Path(args.db)
+    if not db_path.is_absolute():
+        db_path = ROOT / db_path
+    conn = db.connect(db_path)
+    try:
+        cookie_ok, cookie_reason = check_cookie()
+        already_ran = check_already_ran(conn)
+        budget_ok, spent = check_budget(conn, args.budget)
+        reasons = []
+        if not cookie_ok:
+            reasons.append(cookie_reason)
+            alert("预检失败：" + cookie_reason)
+        if already_ran:
+            reasons.append("今日已发布过章节，跳过防重复")
+        if not budget_ok:
+            reasons.append(f"本月成本 {spent:.2f} 元已达预算 {args.budget:.2f} 元")
+            alert(reasons[-1])
+        ok = cookie_ok and not already_ran and budget_ok
+        print(
+            json.dumps(
+                {
+                    "ok": ok,
+                    "cookie_valid": cookie_ok,
+                    "cookie_reason": cookie_reason,
+                    "already_ran": already_ran,
+                    "budget_ok": budget_ok,
+                    "spent": spent,
+                    "budget": args.budget,
+                    "reasons": reasons,
+                },
+                ensure_ascii=False,
+            )
+        )
+    finally:
+        conn.close()
+
+
+if __name__ == "__main__":
+    main()

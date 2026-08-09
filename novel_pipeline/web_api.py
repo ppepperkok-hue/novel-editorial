@@ -9,6 +9,7 @@
 
 import argparse
 import json
+import os
 import sys
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -37,7 +38,13 @@ def _load_summary(conn):
         "quality_passed": "SELECT COUNT(*) c FROM quality_reports WHERE passed=1",
         "publish_failed": "SELECT COUNT(*) c FROM publish_logs WHERE result='failed'",
     }
-    return {key: conn.execute(sql).fetchone()["c"] for key, sql in queries.items()}
+    summary = {key: conn.execute(sql).fetchone()["c"] for key, sql in queries.items()}
+    cost_row = conn.execute(
+        "SELECT COALESCE(SUM(cost),0) s FROM cost_logs "
+        "WHERE created_at >= date('now','localtime','start of month')"
+    ).fetchone()
+    summary["monthly_cost"] = round(cost_row["s"] or 0.0, 4)
+    return summary
 
 
 def _load_novels(conn):
@@ -122,6 +129,7 @@ def build_payload(conn):
     return {
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "summary": _load_summary(conn),
+        "cost_budget": float(os.environ.get("MONTHLY_BUDGET", "100")),
         "novels": _load_novels(conn),
         "chapters": _load_chapters(conn),
         "publish_logs": _load_publish_logs(conn),

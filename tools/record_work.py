@@ -6,6 +6,7 @@ Usage:
 
 import base64
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -275,6 +276,41 @@ def upsert_chapters(conn, novel_id, chapters):
     conn.commit()
 
 
+def _rate_for_model(model):
+    if "flash" in model:
+        return float(os.environ.get("COST_FLASH_PER_1K", "0.002"))
+    return float(os.environ.get("COST_PRO_PER_1K", "0.01"))
+
+
+def upsert_costs(conn, novel_id, payload):
+    """Record LLM token usage into cost_logs (idempotent per run is not
+    critical; duplicates are bounded by manual re-runs)."""
+    for c in payload.get("costs") or []:
+        if not isinstance(c, dict):
+            continue
+        pt = int(c.get("prompt_tokens") or 0)
+        ct = int(c.get("completion_tokens") or 0)
+        if pt + ct <= 0:
+            continue
+        model = str(c.get("model") or "")
+        rate = _rate_for_model(model)
+        cost = round(pt / 1000.0 * rate + ct / 1000.0 * rate, 6)
+        conn.execute(
+            "INSERT INTO cost_logs(novel_id,node_name,model,prompt_tokens,"
+            "completion_tokens,cost,created_at) VALUES(?,?,?,?,?,?,?)",
+            (
+                novel_id,
+                str(c.get("node") or ""),
+                model,
+                pt,
+                ct,
+                cost,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            ),
+        )
+    conn.commit()
+
+
 def main():
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -289,6 +325,7 @@ def main():
         upsert_characters(conn, novel_id, payload.get("protagonists") or [])
         upsert_volume(conn, novel_id, payload)
         upsert_chapters(conn, novel_id, payload.get("chapters") or [])
+        upsert_costs(conn, novel_id, payload)
         print("recorded novel_id=", novel_id, "chapters=", len(payload.get("chapters") or []))
     finally:
         conn.close()
