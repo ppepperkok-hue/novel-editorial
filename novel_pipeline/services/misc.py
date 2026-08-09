@@ -127,3 +127,49 @@ def character_evolution(conn, novel_id):
         (novel_id,),
     ).fetchall()
     return {"evolution": [dict(r) for r in rows]}
+
+
+def list_diaries(conn, agent=None, diary_type=None, limit=100):
+    sql = (
+        "SELECT id, agent, novel_id, diary_type, content, created_at "
+        "FROM agent_diaries"
+    )
+    params = []
+    conds = []
+    if agent:
+        conds.append("agent=?")
+        params.append(agent)
+    if diary_type:
+        conds.append("diary_type=?")
+        params.append(diary_type)
+    if conds:
+        sql += " WHERE " + " AND ".join(conds)
+    sql += " ORDER BY id DESC LIMIT ?"
+    params.append(limit)
+    rows = conn.execute(sql, params).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["content"] = json.loads(d["content"] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            d["content"] = {}
+        out.append(d)
+    return out
+
+
+def list_states(conn, limit=20):
+    rows = conn.execute(
+        "SELECT agent, novel_id, mood, updated_at FROM agent_states "
+        "ORDER BY id DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["mood"] = json.loads(d["mood"] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            d["mood"] = {}
+        out.append(d)
+    return out

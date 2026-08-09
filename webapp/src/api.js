@@ -121,3 +121,18 @@ export async function getCharacterEvolution(novelId) {
   if (!r.ok) throw new Error("evolution " + r.status);
   return r.json();
 }
+
+export async function getDiaries(agent, type) {
+  const q = new URLSearchParams();
+  if (agent) q.set("agent", agent);
+  if (type) q.set("type", type);
+  const r = await fetch(API_BASE + "/api/diaries?" + q.toString());
+  if (!r.ok) throw new Error("diaries " + r.status);
+  return r.json();
+}
+
+export async function getAgentStates() {
+  const r = await fetch(API_BASE + "/api/agent_states");
+  if (!r.ok) throw new Error("states " + r.status);
+  return r.json();
+}

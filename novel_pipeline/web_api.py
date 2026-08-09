@@ -177,6 +177,22 @@ def make_handler(db_path):
                         self._json(misc_service.character_evolution(conn, novel_id))
                     finally:
                         conn.close()
+                elif path == "/api/diaries":
+                    conn = db.connect(db_path)
+                    try:
+                        qs = parse_qs(parsed.query)
+                        agent = qs["agent"][0] if qs.get("agent") else None
+                        dtype = qs["type"][0] if qs.get("type") else None
+                        limit = int(qs["limit"][0]) if qs.get("limit") else 100
+                        self._json({"diaries": misc_service.list_diaries(conn, agent, dtype, limit)})
+                    finally:
+                        conn.close()
+                elif path == "/api/agent_states":
+                    conn = db.connect(db_path)
+                    try:
+                        self._json({"states": misc_service.list_states(conn)})
+                    finally:
+                        conn.close()
                 elif path == "/api/control":
                     conn = db.connect(db_path)
                     try:
