@@ -93,7 +93,7 @@ export default function App() {
   const toastId = useRef(0);
   const [theme, setTheme] = useState(() => {
     const urlTheme = new URLSearchParams(location.search).get("theme");
-    return urlTheme || localStorage.getItem("panel_theme") || "system";
+    return urlTheme || localStorage.getItem("panel_theme") || "dark";
   });
 
   const pushToast = useCallback((text, kind = "ok") => {
