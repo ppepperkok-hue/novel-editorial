@@ -136,3 +136,21 @@ export async function getAgentStates() {
   if (!r.ok) throw new Error("states " + r.status);
   return r.json();
 }
+
+export async function updateDiary(id, content) {
+  const r = await fetch(API_BASE + "/api/diaries/update", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, content }),
+  });
+  return r.json();
+}
+
+export async function updateAgentState(agent, novelId, mood) {
+  const r = await fetch(API_BASE + "/api/agent_states/update", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ agent, novel_id: novelId, mood }),
+  });
+  return r.json();
+}

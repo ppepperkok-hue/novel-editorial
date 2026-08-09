@@ -12,7 +12,6 @@ import SettingsPage from "./components/SettingsPage.jsx";
 import CommandPalette from "./components/CommandPalette.jsx";
 import MeetingsPage from "./components/MeetingsPage.jsx";
 import AuditPage from "./components/AuditPage.jsx";
-import DiariesPage from "./components/DiariesPage.jsx";
 
 const NAV = [
   { id: "dashboard", label: "仪表盘", icon: "◈" },
@@ -25,7 +24,6 @@ const NAV = [
   { id: "settings", label: "系统设置", icon: "⚙" },
   { id: "meetings", label: "周会档案", icon: "▦" },
   { id: "audit", label: "留痕档案", icon: "≡" },
-  { id: "diaries", label: "Agent 日记", icon: "✎" },
 ];
 
 const PAGE_META = {
@@ -39,7 +37,6 @@ const PAGE_META = {
   settings: ["系统设置", "运行开关、预算、目标字数、更新时间与风格微调"],
   meetings: ["周会档案", "多 Agent 周会的历次会议记录与决策"],
   audit: ["留痕档案", "流水线全量事件审计：设置、操作、Agent、发布、预检"],
-  diaries: ["Agent 日记", "每个 Agent 的每日日记、每周周记与当前心情"],
 };
 
 const TOAST_ICON = { ok: "✓", bad: "✕", warn: "!" };
@@ -328,7 +325,6 @@ export default function App() {
             {page === "settings" && <SettingsPage data={data} onRefresh={refresh} pushToast={pushToast} theme={theme} onThemeChange={changeTheme} />}
             {page === "meetings" && <MeetingsPage />}
             {page === "audit" && <AuditPage />}
-            {page === "diaries" && <DiariesPage />}
           </ErrorBoundary>
         </div>
       </main>

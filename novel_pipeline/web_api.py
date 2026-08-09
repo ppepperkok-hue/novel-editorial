@@ -231,6 +231,8 @@ def make_handler(db_path):
                 "/api/agents",
                 "/api/ending/confirm",
                 "/api/ending/bind",
+                "/api/diaries/update",
+                "/api/agent_states/update",
             ):
                 self.send_error(404, "Not Found")
                 return
@@ -265,6 +267,18 @@ def make_handler(db_path):
                             payload.get("novel_id"),
                             payload.get("book_id"),
                             payload.get("volume_id", ""),
+                        )
+                    finally:
+                        conn.close()
+                elif parsed.path == "/api/diaries/update":
+                    try:
+                        result = misc_service.update_diary(conn, payload.get("id"), payload.get("content"))
+                    finally:
+                        conn.close()
+                elif parsed.path == "/api/agent_states/update":
+                    try:
+                        result = misc_service.update_state(
+                            conn, payload.get("agent"), payload.get("novel_id"), payload.get("mood")
                         )
                     finally:
                         conn.close()

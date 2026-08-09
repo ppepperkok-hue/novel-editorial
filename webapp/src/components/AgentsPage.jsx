@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getAgents, postAgents } from "../api.js";
+import {
+  getAgentStates,
+  getAgents,
+  getDiaries,
+  postAgents,
+  updateAgentState,
+  updateDiary,
+} from "../api.js";
 import { ConfirmDialog } from "./ui.jsx";
 
 const AVATAR_COLORS = [
@@ -25,6 +32,10 @@ export default function AgentsPage({ pushToast }) {
   const [log, setLog] = useState([]);
   const [pendingPick, setPendingPick] = useState(null);
   const [confirmDeploy, setConfirmDeploy] = useState(false);
+  const [diaries, setDiaries] = useState([]);
+  const [states, setStates] = useState([]);
+  const [editDiary, setEditDiary] = useState(null);
+  const [moodDraft, setMoodDraft] = useState(null);
   const logRef = useRef(null);
 
   const load = async () => {
@@ -45,6 +56,16 @@ export default function AgentsPage({ pushToast }) {
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    if (!selected) return;
+    getDiaries(selected.file)
+      .then((r) => setDiaries(r.diaries || []))
+      .catch(() => {});
+    getAgentStates()
+      .then((r) => setStates(r.states || []))
+      .catch(() => {});
+  }, [selected]);
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
@@ -86,6 +107,37 @@ export default function AgentsPage({ pushToast }) {
     !Number.isNaN(tempValue) &&
     tempValue >= 0 &&
     tempValue <= 2;
+
+  const moodOf = states.find((s) => s.agent === selected?.file);
+  const currentMood = moodDraft || moodOf?.mood || {
+    satisfaction: 0.5,
+    concern: 0.5,
+    excitement: 0.5,
+    fatigue: 0.3,
+    note: "",
+  };
+
+  const saveMood = async () => {
+    const r = await updateAgentState(selected.file, 0, currentMood);
+    pushToast(r.ok ? "心情已更新" : "更新失败：" + (r.error || "未知"), r.ok ? "ok" : "bad");
+    setMoodDraft(null);
+    getAgentStates().then((x) => setStates(x.states || []));
+  };
+
+  const saveDiary = async () => {
+    if (!editDiary) return;
+    let content;
+    try {
+      content = JSON.parse(editDiary.text);
+    } catch {
+      pushToast("日记内容必须是合法 JSON", "bad");
+      return;
+    }
+    const r = await updateDiary(editDiary.id, content);
+    pushToast(r.ok ? "日记已更新" : "更新失败：" + (r.error || "未知"), r.ok ? "ok" : "bad");
+    setEditDiary(null);
+    getDiaries(selected.file).then((x) => setDiaries(x.diaries || []));
+  };
 
   const save = async () => {
     if (!selected) return;
@@ -253,6 +305,95 @@ export default function AgentsPage({ pushToast }) {
                   onChange={(e) => setSelected({ ...selected, prompt: e.target.value })}
                 />
                 <div className="muted mt-1.5 text-right text-xs">{selected.prompt.length} 字符</div>
+              </div>
+            </div>
+
+            <div className="border-t border-[var(--line)] px-5 py-4">
+              <div className="label !mb-3">记忆与日记（可修改）</div>
+              <div className="mb-4 rounded-lg border border-[var(--line)] bg-[var(--code-bg)] p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs font-semibold">当前心情</span>
+                  <button className="btn btn-ok !px-3 !py-1 text-xs" onClick={saveMood}>保存心情</button>
+                </div>
+                <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                  {[
+                    ["satisfaction", "满意"],
+                    ["concern", "担忧"],
+                    ["excitement", "兴奋"],
+                    ["fatigue", "疲惫"],
+                  ].map(([k, l]) => (
+                    <label key={k} className="muted text-xs">
+                      {l}
+                      <input
+                        type="number"
+                        min="0"
+                        max="1"
+                        step="0.1"
+                        className="input mt-1"
+                        value={currentMood[k] ?? 0.5}
+                        onChange={(e) => setMoodDraft({ ...currentMood, [k]: Number(e.target.value) })}
+                      />
+                    </label>
+                  ))}
+                </div>
+                <input
+                  className="input mt-2"
+                  placeholder="心情备注（可选）"
+                  value={currentMood.note || ""}
+                  onChange={(e) => setMoodDraft({ ...currentMood, note: e.target.value })}
+                />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                {diaries.slice(0, 6).map((d) => (
+                  <div key={d.id} className="rounded-lg border border-[var(--line)] bg-[var(--code-bg)] p-3">
+                    <div className="flex items-center gap-2">
+                      <span className={`chip ${d.diary_type === "weekly" ? "chip-info" : "chip-warn"}`}>
+                        {d.diary_type === "weekly" ? "周记" : "日记"}
+                      </span>
+                      <span className="muted text-xs">{d.created_at}</span>
+                      <button
+                        className="btn ml-auto !px-2.5 !py-0.5 text-xs"
+                        onClick={() =>
+                          setEditDiary(
+                            editDiary?.id === d.id
+                              ? null
+                              : { id: d.id, text: JSON.stringify(d.content, null, 2) },
+                          )
+                        }
+                      >
+                        {editDiary?.id === d.id ? "取消" : "编辑"}
+                      </button>
+                    </div>
+                    {editDiary?.id === d.id ? (
+                      <div className="mt-2">
+                        <textarea
+                          className="input code min-h-[140px] !text-xs"
+                          value={editDiary.text}
+                          spellCheck={false}
+                          onChange={(e) => setEditDiary({ ...editDiary, text: e.target.value })}
+                        />
+                        <div className="mt-2 flex justify-end">
+                          <button className="btn btn-ok !px-3 !py-1 text-xs" onClick={saveDiary}>保存日记</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+                        {Object.entries(d.content || {})
+                          .filter(([k]) => k !== "mood")
+                          .slice(0, 4)
+                          .map(([k, v]) => (
+                            <span key={k} className="text-[11px] text-slate-400">
+                              {k}：{Array.isArray(v) ? v.join("；") : typeof v === "object" ? JSON.stringify(v) : v}
+                            </span>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {!diaries.length ? (
+                  <div className="muted text-xs">暂无日记。日更后自动生成，周会前写周记。</div>
+                ) : null}
               </div>
             </div>
 

@@ -173,3 +173,30 @@ def list_states(conn, limit=20):
             d["mood"] = {}
         out.append(d)
     return out
+
+
+def update_diary(conn, diary_id, content):
+    if not isinstance(content, dict):
+        return {"ok": False, "error": "content must be an object"}
+    row = conn.execute("SELECT id FROM agent_diaries WHERE id=?", (diary_id,)).fetchone()
+    if row is None:
+        return {"ok": False, "error": "diary not found"}
+    conn.execute(
+        "UPDATE agent_diaries SET content=? WHERE id=?",
+        (json.dumps(content, ensure_ascii=False), diary_id),
+    )
+    conn.commit()
+    return {"ok": True}
+
+
+def update_state(conn, agent, novel_id, mood):
+    if not isinstance(mood, dict):
+        return {"ok": False, "error": "mood must be an object"}
+    conn.execute("DELETE FROM agent_states WHERE agent=? AND novel_id=?", (agent, novel_id))
+    conn.execute(
+        "INSERT INTO agent_states(agent,novel_id,mood,updated_at) "
+        "VALUES(?,?,?,datetime('now','localtime'))",
+        (agent, novel_id, json.dumps(mood, ensure_ascii=False)),
+    )
+    conn.commit()
+    return {"ok": True}
