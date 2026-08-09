@@ -258,7 +258,10 @@ function render(data) {
 
 async function refresh() {
   try {
-    const resp = await fetch("/api/dashboard");
+    const API_BASE = (location.protocol === "file:" || !location.host)
+      ? "http://localhost:8000"
+      : "";
+    const resp = await fetch(API_BASE + "/api/dashboard");
     render(await resp.json());
   } catch (e) {
     document.getElementById("updated").textContent = "加载失败：" + e;
