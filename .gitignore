@@ -31,6 +31,8 @@ webapp/dist/
 desktop/node_modules/
 desktop/dist/
 desktop/out/
+desktop/release/
+desktop/build/
 
 # 编辑器 / 系统
 .vscode/

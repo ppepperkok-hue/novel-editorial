@@ -5,9 +5,65 @@
   "description": "网文自动生成流水线桌面控制台",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --publish never"
   },
   "devDependencies": {
-    "electron": "^37.2.0"
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "dependencies": {
+    "electron-updater": "^6.6.2"
+  },
+  "build": {
+    "appId": "com.novelpipeline.desktop",
+    "productName": "\u5c0f\u8bf4\u6d41\u6c34\u7ebf",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "assets/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../",
+        "to": "novel-pipeline",
+        "filter": [
+          "novel_pipeline/**",
+          "tools/**",
+          "prompts/**",
+          "n8n/**",
+          "webapp/dist/**",
+          "web/**",
+          "demo.db",
+          "docs/**",
+          "README.md"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "\u5c0f\u8bf4\u6d41\u6c34\u7ebf"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ppepperkok-hue",
+        "repo": "novel-pipeline"
+      }
+    ]
   }
 }

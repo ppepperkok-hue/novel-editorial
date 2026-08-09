@@ -1,4 +1,5 @@
 import { Fragment, useMemo, useState } from "react";
+import { getChapterContent } from "../api.js";
 import { fmtNum } from "./ui.jsx";
 
 const STATUS_META = {
@@ -14,6 +15,9 @@ export default function ChaptersPage({ data }) {
   const [filter, setFilter] = useState("all");
   const [novelFilter, setNovelFilter] = useState("all");
   const [expanded, setExpanded] = useState(null);
+  const [reader, setReader] = useState(null);
+  const [readerBody, setReaderBody] = useState(null);
+  const [fontSize, setFontSize] = useState(15);
 
   const novels = data?.novels || [];
   const chapters = (data?.chapters || []).filter((c) => {
@@ -43,12 +47,24 @@ export default function ChaptersPage({ data }) {
     };
   }, [data]);
 
+  const openReader = async (c) => {
+    setReader(c);
+    setReaderBody(null);
+    setFontSize(15);
+    try {
+      const r = await getChapterContent(c.id);
+      setReaderBody(r.content || "");
+    } catch {
+      setReaderBody("");
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
         <span className="chip" onClick={() => setFilter("all")} style={{ cursor: "pointer" }}>全部 {data?.chapters?.length || 0}</span>
         {Object.entries(STATUS_META).map(([st, [label, cls]]) => (
-          <span key={st} className={`chip ${cls} ${filter === st ? "!border-[#5ba4d4] !text-[#7db9dd]" : ""}`} onClick={() => setFilter(st)} style={{ cursor: "pointer" }}>
+          <span key={st} className={`chip ${cls} ${filter === st ? "!border-[var(--accent)] !text-[var(--accent-text)]" : ""}`} onClick={() => setFilter(st)} style={{ cursor: "pointer" }}>
             {label} {counts[st] || 0}
           </span>
         ))}
@@ -103,7 +119,12 @@ export default function ChaptersPage({ data }) {
                     <td className="muted">{c.id}</td>
                     <td className="text-sky-400">{titleFor(c.novel_id)}</td>
                     <td>{c.seq}</td>
-                    <td className="font-medium">{c.title || "（无标题）"}</td>
+                    <td className="font-medium">
+                      {c.title || "（无标题）"}
+                      <button className="ml-2 text-xs text-[var(--accent-text)] underline-offset-2 hover:underline" onClick={(e) => { e.stopPropagation(); openReader(c); }}>
+                        阅读
+                      </button>
+                    </td>
                     <td>
                       <span className={`chip ${(STATUS_META[c.status] || ["未知", "chip-warn"])[1]}`}>
                         {(STATUS_META[c.status] || ["未知", "chip-warn"])[0]}
@@ -119,7 +140,7 @@ export default function ChaptersPage({ data }) {
                   </tr>
                   {expanded === c.id ? (
                     <tr>
-                      <td colSpan={10} className="!bg-[#0a0f18]">
+                      <td colSpan={10} className="!bg-[var(--code-bg)]">
                         <div className="px-3 py-3">
                           <div className="label">章节大纲</div>
                           <div className="text-sm leading-relaxed text-slate-300">{c.outline || "无章纲"}</div>
@@ -136,6 +157,43 @@ export default function ChaptersPage({ data }) {
           </table>
         </div>
       </div>
+
+      {reader ? (
+        <div className="modal-mask" onMouseDown={(e) => e.target === e.currentTarget && setReader(null)}>
+          <div className="modal reader-modal">
+            <div className="modal-head">
+              <div className="min-w-0">
+                <div className="text-sm font-bold">第 {reader.seq} 章 · {reader.title || "无标题"}</div>
+                <div className="muted mt-0.5 text-xs">
+                  {reader.status === "published" ? "已发布" : reader.status} · {reader.words || 0} 字
+                  {reader.score != null ? ` · 评分 ${reader.score}` : ""}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button className="btn !px-2 !py-1 text-xs" onClick={() => setFontSize((s) => Math.max(13, s - 1))}>A−</button>
+                <span className="muted text-xs">{fontSize}px</span>
+                <button className="btn !px-2 !py-1 text-xs" onClick={() => setFontSize((s) => Math.min(20, s + 1))}>A+</button>
+                <button className="btn !px-2 !py-0.5 text-sm" onClick={() => setReader(null)}>✕</button>
+              </div>
+            </div>
+            <div className="modal-body reader-body">
+              {readerBody === null ? (
+                <div className="empty">正文加载中…</div>
+              ) : readerBody ? (
+                <div className="reader-content" style={{ fontSize: `${fontSize}px` }}>
+                  {readerBody.split(/\n+/).map((p, i) => (
+                    <p key={i} className="mb-3 leading-8">{p}</p>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty">
+                  本章正文未落库（历史章节）。正文从下次日更开始自动保存，之后这里就能阅读。
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

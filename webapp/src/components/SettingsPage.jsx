@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { getControl, postControl } from "../api.js";
 import { ConfirmDialog } from "./ui.jsx";
 
+const desktopApi = typeof window !== "undefined" ? window.desktopApi || null : null;
+
 function WorkflowCard({ label, wf, onAction, onPause }) {
   const state = !wf?.online
     ? { text: "n8n 离线", cls: "chip-bad" }
@@ -30,7 +32,7 @@ function WorkflowCard({ label, wf, onAction, onPause }) {
   );
 }
 
-export default function SettingsPage({ data, onRefresh, pushToast }) {
+export default function SettingsPage({ data, onRefresh, pushToast, theme, onThemeChange }) {
   const [control, setControl] = useState(null);
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -242,6 +244,64 @@ export default function SettingsPage({ data, onRefresh, pushToast }) {
           <div className="empty">设置服务不可达</div>
         )}
       </section>
+
+      <section className="panel p-4">
+        <div className="section-title !mb-3">外观主题</div>
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              ["dark", "深色", "适合夜间与长时间使用"],
+              ["light", "浅色", "明亮清爽"],
+              ["system", "跟随系统", "随 Windows 主题自动切换"],
+            ].map(([id, label, desc]) => (
+              <button
+                key={id}
+                className={`btn flex-col !items-start !py-3 text-left ${theme === id ? "btn-primary" : ""}`}
+                onClick={() => onThemeChange(id)}
+              >
+                <span className="text-sm font-semibold">{label}</span>
+                <span className="muted mt-0.5 text-xs">{desc}</span>
+              </button>
+            ))}
+          </div>
+          <div className="muted text-xs">主题选择会保存，下次启动自动恢复。</div>
+        </div>
+      </section>
+
+      {desktopApi ? (
+        <section className="panel p-4">
+          <div className="section-title !mb-3">桌面应用</div>
+          <div className="flex flex-col gap-3">
+            <label className="flex cursor-pointer items-center gap-2.5 text-sm">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-emerald-500"
+                defaultChecked={false}
+                ref={(el) => {
+                  if (el && !el.dataset.init) {
+                    el.dataset.init = "1";
+                    desktopApi.getAutoLaunch().then((v) => { el.checked = v; });
+                  }
+                }}
+                onChange={(e) => {
+                  desktopApi.setAutoLaunch(e.target.checked).then((v) => {
+                    pushToast(v ? "已开启开机自启" : "已关闭开机自启", "ok");
+                  });
+                }}
+              />
+              开机自动启动
+            </label>
+            <div className="muted text-xs leading-relaxed">
+              关闭窗口会最小化到系统托盘，应用在后台继续运行；需要完全退出请点下面的按钮。
+            </div>
+            <div>
+              <button className="btn btn-danger" onClick={() => desktopApi.quit()}>
+                退出应用
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section className="panel p-4 xl:col-span-2">
         <div className="section-title !mb-3">流水线架构说明</div>

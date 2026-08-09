@@ -147,7 +147,7 @@ export default function AgentsPage({ pushToast }) {
   return (
     <div className="grid h-[calc(100vh-150px)] grid-cols-1 gap-4 xl:grid-cols-[330px_1fr]">
       <div className="panel overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between border-b border-[#333333] px-4 py-3">
+        <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3">
           <div className="text-sm font-semibold">写作智能体</div>
           <button className="btn !px-2.5 !py-1 text-xs" onClick={load}>⟳</button>
         </div>
@@ -191,7 +191,7 @@ export default function AgentsPage({ pushToast }) {
       <div className="panel overflow-hidden flex flex-col">
         {selected ? (
           <>
-            <div className="flex flex-wrap items-center gap-3 border-b border-[#1a2332] px-5 py-3.5">
+            <div className="flex flex-wrap items-center gap-3 border-b border-[var(--line)] px-5 py-3.5">
               <div>
                 <div className="text-sm font-bold">{selected.name}</div>
                 <div className="muted text-xs">{selected.file} · 用于节点：{selected.nodes.join("、") || "未映射"}</div>
@@ -233,13 +233,13 @@ export default function AgentsPage({ pushToast }) {
                     {tempValid ? "越低越稳定，越高越有发散性" : "温度必须是 0–2 之间的数字"}
                   </div>
                 </div>
-                <div className="rounded-lg border border-[#333333] bg-[#1e1e1e] p-3">
+                <div className="rounded-lg border border-[var(--line)] bg-[var(--code-bg)] p-3">
                   <div className="label !mb-2">Agent 说明</div>
                   <div className="text-xs leading-relaxed text-slate-400">{selected.description}</div>
                 </div>
-                <div className="rounded-lg border border-[#333333] bg-[#1e1e1e] p-3">
+                <div className="rounded-lg border border-[var(--line)] bg-[var(--code-bg)] p-3">
                   <div className="label !mb-2">提示词占位符</div>
-                  <div className="code w-fit rounded-md border border-[#5ba4d4]/40 bg-[#1e3a5f]/40 px-2 py-1 text-xs text-[#8cc9f0]">{"{TARGET_WORDS}"}</div>
+                  <div className="code w-fit rounded-md border border-[var(--accent)]/40 bg-[var(--placeholder-highlight-bg)]/40 px-2 py-1 text-xs text-[var(--accent-text)]">{"{TARGET_WORDS}"}</div>
                   <div className="muted mt-1 text-xs">渲染时会替换为工作流里的目标字数表达式，请保留在提示词中。</div>
                 </div>
               </div>
@@ -256,9 +256,9 @@ export default function AgentsPage({ pushToast }) {
               </div>
             </div>
 
-            <div className="border-t border-[#333333] px-5 py-3">
+            <div className="border-t border-[var(--line)] px-5 py-3">
               <div className="label !mb-1.5">操作日志</div>
-              <div ref={logRef} className="code max-h-28 overflow-y-auto rounded-lg bg-[#1e1e1e] px-3 py-2 text-xs leading-relaxed">
+              <div ref={logRef} className="code max-h-28 overflow-y-auto rounded-lg bg-[var(--code-bg)] px-3 py-2 text-xs leading-relaxed">
                 {log.length ? (
                   log.map((l, i) => (
                     <div key={i} className={l.kind === "bad" ? "text-red-400" : l.kind === "ok" ? "text-emerald-400" : "text-slate-400"}>

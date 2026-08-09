@@ -142,7 +142,7 @@ export default function ExecutionsPage() {
               <button className="btn !px-2 !py-0.5 text-sm" onClick={() => setDetail(null)}>✕</button>
             </div>
             <div className="modal-body">
-              <pre className="code max-h-80 overflow-auto rounded-lg bg-[#1e1e1e] p-3 text-xs leading-relaxed text-red-300">
+              <pre className="code max-h-80 overflow-auto rounded-lg bg-[var(--code-bg)] p-3 text-xs leading-relaxed text-red-300">
                 {detail.error}
               </pre>
             </div>

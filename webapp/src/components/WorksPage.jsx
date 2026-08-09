@@ -2,7 +2,7 @@ import { useState } from "react";
 
 function Field({ label, children }) {
   return (
-    <div className="rounded-lg border border-[#333333] bg-[#1e1e1e] p-3">
+    <div className="rounded-lg border border-[var(--line)] bg-[var(--code-bg)] p-3">
       <div className="label !mb-2">{label}</div>
       <div className="text-sm leading-relaxed text-slate-300">{children || <span className="muted">暂无</span>}</div>
     </div>
@@ -11,7 +11,7 @@ function Field({ label, children }) {
 
 function CharacterCard({ c }) {
   return (
-    <div className="rounded-lg border border-[#333333] bg-[#1e1e1e] p-2.5">
+    <div className="rounded-lg border border-[var(--line)] bg-[var(--code-bg)] p-2.5">
       <div className="flex items-baseline gap-2">
         <span className="text-sm font-semibold text-sky-400">{c.name}</span>
         <span className="muted text-xs">{c.role}</span>
@@ -73,7 +73,7 @@ export default function WorksPage({ data }) {
           <CharacterCard key={"b" + c.name + c.role} c={c} />
         ));
         const rels = (bible.relationships || []).map((r, i) => (
-          <div key={i} className="rounded-md bg-[#1e1e1e] px-2.5 py-1.5 text-xs text-slate-400">
+          <div key={i} className="rounded-md bg-[var(--code-bg)] px-2.5 py-1.5 text-xs text-slate-400">
             {r.from} <span className="text-sky-400">— {r.relation || "关系"} —</span> {r.to}
             {r.note ? <span className="muted">：{r.note}</span> : ""}
           </div>
@@ -82,7 +82,7 @@ export default function WorksPage({ data }) {
           <div key={i} className="text-xs text-slate-400">· {w}</div>
         ));
         const chs = [o.chapter1, o.chapter2].filter(Boolean).map((c) => (
-          <div key={c.title} className="rounded-lg border border-[#333333] bg-[#1e1e1e] p-2.5">
+          <div key={c.title} className="rounded-lg border border-[var(--line)] bg-[var(--code-bg)] p-2.5">
             <div className="text-sm font-semibold text-amber-400">{c.title}</div>
             <div className="muted mt-0.5 text-xs leading-relaxed">{c.outline}</div>
             {c.hook ? <div className="mt-1 text-xs text-emerald-400">钩子：{c.hook}</div> : null}
@@ -110,7 +110,7 @@ export default function WorksPage({ data }) {
             </div>
 
             {isOpen ? (
-              <div className="flex flex-col gap-4 border-t border-[#333333] px-5 py-4">
+              <div className="flex flex-col gap-4 border-t border-[var(--line)] px-5 py-4">
                 <div className="flex flex-wrap gap-1.5">
                   {(n.tags || []).map((t) => (
                     <span key={t} className="chip chip-info">{t}</span>

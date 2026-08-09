@@ -13,6 +13,8 @@ import mimetypes
 import os
 import subprocess
 import sys
+import threading
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime
@@ -44,6 +46,9 @@ ALLOWED_SETTINGS = {
 }
 _N8N_KEY = None
 _EXEC_ERROR_CACHE = {}
+_SNAPSHOT = {}
+_SNAPSHOT_LOCK = threading.Lock()
+_SNAPSHOT_THREAD_STARTED = False
 AGENTS_DIR = ROOT / "prompts" / "agents"
 WORKFLOW_JSON = ROOT / "n8n" / "novel_workflow.json"
 VALIDATE_JS = ROOT / "tools" / "validate_workflow_deep.mjs"
@@ -394,6 +399,41 @@ def _executions():
     return rows
 
 
+def _snapshot_loop(db_path):
+    """Background aggregator: keeps a small JSON snapshot fresh for SSE."""
+    while True:
+        try:
+            conn = db.connect(db_path)
+            try:
+                snapshot = {
+                    "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "workflows": {
+                        "daily": _workflow_status(N8N_WORKFLOW_DAILY),
+                        "weekly": _workflow_status(N8N_WORKFLOW_WEEKLY),
+                    },
+                    "executions": _executions()[:5],
+                    "issues": len(_load_alerts(conn)["issues"]),
+                    "monthly_cost": _load_summary(conn)["monthly_cost"],
+                }
+            finally:
+                conn.close()
+            with _SNAPSHOT_LOCK:
+                _SNAPSHOT["data"] = snapshot
+        except Exception:  # noqa: BLE001
+            pass
+        time.sleep(5)
+
+
+def _ensure_snapshot_thread(db_path):
+    global _SNAPSHOT_THREAD_STARTED
+    with _SNAPSHOT_LOCK:
+        if not _SNAPSHOT_THREAD_STARTED:
+            _SNAPSHOT_THREAD_STARTED = True
+            threading.Thread(
+                target=_snapshot_loop, args=(db_path,), daemon=True
+            ).start()
+
+
 def _handle_control(conn, payload):
     from tools.app_settings import set_many  # noqa: PLC0415
 
@@ -542,6 +582,8 @@ def build_payload(conn):
 
 
 def make_handler(db_path):
+    _ensure_snapshot_thread(db_path)
+
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):  # noqa: N802
             parsed = urlparse(self.path)
@@ -563,12 +605,32 @@ def make_handler(db_path):
                         self._json({"chapters": _load_chapters(conn, novel_id)})
                     finally:
                         conn.close()
+                elif path == "/api/chapter_content":
+                    conn = db.connect(db_path)
+                    try:
+                        qs = parse_qs(parsed.query)
+                        chapter_id = int(qs["chapter_id"][0]) if qs.get("chapter_id") else None
+                        if chapter_id is None:
+                            self._json({"error": "chapter_id required"}, status=400)
+                        else:
+                            row = conn.execute(
+                                "SELECT chapter_id, content, updated_at "
+                                "FROM chapter_content WHERE chapter_id=?",
+                                (chapter_id,),
+                            ).fetchone()
+                            self._json(
+                                dict(row) if row else {"chapter_id": chapter_id, "content": "", "updated_at": ""}
+                            )
+                    finally:
+                        conn.close()
                 elif path == "/api/control":
                     conn = db.connect(db_path)
                     try:
                         self._json(_load_control(conn))
                     finally:
                         conn.close()
+                elif path == "/api/events":
+                    self._sse()
                 elif path in ("/api/summary", "/api/novels", "/api/publish_logs",
                               "/api/alerts", "/api/reader_stats", "/api/hot_topics",
                               "/api/agents", "/api/cost", "/api/executions"):
@@ -636,6 +698,28 @@ def make_handler(db_path):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+
+        def _sse(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            last = None
+            while True:
+                with _SNAPSHOT_LOCK:
+                    data = _SNAPSHOT.get("data")
+                if data is not None and data != last:
+                    last = data
+                    try:
+                        self.wfile.write(
+                            ("data: " + json.dumps(data, ensure_ascii=False) + "\n\n").encode("utf-8")
+                        )
+                        self.wfile.flush()
+                    except (BrokenPipeError, ConnectionResetError, OSError):
+                        return
+                time.sleep(1)
 
         def _serve_static(self, path):
             if not WEBAPP_DIST.exists():

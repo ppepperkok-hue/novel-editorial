@@ -82,7 +82,7 @@ export class ErrorBoundary extends Component {
       return (
         <div className="panel p-6">
           <div className="mb-2 text-sm font-bold text-red-400">页面渲染出错</div>
-          <pre className="code max-h-48 overflow-auto rounded-lg bg-[#1e1e1e] p-3 text-xs text-slate-400">
+          <pre className="code max-h-48 overflow-auto rounded-lg bg-[var(--code-bg)] p-3 text-xs text-slate-400">
             {String(this.state.error?.stack || this.state.error)}
           </pre>
           <button className="btn mt-3" onClick={() => this.setState({ error: null })}>

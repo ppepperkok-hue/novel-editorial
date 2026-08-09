@@ -248,6 +248,15 @@ def upsert_chapters(conn, novel_id, chapters):
                  published_at, title, item_id),
             )
             chapter_id = cur.lastrowid
+        content = str(ch.get("content") or "")
+        if content:
+            conn.execute(
+                "INSERT INTO chapter_content(chapter_id,content,updated_at) "
+                "VALUES(?,?,datetime('now','localtime')) "
+                "ON CONFLICT(chapter_id) DO UPDATE SET content=excluded.content, "
+                "updated_at=excluded.updated_at",
+                (chapter_id, content),
+            )
         if status == "published":
             dup = conn.execute(
                 "SELECT id FROM publish_logs WHERE chapter_id=? AND action='publish' "

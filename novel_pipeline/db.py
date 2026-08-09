@@ -99,6 +99,12 @@ CREATE TABLE IF NOT EXISTS chapter_summaries (
     ending_excerpt TEXT DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS chapter_content (
+    chapter_id INTEGER PRIMARY KEY REFERENCES chapters(id),
+    content TEXT NOT NULL,
+    updated_at TEXT DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS cost_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     novel_id INTEGER,

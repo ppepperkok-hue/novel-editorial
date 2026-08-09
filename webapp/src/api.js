@@ -48,3 +48,9 @@ export async function getExecutions() {
   if (!r.ok) throw new Error("executions " + r.status);
   return r.json();
 }
+
+export async function getChapterContent(chapterId) {
+  const r = await fetch(API_BASE + "/api/chapter_content?chapter_id=" + chapterId);
+  if (!r.ok) throw new Error("chapter_content " + r.status);
+  return r.json();
+}

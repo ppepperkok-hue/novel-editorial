@@ -167,7 +167,7 @@ export default function DashboardPage({ data, error, onRefresh, pushToast }) {
           {data?.health?.log_tail?.length ? (
             <details className="mt-3">
               <summary className="cursor-pointer text-xs text-sky-400">查看最近告警日志（{data.health.log_tail.length} 条）</summary>
-              <pre className="code mt-2 max-h-44 overflow-auto rounded-lg bg-[#0a0f18] p-2.5 text-xs leading-relaxed text-slate-400">
+              <pre className="code mt-2 max-h-44 overflow-auto rounded-lg bg-[var(--code-bg)] p-2.5 text-xs leading-relaxed text-slate-400">
                 {data.health.log_tail.join("\n")}
               </pre>
             </details>
@@ -275,7 +275,7 @@ export default function DashboardPage({ data, error, onRefresh, pushToast }) {
               <div className="mb-2 text-xs text-slate-400">
                 {logDetail.platform} · {logDetail.action} · {logDetail.result}
               </div>
-              <pre className="code max-h-72 overflow-auto rounded-lg bg-[#1e1e1e] p-3 text-xs leading-relaxed text-red-300">
+              <pre className="code max-h-72 overflow-auto rounded-lg bg-[var(--code-bg)] p-3 text-xs leading-relaxed text-red-300">
                 {logDetail.error}
               </pre>
             </div>

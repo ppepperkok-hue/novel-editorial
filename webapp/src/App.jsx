@@ -9,6 +9,7 @@ import CostPage from "./components/CostPage.jsx";
 import ExecutionsPage from "./components/ExecutionsPage.jsx";
 import ReaderPage from "./components/ReaderPage.jsx";
 import SettingsPage from "./components/SettingsPage.jsx";
+import CommandPalette from "./components/CommandPalette.jsx";
 
 const NAV = [
   { id: "dashboard", label: "仪表盘", icon: "◈" },
@@ -90,6 +91,10 @@ export default function App() {
   const [toasts, setToasts] = useState([]);
   const [now, setNow] = useState(new Date());
   const toastId = useRef(0);
+  const [theme, setTheme] = useState(() => {
+    const urlTheme = new URLSearchParams(location.search).get("theme");
+    return urlTheme || localStorage.getItem("panel_theme") || "system";
+  });
 
   const pushToast = useCallback((text, kind = "ok") => {
     const id = ++toastId.current;
@@ -145,6 +150,22 @@ export default function App() {
       window.removeEventListener("keydown", onKey);
     };
   }, [refresh]);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const apply = () => {
+      const resolved = theme === "system" ? (mq.matches ? "dark" : "light") : theme;
+      document.documentElement.setAttribute("data-theme", resolved);
+    };
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, [theme]);
+
+  const changeTheme = (t) => {
+    localStorage.setItem("panel_theme", t);
+    setTheme(t);
+  };
 
   const go = (id) => {
     setPage(id);
@@ -272,7 +293,7 @@ export default function App() {
             {page === "cost" && <CostPage data={data} />}
             {page === "executions" && <ExecutionsPage />}
             {page === "reader" && <ReaderPage data={data} />}
-            {page === "settings" && <SettingsPage data={data} onRefresh={refresh} pushToast={pushToast} />}
+            {page === "settings" && <SettingsPage data={data} onRefresh={refresh} pushToast={pushToast} theme={theme} onThemeChange={changeTheme} />}
           </ErrorBoundary>
         </div>
       </main>
@@ -286,6 +307,14 @@ export default function App() {
           </div>
         ))}
       </div>
+
+      <CommandPalette
+        onRefresh={refresh}
+        pushToast={pushToast}
+        go={go}
+        changeTheme={changeTheme}
+        theme={theme}
+      />
     </div>
   );
 }
