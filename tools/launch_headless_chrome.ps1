@@ -1,5 +1,5 @@
 $chrome = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
-$tmp = 'C:\Users\Administrator\Documents\Codex\2026-08-09\new-chat-2\outputs\novel-pipeline\tools\chrome-profile'
+$tmp = 'E:\code\novel-pipeline\tools\chrome-profile'
 $args = @(
   '--headless=new',
   '--remote-debugging-port=9333',

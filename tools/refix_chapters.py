@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, r"C:\Users\Administrator\Documents\Codex\2026-08-09\new-chat-2")
-ROOT = Path(r"C:\Users\Administrator\Documents\Codex\2026-08-09\new-chat-2\outputs\novel-pipeline")
+ROOT = Path(r"E:\code\novel-pipeline")
 sys.path.insert(0, str(ROOT))
 
 from novel_pipeline import db  # noqa: E402

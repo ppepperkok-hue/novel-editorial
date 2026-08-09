@@ -1074,7 +1074,7 @@
     },
     {
       "parameters": {
-        "command": "={{ 'C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline/tools/get_meta.py ' + $json.book_id }}",
+        "command": "={{ 'C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe E:/code/novel-pipeline/tools/get_meta.py ' + $json.book_id }}",
         "executeOnce": true,
         "options": {}
       },
@@ -1275,7 +1275,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const safe = (name) => { try { const d = $(name).first(); return d ? d.json : null; } catch { return null; } };\nconst meta = safe('解析作品资料') || {};\nconst outline = safe('解析大纲') || { chapter1: {}, chapter2: {} };\nconst ch1 = outline.chapter1 || {};\nconst ch2 = outline.chapter2 || {};\nconst now = new Date().toISOString().slice(0, 19).replace('T', ' ');\nconst chapters = [];\nconst pubA = safe('校验发布A');\nconst pubB = safe('校验发布B');\nconst draftA = safe('解析草稿A');\nconst draftB = safe('解析草稿B');\nconst qa = safe('质量门A');\nconst qb = safe('质量门B');\nconst sumA = (safe('整理剧情A') || {}).summary || {};\nconst verifyA = safe('解析复核A');\nconst verifyB = safe('解析复核B');\nconst sumB = (safe('整理剧情B') || {}).summary || {};\nconst aOk = !!(pubA && pubA.published);\nconst bOk = !!(pubB && pubB.published);\nif (draftA && draftA.item_id) {\n  chapters.push({ seq: meta.start_num, title: draftA.title, outline: ch1.outline || '', status: aOk ? ((verifyA && verifyA.status) || 'published') : 'draft', words: Number(qa.chars || 0), fanqie_item_id: draftA.item_id, published_at: aOk ? now : '', error: aOk ? '' : ((pubA && pubA.error) || JSON.stringify(pubA || {}).slice(0, 200)), summary: sumA, ending_excerpt: qa.editedText ? String(qa.editedText).slice(-220) : '' });\n}\nif (draftB && draftB.item_id) {\n  chapters.push({ seq: meta.start_num + 1, title: draftB.title, outline: ch2.outline || '', status: bOk ? ((verifyB && verifyB.status) || 'published') : 'draft', words: Number(qb.chars || 0), fanqie_item_id: draftB.item_id, published_at: bOk ? now : '', error: bOk ? '' : ((pubB && pubB.error) || JSON.stringify(pubB || {}).slice(0, 200)), summary: sumB, ending_excerpt: qb.editedText ? String(qb.editedText).slice(-220) : '' });\n}\nconst payload = {\n  book_id: meta.book_id,\n  book_name: meta.book_name,\n  genre: outline.genre || '',\n  premise: outline.premise || meta.premise,\n  selling_point: '',\n  platform: meta.platform || 'fanqie',\n  tags: meta.tags || [],\n  abstract: meta.abstract || '',\n  protagonists: meta.protagonists || [],\n  volume_goal: meta.volume_goal || '',\n  outline: { premise: outline.premise, genre: outline.genre, title: outline.title, keywords: outline.keywords, bible: outline.bible || null, chapter1: ch1, chapter2: ch2 },\n  chapters: chapters,\n  costs: (() => {\n    const llmNodes = ['Planner出大纲','守护细纲','生成作品资料','写手A','写手B','润色A','润色B','审稿A','审稿B','读者审稿A','读者审稿B','提炼剧情A','提炼剧情B'];\n    const costs = [];\n    for (const nm of llmNodes) {\n      const d = safe(nm);\n      if (d && d.usage) costs.push({ node: nm, model: String(d.model || ''), prompt_tokens: Number(d.usage.prompt_tokens || 0), completion_tokens: Number(d.usage.completion_tokens || 0) });\n    }\n    return costs;\n  })()\n};\nconst fs = require('fs');\nconst resultFile = 'C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline/n8n_tmp/daily_result.json';\nfs.mkdirSync(resultFile.slice(0, resultFile.lastIndexOf('/')), { recursive: true });\nfs.writeFileSync(resultFile, JSON.stringify(payload));\nreturn [{ json: { payload_b64: Buffer.from(JSON.stringify(payload)).toString('base64'), result_file: resultFile } }];\n"
+        "jsCode": "const safe = (name) => { try { const d = $(name).first(); return d ? d.json : null; } catch { return null; } };\nconst meta = safe('解析作品资料') || {};\nconst outline = safe('解析大纲') || { chapter1: {}, chapter2: {} };\nconst ch1 = outline.chapter1 || {};\nconst ch2 = outline.chapter2 || {};\nconst now = new Date().toISOString().slice(0, 19).replace('T', ' ');\nconst chapters = [];\nconst pubA = safe('校验发布A');\nconst pubB = safe('校验发布B');\nconst draftA = safe('解析草稿A');\nconst draftB = safe('解析草稿B');\nconst qa = safe('质量门A');\nconst qb = safe('质量门B');\nconst sumA = (safe('整理剧情A') || {}).summary || {};\nconst verifyA = safe('解析复核A');\nconst verifyB = safe('解析复核B');\nconst sumB = (safe('整理剧情B') || {}).summary || {};\nconst aOk = !!(pubA && pubA.published);\nconst bOk = !!(pubB && pubB.published);\nif (draftA && draftA.item_id) {\n  chapters.push({ seq: meta.start_num, title: draftA.title, outline: ch1.outline || '', status: aOk ? ((verifyA && verifyA.status) || 'published') : 'draft', words: Number(qa.chars || 0), fanqie_item_id: draftA.item_id, published_at: aOk ? now : '', error: aOk ? '' : ((pubA && pubA.error) || JSON.stringify(pubA || {}).slice(0, 200)), summary: sumA, ending_excerpt: qa.editedText ? String(qa.editedText).slice(-220) : '' });\n}\nif (draftB && draftB.item_id) {\n  chapters.push({ seq: meta.start_num + 1, title: draftB.title, outline: ch2.outline || '', status: bOk ? ((verifyB && verifyB.status) || 'published') : 'draft', words: Number(qb.chars || 0), fanqie_item_id: draftB.item_id, published_at: bOk ? now : '', error: bOk ? '' : ((pubB && pubB.error) || JSON.stringify(pubB || {}).slice(0, 200)), summary: sumB, ending_excerpt: qb.editedText ? String(qb.editedText).slice(-220) : '' });\n}\nconst payload = {\n  book_id: meta.book_id,\n  book_name: meta.book_name,\n  genre: outline.genre || '',\n  premise: outline.premise || meta.premise,\n  selling_point: '',\n  platform: meta.platform || 'fanqie',\n  tags: meta.tags || [],\n  abstract: meta.abstract || '',\n  protagonists: meta.protagonists || [],\n  volume_goal: meta.volume_goal || '',\n  outline: { premise: outline.premise, genre: outline.genre, title: outline.title, keywords: outline.keywords, bible: outline.bible || null, chapter1: ch1, chapter2: ch2 },\n  chapters: chapters,\n  costs: (() => {\n    const llmNodes = ['Planner出大纲','守护细纲','生成作品资料','写手A','写手B','润色A','润色B','审稿A','审稿B','读者审稿A','读者审稿B','提炼剧情A','提炼剧情B'];\n    const costs = [];\n    for (const nm of llmNodes) {\n      const d = safe(nm);\n      if (d && d.usage) costs.push({ node: nm, model: String(d.model || ''), prompt_tokens: Number(d.usage.prompt_tokens || 0), completion_tokens: Number(d.usage.completion_tokens || 0) });\n    }\n    return costs;\n  })()\n};\nconst fs = require('fs');\nconst resultFile = 'E:/code/novel-pipeline/n8n_tmp/daily_result.json';\nfs.mkdirSync(resultFile.slice(0, resultFile.lastIndexOf('/')), { recursive: true });\nfs.writeFileSync(resultFile, JSON.stringify(payload));\nreturn [{ json: { payload_b64: Buffer.from(JSON.stringify(payload)).toString('base64'), result_file: resultFile } }];\n"
       },
       "id": "n-summary",
       "name": "汇总运行结果",
@@ -1288,7 +1288,7 @@
     },
     {
       "parameters": {
-        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline/tools/record_work.py --file C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline/n8n_tmp/daily_result.json",
+        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe E:/code/novel-pipeline/tools/record_work.py --file E:/code/novel-pipeline/n8n_tmp/daily_result.json",
         "executeOnce": true,
         "options": {}
       },
@@ -1405,9 +1405,9 @@
     },
     {
       "parameters": {
-        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline/novel_pipeline/backup.py --db demo.db --backup-dir backups",
+        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe E:/code/novel-pipeline/novel_pipeline/backup.py --db demo.db --backup-dir backups",
         "options": {
-          "cwd": "C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline"
+          "cwd": "E:/code/novel-pipeline"
         }
       },
       "id": "n-backup",
@@ -1530,9 +1530,9 @@
     },
     {
       "parameters": {
-        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline/tools/preflight.py --db demo.db --budget 100",
+        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe E:/code/novel-pipeline/tools/preflight.py --db demo.db --budget 100",
         "options": {
-          "cwd": "C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline"
+          "cwd": "E:/code/novel-pipeline"
         }
       },
       "onError": "continueRegularOutput",
@@ -1563,7 +1563,7 @@
     },
     {
       "parameters": {
-        "jsCode": "try { require('fs').unlinkSync('C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline/n8n_tmp/daily.lock'); } catch (e) {} return [];"
+        "jsCode": "try { require('fs').unlinkSync('E:/code/novel-pipeline/n8n_tmp/daily.lock'); } catch (e) {} return [];"
       },
       "id": "n-stop",
       "name": "结束",
@@ -1750,9 +1750,9 @@
     },
     {
       "parameters": {
-        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline/tools/collect_reader_stats.py --db demo.db & C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline/tools/release_lock.py",
+        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe E:/code/novel-pipeline/tools/collect_reader_stats.py --db demo.db & E:/code/novel-pipeline/tools/release_lock.py",
         "options": {
-          "cwd": "C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline"
+          "cwd": "E:/code/novel-pipeline"
         }
       },
       "onError": "continueRegularOutput",

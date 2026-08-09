@@ -14,7 +14,7 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-ROOT = Path(r"C:\Users\Administrator\Documents\Codex\2026-08-09\new-chat-2\outputs\novel-pipeline")
+ROOT = Path(r"E:\code\novel-pipeline")
 ENV = Path.home() / ".n8n" / ".env"
 sys.path.insert(0, r"C:\Users\Administrator\Documents\Codex\2026-08-09\new-chat-2")
 sys.path.insert(0, str(ROOT))
@@ -252,7 +252,7 @@ def main():
         "核心创意：凡人修仙：捡到一只会提纯灵物的破碗，从杂灵根苟到无敌；"
         "主角：陈凡（杂灵根，谨慎隐忍，装傻苟发育）。请设计完整世界观、角色阵容与第一卷框架。"
     )
-    bible_path = Path(r"C:\Users\Administrator\Documents\Codex\2026-08-09\new-chat-2\outputs\novel-pipeline\tools\rewrite_bible.json")
+    bible_path = Path(r"E:\code\novel-pipeline\tools\rewrite_bible.json")
     bible = None
     if bible_path.exists():
         try:
@@ -264,7 +264,7 @@ def main():
             {"role": "system", "content": bible_prompt_system},
             {"role": "user", "content": bible_user},
         ]))
-    Path(r"C:\Users\Administrator\Documents\Codex\2026-08-09\new-chat-2\outputs\novel-pipeline\tools\rewrite_bible.json").write_text(
+    Path(r"E:\code\novel-pipeline\tools\rewrite_bible.json").write_text(
         json.dumps(bible, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     print("bible ok:", len(bible.get("characters", [])), "characters,", len(bible.get("world_settings", [])), "settings")
@@ -285,7 +285,7 @@ def main():
         "；金手指：" + json.dumps(bible.get("golden_finger", {}), ensure_ascii=False)[:600] +
         "；主角：陈凡。规划第1-10章，前3章要有强钩子，每章结尾自然引向下一章。"
     )
-    bp_path = Path(r"C:\Users\Administrator\Documents\Codex\2026-08-09\new-chat-2\outputs\novel-pipeline\tools\rewrite_blueprints.json")
+    bp_path = Path(r"E:\code\novel-pipeline\tools\rewrite_blueprints.json")
     blueprints = None
     if bp_path.exists():
         try:
@@ -297,7 +297,7 @@ def main():
             {"role": "system", "content": bp_system},
             {"role": "user", "content": bp_user},
         ]))["chapters"]
-    Path(r"C:\Users\Administrator\Documents\Codex\2026-08-09\new-chat-2\outputs\novel-pipeline\tools\rewrite_blueprints.json").write_text(
+    Path(r"E:\code\novel-pipeline\tools\rewrite_blueprints.json").write_text(
         json.dumps(blueprints, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     print("blueprints ok:", len(blueprints))

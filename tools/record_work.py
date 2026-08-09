@@ -11,7 +11,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-ROOT = Path(r"C:\Users\Administrator\Documents\Codex\2026-08-09\new-chat-2\outputs\novel-pipeline")
+ROOT = Path(r"E:\code\novel-pipeline")
 DB_PATH = ROOT / "demo.db"
 sys.path.insert(0, str(ROOT))
 
