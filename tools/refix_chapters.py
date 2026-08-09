@@ -16,9 +16,9 @@ sys.path.insert(0, str(ROOT))
 from novel_pipeline import db  # noqa: E402
 from tools.paragraphs import to_html  # noqa: E402
 
-BOOK_ID = "7672026913946209342"
-VOLUME_ID = "7672026916169206846"
-VOLUME_NAME = "第一卷：默认"
+BOOK_ID = os.environ.get("FANQIE_BOOK_ID", "YOUR_FANQIE_BOOK_ID")
+VOLUME_ID = os.environ.get("FANQIE_VOLUME_ID", "YOUR_FANQIE_VOLUME_ID")
+VOLUME_NAME = os.environ.get("FANQIE_VOLUME_NAME", "第一卷：默认")
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
@@ -140,10 +140,12 @@ def main():
     except (AttributeError, ValueError):
         pass
     load_env()
-    old_items = {
-        1: "7672059932291629630",
-        2: "7672060286378983998",
-    }
+    old_items = {}
+    for part in os.environ.get("FANQIE_OLD_ITEMS", "").split(","):
+        part = part.strip()
+        if ":" in part:
+            seq_s, item = part.split(":", 1)
+            old_items[int(seq_s.strip())] = item.strip()
     chapters = []
     for seq in (1, 2):
         title, plain = get_content(old_items[seq])

@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import sys
 import urllib.parse
 import urllib.request
 
@@ -40,7 +41,8 @@ def get(path, params):
 def main():
     load_env()
     book_id = os.environ["FANQIE_BOOK_ID"]
-    for item_id in ("7672059932291629630", "7672060286378983998"):
+    item_ids = sys.argv[1:] or os.environ.get("FANQIE_ITEM_ID", "").split(",")
+    for item_id in [x.strip() for x in item_ids if x.strip()]:
         d = get(
             "/api/author/edit_article/v0/",
             {"book_id": book_id, "item_id": item_id, "from_source": "0"},

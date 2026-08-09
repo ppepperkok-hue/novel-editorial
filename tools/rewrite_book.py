@@ -23,10 +23,11 @@ from novel_pipeline import db  # noqa: E402
 from tools.record_work import upsert_novel, upsert_characters, upsert_volume, upsert_chapters  # noqa: E402
 from tools.paragraphs import to_html  # noqa: E402
 
-BOOK_ID = "7672026913946209342"
-VOLUME_ID = "7672026916169206846"
-VOLUME_NAME = "第一卷：默认"
+BOOK_ID = os.environ.get("FANQIE_BOOK_ID", "YOUR_FANQIE_BOOK_ID")
+VOLUME_ID = os.environ.get("FANQIE_VOLUME_ID", "YOUR_FANQIE_VOLUME_ID")
+VOLUME_NAME = os.environ.get("FANQIE_VOLUME_NAME", "第一卷：默认")
 MODEL = "deepseek-v4-flash"
+WRITER_MODEL = os.environ.get("DEEPSEEK_WRITER_MODEL", "deepseek-v4-pro")
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
@@ -41,10 +42,11 @@ def load_env():
             os.environ.setdefault(k.strip(), v.strip())
 
 
-def llm(messages, temperature=0.7):
+def llm(messages, temperature=0.7, model=None):
+    model = model or MODEL
     body = json.dumps(
         {
-            "model": MODEL,
+            "model": model,
             "temperature": temperature,
             "messages": messages,
         }
@@ -214,12 +216,7 @@ def main():
 
     # 1. delete old pending chapters on Fanqie
     cleanup_all_drafts()
-    old_items = [
-        "7672041382386598462",
-        "7672041753276318270",
-        "7672049207682794046",
-        "7672050652293382718",
-    ]
+    old_items = [x.strip() for x in os.environ.get("FANQIE_OLD_ITEMS", "").split(",") if x.strip()]
     for item in old_items:
         ok = delete_chapter(item)
         print("delete", item, "ok" if ok else "FAILED")
@@ -369,40 +366,49 @@ def main():
             "；活跃伏笔：" + threads +
             "；已有章节标题（不能重复）：" + (existing or "无")
         )
-        out = extract_json(llm([
-            {"role": "system", "content": writer_system},
-            {"role": "user", "content": writer_user},
-        ], temperature=0.85))
-        title = str(out.get("title") or bp.get("title") or "")
-        content = str(out.get("content") or "")
-        chars = chinese_chars(content)
-        if chars < 1500:
-            out = extract_json(llm([
-                {"role": "system", "content": writer_system + "上一版太短，请扩充到2000字以上。"},
-                {"role": "user", "content": writer_user + "；上一版正文：" + content[:1500]},
-            ], temperature=0.85))
-            content = str(out.get("content") or content)
-            title = str(out.get("title") or title)
-            chars = chinese_chars(content)
-        print("chapter", i, "written:", title, chars, "chars")
-
         reviewer_system = (
             "你是严格的网文质检专家。只输出JSON：{score(0-10),passed(bool),"
             "coherence_ok(bool),issues([{severity,description}])}。"
             "重点：将上一章结尾与本章开头3段逐句对比检查连贯性；角色是否OOC；"
             "设定是否吃书；标题是否与已有标题重复；是否有AI痕迹。"
         )
-        reviewer_user = (
-            "本章标题：" + title +
-            ("；上一章结尾：" + prev_ending[-800:] if prev_ending else "；本书第一章，无上一章") +
-            "；本章大纲：" + json.dumps(bp, ensure_ascii=False) +
-            "；已有标题：" + (existing or "无") +
-            "；正文：" + content[:4000]
-        )
-        review = extract_json(llm([
-            {"role": "system", "content": reviewer_system},
-            {"role": "user", "content": reviewer_user},
-        ], temperature=0.2))
+        title = ""
+        content = ""
+        review = {}
+        for attempt in range(3):
+            out = extract_json(llm([
+                {"role": "system", "content": writer_system},
+                {"role": "user", "content": writer_user},
+            ], temperature=0.85, model=WRITER_MODEL))
+            title = str(out.get("title") or bp.get("title") or title)
+            content = str(out.get("content") or content)
+            chars = chinese_chars(content)
+            if chars < 1500:
+                content = str(
+                    extract_json(llm([
+                        {"role": "system", "content": writer_system + "上一版太短，请扩充到2000字以上。"},
+                        {"role": "user", "content": writer_user + "；上一版正文：" + content[:1500]},
+                    ], temperature=0.85, model=WRITER_MODEL)).get("content") or content
+                )
+                title = str(out.get("title") or title)
+                chars = chinese_chars(content)
+            reviewer_user = (
+                "本章标题：" + title +
+                ("；上一章结尾：" + prev_ending[-800:] if prev_ending else "；本书第一章，无上一章") +
+                "；本章大纲：" + json.dumps(bp, ensure_ascii=False) +
+                "；已有标题：" + (existing or "无") +
+                "；正文：" + content[:4000]
+            )
+            review = extract_json(llm([
+                {"role": "system", "content": reviewer_system},
+                {"role": "user", "content": reviewer_user},
+            ], temperature=0.2))
+            print("chapter", i, "attempt", attempt + 1, "written:", title, chars, "chars",
+                  "review", review.get("score"), review.get("passed"))
+            if review.get("passed") and float(review.get("score") or 0) >= 7:
+                break
+            issues = json.dumps(review.get("issues", []), ensure_ascii=False)
+            writer_user = writer_user + "；上一版被审稿打回：" + issues[:1200] + "，请针对性修改，保持剧情连贯。"
         print("review", i, "score", review.get("score"), "passed", review.get("passed"), "coherence", review.get("coherence_ok"))
 
         item_id = new_draft()
