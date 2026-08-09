@@ -39,6 +39,7 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
   const [running, setRunning] = useState("");
   const [confirm, setConfirm] = useState(null);
   const [confirmRun, setConfirmRun] = useState(null);
+  const [runChapters, setRunChapters] = useState(2);
   const [autoLaunch, setAutoLaunch] = useState(false);
   const autoLaunchInit = useRef(false);
 
@@ -53,6 +54,7 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
           target_words: c.settings?.target_words || 2000,
           style_tweak: c.settings?.style_tweak || "",
           daily_run_time: c.settings?.daily_run_time || "08:00",
+          daily_chapters: c.settings?.daily_chapters || 2,
         },
       );
     } catch {
@@ -89,6 +91,7 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
           target_words: String(form.target_words),
           style_tweak: form.style_tweak,
           daily_run_time: form.daily_run_time,
+          daily_chapters: String(form.daily_chapters),
         },
       });
       if (!r.ok) {
@@ -130,6 +133,7 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
 
   const budgetNum = Number(form?.monthly_budget);
   const wordsNum = Number(form?.target_words);
+  const chaptersNum = Number(form?.daily_chapters);
   const formValid =
     form != null &&
     !Number.isNaN(budgetNum) &&
@@ -137,6 +141,8 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
     !Number.isNaN(wordsNum) &&
     wordsNum >= 500 &&
     wordsNum <= 10000 &&
+    chaptersNum >= 1 &&
+    chaptersNum <= 4 &&
     /^\d{2}:\d{2}$/.test(form.daily_run_time || "");
 
   const wfs = control?.workflows || {};
@@ -240,6 +246,20 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
                 保存后立即重新部署定时器；机器关机时段会被错过，开机后请用手动更新补更。
               </div>
             </div>
+            <div>
+              <label className="label">每批发布章数（1–4，存稿优先）</label>
+              <input
+                type="number"
+                min="1"
+                max="4"
+                className="input !w-32"
+                value={form.daily_chapters}
+                onChange={(e) => setForm({ ...form, daily_chapters: e.target.value })}
+              />
+              <div className="muted mt-1 text-xs">
+                每天先发存稿池里的章节，不够再现场生成补足；多出来的章节会存着下次发。
+              </div>
+            </div>
             <div className="flex items-center gap-3">
               <button className="btn btn-ok" disabled={saving || !formValid} onClick={save}>
                 {saving ? "保存中…" : "💾 保存设置"}
@@ -340,18 +360,69 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
       />
 
       <ConfirmDialog
-        open={confirmRun === "daily" || confirmRun === "weekly"}
-        title={confirmRun === "daily" ? "立即执行完整日更？" : "立即执行架构师周会？"}
-        body={
-          confirmRun === "daily"
-            ? "这会真实运行整条写作流水线（消耗 DeepSeek API 额度），并尝试把新章节发布到番茄小说。"
-            : "周会会调用架构师模型生成蓝图并写入作品设定，耗时约 2 分钟。"
-        }
-        confirmText={confirmRun === "daily" ? "立即更新一章" : "立即跑周会"}
+        open={confirmRun === "weekly"}
+        title="立即执行架构师周会？"
+        body="周会会调用架构师模型生成蓝图并写入作品设定，耗时约 2 分钟。"
+        confirmText="立即跑周会"
         busy={running !== ""}
         onCancel={() => setConfirmRun(null)}
-        onConfirm={() => runNow(confirmRun, confirmRun === "daily" ? "日更流水线" : "架构师周会")}
+        onConfirm={() => {
+          runNow("weekly", "架构师周会");
+        }}
       />
+
+      {confirmRun === "daily" ? (
+        <div className="modal-mask" onMouseDown={(e) => e.target === e.currentTarget && setConfirmRun(null)}>
+          <div className="modal confirm-modal">
+            <div className="modal-head">
+              <div className="text-sm font-bold">本次发布几章？</div>
+              <button className="btn !px-2 !py-0.5 text-sm" onClick={() => setConfirmRun(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="mb-4 text-sm text-slate-400">
+                存稿池有存货就直接发，不够会自动补造。最多一次发 5 章。
+              </div>
+              <div className="flex gap-2">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    className={`btn flex-1 !py-3 text-base ${runChapters === n ? "btn-primary" : ""}`}
+                    onClick={() => setRunChapters(n)}
+                  >
+                    {n} 章
+                  </button>
+                ))}
+              </div>
+              <div className="mt-5 flex justify-end gap-2">
+                <button className="btn" onClick={() => setConfirmRun(null)}>取消</button>
+                <button
+                  className="btn btn-ok"
+                  disabled={running !== ""}
+                  onClick={() => {
+                    setConfirmRun(null);
+                    setRunning("daily");
+                    postControl({ action: "run_now", workflow: "daily", chapters: runChapters })
+                      .then((r) => {
+                        pushToast(
+                          r.ok ? `已启动：本次目标发布 ${runChapters} 章` : `启动失败：${r.error || "未知"}`,
+                          r.ok ? "ok" : "bad",
+                        );
+                      })
+                      .catch((e) => pushToast("启动失败：" + e, "bad"))
+                      .finally(() => {
+                        setRunning("");
+                        refresh();
+                        onRefresh();
+                      });
+                  }}
+                >
+                  发布 {runChapters} 章
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

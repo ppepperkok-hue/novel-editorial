@@ -52,6 +52,7 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
   const [control, setControl] = useState(null);
   const [running, setRunning] = useState(false);
   const [confirm, setConfirm] = useState(null);
+  const [runChapters, setRunChapters] = useState(2);
   const [logDetail, setLogDetail] = useState(null);
 
   const refreshControl = async () => {
@@ -75,14 +76,15 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
     onRefresh();
   };
 
-  const runNow = async () => {
+  const runNow = async (chapters) => {
     setRunning(true);
     setConfirm(null);
+    setRunChapters(2);
     try {
-      const r = await postControl({ action: "run_now", workflow: "daily" });
+      const r = await postControl({ action: "run_now", workflow: "daily", chapters });
       pushToast(
         r.ok
-          ? "日更流水线已启动，正在后台执行（真实发布，可到执行记录看进度）"
+          ? `已启动：本次目标发布 ${chapters} 章（存稿优先）`
           : "启动失败：" + (r.error || "未知"),
         r.ok ? "ok" : "bad",
       );
@@ -190,7 +192,7 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
             <div className="text-sm font-semibold">手动补更</div>
             <div className="muted mt-1 text-xs">机器关机错过定时后，开机点这里立即执行完整日更（真实发布）</div>
             <button className="btn btn-ok mt-3" disabled={running} onClick={() => setConfirm("run")}>
-              {running ? "正在启动…" : "▶ 立即更新一章"}
+              {running ? "正在启动…" : "▶ 立即补更"}
             </button>
           </div>
         </div>
@@ -301,15 +303,38 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
         </section>
       </div>
 
-      <ConfirmDialog
-        open={confirm === "run"}
-        title="立即执行完整日更？"
-        body="这会真实运行整条写作流水线（消耗 DeepSeek API 额度），并尝试把新章节发布到番茄小说。确认在预检通过的前提下继续。"
-        confirmText="立即更新一章"
-        busy={running}
-        onCancel={() => setConfirm(null)}
-        onConfirm={runNow}
-      />
+      {confirm === "run" ? (
+        <div className="modal-mask" onMouseDown={(e) => e.target === e.currentTarget && setConfirm(null)}>
+          <div className="modal confirm-modal">
+            <div className="modal-head">
+              <div className="text-sm font-bold">本次发布几章？</div>
+              <button className="btn !px-2 !py-0.5 text-sm" onClick={() => setConfirm(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="mb-4 text-sm text-slate-400">
+                存稿池有存货就直接发，不够会自动补造。最多一次发 5 章。
+              </div>
+              <div className="flex gap-2">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    className={`btn flex-1 !py-3 text-base ${runChapters === n ? "btn-primary" : ""}`}
+                    onClick={() => setRunChapters(n)}
+                  >
+                    {n} 章
+                  </button>
+                ))}
+              </div>
+              <div className="mt-5 flex justify-end gap-2">
+                <button className="btn" onClick={() => setConfirm(null)}>取消</button>
+                <button className="btn btn-ok" disabled={running} onClick={() => runNow(runChapters)}>
+                  发布 {runChapters} 章
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <ConfirmDialog
         open={confirm === "pause-daily" || confirm === "pause-weekly"}

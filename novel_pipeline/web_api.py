@@ -43,6 +43,7 @@ ALLOWED_SETTINGS = {
     "target_words",
     "style_tweak",
     "daily_run_time",
+    "daily_chapters",
 }
 _N8N_KEY = None
 _EXEC_ERROR_CACHE = {}
@@ -451,6 +452,14 @@ def _handle_control(conn, payload):
             # Manual runs must bypass the "already published today" guard,
             # while still honoring cookie/budget/enabled preflight checks.
             set_many(conn, {"manual_run_requested": "1"})
+            chapters = payload.get("chapters")
+            if chapters:
+                try:
+                    n = max(1, min(int(chapters), 10))
+                except (TypeError, ValueError):
+                    n = 0
+                if n:
+                    set_many(conn, {"pending_publish": str(n)})
         return _run_workflow_now(payload.get("workflow") or "daily")
     if action == "apply_schedule":
         time_value = (payload.get("time") or "").strip()

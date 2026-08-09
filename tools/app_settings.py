@@ -20,6 +20,8 @@ DEFAULTS = {
     "target_words": "2000",
     "style_tweak": "",
     "daily_run_time": "08:00",
+    "daily_chapters": "2",
+    "pending_publish": "0",
 }
 
 
