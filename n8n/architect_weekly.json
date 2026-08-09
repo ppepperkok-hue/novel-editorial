@@ -1,0 +1,152 @@
+{
+  "name": "架构师周会",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "10 8 * * 0"
+            }
+          ]
+        }
+      },
+      "id": "n-weekly-trigger",
+      "name": "每周日触发",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "command": "python tools/architect_weekly.py --db demo.db",
+        "options": {
+          "cwd": "C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "n-arch-read",
+      "name": "读上下文",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.deepseek.com/chat/completions",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.DEEPSEEK_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({model:'deepseek-v4-flash', temperature:0.4, messages:[{role:'system',content:'你是长篇网文架构师，每周日做一次中期规划。只输出JSON：{blueprint_updates(数组,每项含seq(章节号)/title(2-20字)/outline(120-180字,含本章小爽点)/hook_type(cliffhanger|revelation|question|twist|promise)/hook/emotion(读者情绪)),reader_persona({age_range,preference(读者爱看什么),avoid(读者反感什么)}),volume_goal_adjust(下一卷目标微调,没有就空),notes(规划说明)}。要求：优先沿用已有蓝图并只覆盖需要调整的seq；检查伏笔台账安排回收；对照完读率低章节调整节奏；热点只做灵感不硬套。'},{role:'user',content:'上下文：'+$input.first().json.stdout}]}) }}"
+      },
+      "onError": "continueRegularOutput",
+      "id": "n-arch-llm",
+      "name": "架构师规划",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst resp = typeof raw === 'string' ? JSON.parse(raw) : raw;\nconst msg = resp && resp.choices && resp.choices[0] && resp.choices[0].message;\nconst text = (msg && typeof msg.content === 'string' && msg.content.trim()) ? msg.content : (msg && typeof msg.reasoning_content === 'string' ? msg.reasoning_content : '');\nconst t = String(text).replace(/```json/g, '').replace(/```/g, '').trim();\nlet plan = null;\ntry { plan = JSON.parse(t); } catch { const m = t.match(/\\{[\\s\\S]*\\}/); if (m) { try { plan = JSON.parse(m[0]); } catch {} } }\nif (!plan) { throw new Error('架构师输出解析失败: ' + t.slice(0, 200)); }\nconst ctx = JSON.parse($('读上下文').first().json.stdout || '{}');\nconst payload = { book_id: (ctx.context && ctx.context.book_id) || '', blueprint_updates: plan.blueprint_updates || [], reader_persona: plan.reader_persona || null, volume_goal: plan.volume_goal_adjust || '' };\nreturn [{ json: { payload_b64: Buffer.from(JSON.stringify(payload)).toString('base64') } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "n-arch-parse",
+      "name": "解析规划",
+      "position": [
+        600,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "command": "={{ 'python tools/apply_architect.py ' + $json.payload_b64 }}",
+        "options": {
+          "cwd": "C:/Users/Administrator/Documents/Codex/2026-08-09/new-chat-2/outputs/novel-pipeline"
+        }
+      },
+      "id": "n-arch-apply",
+      "name": "落盘蓝图",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        800,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "每周日触发": {
+      "main": [
+        [
+          {
+            "node": "读上下文",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "读上下文": {
+      "main": [
+        [
+          {
+            "node": "架构师规划",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "架构师规划": {
+      "main": [
+        [
+          {
+            "node": "解析规划",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析规划": {
+      "main": [
+        [
+          {
+            "node": "落盘蓝图",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

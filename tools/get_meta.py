@@ -91,6 +91,11 @@ def main():
         char_states = {
             c["name"]: json.loads(c["state"] or "{}") for c in characters if c["state"]
         }
+        if isinstance(bible, dict):
+            for c in bible.get("characters") or []:
+                st = char_states.get(c.get("name")) or {}
+                if st.get("state"):
+                    c["current_state"] = st["state"]
 
         threads = conn.execute(
             "SELECT planted_chapter, expected_recover_chapter, status, description FROM plot_threads "
