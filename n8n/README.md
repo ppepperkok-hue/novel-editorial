@@ -4,6 +4,7 @@
 
 - 工作流 ID：`SkLUnm3uRyBSY84F`
 - 本地源文件：`novel_workflow.json`
+- 架构师周会：工作流 ID `TAScPjj0Oqtz1uy7`，源文件 `architect_weekly.json`（周日 08:10）
 
 ## 番茄发书流程（已实测）
 
@@ -44,6 +45,11 @@ B 章串行承接 A 章：写手B/审稿B 输入 A 章结尾原文与 A 章提�
 叙事写手、文字编辑、逻辑审稿、读者体验审稿、主编终审（仲裁）、记忆官（提炼剧情）、
 架构师（每周日独立工作流，更新蓝图/读者画像/卷目标）。
 详见 `docs/research/multiagent-and-audit.md`。
+
+## 成本单价调整
+
+`~/.n8n/.env` 中 `COST_PRO_PER_1K` / `COST_FLASH_PER_1K` 控制 cost_logs 的成本
+折算（默认 0.01 / 0.002 元每千 token）；`MONTHLY_BUDGET` 为预检熔断预算。
 
 2026-08-10 起，质量门与排版之间新增「提炼剧情A/B → 整理剧情A/B」：逐章提取摘要、
 角色状态变化、事件与伏笔台账，随「记录作品资料」写回数据库，供次日记忆包使用。

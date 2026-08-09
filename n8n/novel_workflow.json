@@ -1335,7 +1335,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({model:'deepseek-v4-flash', temperature:0.3, messages:[{role:'system',content:'你是剧情记忆官，只输出JSON：{summary(80-150字本章核心剧情),character_updates(对象,键为角色名,每项含changes/current_state),plot_events(数组,每项含description/event_type(foreshadow|setup|resolve|world|item|character)/importance(1-5)/resolved),foreshadowing_planted(数组,每项含description/expected_recover),foreshadowing_recovered(数组,每项含description),next_hook(下一章必须承接的悬念)}。依据正文提取，不得编造；summary与event描述要具体。'},{role:'user',content:'章纲：'+JSON.stringify($('解析大纲').item.json.chapter1)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+(($('质量门A').first().json.editedText)||'')'}]}) }}"
+        "jsonBody": "={{ JSON.stringify({model:'deepseek-v4-flash', temperature:0.3, messages:[{role:'system',content:'你是剧情记忆官，只输出JSON：{summary(80-150字本章核心剧情),character_updates(对象,键为角色名,每项含changes/current_state),plot_events(数组,每项含description/event_type(foreshadow|setup|resolve|world|item|character)/importance(1-5)/resolved),foreshadowing_planted(数组,每项含description/expected_recover),foreshadowing_recovered(数组,每项含description),next_hook(下一章必须承接的悬念)}。依据正文提取，不得编造；summary与event描述要具体。'},{role:'user',content:'章纲：'+JSON.stringify($('解析大纲').item.json.chapter1)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+(($('润色A').item.json.choices[0].message.content)||'')'}]}) }}"
       },
       "id": "n-extract-a",
       "name": "提炼剧情A",
@@ -1379,7 +1379,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({model:'deepseek-v4-flash', temperature:0.3, messages:[{role:'system',content:'你是剧情记忆官，只输出JSON：{summary(80-150字本章核心剧情),character_updates(对象,键为角色名,每项含changes/current_state),plot_events(数组,每项含description/event_type(foreshadow|setup|resolve|world|item|character)/importance(1-5)/resolved),foreshadowing_planted(数组,每项含description/expected_recover),foreshadowing_recovered(数组,每项含description),next_hook(下一章必须承接的悬念)}。依据正文提取，不得编造；summary与event描述要具体。'},{role:'user',content:'章纲：'+JSON.stringify($('解析大纲').item.json.chapter2)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+(($('质量门B').first().json.editedText)||'')'}]}) }}"
+        "jsonBody": "={{ JSON.stringify({model:'deepseek-v4-flash', temperature:0.3, messages:[{role:'system',content:'你是剧情记忆官，只输出JSON：{summary(80-150字本章核心剧情),character_updates(对象,键为角色名,每项含changes/current_state),plot_events(数组,每项含description/event_type(foreshadow|setup|resolve|world|item|character)/importance(1-5)/resolved),foreshadowing_planted(数组,每项含description/expected_recover),foreshadowing_recovered(数组,每项含description),next_hook(下一章必须承接的悬念)}。依据正文提取，不得编造；summary与event描述要具体。'},{role:'user',content:'章纲：'+JSON.stringify($('解析大纲').item.json.chapter2)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+(($('润色B').item.json.choices[0].message.content)||'')'}]}) }}"
       },
       "id": "n-extract-b",
       "name": "提炼剧情B",
