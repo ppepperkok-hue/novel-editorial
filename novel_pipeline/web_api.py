@@ -463,6 +463,8 @@ def make_handler(db_path):
                     if self._serve_static(path):
                         return
                     self.send_error(404, "Not Found")
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                return
             except Exception as exc:  # noqa: BLE001
                 self._json({"error": str(exc)}, status=500)
 
@@ -490,6 +492,8 @@ def make_handler(db_path):
                     else:
                         result = {"ok": False, "error": f"unknown action {action}"}
                 self._json(result)
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                return
             except Exception as exc:  # noqa: BLE001
                 self._json({"ok": False, "error": str(exc)}, status=500)
 
