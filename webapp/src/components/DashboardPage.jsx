@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { getControl, postControl } from "../api.js";
 import ReaderChart from "./ReaderChart.jsx";
-import { ConfirmDialog, fmtRelative } from "./ui.jsx";
+import { ConfirmDialog, fmtRelative, fmtTime } from "./ui.jsx";
 import { getMeetings } from "../api.js";
+import MeetingLive from "./MeetingLive.jsx";
 
 function Kpi({ label, value, sub, tone }) {
   return (
@@ -179,19 +180,38 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
         </div>
       </section>
 
-      {latestMeeting ? (
-        <section className="panel p-4">
-          <div className="section-title !mb-2">最近周会</div>
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="font-semibold">#{latestMeeting.id}</span>
-            <span className="muted text-xs">{fmtTime(latestMeeting.held_at)}</span>
-            <span className="muted text-xs">参会：{latestMeeting.attendees.join("、")}</span>
-            {latestMeeting.blueprint_count ? <span className="chip chip-info">蓝图 {latestMeeting.blueprint_count} 条</span> : null}
-            {latestMeeting.volume_goal_adjust ? <span className="chip chip-warn">卷目标已调整</span> : null}
-            <span className="muted ml-auto text-xs truncate max-w-[40%]">{latestMeeting.summary}</span>
+      <section className="panel p-4">
+        <div className="section-title !mb-3">会议中心</div>
+        <MeetingLive onArchived={onRefresh} />
+        {latestMeeting ? (
+          <div className="mt-3 border-t border-[var(--line)] pt-3">
+            <div className="mb-2 flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-xs font-semibold">最近周会</span>
+              <span className="chip">#{latestMeeting.id}</span>
+              <span className="muted text-xs">{fmtTime(latestMeeting.held_at)}</span>
+              <span className="muted text-xs">参会：{latestMeeting.attendees.join("、")}</span>
+              {latestMeeting.blueprint_count ? <span className="chip chip-info">蓝图 {latestMeeting.blueprint_count} 条</span> : null}
+              {latestMeeting.volume_goal_adjust ? <span className="chip chip-warn">卷目标已调整</span> : null}
+            </div>
+            <div className="muted text-xs leading-relaxed">{latestMeeting.summary}</div>
           </div>
-        </section>
-      ) : null}
+        ) : null}
+      </section>
+
+      <section>
+        <div className="section-title">工作流状态与补更</div>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <WorkflowCard label="日更工作流（60 节点）" wf={wfs.daily} onAction={(a) => action({ action: a, workflow: "daily" }, "日更已恢复")} onPause={() => setConfirm("pause-daily")} />
+          <WorkflowCard label="架构师周会（5 节点）" wf={wfs.weekly} onAction={(a) => action({ action: a, workflow: "weekly" }, "周会已恢复")} onPause={() => setConfirm("pause-weekly")} />
+          <div className="panel panel-hover p-4">
+            <div className="text-sm font-semibold">手动补更</div>
+            <div className="muted mt-1 text-xs">存稿优先：有存货直接发，不够自动补造并发布</div>
+            <button className="btn btn-ok mt-3" disabled={running} onClick={() => setConfirm("run")}>
+              {running ? "正在启动…" : "▶ 立即补更"}
+            </button>
+          </div>
+        </div>
+      </section>
 
       <div className="kpi-grid">
         <Kpi label="连载作品" value={s.novels ?? "—"} sub="全部连载中" />
@@ -204,21 +224,6 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
         <Kpi label="本月成本" value={`¥${cost}`} sub={`预算 ¥${budget}`} tone={cost >= budget ? "bad" : "ok"} />
         <Kpi label="健康问题" value={liveIssueCount} tone={liveIssueCount ? "bad" : "ok"} />
       </div>
-
-      <section>
-        <div className="section-title">工作流状态</div>
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <WorkflowCard label="日更工作流（56 节点）" wf={wfs.daily} onAction={(a) => action({ action: a, workflow: "daily" }, "日更已恢复")} onPause={() => setConfirm("pause-daily")} />
-          <WorkflowCard label="架构师周会（6 节点）" wf={wfs.weekly} onAction={(a) => action({ action: a, workflow: "weekly" }, "周会已恢复")} onPause={() => setConfirm("pause-weekly")} />
-          <div className="panel panel-hover p-4">
-            <div className="text-sm font-semibold">手动补更</div>
-            <div className="muted mt-1 text-xs">机器关机错过定时后，开机点这里立即执行完整日更（真实发布）</div>
-            <button className="btn btn-ok mt-3" disabled={running} onClick={() => setConfirm("run")}>
-              {running ? "正在启动…" : "▶ 立即补更"}
-            </button>
-          </div>
-        </div>
-      </section>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <section className="panel p-4">
@@ -258,31 +263,6 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
           ) : null}
         </section>
 
-        <section className="panel p-4">
-          <div className="section-title !mb-3">热点选题</div>
-          {data?.hot_topics?.present ? (
-            <>
-              <div className="mb-2 flex flex-wrap gap-1.5">
-                {(data.hot_topics.top_keywords || []).map(([k, n]) => (
-                  <span key={k} className="chip chip-info">{k} ×{n}</span>
-                ))}
-              </div>
-              {(data.hot_topics.sources || []).map((src) => (
-                <div key={src.source} className="mb-2">
-                  <div className="muted text-xs">
-                    {src.source}（{src.count || 0} 本）
-                    {src.error ? <span className="badge-bad"> · {src.error}</span> : ""}
-                  </div>
-              <div className="mt-0.5 break-words text-xs leading-relaxed text-slate-400">
-                    {(src.titles || []).slice(0, 8).join("、")}
-                  </div>
-                </div>
-              ))}
-            </>
-          ) : (
-            <div className="empty">暂无热点数据，等待采集任务写入。</div>
-          )}
-        </section>
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -324,6 +304,32 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
           </div>
         </section>
       </div>
+
+      <section className="panel p-4">
+        <div className="section-title !mb-3">热点选题</div>
+        {data?.hot_topics?.present ? (
+          <>
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {(data.hot_topics.top_keywords || []).map(([k, n]) => (
+                <span key={k} className="chip chip-info">{k} ×{n}</span>
+              ))}
+            </div>
+            {(data.hot_topics.sources || []).map((src) => (
+              <div key={src.source} className="mb-2">
+                <div className="muted text-xs">
+                  {src.source}（{src.count || 0} 本）
+                  {src.error ? <span className="badge-bad"> · {src.error}</span> : ""}
+                </div>
+                <div className="mt-0.5 break-words text-xs leading-relaxed text-slate-400">
+                  {(src.titles || []).slice(0, 8).join("、")}
+                </div>
+              </div>
+            ))}
+          </>
+        ) : (
+          <div className="empty">暂无热点数据，等待采集任务写入。</div>
+        )}
+      </section>
 
       {confirm === "run" ? (
         <div className="modal-mask" onMouseDown={(e) => e.target === e.currentTarget && setConfirm(null)}>
