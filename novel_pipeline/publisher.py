@@ -64,6 +64,18 @@ class FanqieHttpAdapter(PublisherAdapter):
             )
             self.conn.commit()
             raise RuntimeError(error or "publish failed")
+        if error:
+            # Published but the verification list did not show it yet
+            # (review latency): surface a warning instead of swallowing it.
+            try:
+                config.ALERTS_LOG.parent.mkdir(parents=True, exist_ok=True)
+                with config.ALERTS_LOG.open("a", encoding="utf-8") as f:
+                    f.write(
+                        f"[{datetime.now():%Y-%m-%d %H:%M:%S}] 章节 {row['seq']} "
+                        f"发布复核警告：{error}\n"
+                    )
+            except Exception:  # noqa: BLE001
+                pass
         self.conn.execute(
             "UPDATE chapters SET status='published', fanqie_item_id=?, published_at=? "
             "WHERE id=?",
@@ -79,4 +91,4 @@ class FanqieHttpAdapter(PublisherAdapter):
             (chapter_id, "fanqie", "publish", "success", "", 1),
         )
         self.conn.commit()
-        return {"result": "published", "item_id": item_id}
+        return {"result": "published", "item_id": item_id, "warning": error or ""}

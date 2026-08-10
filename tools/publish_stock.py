@@ -266,6 +266,7 @@ def main():
 
         published = 0
         failures = []
+        warnings = []
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         for ch in rows:
             try:
@@ -275,6 +276,14 @@ def main():
             except Exception as e:  # noqa: BLE001
                 ok, item_id, error = False, None, str(e)[:200]
             if ok:
+                if error:
+                    warnings.append({"chapter": ch["seq"], "warning": error})
+                    alerts = ROOT / "alerts.log"
+                    with alerts.open("a", encoding="utf-8") as f:
+                        f.write(
+                            f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
+                            f"章节 {ch['seq']} 发布复核警告：{error}\n"
+                        )
                 conn.execute(
                     "UPDATE chapters SET status='published', fanqie_item_id=?, "
                     "published_at=? WHERE id=?",
@@ -315,7 +324,12 @@ def main():
                 )
                 failures.append({"chapter": ch["seq"], "error": error})
             conn.commit()
-        summary = {"target": target, "published": published, "failures": failures}
+        summary = {
+            "target": target,
+            "published": published,
+            "failures": failures,
+            "warnings": warnings,
+        }
         audit.log(
             conn,
             "publish",

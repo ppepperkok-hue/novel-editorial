@@ -5,6 +5,7 @@ import os
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -45,6 +46,14 @@ class MigrationDedupTests(unittest.TestCase):
             "INSERT INTO publish_logs(chapter_id,platform,action,result,ai_declared,created_at) "
             "VALUES(2,'fanqie','publish','success',1,datetime('now','localtime'))"
         )
+        conn.execute(
+            "INSERT INTO world_events(novel_id,chapter_id,event,impact) "
+            "VALUES(1,2,'事件','影响')"
+        )
+        conn.execute(
+            "INSERT INTO character_evolution(novel_id,chapter_id,name,snapshot,change_log,arc,created_at) "
+            "VALUES(1,2,'主角','{}','变化','弧',datetime('now','localtime'))"
+        )
         conn.commit()
         conn.close()
 
@@ -62,6 +71,15 @@ class MigrationDedupTests(unittest.TestCase):
                 "(SELECT id FROM chapters)"
             ).fetchone()["c"]
             self.assertEqual(orphans, 0)
+            for table, col in (
+                ("world_events", "chapter_id"),
+                ("character_evolution", "chapter_id"),
+            ):
+                orphans = conn.execute(
+                    f"SELECT COUNT(*) c FROM {table} WHERE {col} NOT IN "
+                    "(SELECT id FROM chapters)"
+                ).fetchone()["c"]
+                self.assertEqual(orphans, 0, f"{table} must have no orphan rows")
         finally:
             conn.close()
 
@@ -153,6 +171,74 @@ class SchedulerMissingBodyTests(unittest.TestCase):
             self.assertTrue(report["failures"])
             row = conn.execute("SELECT status FROM chapters WHERE id=1").fetchone()
             self.assertEqual(row["status"], "reviewed")
+        finally:
+            conn.close()
+
+
+class SchedulerFailureReportTests(unittest.TestCase):
+    def test_failed_publish_not_counted_as_published(self):
+        path = make_db()
+        conn = db.connect(path)
+        try:
+            conn.execute(
+                "INSERT INTO chapters(novel_id,volume_id,seq,outline,status,title) "
+                "VALUES(1,1,1,'章纲','reviewed','第 1 章')"
+            )
+            conn.execute(
+                "INSERT INTO chapter_content(chapter_id,content,updated_at) "
+                "VALUES(1,'正文内容',datetime('now','localtime'))"
+            )
+            conn.commit()
+            from novel_pipeline.publisher import ManualAdapter
+            from novel_pipeline.scheduler import Scheduler
+
+            class ExplodingAdapter(ManualAdapter):
+                def publish(self, chapter_id, text, scheduled_at=None, as_draft=False):
+                    raise RuntimeError("番茄拒绝")
+
+            report = Scheduler(
+                adapter=ExplodingAdapter(), chapters_per_day=2
+            ).tick(conn)
+            self.assertEqual(report["published"], [], "failed chapter must not be in published")
+            self.assertEqual(len(report["failures"]), 1)
+            self.assertIn("番茄拒绝", report["failures"][0]["error"])
+        finally:
+            conn.close()
+
+
+class AdapterWarningTests(unittest.TestCase):
+    def test_verification_warning_is_surfaced(self):
+        import tempfile
+
+        tmp = tempfile.mkdtemp()
+        alert_file = os.path.join(tmp, "alerts.log")
+        path = make_db()
+        conn = db.connect(path)
+        try:
+            conn.execute(
+                "INSERT INTO chapters(novel_id,volume_id,seq,outline,status,title) "
+                "VALUES(1,1,1,'章纲','reviewed','第 1 章')"
+            )
+            conn.execute(
+                "INSERT INTO chapter_content(chapter_id,content,updated_at) "
+                "VALUES(1,'正文内容',datetime('now','localtime'))"
+            )
+            conn.commit()
+            from novel_pipeline import config as cfg
+            from novel_pipeline.publisher import FanqieHttpAdapter
+
+            adapter = FanqieHttpAdapter(conn)
+            with mock.patch(
+                "tools.publish_stock.publish_chapter",
+                return_value=(True, "i1", "发布成功但复核未在章节列表找到"),
+            ):
+                with mock.patch("tools.publish_stock.load_env", return_value={"FANQIE_COOKIE": "c"}):
+                    with mock.patch.object(cfg, "ALERTS_LOG", Path(alert_file)):
+                        result = adapter.publish(1, "正文内容")
+            self.assertEqual(result["warning"], "发布成功但复核未在章节列表找到")
+            self.assertTrue(
+                "复核警告" in Path(alert_file).read_text(encoding="utf-8")
+            )
         finally:
             conn.close()
 

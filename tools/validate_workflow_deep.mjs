@@ -120,6 +120,16 @@ for (const file of files) {
     if (!/qb\.passed === false/.test(sumCode)) {
       issues.push(`${file}: 汇总运行结果 must record B-track quality-gate failures explicitly`);
     }
+    // both-tracks-failed runs must still reach the summary via the fallback.
+    for (const [src, dst] of [
+      ["整理剧情A", "合并兜底"],
+      ["合并兜底", "合并发布结果"],
+    ]) {
+      const targets = (conns[src]?.main?.[0] || []).map((x) => x.node);
+      if (!targets.includes(dst)) {
+        issues.push(`${file}: merge fallback chain broken ${src} -> ${dst}`);
+      }
+    }
   }
 
   // 5. executeCommand nodes: parameterized command + args + relative cwd.

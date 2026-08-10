@@ -318,15 +318,14 @@ def _migrate(conn):
         """
     )
     # Deduplicate (novel_id, seq) keeping the published row when possible;
-    # clean child tables first so no orphan rows are left behind.
+    # clean child tables first so no orphan rows are left behind. A correlated
+    # EXISTS works on SQLite < 3.25 too (no ROW_NUMBER requirement).
     dup_rows = conn.execute(
-        "SELECT id FROM chapters WHERE id NOT IN ("
-        "  SELECT id FROM ("
-        "    SELECT id, ROW_NUMBER() OVER ("
-        "      PARTITION BY novel_id, seq "
-        "      ORDER BY CASE WHEN status='published' THEN 0 ELSE 1 END, id"
-        "    ) AS rn FROM chapters"
-        "  ) WHERE rn=1"
+        "SELECT id FROM chapters c WHERE EXISTS ("
+        "  SELECT 1 FROM chapters c2 "
+        "  WHERE c2.novel_id = c.novel_id AND c2.seq = c.seq "
+        "    AND ((c2.status = c.status AND c2.id < c.id) "
+        "      OR (c2.status='published' AND c.status!='published'))"
         ")"
     ).fetchall()
     dup_ids = [r["id"] for r in dup_rows]
@@ -337,6 +336,8 @@ def _migrate(conn):
             ("quality_reports", "chapter_id"),
             ("chapter_content", "chapter_id"),
             ("chapter_summaries", "chapter_id"),
+            ("world_events", "chapter_id"),
+            ("character_evolution", "chapter_id"),
         ):
             conn.execute(f"DELETE FROM {table} WHERE {col} IN ({marks})", dup_ids)
         conn.execute(f"DELETE FROM chapters WHERE id IN ({marks})", dup_ids)

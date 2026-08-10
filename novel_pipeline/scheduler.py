@@ -80,6 +80,7 @@ class Scheduler:
                     )
                     if self.alert_sink:
                         self.alert_sink.send(f"章节 {row['seq']} 发布失败：{exc}")
+                    continue
                 report["published"].append({"chapter_id": row["id"], "result": result})
         conn.commit()
         return report

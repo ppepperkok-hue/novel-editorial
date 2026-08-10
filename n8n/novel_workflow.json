@@ -1945,6 +1945,19 @@
         2400,
         700
       ]
+    },
+    {
+      "id": "n-merge-fallback",
+      "name": "合并兜底",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        880,
+        940
+      ],
+      "parameters": {
+        "jsCode": "const hasA = (() => { try { return !!$('校验发布A').first(); } catch { return false; } })();\nconst hasB = (() => { try { return !!$('校验发布B').first(); } catch { return false; } })();\nif (hasA || hasB) return [];\nreturn [{ json: { failed_both: true } }];"
+      }
     }
   ],
   "connections": {
@@ -2363,6 +2376,11 @@
             "node": "写手B",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "合并兜底",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -2628,6 +2646,17 @@
         [
           {
             "node": "结束",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "合并兜底": {
+      "main": [
+        [
+          {
+            "node": "合并发布结果",
             "type": "main",
             "index": 0
           }

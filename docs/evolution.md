@@ -392,3 +392,22 @@ Toast 带图标、执行失败可查看原因弹窗、作品库搜索与批量�
   4 分（低于通过线，真实拦截）；n8n_api 失败限频写 alerts.log。
 - **验证**：后端 134 + 前端 6 全绿；validate 全工作流通过；三份工作流重新部署
   激活；服务重启后 dashboard 200 / 跨站 POST 403。
+
+## 19. 第四轮复查修复（2026-08-10，F1-F5）
+
+- **F1 迁移孤儿**：chapters 去重清理扩展到 world_events / character_evolution
+  两张子表，测试断言全部子表无孤儿。
+- **F2 复核告警**：publish_stock 复核「未在章节列表找到」的警告不再被吞——
+  main 与 FanqieHttpAdapter 都写 alerts.log 并透传到返回值（warnings /
+  warning 字段）。
+- **F3 报告语义**：Scheduler.tick 失败章节只进 failures，不再同时混入
+  published（新增回归测试）。
+- **F4 双轨失败兜底**：新增「合并兜底」code 节点（整理剧情A → 合并兜底 →
+  合并发布结果）：校验发布A/B 都无输出时输出 failed_both 占位，保证双轨
+  同时失败时汇总运行结果仍执行、daily_result.json 照常生成（质量门失败
+  章节落库留痕）；直发成功时兜底返回空数组不干扰原链路；validator 增加
+  兜底连接断言。
+- **F5 SQLite 兼容**：去重 SQL 改用相关 EXISTS 写法（不再依赖 ROW_NUMBER
+  窗口函数），SQLite < 3.25 也可运行，且修正了「同状态最小 id」保留语义。
+- **验证**：后端 136 + 前端 6 全绿；README/ARCHITECTURE 测试数同步为 136；
+  三份工作流重新部署激活。
