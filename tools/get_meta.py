@@ -152,6 +152,7 @@ def main():
             "genre": row["genre"],
             "premise": row["premise"],
             "tags": json.loads(row["tags"] or "[]"),
+            "keywords": ",".join(json.loads(row["tags"] or "[]")),
             "abstract": row["abstract"],
             "protagonists": protagonists,
             "volume_goal": row["volume_goal"],

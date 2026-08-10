@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { advanceSession, getActiveSession, getSession, startMeeting } from "../api.js";
+import {
+  advanceSession,
+  cancelMeeting,
+  getActiveSession,
+  getSession,
+  startMeeting,
+} from "../api.js";
+import { ConfirmDialog } from "./ui.jsx";
 
 const AGENT_NAMES = {
   planner: "文策",
@@ -62,6 +69,7 @@ export default function MeetingLive({ onArchived }) {
   const [nowMs, setNowMs] = useState(Date.now());
   const [instruction, setInstruction] = useState("");
   const [advancing, setAdvancing] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const [msg, setMsg] = useState("");
   const onArchivedRef = useRef(onArchived);
 
@@ -161,6 +169,22 @@ export default function MeetingLive({ onArchived }) {
     }
   };
 
+  const doCancel = async () => {
+    setAdvancing(true);
+    try {
+      const r = await cancelMeeting(session.id);
+      setConfirmCancel(false);
+      if (r.ok) {
+        setSession(null);
+        onArchivedRef.current?.();
+      } else {
+        setMsg(r.error || "取消失败");
+      }
+    } finally {
+      setAdvancing(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-3">
       {!session ? (
@@ -209,7 +233,9 @@ export default function MeetingLive({ onArchived }) {
             {session.attendees?.length ? (
               <span className="muted text-xs">参会：{session.attendees.map((a) => AGENT_NAMES[a] || a).join("、")}</span>
             ) : null}
-            <button className="btn ml-auto !px-2.5 !py-1 text-xs" onClick={() => setSession(null)}>关闭</button>
+            <button className="btn ml-auto !px-2.5 !py-1 text-xs" onClick={() => setConfirmCancel(true)}>
+              取消会议
+            </button>
           </div>
 
           <div className="max-h-[380px] overflow-y-auto bg-[var(--bg-soft)] p-4">
@@ -344,6 +370,16 @@ export default function MeetingLive({ onArchived }) {
         </div>
       )}
       {msg ? <div className="text-xs text-red-400">{msg}</div> : null}
+      <ConfirmDialog
+        open={confirmCancel}
+        title="取消这次会议？"
+        body="取消后本次讨论立即终止，已发言内容会保留在记录里。注意：直接关闭面板不会停止后台会议，请用这个按钮结束。"
+        confirmText="取消会议"
+        tone="danger"
+        busy={advancing}
+        onCancel={() => setConfirmCancel(false)}
+        onConfirm={doCancel}
+      />
       <div className="muted text-xs leading-relaxed">
         与周会共用引擎：主席点将、3 轮相互通气、主席总结；会议结论写入每位 Agent 的记忆。每轮结束后可插话指示。
         还没有作品时直接开会，就是新书选题会——先讨论写什么，结论存档后再建书。

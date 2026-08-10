@@ -171,6 +171,12 @@ class MeetingSessionTests(unittest.TestCase):
             "SELECT session_id FROM weekly_meetings ORDER BY id DESC LIMIT 1"
         ).fetchone()
         self.assertEqual(weekly["session_id"], sid)
+        # New-book meeting conclusions become a planning novel automatically.
+        nb = self.conn.execute(
+            "SELECT id, title, status FROM novels WHERE status='planning'"
+        ).fetchone()
+        self.assertIsNotNone(nb)
+        self.assertEqual(nb["title"], "测试新书")
 
     def test_session_times_out_after_hard_limit(self):
         from tools import agent_meeting
@@ -211,6 +217,50 @@ class MeetingSessionTests(unittest.TestCase):
         s = meeting_session.get_session(self.conn, sid)
         self.assertEqual(s["status"], "running")
         self.assertEqual(s["instruction"], meeting_session.FINISH_TOKEN)
+
+    def test_second_meeting_rejected_while_one_is_active(self):
+        r1 = meeting_session.create_session(self.conn, "first meeting")
+        self.assertTrue(r1["ok"])
+        r2 = meeting_session.create_session(self.conn, "second meeting")
+        self.assertFalse(r2["ok"])
+        self.assertIn("已有会议进行中", r2["error"])
+
+    def test_stale_running_session_self_heals(self):
+        stale = time.strftime(
+            "%Y-%m-%d %H:%M:%S", time.gmtime(time.time() - 3600)
+        )
+        cur = self.conn.execute(
+            "INSERT INTO meeting_sessions(kind,topic,status,novel_id,heartbeat_at,created_at,updated_at) "
+            "VALUES('topic','stale','running',0,?,?,?)",
+            (stale, "2026-08-10 10:00:00", "2026-08-10 10:00:00"),
+        )
+        self.conn.commit()
+        sid = cur.lastrowid
+        active = meeting_session.get_active_session(self.conn)
+        self.assertIsNone(active)
+        row = self.conn.execute(
+            "SELECT status FROM meeting_sessions WHERE id=?", (sid,)
+        ).fetchone()
+        self.assertEqual(row["status"], "failed")
+
+    def test_cancel_during_speech_not_overwritten_by_awaiting(self):
+        cur = self.conn.execute(
+            "INSERT INTO meeting_sessions(kind,topic,status,novel_id,created_at,updated_at) "
+            "VALUES('topic','cancel-test','cancelled',0,datetime('now','localtime'),datetime('now','localtime'))"
+        )
+        self.conn.commit()
+        sid = cur.lastrowid
+        cur2 = self.conn.execute(
+            "UPDATE meeting_sessions SET status='awaiting_input', instruction='', "
+            "updated_at=? WHERE id=? AND status != 'cancelled'",
+            (time.strftime("%Y-%m-%d %H:%M:%S"), sid),
+        )
+        self.conn.commit()
+        self.assertEqual(cur2.rowcount, 0)
+        row = self.conn.execute(
+            "SELECT status FROM meeting_sessions WHERE id=?", (sid,)
+        ).fetchone()
+        self.assertEqual(row["status"], "cancelled")
 
     def test_get_active_session_returns_latest_in_progress(self):
         self.assertIsNone(meeting_session.get_active_session(self.conn))

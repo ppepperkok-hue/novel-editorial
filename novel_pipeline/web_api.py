@@ -389,6 +389,7 @@ def make_handler(db_path):
                 "/api/agent_actions/create",
                 "/api/meetings/start",
                 "/api/meetings/advance",
+                "/api/meetings/cancel",
                 "/api/agent/run",
                 "/api/knowledge",
                 "/api/knowledge_drafts",
@@ -492,6 +493,13 @@ def make_handler(db_path):
                             payload.get("session_id"),
                             payload.get("instruction", ""),
                             finish=bool(payload.get("finish")),
+                        )
+                    finally:
+                        conn.close()
+                elif parsed.path == "/api/meetings/cancel":
+                    try:
+                        result = meeting_service.cancel_session(
+                            conn, payload.get("session_id")
                         )
                     finally:
                         conn.close()

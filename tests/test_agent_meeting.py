@@ -281,6 +281,52 @@ class MeetingDryRunTests(unittest.TestCase):
 
 
 class ApplyReportTests(unittest.TestCase):
+    def test_create_planning_from_next_book_idempotent(self):
+        path = make_db()
+        from tools import apply_architect
+
+        conn = db.connect(path)
+        try:
+            report = {
+                "decisions": {
+                    "next_book": {
+                        "book_name": "Test Book",
+                        "genre": "玄幻",
+                        "abstract": "A premise",
+                        "selling_point": "hook",
+                        "protagonist": "Lin",
+                    }
+                },
+                "cover_prompt": "cover art prompt",
+            }
+            r1 = apply_architect.create_planning_from_next_book(conn, report)
+            r2 = apply_architect.create_planning_from_next_book(conn, report)
+            self.assertTrue(r1["ok"])
+            self.assertFalse(r1["duplicate"])
+            self.assertTrue(r2["duplicate"])
+            self.assertEqual(r1["id"], r2["id"])
+            row = conn.execute(
+                "SELECT title, genre, status, cover_prompt FROM novels WHERE id=?",
+                (r1["id"],),
+            ).fetchone()
+            self.assertEqual(row["status"], "planning")
+            self.assertEqual(row["cover_prompt"], "cover art prompt")
+        finally:
+            conn.close()
+
+    def test_create_planning_requires_next_book(self):
+        path = make_db()
+        from tools import apply_architect
+
+        conn = db.connect(path)
+        try:
+            r = apply_architect.create_planning_from_next_book(
+                conn, {"decisions": {}}
+            )
+            self.assertFalse(r["ok"])
+        finally:
+            conn.close()
+
     def test_apply_report_is_idempotent(self):
         path = make_db()
         from tools import apply_architect

@@ -3,7 +3,7 @@
 import json
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import novel_pipeline
 from novel_pipeline import config
@@ -24,13 +24,27 @@ def _now():
 def create_session(conn, topic, novel_id=0, db_path=""):
     if not topic or not str(topic).strip():
         return {"ok": False, "error": "topic 不能为空"}
+    active = get_active_session(conn)
+    if active is not None:
+        return {
+            "ok": False,
+            "error": f"已有会议进行中（#{active['id']}），请先结束或关闭当前会议",
+        }
     if not novel_id:
         row = conn.execute("SELECT id FROM novels ORDER BY id DESC LIMIT 1").fetchone()
         novel_id = row["id"] if row else 0
     cur = conn.execute(
-        "INSERT INTO meeting_sessions(kind,topic,status,novel_id,db_path,created_at,updated_at) "
-        "VALUES('topic',?,?,?,?,?,?)",
-        (str(topic).strip(), "running", novel_id, str(db_path or ""), _now(), _now()),
+        "INSERT INTO meeting_sessions(kind,topic,status,novel_id,db_path,heartbeat_at,created_at,updated_at) "
+        "VALUES('topic',?,?,?,?,?,?,?)",
+        (
+            str(topic).strip(),
+            "running",
+            novel_id,
+            str(db_path or ""),
+            _now(),
+            _now(),
+            _now(),
+        ),
     )
     conn.commit()
     session_id = cur.lastrowid
@@ -60,15 +74,35 @@ def get_session(conn, session_id):
 
 
 def get_active_session(conn):
-    """Latest in-progress topic session (running or awaiting input)."""
+    """Latest in-progress topic session (running or awaiting input).
+
+    Stale ``running`` sessions whose heartbeat is older than 10 minutes are
+    considered dead (their background thread died, e.g. after a web_api
+    restart) and are marked failed so they cannot block new meetings.
+    ``awaiting_input`` sessions are left alone: the thread is parked waiting
+    for the user, which is a legitimate state.
+    """
     row = conn.execute(
-        "SELECT id FROM meeting_sessions "
-        "WHERE status IN ('running','awaiting_input') "
+        "SELECT id FROM meeting_sessions WHERE status='running' ORDER BY id DESC LIMIT 5"
+    ).fetchone()
+    if row is not None:
+        session = get_session(conn, row["id"])
+        cutoff = (datetime.now() - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+        if session.get("heartbeat_at", "") < cutoff:
+            conn.execute(
+                "UPDATE meeting_sessions SET status='failed', updated_at=? WHERE id=?",
+                (_now(), row["id"]),
+            )
+            conn.commit()
+        else:
+            return session
+    parked = conn.execute(
+        "SELECT id FROM meeting_sessions WHERE status='awaiting_input' "
         "ORDER BY id DESC LIMIT 1"
     ).fetchone()
-    if row is None:
-        return None
-    return get_session(conn, row["id"])
+    if parked is not None:
+        return get_session(conn, parked["id"])
+    return None
 
 
 def advance_session(conn, session_id, instruction="", finish=False):
@@ -86,6 +120,27 @@ def advance_session(conn, session_id, instruction="", finish=False):
         (str(instruction or "").strip(), _now(), session_id),
     )
     conn.commit()
+    return {"ok": True}
+
+
+def cancel_session(conn, session_id):
+    """Cancel a running/parked session; the background thread stops at the
+    next round boundary (awaiting_input write is guarded against cancelled)."""
+    cur = conn.execute(
+        "UPDATE meeting_sessions SET status='cancelled', updated_at=? "
+        "WHERE id=? AND status IN ('running','awaiting_input')",
+        (_now(), session_id),
+    )
+    conn.commit()
+    if cur.rowcount == 0:
+        return {"ok": False, "error": "session not found or already finished"}
+    audit.log(
+        conn,
+        "meeting",
+        "cancel_session",
+        target_type="session",
+        target_id=session_id,
+    )
     return {"ok": True}
 
 
@@ -236,11 +291,15 @@ def _run_locked(conn, session_id):
                     (json.dumps(transcript, ensure_ascii=False), _now(), session_id),
                 )
                 conn.commit()
-            conn.execute(
-                "UPDATE meeting_sessions SET status='awaiting_input', instruction='', updated_at=? WHERE id=?",
+            cur = conn.execute(
+                "UPDATE meeting_sessions SET status='awaiting_input', instruction='', "
+                "updated_at=? WHERE id=? AND status != 'cancelled'",
                 (_now(), session_id),
             )
             conn.commit()
+            if cur.rowcount == 0:
+                # cancelled while speaking: stop instead of parking forever
+                return
             if round_no >= MAX_ROUNDS:
                 # Hard cap: auto-finish instead of waiting forever for a click.
                 break
@@ -345,6 +404,34 @@ def _run_locked(conn, session_id):
                     target_type="session",
                     target_id=session_id,
                     detail={"error": str(exc)},
+                )
+                conn.commit()
+        else:
+            # New-book meeting without a novel yet: turn decisions.next_book
+            # into a planning novel so auto-create on Fanqie has a target.
+            try:
+                from tools.apply_architect import create_planning_from_next_book  # noqa: PLC0415
+
+                book_result = create_planning_from_next_book(
+                    conn, report, cover_prompt=report.get("cover_prompt", "")
+                )
+                if book_result.get("ok"):
+                    audit.log(
+                        conn,
+                        "meeting",
+                        "planning_book_created",
+                        target_type="novel",
+                        target_id=str(book_result.get("id") or ""),
+                        detail={"duplicate": bool(book_result.get("duplicate"))},
+                    )
+            except Exception as exc:  # noqa: BLE001
+                audit.log(
+                    conn,
+                    "meeting",
+                    "planning_book_failed",
+                    target_type="session",
+                    target_id=session_id,
+                    detail={"error": str(exc)[:300]},
                 )
                 conn.commit()
         # meeting memory for each attendee

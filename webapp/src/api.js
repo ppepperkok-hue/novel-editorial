@@ -45,6 +45,8 @@ export const getSession = (id) => getJSON("/api/meetings/session?id=" + id);
 export const getActiveSession = () => getJSON("/api/meetings/active");
 export const advanceSession = (id, instruction, finish = false) =>
   postJSON("/api/meetings/advance", { session_id: id, instruction, finish });
+export const cancelMeeting = (id) =>
+  postJSON("/api/meetings/cancel", { session_id: id });
 export const getAiTaste = (chapterId) => getJSON("/api/ai_taste?chapter_id=" + chapterId);
 export const getEndingStatus = () => getJSON("/api/ending/status");
 export const confirmNextBook = (novelId) =>

@@ -91,6 +91,19 @@ def check_budget(conn, budget):
     return spent < budget, spent
 
 
+def check_active_book(conn):
+    """A daily run needs a publishable (publishing/finishing) novel; without
+    one the whole generation+publish chain would spin for nothing and
+    record_work would create garbage rows. New books are created by the
+    panel flow: new-book meeting -> planning -> auto-create on Fanqie."""
+    row = conn.execute(
+        "SELECT COUNT(*) c FROM novels WHERE status IN ('publishing','finishing')"
+    ).fetchone()
+    if row and row["c"]:
+        return True, ""
+    return False, "当前没有可发布的连载作品，请先开新书会并完成建书"
+
+
 def acquire_lock(lock_path=None):
     """Atomically claim the daily run lock (O_EXCL) to prevent concurrent
     scheduled + manual runs from both passing preflight and double-publishing.
@@ -163,6 +176,12 @@ def main():
     ap.add_argument("--db", default="demo.db")
     ap.add_argument("--budget", type=float, default=100.0)
     ap.add_argument("--env-file", default=str(ENV_FILE))
+    ap.add_argument(
+        "--no-lock",
+        action="store_true",
+        help="check-only mode for manual runs: do not acquire the daily lock "
+        "(n8n workflow keeps holding the lock until its final release node)",
+    )
     args = ap.parse_args()
 
     load_env(args.env_file)
@@ -183,6 +202,7 @@ def main():
         if manual_requested:
             already_ran = False
         budget_ok, spent = check_budget(conn, budget)
+        book_ok, book_reason = check_active_book(conn)
         reasons = []
         if not enabled:
             reasons.append("日更已暂停（可在监控面板恢复）")
@@ -194,10 +214,12 @@ def main():
         if not budget_ok:
             reasons.append(f"本月成本 {spent:.2f} 元已达预算 {budget:.2f} 元")
             alert(reasons[-1])
+        if not book_ok:
+            reasons.append(book_reason)
         if manual_requested:
             reasons.append("手动请求运行已生效")
-        ok = enabled and cookie_ok and not already_ran and budget_ok
-        if ok:
+        ok = enabled and cookie_ok and not already_ran and budget_ok and book_ok
+        if ok and not args.no_lock:
             lock_path = ROOT / "n8n_tmp" / f"{db_path.stem}.lock"
             locked, lock_reason = acquire_lock(lock_path)
             if not locked:
@@ -222,6 +244,7 @@ def main():
                 "cookie_valid": cookie_ok,
                 "already_ran": already_ran,
                 "budget_ok": budget_ok,
+                "book_ok": book_ok,
             },
             source="preflight",
         )

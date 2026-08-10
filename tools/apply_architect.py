@@ -24,6 +24,53 @@ def merge_blueprints(old, updates):
     return [by_seq[k] for k in sorted(by_seq)]
 
 
+def create_planning_from_next_book(conn, report, cover_prompt=""):
+    """Create a planning novel from a new-book meeting (no novel yet).
+
+    Used when a topic/new-book meeting produces decisions.next_book while no
+    work exists: the conclusion becomes a planning novel so the panel can
+    then run auto-create on Fanqie. Idempotent by title.
+    """
+    decisions = report.get("decisions") or {}
+    next_book = decisions.get("next_book")
+    if not isinstance(next_book, dict) or not str(next_book.get("book_name") or "").strip():
+        return {"ok": False, "reason": "report has no next_book"}
+    cover_prompt = str(cover_prompt or report.get("cover_prompt") or "").strip()
+    title = str(next_book["book_name"]).strip()[:50]
+    dup = conn.execute(
+        "SELECT id FROM novels WHERE title=? AND status='planning'", (title,)
+    ).fetchone()
+    if dup is not None:
+        return {"ok": True, "id": dup["id"], "duplicate": True}
+    protagonists = json.dumps(
+        [
+            {
+                "name": str(next_book.get("protagonist") or "主角").strip()[:20] or "主角",
+                "role": "主角",
+            }
+        ],
+        ensure_ascii=False,
+    )
+    cur = conn.execute(
+        "INSERT INTO novels(title,genre,premise,selling_point,platform,status,"
+        "abstract,protagonists,cover_prompt,updated_at) "
+        "VALUES(?,?,?,?,?,?,?,?,?,datetime('now','localtime'))",
+        (
+            title,
+            str(next_book.get("genre") or "都市").strip()[:20] or "都市",
+            str(next_book.get("abstract") or next_book.get("premise") or ""),
+            str(next_book.get("selling_point") or ""),
+            "fanqie",
+            "planning",
+            str(next_book.get("abstract") or ""),
+            protagonists,
+            str(cover_prompt or ""),
+        ),
+    )
+    conn.commit()
+    return {"ok": True, "id": cur.lastrowid, "duplicate": False}
+
+
 def apply_report(conn, novel_id, report):
     """Persist a meeting report: blueprints, reader persona, volume goal."""
     decisions = report.get("decisions") or {}

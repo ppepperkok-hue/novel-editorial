@@ -276,6 +276,24 @@ class WebApiTests(unittest.TestCase):
             created = json.loads(resp.read().decode("utf-8"))
         self.assertEqual(created["actions"][0]["task"], "organize reader feedback")
 
+    def test_meeting_cancel_endpoint(self):
+        from novel_pipeline.services import meeting_session
+
+        conn = db.connect(self.db_path)
+        r = meeting_session.create_session(conn, "cancel me")
+        sid = r["session_id"]
+        conn.close()
+        body = json.dumps({"session_id": sid}).encode("utf-8")
+        req = urlopen(f"{self.base}/api/meetings/cancel", data=body, timeout=10)
+        data = json.loads(req.read().decode("utf-8"))
+        self.assertTrue(data["ok"])
+        conn = db.connect(self.db_path)
+        row = conn.execute(
+            "SELECT status FROM meeting_sessions WHERE id=?", (sid,)
+        ).fetchone()
+        conn.close()
+        self.assertEqual(row["status"], "cancelled")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -415,6 +415,19 @@ def main():
         payload = json.loads(base64.b64decode(sys.argv[1]).decode("utf-8"))
     conn = db.connect(DB_PATH)
     try:
+        if not payload or not (
+            payload.get("book_name")
+            or payload.get("title")
+            or payload.get("book_id")
+            or payload.get("chapters")
+        ):
+            print(
+                json.dumps(
+                    {"ok": False, "error": "empty payload, skipped (no novel created)"},
+                    ensure_ascii=False,
+                )
+            )
+            return
         novel_id = upsert_novel(conn, payload)
         upsert_characters(conn, novel_id, payload.get("protagonists") or [])
         upsert_volume(conn, novel_id, payload)

@@ -1,6 +1,7 @@
 """Tests for preflight guards: manual-run retention, budget, lock safety."""
 
 import json
+import io
 import os
 import sys
 import tempfile
@@ -30,6 +31,7 @@ class PreflightTests(unittest.TestCase):
     def _run(self, path, cookie_ok=True, budget_ok=True, already=False):
         env = {"FANQIE_COOKIE": "c", "FANQIE_CSRF_TOKEN": "t"}
         alert_file = os.path.join(tempfile.mkdtemp(), "alerts.log")
+        out = io.StringIO()
         conn = db.connect(path)
         try:
             with mock.patch.object(sys, "argv", ["preflight", "--db", path]):
@@ -39,9 +41,11 @@ class PreflightTests(unittest.TestCase):
                             with mock.patch.object(preflight, "check_already_ran", return_value=already):
                                 with mock.patch.object(preflight, "acquire_lock", return_value=(True, "")):
                                     with mock.patch.dict(os.environ, env, clear=False):
-                                        return preflight.main()
+                                        with mock.patch("sys.stdout", out):
+                                            preflight.main()
         finally:
             conn.close()
+        return json.loads(out.getvalue() or "{}")
 
     def test_manual_request_consumed_only_when_ok(self):
         path = make_db()
@@ -63,6 +67,17 @@ class PreflightTests(unittest.TestCase):
 
     def test_pid_alive_windows_uses_openprocess(self):
         self.assertFalse(preflight._pid_alive(0) if os.name == "nt" else not preflight._pid_alive(os.getpid()))
+
+    def test_no_publishable_book_blocks_preflight(self):
+        import json
+
+        tmp = tempfile.mkdtemp()
+        path = os.path.join(tmp, "empty.db")
+        conn = db.connect(path)
+        conn.close()
+        result = self._run(path, cookie_ok=True, budget_ok=True, already=False)
+        self.assertFalse(result["ok"])
+        self.assertTrue(any("建书" in str(r) for r in result.get("reasons", [])))
 
 
 if __name__ == "__main__":
