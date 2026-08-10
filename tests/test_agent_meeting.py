@@ -224,7 +224,8 @@ class RoundSpeechRetryTests(unittest.TestCase):
                 )
             self.assertEqual(calls["n"], 2)
             self.assertEqual(calls["first_tools"][0]["function"]["name"], "get_knowledge")
-            self.assertIn("知识库工具", calls["first_system"])
+            self.assertIn("可用工具", calls["first_system"])
+            self.assertIn("get_novel_knowledge", calls["first_system"])
             self.assertIn("开篇钩子", calls["first_system"])
             roles = [m["role"] for m in calls["second_messages"]]
             self.assertIn("tool", roles)

@@ -94,10 +94,13 @@ def build_system(agent, target_words=None):
     body = body.replace("{TARGET_WORDS}", str(target_words or 2000))
     index = knowledge.build_knowledge_index(agent)
     tool_rule = (
-        "\n\n[知识库工具]\n"
-        "你的可用知识包见下方索引。当任务涉及索引中列出的主题时，"
-        "必须调用 get_knowledge 工具获取知识包内容，再基于内容输出最终结果；"
-        "知识包内容是硬规则，输出前逐条检查。"
+        "\n\n[可用工具]\n"
+        "1. get_knowledge：通用写作知识包。任务涉及开篇/钩子、节奏/爽点、人设/OOC、"
+        "伏笔、去AI味、市场热点/选题等主题时调用；知识包内容是硬规则。\n"
+        "2. get_novel_knowledge：当前这部小说的设定知识库（角色状态/世界观/物品/势力/"
+        "地点/力量体系/剧情事实/时间线）。写正文或设计细纲时，涉及本书已有设定必须调用"
+        "确认，禁止凭记忆编造或遗忘设定。\n"
+        "根据任务需要自主选择调用，可多次调用不同主题；调用后基于返回内容输出最终结果。"
     )
     if index:
         body += tool_rule + "\n\n" + index

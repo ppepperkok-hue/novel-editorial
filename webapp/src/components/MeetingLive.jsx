@@ -166,6 +166,9 @@ export default function MeetingLive({ onArchived }) {
                   <div className="mb-1.5 flex items-center gap-2">
                     <span className="text-xs font-bold">{AGENT_NAMES[m.agent] || m.agent}</span>
                     <span className="muted text-xs">第 {m.round} 轮</span>
+                    {(m.speech?._tools_used || []).map((t) => (
+                      <span key={t} className="chip chip-info !px-1.5 !py-0.5 text-[10px]">⚙ {t}</span>
+                    ))}
                   </div>
                   {m.speech?.speech ? (
                     <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-200">

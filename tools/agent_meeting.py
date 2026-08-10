@@ -265,8 +265,12 @@ def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run, i
     )
     index = knowledge.build_knowledge_index(agent)
     tool_rule = (
-        "\n\n[知识库工具]\n讨论涉及知识库索引中的主题时，必须调用 get_knowledge 工具"
-        "获取知识包内容，再基于内容按[会议模式]输出最终 JSON。"
+        "\n\n[可用工具]\n"
+        "1. get_knowledge：通用写作知识包（开篇/钩子、节奏/爽点、人设/OOC、伏笔、"
+        "去AI味、市场热点/选题），涉及这些主题时调用。\n"
+        "2. get_novel_knowledge：当前小说的设定知识库（角色状态/世界观/物品/势力/"
+        "地点/力量体系/剧情事实/时间线），讨论设定一致性时调用。\n"
+        "按需自主调用，可多次调用；调用后基于返回内容按[会议模式]输出最终 JSON。"
     )
     system = agent_md(agent) + tool_rule + ("\n\n" + index if index else "")
     user += "；" + natural_rule + "；" + json_rule
@@ -278,6 +282,20 @@ def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run, i
         system_override=system,
     )
     if tool_calls:
+        tools_used = []
+        for tc in tool_calls:
+            fn = tc.get("function") or {}
+            try:
+                args = json.loads(fn.get("arguments") or "{}")
+            except ValueError:
+                args = {}
+            tools_used.append(
+                f"{fn.get('name') or 'unknown'}({str(args.get('topic') or '')})"
+            )
+        first = parse_json(text)
+        if first is None:
+            first = {}
+        first["_tools_used"] = tools_used
         msgs = [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -315,7 +333,10 @@ def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run, i
             conn, novel_id, agent, None, temperature=0.6, dry_run=dry_run,
             mock_text=mock_text, messages=msgs, system_override=system,
         )
-        return parse_json(text) or {"raw": text[:2000]}
+        result = parse_json(text) or {"raw": text[:2000]}
+        if isinstance(result, dict):
+            result["_tools_used"] = tools_used
+        return result
 
     parsed = parse_json(text)
     if parsed:
