@@ -45,7 +45,7 @@ class AgentToolLoopTests(unittest.TestCase):
 
         def fake(model, system, user, temperature=0.5, max_tokens=1600, messages=None, tools=None):
             calls["n"] += 1
-            if calls["n"] == 1:
+            if calls["n"] <= 3:
                 return _resp("", [_tool_call()])
             self.assertIsNone(tools)
             self.assertIsNotNone(messages)
@@ -57,7 +57,7 @@ class AgentToolLoopTests(unittest.TestCase):
 
         with mock.patch("tools.agent_tool_loop.chat_deepseek", side_effect=fake):
             r = agent_tool_loop.run("writer", "写章末钩子")
-        self.assertEqual(calls["n"], 2)
+        self.assertEqual(calls["n"], 4)
         self.assertEqual(r["text"], "基于知识包的最终回答")
         self.assertEqual(r["attempts"], 2)
         self.assertEqual(r["used_knowledge"][0]["topic"], "钩子")
@@ -68,7 +68,7 @@ class AgentToolLoopTests(unittest.TestCase):
 
         def fake(model, system, user, temperature=0.5, max_tokens=1600, messages=None, tools=None):
             calls["n"] += 1
-            if calls["n"] == 1:
+            if calls["n"] <= 3:
                 raise RuntimeError("tools unsupported")
             return _resp("降级回答")
 
@@ -77,7 +77,7 @@ class AgentToolLoopTests(unittest.TestCase):
         self.assertTrue(r["ok"])
         self.assertEqual(r["text"], "降级回答")
         self.assertTrue(r["degraded"])
-        self.assertEqual(calls["n"], 2)
+        self.assertEqual(calls["n"], 4)
 
     def test_unknown_agent_raises(self):
         with self.assertRaises(ValueError):

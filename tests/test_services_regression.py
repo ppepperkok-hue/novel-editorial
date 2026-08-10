@@ -25,7 +25,7 @@ def make_db():
 
 
 class CheckStockTests(unittest.TestCase):
-    def test_outputs_settings_plus_db_arg(self):
+    def test_outputs_active_novel_metadata(self):
         path = make_db()
         from tools import check_stock
 
@@ -46,7 +46,30 @@ class CheckStockTests(unittest.TestCase):
         payload = json.loads(print_mock.call_args[0][0])
         self.assertEqual(payload["stock"], 1)
         self.assertEqual(payload["need"], 1)
+        # book isolation: the active publishing novel wins over settings
+        self.assertEqual(payload["novel_premise"], "设定")
+        self.assertEqual(payload["book_name"], "书")
+        self.assertEqual(payload["novel_id"], 1)
+
+    def test_falls_back_to_settings_when_no_book(self):
+        path = make_db()
+        from tools import check_stock
+
+        conn = db.connect(path)
+        conn.execute("DELETE FROM chapters")
+        conn.execute("DELETE FROM novels")
+        conn.execute(
+            "INSERT INTO settings(key,value) VALUES('novel_premise','测试设定') "
+            "ON CONFLICT(key) DO UPDATE SET value='测试设定'"
+        )
+        conn.commit()
+        conn.close()
+        with mock.patch.object(sys, "argv", ["check_stock", "--db", path]):
+            with mock.patch("builtins.print") as print_mock:
+                check_stock.main()
+        payload = json.loads(print_mock.call_args[0][0])
         self.assertEqual(payload["novel_premise"], "测试设定")
+        self.assertEqual(payload["book_id"], "")
 
 
 class ControlTests(unittest.TestCase):

@@ -22,7 +22,9 @@ def daily_run(conn, client, premise, chapters=3, chapters_per_day=2,
     env = env if env is not None else os.environ
     # Same lock as the n8n preflight: the scheduled task and the n8n daily
     # workflow must never run concurrently or chapters get double-published.
-    locked, lock_reason = preflight.acquire_lock()
+    db_file = Path(conn.execute("PRAGMA database_list").fetchone()[2])
+    lock_path = ROOT / "n8n_tmp" / f"{db_file.stem}.lock"
+    locked, lock_reason = preflight.acquire_lock(lock_path)
     if not locked:
         return {
             "ok": False,
@@ -46,7 +48,7 @@ def daily_run(conn, client, premise, chapters=3, chapters_per_day=2,
             conn, env=env, monthly_budget=monthly_budget, spent=spent
         )
     finally:
-        preflight.release_lock()
+        preflight.release_lock(lock_path)
     return {
         "generation": generation,
         "publish": publish,

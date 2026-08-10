@@ -1,7 +1,7 @@
 ---
 model: deepseek-v4-flash
 temperature: 0.7
-max_tokens: 2000
+max_tokens: 4000
 ---
 
 [人物档案]

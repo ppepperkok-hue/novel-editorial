@@ -91,39 +91,30 @@ def check_budget(conn, budget):
     return spent < budget, spent
 
 
-def acquire_lock():
+def acquire_lock(lock_path=None):
     """Atomically claim the daily run lock (O_EXCL) to prevent concurrent
-    scheduled + manual runs from both passing preflight and double-publishing."""
-    LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    scheduled + manual runs from both passing preflight and double-publishing.
+    The lock is time-based: a full run can take well over 30 minutes, so a
+    lock younger than 2h is considered held regardless of PID."""
+    lock = Path(lock_path) if lock_path else LOCK_FILE
+    lock.parent.mkdir(parents=True, exist_ok=True)
     try:
-        fd = os.open(LOCK_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         os.write(fd, f"{os.getpid()} {datetime.now():%Y-%m-%d %H:%M:%S}".encode("utf-8"))
         os.close(fd)
         return True, ""
     except FileExistsError:
         try:
-            pid = int(LOCK_FILE.read_text(encoding="utf-8").split()[0])
-            alive = _pid_alive(pid)
-        except Exception:
-            alive = time.time() - LOCK_FILE.stat().st_mtime < 3600
-        if not alive:
+            age = time.time() - lock.stat().st_mtime
+        except OSError:
+            age = 0
+        if age > 7200:
             try:
-                LOCK_FILE.unlink()
-                return acquire_lock()
+                lock.unlink()
+                return acquire_lock(lock_path)
             except OSError:
                 pass
-        else:
-            age = time.time() - LOCK_FILE.stat().st_mtime
-            if age > 7200:
-                # A full daily run can take well over 30 minutes (15+ LLM
-                # calls with large max_tokens); only reclaim after 2h when a
-                # live PID is almost certainly reused.
-                try:
-                    LOCK_FILE.unlink()
-                    return acquire_lock()
-                except OSError:
-                    pass
-        return False, "已有日更运行在途中（运行锁占用），本次跳过防双发"
+        return False, "已有日更运行在途（运行锁占用），本次跳过防重复"
 
 
 def _pid_alive(pid):
@@ -155,9 +146,10 @@ def _pid_alive(pid):
         return True
 
 
-def release_lock():
+def release_lock(lock_path=None):
+    lock = Path(lock_path) if lock_path else LOCK_FILE
     try:
-        LOCK_FILE.unlink()
+        lock.unlink()
     except OSError:
         pass
 
@@ -206,7 +198,8 @@ def main():
             reasons.append("手动请求运行已生效")
         ok = enabled and cookie_ok and not already_ran and budget_ok
         if ok:
-            locked, lock_reason = acquire_lock()
+            lock_path = ROOT / "n8n_tmp" / f"{db_path.stem}.lock"
+            locked, lock_reason = acquire_lock(lock_path)
             if not locked:
                 reasons.append(lock_reason)
                 ok = False

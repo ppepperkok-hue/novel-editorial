@@ -196,7 +196,7 @@ for (const file of files) {
     // verification nodes tolerate non-JSON bodies, editors get max_tokens.
     for (const name of ["质量门A", "质量门B"]) {
       const node = nodes.find((n) => n.name === name);
-      if (node && !/审稿输出非JSON/.test(node.parameters.jsCode || "")) {
+      if (node && !/审稿输出非JSON|review = null/.test(node.parameters.jsCode || "")) {
         issues.push(`${file}: ${name} must fail softly on non-JSON review`);
       }
     }
@@ -208,7 +208,7 @@ for (const file of files) {
     }
     for (const name of ["润色A", "润色B"]) {
       const node = nodes.find((n) => n.name === name);
-      if (node && !/max_tokens:4000/.test(node.parameters.jsonBody || "")) {
+      if (node && !/max_tokens:(4000|8000)/.test(node.parameters.jsonBody || "")) {
         issues.push(`${file}: ${name} is missing max_tokens (truncation risk)`);
       }
     }
@@ -281,27 +281,44 @@ for (const file of files) {
   }
 
   // 5. executeCommand nodes: parameterized command + args + relative cwd.
+  // n8n 2.x ships ExecuteCommand v1 (single `command` string; commandArguments
+  // and options.cwd are ignored). Newer n8n versions support the split form,
+  // so both shapes are accepted here.
   for (const n of nodes) {
     if (n.type !== "n8n-nodes-base.executeCommand") continue;
     const p = n.parameters || {};
     const command = String(p.command || "");
     const args = p.commandArguments;
     const cwd = (p.options && p.options.cwd) || "";
+    const legacy = !args || args === "";
     if (!command.includes("$env.PYTHON_EXE")) {
       issues.push(`${file}: executeCommand ${n.name} command is not parameterized with $env.PYTHON_EXE`);
     }
-    if (!args || args === "") {
-      issues.push(`${file}: executeCommand ${n.name} has no commandArguments`);
-    }
-    if (!cwd.includes("$env.PIPELINE_ROOT")) {
-      issues.push(`${file}: executeCommand ${n.name} cwd is not parameterized with $env.PIPELINE_ROOT`);
-    }
-    const hay = command + JSON.stringify(args || "") + cwd;
-    if (/E:\/code|Python311|&/.test(hay)) {
-      issues.push(`${file}: executeCommand ${n.name} contains hardcoded paths or shell '&'`);
-    }
-    if (typeof args === "string" && args.includes("$env.PYTHON_EXE")) {
-      issues.push(`${file}: executeCommand ${n.name} repeats the interpreter in commandArguments`);
+    if (legacy) {
+      if (!command.includes("$env.PIPELINE_ROOT")) {
+        issues.push(`${file}: executeCommand ${n.name} command does not parameterize cwd with $env.PIPELINE_ROOT`);
+      }
+      if (!command.includes(".join(' ')")) {
+        issues.push(`${file}: executeCommand ${n.name} v1 command must join its argument array`);
+      }
+      if (/E:[/\\]code|Python311/.test(command)) {
+        issues.push(`${file}: executeCommand ${n.name} contains hardcoded paths`);
+      }
+      const withoutInterp = command.replace(/\$env\.PYTHON_EXE/g, "");
+      if (/\bpython(\.exe)?\b/i.test(withoutInterp)) {
+        issues.push(`${file}: executeCommand ${n.name} repeats the interpreter in command`);
+      }
+    } else {
+      if (!cwd.includes("$env.PIPELINE_ROOT")) {
+        issues.push(`${file}: executeCommand ${n.name} cwd is not parameterized with $env.PIPELINE_ROOT`);
+      }
+      const hay = command + JSON.stringify(args || "") + cwd;
+      if (/E:[/\\]code|Python311|&/.test(hay)) {
+        issues.push(`${file}: executeCommand ${n.name} contains hardcoded paths or shell '&'`);
+      }
+      if (typeof args === "string" && args.includes("$env.PYTHON_EXE")) {
+        issues.push(`${file}: executeCommand ${n.name} repeats the interpreter in commandArguments`);
+      }
     }
   }
 
@@ -331,11 +348,15 @@ for (const file of files) {
 
   // 7. book isolation: daily diaries and weekly meetings bind to a novel/book.
   if (file === "novel_workflow.json") {
+    const cmdText = (node) =>
+      JSON.stringify(
+        (node && node.parameters && (node.parameters.commandArguments || node.parameters.command)) || ""
+      );
     const diary = nodes.find((n) => n.name === "全员写日记");
-    if (diary && !/--novel-id/.test(JSON.stringify(diary.parameters.commandArguments || ""))) {
+    if (diary && !/--novel-id/.test(cmdText(diary))) {
       issues.push(`${file}: 全员写日记 does not bind --novel-id`);
     }
-    if (diary && /解析本地资料/.test(JSON.stringify(diary.parameters.commandArguments || ""))) {
+    if (diary && /解析本地资料/.test(cmdText(diary))) {
       issues.push(`${file}: 全员写日记 must read 读当前书, not 解析本地资料 (stock branch)`);
     }
   }
@@ -343,9 +364,13 @@ for (const file of files) {
     if (!nodes.some((n) => n.name === "读当前书")) {
       issues.push(`${file}: missing 读当前书 node`);
     }
+    const cmdText = (node) =>
+      JSON.stringify(
+        (node && node.parameters && (node.parameters.commandArguments || node.parameters.command)) || ""
+      );
     for (const name of ["读上下文", "开会"]) {
       const node = nodes.find((n) => n.name === name);
-      if (node && !/JSON\.parse\(\$\('读当前书'\)/.test(JSON.stringify(node.parameters.commandArguments || ""))) {
+      if (node && !/JSON\.parse\(\$\('读当前书'\)/.test(cmdText(node))) {
         issues.push(`${file}: ${name} must read book from 读当前书, not n8n env`);
       }
     }

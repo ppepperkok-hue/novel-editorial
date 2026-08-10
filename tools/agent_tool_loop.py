@@ -87,8 +87,8 @@ def _parse_asset(path):
 
 
 def build_system(agent, target_words=None):
-    path = AGENTS_DIR / f"{agent}.md"
-    if not path.exists():
+    path = _resolve_agent_file(agent)
+    if path is None:
         raise ValueError(f"unknown agent: {agent}")
     meta, body = _parse_asset(path)
     body = body.replace("{TARGET_WORDS}", str(target_words or 2000))
@@ -107,6 +107,51 @@ def build_system(agent, target_words=None):
     return meta, body
 
 
+def _resolve_agent_file(agent):
+    """Resolve an agent reference to a prompt file.
+
+    Accepts three shapes:
+    1. the canonical file stem (e.g. "writer")
+    2. the workflow node name from render_workflow.AGENT_FILES (e.g. "写手A")
+    3. the display name from services.agents.AGENT_DISPLAY (e.g. "叙述写手")
+    """
+    direct = AGENTS_DIR / f"{agent}.md"
+    if direct.exists():
+        return direct
+    from tools.render_workflow import AGENT_FILES  # noqa: PLC0415
+
+    filename = AGENT_FILES.get(agent)
+    if filename:
+        candidate = AGENTS_DIR / filename
+        if candidate.exists():
+            return candidate
+    from novel_pipeline.services.agents import AGENT_DISPLAY  # noqa: PLC0415
+
+    for filename, display in AGENT_DISPLAY.items():
+        if display == agent:
+            candidate = AGENTS_DIR / filename
+            if candidate.exists():
+                return candidate
+    return None
+
+
+
+
+def _unwrap_text(text):
+    """Unwrap `{\"text\": ...}` JSON envelopes into plain prose."""
+    if not isinstance(text, str):
+        return text
+    stripped = text.strip()
+    if not (stripped.startswith("{") or stripped.startswith("[")):
+        return text
+    try:
+        obj = json.loads(stripped)
+    except ValueError:
+        return text
+    if isinstance(obj, dict) and isinstance(obj.get("text"), str):
+        return obj["text"]
+    return text
+
 def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None,
         novel_id=None, db_path=None):
     meta, system = build_system(agent, target_words)
@@ -116,6 +161,7 @@ def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None,
     degraded = False
 
     def _final(text, usage=None):
+        text = _unwrap_text(text)
         return {
             "ok": True,
             "text": text,
@@ -126,24 +172,43 @@ def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None,
             "degraded": degraded,
         }
 
-    try:
-        first = chat_deepseek(
-            model, system, task_text, temperature=temp,
-            max_tokens=max_tokens, tools=[GET_KNOWLEDGE_TOOL, GET_NOVEL_KNOWLEDGE_TOOL],
-        )
-    except Exception as exc:  # noqa: BLE001 - fall back to plain single round
-        degraded = True
+    first = None
+    tool_err = None
+    for _attempt in range(3):
         try:
-            first = chat_deepseek(
-                model, system, task_text, temperature=temp, max_tokens=max_tokens
+            cand = chat_deepseek(
+                model, system, task_text, temperature=temp,
+                max_tokens=max_tokens, tools=[GET_KNOWLEDGE_TOOL, GET_NOVEL_KNOWLEDGE_TOOL],
             )
-        except Exception as exc2:  # noqa: BLE001
+            if (cand.get("text") or "").strip() or cand.get("tool_calls"):
+                first = cand
+                break
+        except Exception as exc:  # noqa: BLE001 - retry, then fall back plain
+            tool_err = exc
+    if first is None:
+        degraded = True
+        plain = None
+        plain_err = None
+        for _attempt in range(3):
+            try:
+                cand = chat_deepseek(
+                    model, system, task_text, temperature=temp, max_tokens=max_tokens
+                )
+                if (cand.get("text") or "").strip():
+                    plain = cand
+                    break
+            except Exception as exc2:  # noqa: BLE001
+                plain_err = exc2
+        if plain is None:
             return {
                 "ok": False,
-                "error": f"tool loop failed (tools={str(exc)[:120]}, plain={str(exc2)[:120]})",
+                "error": (
+                    "tool loop failed "
+                    f"(tools={str(tool_err)[:120]}, plain={str(plain_err)[:120]})"
+                ),
                 "degraded": True,
             }
-        return _final(first["text"], first.get("usage") or {})
+        return _final(plain["text"], plain.get("usage") or {})
 
     tool_calls = first.get("tool_calls") or []
     if not tool_calls:
@@ -197,22 +262,31 @@ def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None,
             }
         )
 
-    try:
-        final = chat_deepseek(
-            model, None, None, temperature=temp, max_tokens=max_tokens, messages=msgs
-        )
-    except Exception as exc:  # noqa: BLE001 - degraded: keep first-round text
+    final = None
+    final_err = None
+    for _attempt in range(3):
+        try:
+            cand = chat_deepseek(
+                model, None, None, temperature=temp, max_tokens=max_tokens, messages=msgs
+            )
+            if (cand.get("text") or "").strip():
+                final = cand
+                break
+        except Exception as exc:  # noqa: BLE001 - retry, then degrade
+            final_err = exc
+    if final is None:
         degraded = True
         return {
             "ok": True,
-            "text": first.get("text") or "",
+            "text": _unwrap_text(first.get("text") or ""),
             "model": model,
             "usage": first.get("usage") or {"prompt_tokens": 0, "completion_tokens": 0},
             "used_knowledge": used_knowledge,
             "attempts": 1,
             "degraded": True,
-            "warning": f"final round failed: {str(exc)[:120]}",
+            "error": f"final round empty/error: {str(final_err)[:120]}",
         }
+
     first_usage = first.get("usage") or {}
     final_usage = final.get("usage") or {}
     usage = {
