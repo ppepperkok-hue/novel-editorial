@@ -271,7 +271,8 @@ def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run,
             "book_name", "volume_goal", "published_chapters", "stock_chapters",
             "quality_summary", "reader_stats", "open_plot_threads", "last_chapter_seq",
         )}, ensure_ascii=False)
-        + "；历史发言：" + json.dumps(history, ensure_ascii=False)
+        + "；历史发言（共 " + str(len(history)) + " 条，展示最近 2 条）："
+        + json.dumps(history[-2:], ensure_ascii=False)
     )
     natural_rule = (
         "发言要像一个真实的人在群里说话：先输出 speech 字段——第一人称、自然口语、"

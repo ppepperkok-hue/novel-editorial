@@ -164,7 +164,7 @@ def _run_locked(conn, session_id):
                     # One attendee failing must not kill the whole meeting:
                     # record a visible placeholder + audit trace and continue.
                     speech = {
-                        "speech": f"（{agent} 本轮发言生成失败：{exc.__class__.__name__}）",
+                        "speech": f"（{agent} 本轮没有发言，已跳过）",
                         "weekly_summary": "",
                         "feelings": "",
                         "opinion": "",
