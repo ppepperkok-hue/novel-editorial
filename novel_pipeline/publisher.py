@@ -5,6 +5,8 @@ from datetime import datetime
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+QUEUE_PATH = Path(__file__).resolve().parent.parent / "publish_queue.jsonl"
+
 
 class PublisherAdapter(ABC):
     @abstractmethod
@@ -15,17 +17,19 @@ class PublisherAdapter(ABC):
 class ManualAdapter(PublisherAdapter):
     """人工确认通道：把待发布章节写入队列文件，由真人过目后发布。"""
 
+    def __init__(self, queue_path=None):
+        self.queue_path = Path(queue_path) if queue_path else QUEUE_PATH
+
     def publish(self, chapter_id, text, scheduled_at=None, as_draft=False):
-        queue_path = Path("publish_queue.jsonl")
         record = {
             "chapter_id": chapter_id,
             "scheduled_at": scheduled_at,
             "as_draft": as_draft,
             "chars": len(text),
         }
-        with queue_path.open("a", encoding="utf-8") as f:
+        with self.queue_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
-        return {"result": "queued_for_manual_review", "queue_file": str(queue_path)}
+        return {"result": "queued_for_manual_review", "queue_file": str(self.queue_path)}
 
 
 class FanqieHttpAdapter(PublisherAdapter):

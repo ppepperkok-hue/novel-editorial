@@ -29,15 +29,17 @@ def make_db():
 class PreflightTests(unittest.TestCase):
     def _run(self, path, cookie_ok=True, budget_ok=True, already=False):
         env = {"FANQIE_COOKIE": "c", "FANQIE_CSRF_TOKEN": "t"}
+        alert_file = os.path.join(tempfile.mkdtemp(), "alerts.log")
         conn = db.connect(path)
         try:
             with mock.patch.object(sys, "argv", ["preflight", "--db", path]):
-                with mock.patch.object(preflight, "check_cookie", return_value=(cookie_ok, "")):
-                    with mock.patch.object(preflight, "check_budget", return_value=(budget_ok, 10.0)):
-                        with mock.patch.object(preflight, "check_already_ran", return_value=already):
-                            with mock.patch.object(preflight, "acquire_lock", return_value=(True, "")):
-                                with mock.patch.dict(os.environ, env, clear=False):
-                                    return preflight.main()
+                with mock.patch.object(preflight, "ALERTS_LOG", Path(alert_file)):
+                    with mock.patch.object(preflight, "check_cookie", return_value=(cookie_ok, "")):
+                        with mock.patch.object(preflight, "check_budget", return_value=(budget_ok, 10.0)):
+                            with mock.patch.object(preflight, "check_already_ran", return_value=already):
+                                with mock.patch.object(preflight, "acquire_lock", return_value=(True, "")):
+                                    with mock.patch.dict(os.environ, env, clear=False):
+                                        return preflight.main()
         finally:
             conn.close()
 

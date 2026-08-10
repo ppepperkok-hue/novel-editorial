@@ -55,12 +55,13 @@ class AutopilotTests(unittest.TestCase):
             "memory": MEMORY,
         })
         self.env = {"TOMATO_COOKIE": "c", "TOMATO_CSRF_TOKEN": "t"}
+        self.queue_file = os.path.join(self.tmpdir, "publish_queue.jsonl")
 
     def test_daily_run_generates_publishes_and_passes_health_check(self):
         result = daily_run(
             self.conn, self.client, "林舟重生回到高考前三个月。",
             chapters=5, chapters_per_day=2, min_chars=20, max_chars=60,
-            env=self.env, adapter=ManualAdapter(),
+            env=self.env, adapter=ManualAdapter(queue_path=self.queue_file),
         )
         self.assertTrue(result["ok"])
         self.assertEqual(len(result["publish"]["published"]), 2)
@@ -75,7 +76,7 @@ class AutopilotTests(unittest.TestCase):
         result = daily_run(
             self.conn, self.client, "林舟重生回到高考前三个月。",
             chapters=3, chapters_per_day=2, min_chars=20, max_chars=60,
-            env=self.env, adapter=ManualAdapter(),
+            env=self.env, adapter=ManualAdapter(queue_path=self.queue_file),
         )
         self.assertFalse(result["ok"])
         self.assertTrue(any("存稿池" in i for i in result["health_issues"]))

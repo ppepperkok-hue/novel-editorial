@@ -238,8 +238,16 @@ class MeetingDryRunTests(unittest.TestCase):
     def test_meeting_dry_run_full_chain(self):
         path = make_db()
         py = sys.executable
+        out_dir = tempfile.mkdtemp()
         r = subprocess.run(
-            [py, os.path.join(ROOT, "tools", "agent_meeting.py"), "--db", path, "--novel-id", "1", "--dry-run"],
+            [
+                py,
+                os.path.join(ROOT, "tools", "agent_meeting.py"),
+                "--db", path,
+                "--novel-id", "1",
+                "--dry-run",
+                "--out", out_dir,
+            ],
             capture_output=True,
             text=True,
             encoding="utf-8",

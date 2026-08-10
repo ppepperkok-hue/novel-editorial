@@ -504,6 +504,7 @@ def main():
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--topic", default="")
     ap.add_argument("--kind", choices=["weekly", "topic"], default="weekly")
+    ap.add_argument("--out", default="", help="override archive dir for the meeting JSON")
     args = ap.parse_args()
 
     topic = args.topic
@@ -647,7 +648,9 @@ def main():
         except (ImportError, AttributeError):
             print("note: apply_report not available yet", file=sys.stderr)
 
-        out = ROOT / "n8n_tmp" / f"meeting_{datetime.now():%Y%m%d_%H%M%S}.json"
+        out = Path(args.out) if args.out else ROOT / "n8n_tmp"
+        if out.is_dir():
+            out = out / f"meeting_{datetime.now():%Y%m%d_%H%M%S}.json"
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(
             json.dumps(
