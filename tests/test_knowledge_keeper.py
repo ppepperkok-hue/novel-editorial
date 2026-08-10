@@ -79,6 +79,35 @@ class KnowledgeKeeperTests(unittest.TestCase):
         ).fetchone()["c"]
         self.assertEqual(audit, 1)
 
+    def test_shrunken_market_update_goes_to_draft(self):
+        kdir = make_knowledge_dir()
+        keeper_output = {
+            "auto_updates": [
+                {"file": "market.md", "body": "短"}
+            ],
+            "draft_suggestions": [],
+            "deprecations": [],
+        }
+        with (
+            mock.patch.object(knowledge, "KNOWLEDGE_DIR", kdir),
+            mock.patch(
+                "tools.knowledge_keeper.chat_deepseek",
+                return_value={
+                    "text": json.dumps(keeper_output, ensure_ascii=False),
+                    "usage": {},
+                    "model": "deepseek-v4-flash",
+                },
+            ),
+        ):
+            result = knowledge_keeper.run(self.conn)
+        self.assertEqual(result["auto_updates"], [])
+        self.assertEqual(result["skipped_to_draft"], ["market.md"])
+        market = (kdir / "market.md").read_text(encoding="utf-8")
+        self.assertIn("旧市场内容", market)
+        drafts = knowledge.list_drafts(self.conn)
+        self.assertEqual(len(drafts), 1)
+        self.assertEqual(drafts[0]["title"], "知识包更新建议：市场热点")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -135,6 +135,7 @@ def run(conn, dry_run=False):
         if item["type"] == "market"
     }
     auto = []
+    skipped = []
     for item in parsed.get("auto_updates") or []:
         file = str(item.get("file") or "")
         body = str(item.get("body") or "").strip()
@@ -143,7 +144,23 @@ def run(conn, dry_run=False):
         full = knowledge.read_knowledge(file)
         if full is None:
             continue
-        knowledge.write_knowledge(file, full["meta"], body)
+        old_len = len((full.get("body") or "").strip())
+        if old_len and len(body) < old_len * 0.5:
+            # model shrank the package too much: route to human review
+            knowledge.add_draft(
+                conn, "knowledge",
+                f"知识包更新建议：{full['meta'].get('title') or file}",
+                body,
+                agent="knowledge_keeper",
+                source="keeper:auto",
+                agents=full["meta"].get("agents") or [],
+            )
+            skipped.append(file)
+            continue
+        meta = dict(full["meta"])
+        meta["keywords"] = full["meta"].get("keywords") or []
+        meta["source"] = full["meta"].get("source") or ""
+        knowledge.write_knowledge(file, meta, body)
         audit.log(
             conn, "knowledge", "keeper_auto_update",
             target_type="knowledge", target_id=file,
@@ -186,6 +203,7 @@ def run(conn, dry_run=False):
     return {
         "ok": True,
         "auto_updates": auto,
+        "skipped_to_draft": skipped,
         "draft_suggestions": drafts,
         "deprecations": deprecated,
     }
