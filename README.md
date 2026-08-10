@@ -564,9 +564,23 @@ n8n 质量门对正文截断无重试断言（max_tokens 已上调缓解）、�
 
 ## 十七、后续路线
 
-- **完结机制**：ending_judge 接入收尾决策、完结停更、新书孵化联动；
-- **统一留痕**：audit_logs 全类别回填、前端留痕档案细化、guard 拦截意见细粒度入库；
-- **人物卡进化**：character_evolution 成长轨迹注入、周会固化角色卡；
-- **从会议结论一键创建新书**：选题会结论直接生成 planning 新书，衔接自动建书。
+### 已完成
+
+- **完结机制**：ending_judge 周会输出 `finish_decision` → `apply_architect` 置
+  finishing + 剩余章数 → publish_stock 收尾递减、完结停更并自动关闭日更 →
+  新书孵化（finished 后创建下一本 planning）。
+- **统一留痕（主体）**：audit_logs 全类别回填（预检/设置/操作/发布/会议/知识/建书/
+  完结），前端「留痕档案」页可查；发布与质量门失败落 publish_logs。
+- **人物卡进化**：record_work 每章写入 character_evolution（快照/变化/弧线），
+  get_meta 注入写前记忆包，周会 `character_updates` 固化角色卡，前端作品库展示
+  成长轨迹。
+
+### 待做
+
+- **guard 拦截意见细粒度入库**：守护细纲的 constraints / character_beats 目前只
+  进写手提示词，未单独落库留痕（质量门失败已留痕，此项是守护层的审计补充）。
+- **从会议结论一键创建新书**：新书选题会（无作品时）结论只存档到会议档案，
+  不会直接生成 planning 新书；`next_book` 目前仅在本书 finished 后触发。
+  目标：选题会结束后一键把结论转成新书，衔接「确认创意 → 自动建书」。
 
 详见 `docs/evolution.md`（演进记录）与 `docs/planning/`（规划文档）。
