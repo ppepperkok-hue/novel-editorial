@@ -115,6 +115,21 @@ class WebApiTests(unittest.TestCase):
         conn.close()
         self.assertEqual(status, "rejected")
 
+    def test_novel_knowledge_list_and_upsert(self):
+        body = json.dumps(
+            {"action": "upsert", "novel_id": 1, "category": "character",
+             "entity": "苏晚晴", "content": "筑基中期"}
+        ).encode("utf-8")
+        with urlopen(
+            f"{self.base}/api/novel_knowledge", data=body, timeout=10
+        ) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        self.assertTrue(data["ok"])
+        with urlopen(f"{self.base}/api/novel_knowledge?novel_id=1", timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        self.assertEqual(len(data["items"]), 1)
+        self.assertEqual(data["items"][0]["entity"], "苏晚晴")
+
 
 if __name__ == "__main__":
     unittest.main()

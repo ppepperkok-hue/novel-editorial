@@ -36,6 +36,7 @@ class AgentToolLoopTests(unittest.TestCase):
         self.assertFalse(r["degraded"])
         call = chat.call_args
         self.assertEqual(call.kwargs["tools"][0]["function"]["name"], "get_knowledge")
+        self.assertEqual(call.kwargs["tools"][1]["function"]["name"], "get_novel_knowledge")
         self.assertIn("知识库工具", call.args[1])
 
     def test_tool_calls_resolved_and_second_round(self):

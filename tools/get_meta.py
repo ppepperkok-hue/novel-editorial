@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT))
 
 from novel_pipeline import data_feedback, db  # noqa: E402
 from tools.app_settings import get_all  # noqa: E402
+from tools import novel_knowledge  # noqa: E402
 
 
 def main():
@@ -171,6 +172,7 @@ def main():
             "finish_remaining": row["finish_remaining"],
             "target_chapters": row["target_chapters"],
             "character_evolution": evolution,
+            "novel_knowledge": novel_knowledge.snapshot(conn, row["id"]),
             "last_chapter": {
                 "seq": last_chapter["seq"],
                 "title": last_chapter["title"],

@@ -203,6 +203,22 @@ export async function distillLessons(meetingId, sessionId) {
   return r.json();
 }
 
+export async function getNovelKnowledge(novelId, category) {
+  const q = "?novel_id=" + novelId + (category ? "&category=" + encodeURIComponent(category) : "");
+  const r = await fetch(API_BASE + "/api/novel_knowledge" + q);
+  if (!r.ok) throw new Error("novel_knowledge " + r.status);
+  return r.json();
+}
+
+export async function upsertNovelKnowledge(payload) {
+  const r = await fetch(API_BASE + "/api/novel_knowledge", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "upsert", ...payload }),
+  });
+  return r.json();
+}
+
 export async function getCharacterEvolution(novelId) {
   const r = await fetch(API_BASE + "/api/characters/evolution?novel_id=" + novelId);
   if (!r.ok) throw new Error("evolution " + r.status);

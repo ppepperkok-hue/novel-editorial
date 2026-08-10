@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from novel_pipeline import db  # noqa: E402
+from tools import novel_knowledge  # noqa: E402
 
 
 def load_reader_stats():
@@ -82,6 +83,7 @@ def build_planning_materials():
         "target_chapters": 0,
         "character_states": [],
         "quality_summary": {"total": 0, "passed": 0, "avg_score": 0},
+        "novel_knowledge": [],
     }
     agent_briefs = {
         "planner": {
@@ -237,6 +239,7 @@ def build_materials(conn, novel_id, allow_empty=False):
             "passed": quality["passed"] or 0,
             "avg_score": round(quality["avg_score"] or 0, 1),
         },
+        "novel_knowledge": novel_knowledge.snapshot(conn, novel_id),
     }
 
     w = {

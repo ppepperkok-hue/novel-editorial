@@ -202,6 +202,27 @@ CREATE TABLE IF NOT EXISTS knowledge_drafts (
     created_at TEXT DEFAULT '',
     accepted_at TEXT DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS novel_knowledge (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    novel_id INTEGER NOT NULL,
+    category TEXT NOT NULL,
+    entity TEXT NOT NULL,
+    content TEXT NOT NULL,
+    source_chapter INTEGER,
+    version INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT DEFAULT '',
+    UNIQUE(novel_id, category, entity)
+);
+
+CREATE TABLE IF NOT EXISTS novel_knowledge_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    knowledge_id INTEGER NOT NULL REFERENCES novel_knowledge(id),
+    content TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    change_note TEXT DEFAULT '',
+    created_at TEXT DEFAULT ''
+);
 """
 
 

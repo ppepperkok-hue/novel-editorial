@@ -190,6 +190,22 @@ def make_handler(db_path):
                         self._json(misc_service.character_evolution(conn, novel_id))
                     finally:
                         conn.close()
+                elif path == "/api/novel_knowledge":
+                    from tools import novel_knowledge  # noqa: PLC0415
+
+                    conn = db.connect(db_path)
+                    try:
+                        qs = parse_qs(parsed.query)
+                        novel_id = int(qs["novel_id"][0]) if qs.get("novel_id") else 0
+                        category = qs.get("category", [""])[0] or None
+                        if not novel_id:
+                            self._json({"error": "novel_id required"}, status=400)
+                        else:
+                            self._json(
+                                {"items": novel_knowledge.get(conn, novel_id, category=category)}
+                            )
+                    finally:
+                        conn.close()
                 elif path == "/api/diaries":
                     conn = db.connect(db_path)
                     try:
@@ -251,6 +267,7 @@ def make_handler(db_path):
                 "/api/agent/run",
                 "/api/knowledge",
                 "/api/knowledge_drafts",
+                "/api/novel_knowledge",
             ):
                 self.send_error(404, "Not Found")
                 return
@@ -331,6 +348,7 @@ def make_handler(db_path):
                             temperature=payload.get("temperature"),
                             max_tokens=int(payload.get("max_tokens") or 1600),
                             target_words=payload.get("target_words"),
+                            novel_id=payload.get("novel_id"),
                         )
                         if loop_result.get("ok"):
                             result = {
@@ -436,6 +454,43 @@ def make_handler(db_path):
                             db_path=str(db_path),
                         )
                         conn = db.connect(db_path)
+                    else:
+                        result = {"ok": False, "error": f"unknown action {action}"}
+                elif parsed.path == "/api/novel_knowledge":
+                    from tools import novel_knowledge  # noqa: PLC0415
+
+                    action = payload.get("action") or "list"
+                    novel_id = int(payload.get("novel_id") or 0)
+                    if action == "list":
+                        result = {
+                            "ok": True,
+                            "items": novel_knowledge.get(
+                                conn, novel_id, category=payload.get("category")
+                            ),
+                        }
+                    elif action == "upsert":
+                        try:
+                            kid = novel_knowledge.upsert(
+                                conn,
+                                novel_id,
+                                str(payload.get("category") or ""),
+                                str(payload.get("entity") or ""),
+                                str(payload.get("content") or ""),
+                                source_chapter=payload.get("source_chapter"),
+                                change_note=str(payload.get("change_note") or ""),
+                            )
+                        except ValueError as exc:
+                            result = {"ok": False, "error": str(exc)}
+                        else:
+                            audit_service.log(
+                                conn, "knowledge", "novel_knowledge_upsert",
+                                target_type="novel", target_id=str(novel_id),
+                                detail={
+                                    "category": payload.get("category"),
+                                    "entity": payload.get("entity"),
+                                },
+                            )
+                            result = {"ok": bool(kid), "id": kid}
                     else:
                         result = {"ok": False, "error": f"unknown action {action}"}
                 self._json(result)

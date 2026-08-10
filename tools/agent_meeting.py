@@ -98,6 +98,28 @@ GET_KNOWLEDGE_TOOL = {
     },
 }
 
+GET_NOVEL_KNOWLEDGE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "get_novel_knowledge",
+        "description": (
+            "获取当前这部小说的设定知识库：角色当前状态、世界观规则、物品/金手指、"
+            "势力、地点、力量体系、剧情事实与时间线。讨论设定一致性时必须调用本工具确认，"
+            "禁止凭记忆编造或遗忘已有设定。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "topic": {
+                    "type": "string",
+                    "description": "查询关键词，例如：角色名、物品名、境界、地点、势力、事件",
+                }
+            },
+            "required": ["topic"],
+        },
+    },
+}
+
 
 def ask(conn, novel_id, agent, user, temperature, dry_run, mock_text, max_tokens=1600,
         tools=None, messages=None, system_override=None):
@@ -251,7 +273,9 @@ def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run, i
 
     text, _usage, _model, tool_calls = ask(
         conn, novel_id, agent, user, temperature=0.6, dry_run=dry_run,
-        mock_text=mock_text, tools=[GET_KNOWLEDGE_TOOL], system_override=system,
+        mock_text=mock_text,
+        tools=[GET_KNOWLEDGE_TOOL, GET_NOVEL_KNOWLEDGE_TOOL],
+        system_override=system,
     )
     if tool_calls:
         msgs = [
@@ -261,15 +285,25 @@ def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run, i
         ]
         for tc in tool_calls:
             fn = tc.get("function") or {}
+            name = fn.get("name") or ""
             try:
                 args = json.loads(fn.get("arguments") or "{}")
             except ValueError:
                 args = {}
             tool_topic = str(args.get("topic") or "")
-            hits = knowledge.resolve_knowledge(agent, tool_topic)
-            content = "\n\n".join(
-                f"【{h['title']}】\n{h['content']}" for h in hits
-            ) or f"未找到与「{tool_topic}」匹配的知识包，请直接发言。"
+            if name == "get_novel_knowledge":
+                from tools import novel_knowledge  # noqa: PLC0415
+
+                hits = novel_knowledge.resolve(conn, novel_id, tool_topic)
+                content = "\n\n".join(
+                    f"【{h['category']}·{h['entity']} v{h['version']}】\n{h['content']}"
+                    for h in hits
+                ) or f"知识库中没有与「{tool_topic}」相关的设定，请基于已有材料发言并不要编造新设定。"
+            else:
+                hits = knowledge.resolve_knowledge(agent, tool_topic)
+                content = "\n\n".join(
+                    f"【{h['title']}】\n{h['content']}" for h in hits
+                ) or f"未找到与「{tool_topic}」匹配的知识包，请直接发言。"
             msgs.append(
                 {
                     "role": "tool",

@@ -5,6 +5,8 @@ import {
   exportNovels,
   getCharacterEvolution,
   getEndingStatus,
+  getNovelKnowledge,
+  upsertNovelKnowledge,
 } from "../api.js";
 import { useEffect } from "react";
 
@@ -44,6 +46,110 @@ function CharacterCard({ c, evolutions }) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+const CATEGORY_LABELS = {
+  character: "角色",
+  world_rule: "世界观",
+  item: "物品/金手指",
+  faction: "势力",
+  location: "地点",
+  power: "力量体系",
+  plot: "剧情事实",
+  timeline: "时间线",
+};
+
+function NovelKnowledgeBlock({ novelId, pushToast }) {
+  const [items, setItems] = useState([]);
+  const [editor, setEditor] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    getNovelKnowledge(novelId)
+      .then((r) => setItems(r.items || []))
+      .catch(() => setItems([]));
+  };
+  useEffect(() => {
+    load();
+  }, [novelId]);
+
+  const save = async () => {
+    if (!editor) return;
+    setBusy(true);
+    try {
+      const r = await upsertNovelKnowledge({
+        novel_id: novelId,
+        category: editor.category,
+        entity: editor.entity,
+        content: editor.content,
+        change_note: editor.change_note,
+      });
+      pushToast(r.ok ? "设定已保存" : "保存失败：" + (r.error || "未知"), r.ok ? "ok" : "bad");
+      if (r.ok) {
+        setEditor(null);
+        load();
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Field label={`设定知识库（${items.length}）`}>
+      <div className="flex flex-col gap-1.5">
+        {items.map((it) => (
+          <div key={it.id} className="rounded-md bg-[var(--bg-soft)] px-2 py-1.5">
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-sky-400">{CATEGORY_LABELS[it.category] || it.category}</span>
+              <span className="font-semibold text-slate-200">{it.entity}</span>
+              <span className="muted">v{it.version}</span>
+              {it.source_chapter ? <span className="muted">第 {it.source_chapter} 章</span> : null}
+              <button
+                className="btn ml-auto !px-2 !py-0.5 text-xs"
+                onClick={() => setEditor({ id: it.id, category: it.category, entity: it.entity, content: it.content, change_note: "" })}
+              >
+                编辑
+              </button>
+            </div>
+            <div className="muted mt-1 break-words text-xs leading-relaxed">{it.content}</div>
+          </div>
+        ))}
+        {!items.length ? <div className="muted text-xs">还没有设定条目。日更会自动同步角色状态与剧情事实。</div> : null}
+
+        {editor ? (
+          <div className="mt-1 rounded-md border border-[var(--line)] p-2">
+            <div className="grid grid-cols-2 gap-1.5">
+              <label className="text-xs muted">
+                分类
+                <select className="input mt-0.5" value={editor.category} onChange={(e) => setEditor({ ...editor, category: e.target.value })}>
+                  {Object.entries(CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </label>
+              <label className="text-xs muted">
+                实体名（角色/物品/地点）
+                <input className="input mt-0.5" value={editor.entity} onChange={(e) => setEditor({ ...editor, entity: e.target.value })} />
+              </label>
+            </div>
+            <label className="mt-1.5 block text-xs muted">
+              设定内容
+              <textarea className="input mt-0.5 h-20 w-full" value={editor.content} onChange={(e) => setEditor({ ...editor, content: e.target.value })} />
+            </label>
+            <div className="mt-1.5 flex justify-end gap-2">
+              <button className="btn !px-2.5 !py-0.5 text-xs" onClick={() => setEditor(null)}>取消</button>
+              <button className="btn btn-ok !px-2.5 !py-0.5 text-xs" disabled={busy} onClick={save}>保存</button>
+            </div>
+          </div>
+        ) : (
+          <button
+            className="btn mt-1 !px-2.5 !py-0.5 text-xs"
+            onClick={() => setEditor({ category: "character", entity: "", content: "", change_note: "手动录入" })}
+          >
+            + 新增设定
+          </button>
+        )}
+      </div>
+    </Field>
   );
 }
 
@@ -311,6 +417,7 @@ export default function WorksPage({ data, pushToast }) {
                   </Field>
                 ) : null}
 
+                <NovelKnowledgeBlock novelId={n.id} pushToast={pushToast} />
                 <div className="muted text-xs">书 ID：{n.book_id || "未关联"} · 番茄章节 ID 见章节管理</div>
               </div>
             ) : null}
