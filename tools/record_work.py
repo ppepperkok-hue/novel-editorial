@@ -11,7 +11,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-ROOT = Path(r"E:\code\novel-pipeline")
+ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = ROOT / "demo.db"
 sys.path.insert(0, str(ROOT))
 
@@ -74,14 +74,28 @@ def upsert_novel(conn, payload):
 
 
 def upsert_characters(conn, novel_id, protagonists):
-    conn.execute("DELETE FROM characters WHERE novel_id=?", (novel_id,))
     for i, p in enumerate(protagonists or [], start=1):
-        conn.execute(
-            "INSERT INTO characters(novel_id,name,role,traits,goals,first_seen_chapter) "
-            "VALUES(?,?,?,?,?,?)",
-            (novel_id, str(p.get("name") or "主角" + str(i)), str(p.get("role") or "主角"),
-             str(p.get("traits") or ""), str(p.get("goals") or ""), 1),
-        )
+        name = str(p.get("name") or "主角" + str(i))
+        row = conn.execute(
+            "SELECT id FROM characters WHERE novel_id=? AND name=?", (novel_id, name)
+        ).fetchone()
+        if row:
+            conn.execute(
+                "UPDATE characters SET role=?, traits=?, goals=? WHERE id=?",
+                (
+                    str(p.get("role") or "主角"),
+                    str(p.get("traits") or ""),
+                    str(p.get("goals") or ""),
+                    row["id"],
+                ),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO characters(novel_id,name,role,traits,goals,first_seen_chapter) "
+                "VALUES(?,?,?,?,?,?)",
+                (novel_id, name, str(p.get("role") or "主角"),
+                 str(p.get("traits") or ""), str(p.get("goals") or ""), 1),
+            )
     conn.commit()
 
 
@@ -201,8 +215,9 @@ def _upsert_summary(conn, novel_id, chapter_id, seq, ch):
             )
         elif ev.get("resolved"):
             conn.execute(
-                "UPDATE plot_threads SET status='closed' WHERE novel_id=? AND planted_chapter=?",
-                (novel_id, seq),
+                "UPDATE plot_threads SET status='closed' WHERE novel_id=? "
+                "AND status='open' AND description=?",
+                (novel_id, desc),
             )
     for p in summary.get("foreshadowing_planted") or []:
         if not isinstance(p, dict):
@@ -222,11 +237,21 @@ def _upsert_summary(conn, novel_id, chapter_id, seq, ch):
         desc = str(r.get("description") or "").strip()
         if not desc:
             continue
-        conn.execute(
-            "UPDATE plot_threads SET status='closed' "
-            "WHERE novel_id=? AND status='open' AND description LIKE ?",
-            (novel_id, "%" + desc[:40] + "%"),
-        )
+        row = conn.execute(
+            "SELECT id FROM plot_threads WHERE novel_id=? AND status='open' "
+            "AND description=? ORDER BY planted_chapter LIMIT 1",
+            (novel_id, desc),
+        ).fetchone()
+        if row is None:
+            row = conn.execute(
+                "SELECT id FROM plot_threads WHERE novel_id=? AND status='open' "
+                "AND description LIKE ? ORDER BY planted_chapter LIMIT 1",
+                (novel_id, "%" + desc[:40] + "%"),
+            ).fetchone()
+        if row:
+            conn.execute(
+                "UPDATE plot_threads SET status='closed' WHERE id=?", (row["id"],)
+            )
 
 
 def upsert_chapters(conn, novel_id, chapters):
@@ -305,9 +330,9 @@ def _rate_for_model(model):
     return float(os.environ.get("COST_PRO_PER_1K", "0.01"))
 
 
-def upsert_costs(conn, novel_id, payload):
-    """Record LLM token usage into cost_logs (idempotent per run is not
-    critical; duplicates are bounded by manual re-runs)."""
+def upsert_costs(conn, novel_id, payload, run_id=""):
+    """Record LLM token usage into cost_logs; a non-empty run_id makes the
+    insert idempotent so n8n retries do not double-count costs."""
     for c in payload.get("costs") or []:
         if not isinstance(c, dict):
             continue
@@ -316,18 +341,27 @@ def upsert_costs(conn, novel_id, payload):
         if pt + ct <= 0:
             continue
         model = str(c.get("model") or "")
+        node = str(c.get("node") or "")
+        if run_id:
+            dup = conn.execute(
+                "SELECT id FROM cost_logs WHERE run_id=? AND node_name=?",
+                (run_id, node),
+            ).fetchone()
+            if dup:
+                continue
         rate = _rate_for_model(model)
         cost = round(pt / 1000.0 * rate + ct / 1000.0 * rate, 6)
         conn.execute(
             "INSERT INTO cost_logs(novel_id,node_name,model,prompt_tokens,"
-            "completion_tokens,cost,created_at) VALUES(?,?,?,?,?,?,?)",
+            "completion_tokens,cost,run_id,created_at) VALUES(?,?,?,?,?,?,?,?)",
             (
                 novel_id,
-                str(c.get("node") or ""),
+                node,
                 model,
                 pt,
                 ct,
                 cost,
+                run_id,
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             ),
         )
@@ -352,7 +386,7 @@ def main():
         upsert_characters(conn, novel_id, payload.get("protagonists") or [])
         upsert_volume(conn, novel_id, payload)
         upsert_chapters(conn, novel_id, payload.get("chapters") or [])
-        upsert_costs(conn, novel_id, payload)
+        upsert_costs(conn, novel_id, payload, run_id=str(payload.get("run_id") or ""))
         print("recorded novel_id=", novel_id, "chapters=", len(payload.get("chapters") or []))
     finally:
         conn.close()

@@ -54,7 +54,8 @@ def run_checks(conn, env=None, monthly_budget=100.0, spent=0.0):
             issues.append(f"断更预警：小说「{novel['title']}」存稿池 {level} 章")
 
     failed = conn.execute(
-        "SELECT COUNT(*) c FROM publish_logs WHERE result='failed'"
+        "SELECT COUNT(*) c FROM publish_logs WHERE result='failed' "
+        "AND created_at >= datetime('now','localtime','-7 days')"
     ).fetchone()["c"]
     if failed:
         issues.append(f"发布失败 {failed} 条，请检查发布适配器")

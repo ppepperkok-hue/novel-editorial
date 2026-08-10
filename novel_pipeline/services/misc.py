@@ -113,7 +113,7 @@ def load_meetings(conn, limit=20):
     return out
 
 
-def start_topic_meeting(topic):
+def start_topic_meeting(topic, db_path="demo.db"):
     """Launch a topic meeting in a background thread."""
     if not topic or not str(topic).strip():
         return {"ok": False, "error": "topic 不能为空"}
@@ -125,7 +125,7 @@ def start_topic_meeting(topic):
                     sys.executable,
                     str(config.ROOT / "tools" / "agent_meeting.py"),
                     "--db",
-                    "demo.db",
+                    str(db_path),
                     "--topic",
                     str(topic).strip(),
                     "--kind",

@@ -43,14 +43,14 @@ AGENT_NAMES = [
 def load_env():
     """Load ~/.n8n/.env into a dict (without mutating os.environ), merged
     with already-set process environment variables."""
-    env = {}
+    # Process environment wins; ~/.n8n/.env only fills missing keys.
+    # This matches preflight.load_env and keeps explicit env overrides usable.
+    env = dict(os.environ)
     if N8N_ENV_FILE.exists():
         for line in N8N_ENV_FILE.read_text(encoding="utf-8").splitlines():
             if "=" in line:
                 k, v = line.split("=", 1)
-                env[k.strip()] = v.strip()
-    for k, v in os.environ.items():
-        env.setdefault(k, v)
+                env.setdefault(k.strip(), v.strip())
     return env
 
 

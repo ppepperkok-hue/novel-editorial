@@ -1,5 +1,6 @@
 """Check the chapter stock pool and the publish target for the current run."""
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -15,7 +16,13 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8")
     except (AttributeError, ValueError):
         pass
-    conn = db.connect(ROOT / "demo.db")
+    ap = argparse.ArgumentParser(description="检查存稿池与本次发布目标")
+    ap.add_argument("--db", default=str(ROOT / "demo.db"))
+    args = ap.parse_args()
+    db_path = Path(args.db)
+    if not db_path.is_absolute():
+        db_path = ROOT / db_path
+    conn = db.connect(db_path)
     try:
         settings = {
             r["key"]: r["value"]
@@ -31,7 +38,14 @@ def main():
         need = max(0, target - stock)
         print(
             json.dumps(
-                {"stock": stock, "target": target, "need": need},
+                {
+                    "stock": stock,
+                    "target": target,
+                    "need": need,
+                    "novel_premise": settings.get("novel_premise", ""),
+                    "novel_keywords": settings.get("novel_keywords", ""),
+                    "novel_genre": settings.get("novel_genre", ""),
+                },
                 ensure_ascii=False,
             )
         )

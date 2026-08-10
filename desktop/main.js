@@ -10,7 +10,8 @@ const isPackaged = app.isPackaged;
 const ROOT = isPackaged
   ? path.join(process.resourcesPath, "novel-pipeline")
   : path.resolve(__dirname, "..");
-const PYTHONW = "C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python311\\pythonw.exe";
+// Portable: override with PYTHONW_EXE (absolute path) or rely on PATH lookup.
+const PYTHONW = process.env.PYTHONW_EXE || "pythonw";
 const API_PORT = 8000;
 let apiProc = null;
 let win = null;

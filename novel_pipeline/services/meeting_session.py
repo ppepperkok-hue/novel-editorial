@@ -13,6 +13,7 @@ from tools import agent_meeting, architect_weekly
 _MEETING_LOCK = threading.Lock()
 FINISH_TOKEN = "__FINISH__"
 MAX_ROUNDS = 20
+_DB_PATH = config.DB_PATH
 
 
 def _now():
@@ -91,7 +92,7 @@ def run_session(session_id):
     """Background worker: executes rounds, pauses for user instructions."""
     conn = None
     try:
-        conn = novel_pipeline.db.connect(config.DB_PATH)
+        conn = novel_pipeline.db.connect(_DB_PATH)
         with _MEETING_LOCK:
             _run_locked(conn, session_id)
     finally:
@@ -246,9 +247,12 @@ def _run_locked(conn, session_id):
                 pass
 
 
-def start_session_async(topic, novel_id=0):
+def start_session_async(topic, novel_id=0, db_path=None):
     """Create a session and run it in a background thread."""
-    conn = novel_pipeline.db.connect(config.DB_PATH)
+    global _DB_PATH
+    if db_path:
+        _DB_PATH = db_path
+    conn = novel_pipeline.db.connect(_DB_PATH)
     try:
         result = create_session(conn, topic, novel_id)
     finally:

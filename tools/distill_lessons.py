@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from novel_pipeline import config, db  # noqa: E402
-from novel_pipeline.llm_client import chat_deepseek  # noqa: E402
+from novel_pipeline.llm_client import chat_deepseek, estimate_cost  # noqa: E402
 from novel_pipeline.services import knowledge  # noqa: E402
 
 
@@ -153,6 +153,19 @@ def distill(conn, meeting_id=None, session_id=None):
         "deepseek-v4-flash", "你是复盘分析师。", prompt,
         temperature=0.3, max_tokens=2000,
     )
+    conn.execute(
+        "INSERT INTO cost_logs(novel_id,node_name,model,prompt_tokens,completion_tokens,cost,created_at) "
+        "VALUES(?,?,?,?,?,?,datetime('now','localtime'))",
+        (
+            0,
+            "蒸馏经验",
+            resp["model"],
+            int(resp["usage"].get("prompt_tokens") or 0),
+            int(resp["usage"].get("completion_tokens") or 0),
+            estimate_cost(resp["model"], resp["usage"]),
+        ),
+    )
+    conn.commit()
     parsed = _parse_json(resp["text"])
     lessons = (parsed or {}).get("lessons") or []
     if not lessons and parsed is None:

@@ -60,7 +60,7 @@ Python 记忆/知识层（SQLite）+ 番茄 HTTP 发布 + Electron 桌面控制�
         SQLite：作品/章节/设定知识库/伏笔/角色进化/会议/日记/心情/成本/审计
                        │
                        ▼
-        web_api（8000/8001）→ Electron 桌面控制台（React + Vite + SSE 实时推送）
+        web_api（127.0.0.1:8000）→ Electron 桌面控制台（React + Vite + SSE 实时推送）
 ```
 
 分层职责：
@@ -89,6 +89,7 @@ cd ../desktop && npm install
 # 2. 配置凭据 ~/.n8n/.env（见 .env.example）
 #    DEEPSEEK_API_KEY / FANQIE_COOKIE / FANQIE_CSRF_TOKEN
 #    COST_PRO_PER_1K / COST_FLASH_PER_1K / MONTHLY_BUDGET / N8N_API_KEY
+#    PYTHON_EXE / PIPELINE_ROOT（n8n executeCommand 运行环境，换机器只改这里）
 
 # 3. 启动控制台 API（8000 端口，Electron 会自动拉起）
 python -m novel_pipeline.web_api --db demo.db --port 8000
@@ -165,7 +166,7 @@ A/B 双轨互相隔离：质量门失败只在排版处短路，另一章照常�
 - **查存稿 / 存稿充足？ / 发布存稿**：`tools/check_stock.py` 读存稿池（`reviewed` 章节）与本次目标；
   有存货直接 `tools/publish_stock.py` 发布，没存货走「新建草稿 → 保存内容 → 提交发布」实时链路。
   存货策略让测试期多余章节自动留存，断更时也不至于空窗。
-- **发布三步**（番茄已实测）：`new_article/v0` 拿 `item_id`+`volume_id` →
+- **发布三步**（接口经 OpenNovel 等开源实现交叉验证）：`new_article/v0` 拿 `item_id`+`volume_id` →
   `cover_article/v0` 保存标题正文 → `publish_article/v0` 提交审核（`use_ai=2` 声明 AI 创作）。
 - **校验发布 / 复核发布**：发布后查 `chapter_list/v1` / `draft_list/v1` 确认状态，失败即短路。
 
@@ -395,10 +396,13 @@ render + deploy 到 n8n，拒绝则归档。这样 Agent 的成长来自「会�
 
 - 凭据只在 `~/.n8n/.env`（Cookie / CSRF / DeepSeek key / n8n API key），仓库不存密钥；
   n8n 仅监听 `127.0.0.1`；
+- web_api 强制绑定 `127.0.0.1`（拒绝 `--host` 暴露到局域网）；所有请求校验 Origin 必须为
+  本机（跨站 CSRF 直接 403），POST 拒绝 `text/plain`（堵死 no-cors 简单请求）；可选
+  `PANEL_TOKEN`：配置后非浏览器调用（脚本/n8n）必须带 Bearer 头，n8n 节点由渲染器自动注入；
+- 知识包读写做路径穿越防护（resolve 后必须仍在知识库目录内），静态服务同样防目录逃逸；
 - 预检熔断：Cookie 失效、预算超限、当日重复、并发锁四重防护，任一命中即短路并告警；
 - 发布失败短路不丢记录：失败章状态写库、A/B 分支隔离，次日可补发；
 - 知识包缩水保护（新正文 < 原 50% 转人工草稿）；会议 20 轮上限；热点单源失败不阻塞；
-- 静态文件服务做路径穿越防护（resolve 后必须仍在 dist 目录内）；
 - 番茄发布强制 `use_ai=2` 声明 AI 创作，发布日志记录 `ai_declared`，合规透明。
 
 ## 十四、目录结构

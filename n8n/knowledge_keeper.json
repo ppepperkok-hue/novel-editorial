@@ -16,7 +16,10 @@
       "name": "每日触发",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [0, 0]
+      "position": [
+        0,
+        0
+      ]
     },
     {
       "parameters": {
@@ -29,22 +32,29 @@
       "name": "手动触发",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1.2,
-      "position": [-220, 0],
+      "position": [
+        -220,
+        0
+      ],
       "webhookId": "wh-7f1c93b1a4e6d2f0"
     },
     {
       "parameters": {
-        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe E:/code/novel-pipeline/tools/knowledge_keeper.py --db demo.db",
+        "command": "={{ $env.PYTHON_EXE }}",
         "options": {
-          "cwd": "E:/code/novel-pipeline"
-        }
+          "cwd": "={{ $env.PIPELINE_ROOT }}"
+        },
+        "commandArguments": "={{ [$env.PYTHON_EXE, 'tools/knowledge_keeper.py', '--db', 'demo.db'] }}"
       },
       "onError": "continueRegularOutput",
       "id": "n-keeper-run",
       "name": "执行维护",
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1.2,
-      "position": [200, 0]
+      "position": [
+        200,
+        0
+      ]
     },
     {
       "parameters": {
@@ -54,7 +64,10 @@
       "name": "结束",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [400, 0]
+      "position": [
+        400,
+        0
+      ]
     }
   ],
   "connections": {

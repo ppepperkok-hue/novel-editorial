@@ -43,8 +43,8 @@ def bind_book(conn, novel_id, book_id, volume_id=""):
     if not book_id:
         return {"ok": False, "error": "book_id 不能为空"}
     conn.execute(
-        "UPDATE novels SET book_id=?, status='publishing' WHERE id=?",
-        (book_id, novel_id),
+        "UPDATE novels SET book_id=?, volume_id=?, status='publishing' WHERE id=?",
+        (book_id, volume_id, novel_id),
     )
     conn.commit()
     env_file = config.N8N_ENV_FILE

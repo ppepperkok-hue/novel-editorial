@@ -1,7 +1,6 @@
 """Dashboard data aggregation: summary, novels, chapters, costs."""
 
 import json
-import os
 
 
 def load_summary(conn):
@@ -13,7 +12,8 @@ def load_summary(conn):
         "chapters_published": "SELECT COUNT(*) c FROM chapters WHERE status='published'",
         "quality_total": "SELECT COUNT(*) c FROM quality_reports",
         "quality_passed": "SELECT COUNT(*) c FROM quality_reports WHERE passed=1",
-        "publish_failed": "SELECT COUNT(*) c FROM publish_logs WHERE result='failed'",
+        "publish_failed": "SELECT COUNT(*) c FROM publish_logs WHERE result='failed' "
+        "AND created_at >= datetime('now','localtime','-7 days')",
     }
     summary = {key: conn.execute(sql).fetchone()["c"] for key, sql in queries.items()}
     cost_row = conn.execute(
@@ -101,10 +101,11 @@ def cost_summary(conn):
 
 def build_payload(conn):
     from novel_pipeline.services import misc  # noqa: PLC0415
+    from tools.app_settings import get_float  # noqa: PLC0415
 
     payload = {
         "summary": load_summary(conn),
-        "cost_budget": float(os.environ.get("MONTHLY_BUDGET", "100")),
+        "cost_budget": get_float(conn, "monthly_budget", 100.0),
         "novels": load_novels(conn),
         "chapters": load_chapters(conn),
         "publish_logs": load_publish_logs(conn),

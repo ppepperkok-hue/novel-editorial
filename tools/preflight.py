@@ -108,12 +108,7 @@ def acquire_lock():
     except FileExistsError:
         try:
             pid = int(LOCK_FILE.read_text(encoding="utf-8").split()[0])
-            try:
-                os.kill(pid, 0)  # Windows: check process liveness
-                alive = True
-            except (ProcessLookupError, PermissionError) as e:
-                # PermissionError -> process exists but not accessible -> alive
-                alive = isinstance(e, PermissionError)
+            alive = _pid_alive(pid)
         except Exception:
             alive = time.time() - LOCK_FILE.stat().st_mtime < 3600
         if not alive:
@@ -123,6 +118,35 @@ def acquire_lock():
             except OSError:
                 pass
         return False, "已有日更运行在途中（运行锁占用），本次跳过防双发"
+
+
+def _pid_alive(pid):
+    """Check process liveness without killing it on Windows."""
+    if os.name != "nt":
+        try:
+            os.kill(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+    try:
+        import ctypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return False
+        try:
+            code = ctypes.c_ulong()
+            ok = kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+            return bool(ok) and code.value == STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    except Exception:  # noqa: BLE001 - fall back to conservative "alive"
+        return True
 
 
 def release_lock():
@@ -156,12 +180,6 @@ def main():
         except (TypeError, ValueError):
             budget = args.budget
         manual_requested = str(settings.get("manual_run_requested", "0")) == "1"
-        if manual_requested:
-            conn.execute(
-                "INSERT INTO settings(key,value) VALUES('manual_run_requested','0') "
-                "ON CONFLICT(key) DO UPDATE SET value='0'"
-            )
-            conn.commit()
         cookie_ok, cookie_reason = check_cookie()
         already_ran = check_already_ran(conn)
         if manual_requested:
@@ -186,6 +204,14 @@ def main():
             if not locked:
                 reasons.append(lock_reason)
                 ok = False
+        # Consume the manual-run request only when this run will actually
+        # proceed; failed preflights keep the request so the user can retry.
+        if ok and manual_requested:
+            conn.execute(
+                "INSERT INTO settings(key,value) VALUES('manual_run_requested','0') "
+                "ON CONFLICT(key) DO UPDATE SET value='0'"
+            )
+            conn.commit()
         audit.log(
             conn,
             "preflight",

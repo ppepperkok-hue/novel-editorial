@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from novel_pipeline import config, db  # noqa: E402
-from novel_pipeline.llm_client import chat_deepseek  # noqa: E402
+from novel_pipeline.llm_client import chat_deepseek, estimate_cost  # noqa: E402
 from novel_pipeline.services import audit, knowledge  # noqa: E402
 
 
@@ -119,6 +119,19 @@ def run(conn, dry_run=False):
             temperature=0.3, max_tokens=2400,
         )
         text = resp["text"]
+        conn.execute(
+            "INSERT INTO cost_logs(novel_id,node_name,model,prompt_tokens,completion_tokens,cost,created_at) "
+            "VALUES(?,?,?,?,?,?,datetime('now','localtime'))",
+            (
+                0,
+                "知识管家",
+                resp["model"],
+                int(resp["usage"].get("prompt_tokens") or 0),
+                int(resp["usage"].get("completion_tokens") or 0),
+                estimate_cost(resp["model"], resp["usage"]),
+            ),
+        )
+        conn.commit()
     parsed = _parse_json(text) or {}
     if dry_run:
         return {

@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from novel_pipeline import db  # noqa: E402
-from novel_pipeline.llm_client import chat_deepseek  # noqa: E402
+from novel_pipeline.llm_client import chat_deepseek, estimate_cost  # noqa: E402
 
 AGENTS_DIR = ROOT / "prompts" / "agents"
 AGENTS = [
@@ -47,15 +47,17 @@ def parse_json(text):
 
 
 def record_cost(conn, novel_id, agent, usage, model):
+    cost = estimate_cost(model, usage)
     conn.execute(
         "INSERT INTO cost_logs(novel_id,node_name,model,prompt_tokens,completion_tokens,cost,created_at) "
-        "VALUES(?,?,?,?,?,0,datetime('now','localtime'))",
+        "VALUES(?,?,?,?,?,?,datetime('now','localtime'))",
         (
             novel_id,
             "日记:" + agent,
             model,
             int(usage.get("prompt_tokens") or 0),
             int(usage.get("completion_tokens") or 0),
+            cost,
         ),
     )
     conn.commit()

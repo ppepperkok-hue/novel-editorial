@@ -22,16 +22,44 @@ def _env_str(name, default=""):
     return os.environ.get(name, default)
 
 
+def estimate_cost(model, usage, env=None):
+    """Estimate RMB cost for a model+usage pair using per-1k-token rates."""
+    env = env if env is not None else config.load_env()
+    if "flash" in str(model or ""):
+        rate = float(env.get("COST_FLASH_PER_1K") or 0.002)
+    else:
+        rate = float(env.get("COST_PRO_PER_1K") or 0.01)
+    pt = int(usage.get("prompt_tokens") or 0)
+    ct = int(usage.get("completion_tokens") or 0)
+    return round(pt / 1000.0 * rate + ct / 1000.0 * rate, 6)
+
+
 class LLMClient:
     def __init__(self, api_key=None, base_url=None, models=None,
                  timeout=120, max_retries=2):
-        self.api_key = api_key if api_key is not None else _env_str("LLM_API_KEY")
+        env = config.load_env()
+        self.api_key = (
+            api_key
+            if api_key is not None
+            else (
+                _env_str("LLM_API_KEY")
+                or env.get("LLM_API_KEY")
+                or env.get("DEEPSEEK_API_KEY")
+            )
+        )
         self.base_url = (
-            base_url if base_url is not None else _env_str("LLM_BASE_URL")
+            base_url
+            if base_url is not None
+            else (_env_str("LLM_BASE_URL") or env.get("LLM_BASE_URL") or "https://api.deepseek.com")
         ).rstrip("/")
         self.models = dict(models or {})
         for tier in MODEL_TIERS:
-            self.models.setdefault(tier, _env_str(f"LLM_MODEL_{tier.upper()}"))
+            self.models.setdefault(
+                tier,
+                _env_str(f"LLM_MODEL_{tier.upper()}")
+                or env.get(f"LLM_MODEL_{tier.upper()}")
+                or "",
+            )
         self.timeout = timeout
         self.max_retries = max_retries
 
@@ -131,18 +159,31 @@ def chat_deepseek(model, system, user, temperature=0.5, max_tokens=1600,
         body["tools"] = tools
     else:
         body["response_format"] = {"type": "json_object"}
-    req = urllib.request.Request(
-        "https://api.deepseek.com/chat/completions",
-        data=json.dumps(body).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": "Bearer " + key,
-        },
-    )
-    with urllib.request.urlopen(req, timeout=120) as r:
-        data = json.loads(r.read().decode("utf-8"))
+    last_err = None
+    data = None
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(
+                "https://api.deepseek.com/chat/completions",
+                data=json.dumps(body).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer " + key,
+                },
+            )
+            with urllib.request.urlopen(req, timeout=120) as r:
+                data = json.loads(r.read().decode("utf-8"))
+            break
+        except (urllib.error.URLError, ValueError) as exc:
+            last_err = exc
+            if attempt < 2:
+                time.sleep(1.0 * (attempt + 1))
+    if data is None:
+        raise RuntimeError(f"DeepSeek 调用失败：{last_err}")
     choice = data["choices"][0]["message"]
-    text = choice.get("content") or choice.get("reasoning_content") or ""
+    text = choice.get("content") or ""
+    if not text:
+        raise RuntimeError("DeepSeek 返回空 content（不要用思考过程当答案），请重试")
     return {
         "text": text,
         "usage": data.get("usage", {}),

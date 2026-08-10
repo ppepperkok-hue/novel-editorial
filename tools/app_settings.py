@@ -23,6 +23,9 @@ DEFAULTS = {
     "daily_chapters": "2",
     "pending_publish": "0",
     "target_chapters": "0",
+    "novel_premise": "",
+    "novel_keywords": "",
+    "novel_genre": "",
 }
 
 

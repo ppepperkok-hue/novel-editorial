@@ -61,15 +61,17 @@ def list_knowledge():
 
 
 def read_knowledge(file):
-    path = KNOWLEDGE_DIR / file
-    if not path.exists() or path.suffix != ".md":
+    path = _resolve_knowledge(file)
+    if path is None or not path.exists() or path.suffix != ".md":
         return None
     meta, body = _parse(path)
     return {"file": path.name, "meta": meta, "body": body}
 
 
 def write_knowledge(file, meta, body):
-    path = KNOWLEDGE_DIR / file
+    path = _resolve_knowledge(file)
+    if path is None:
+        raise ValueError("knowledge file path escapes the knowledge directory")
     if path.suffix != ".md":
         raise ValueError("knowledge file must be .md")
     meta.setdefault("updated_at", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
@@ -87,6 +89,15 @@ def write_knowledge(file, meta, body):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(head + body.strip() + "\n", encoding="utf-8")
     return {"file": path.name, "meta": meta, "body": body.strip()}
+
+
+def _resolve_knowledge(file):
+    """Resolve a knowledge file and reject path traversal outside the dir."""
+    root = KNOWLEDGE_DIR.resolve()
+    path = (KNOWLEDGE_DIR / str(file)).resolve()
+    if path != root and root not in path.parents:
+        return None
+    return path
 
 
 def _matches(agent, meta):

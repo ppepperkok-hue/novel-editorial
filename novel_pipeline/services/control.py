@@ -220,4 +220,7 @@ ALLOWED_SETTINGS = {
     "daily_run_time",
     "daily_chapters",
     "target_chapters",
+    "novel_premise",
+    "novel_keywords",
+    "novel_genre",
 }

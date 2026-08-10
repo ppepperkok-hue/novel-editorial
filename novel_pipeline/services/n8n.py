@@ -37,7 +37,10 @@ def n8n_api(method, path, body=None, timeout=6):
 def _load_n8n_env():
     global _N8N_KEY
     if _N8N_KEY is None:
-        _N8N_KEY = config.env_value("N8N_API_KEY", "") or os.environ.get("N8N_API_KEY", "")
+        value = config.env_value("N8N_API_KEY", "") or os.environ.get("N8N_API_KEY", "")
+        if value:
+            _N8N_KEY = value
+        return value
     return _N8N_KEY
 
 
@@ -79,6 +82,10 @@ def executions():
     rows.sort(key=lambda r: r.get("started_at") or "", reverse=True)
     rows = rows[:30]
     now = datetime.now().timestamp()
+    if len(_EXEC_ERROR_CACHE) > 200:
+        cutoff = now - 300
+        for key in [k for k, (t, _e) in _EXEC_ERROR_CACHE.items() if t < cutoff]:
+            del _EXEC_ERROR_CACHE[key]
     for row in rows:
         if row["status"] in ("success", "running", "waiting", None):
             continue

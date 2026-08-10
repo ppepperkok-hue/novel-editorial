@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from novel_pipeline import db  # noqa: E402
-from novel_pipeline.llm_client import chat_deepseek  # noqa: E402
+from novel_pipeline.llm_client import chat_deepseek, estimate_cost  # noqa: E402
 from novel_pipeline.services import knowledge  # noqa: E402
 from tools import architect_weekly, write_diaries  # noqa: E402
 
@@ -45,16 +45,31 @@ def agent_md(agent):
     return p.read_text(encoding="utf-8") if p.exists() else ""
 
 
+def agent_model(agent):
+    """Resolve the model from the agent frontmatter (default flash)."""
+    p = AGENTS_DIR / f"{agent}.md"
+    if p.exists():
+        text = p.read_text(encoding="utf-8")
+        if text.startswith("---"):
+            head = text.split("---", 2)[1]
+            for line in head.strip().splitlines():
+                if line.strip().startswith("model:"):
+                    return line.split(":", 1)[1].strip() or "deepseek-v4-flash"
+    return "deepseek-v4-flash"
+
+
 def record_cost(conn, novel_id, agent, usage, model):
+    cost = estimate_cost(model, usage)
     conn.execute(
         "INSERT INTO cost_logs(novel_id,node_name,model,prompt_tokens,completion_tokens,cost,created_at) "
-        "VALUES(?,?,?,?,?,0,datetime('now','localtime'))",
+        "VALUES(?,?,?,?,?,?,datetime('now','localtime'))",
         (
             novel_id,
             "会议:" + agent,
             model,
             int(usage.get("prompt_tokens") or 0),
             int(usage.get("completion_tokens") or 0),
+            cost,
         ),
     )
     conn.commit()
@@ -126,8 +141,9 @@ def ask(conn, novel_id, agent, user, temperature, dry_run, mock_text, max_tokens
     if dry_run:
         return mock_text, {"prompt_tokens": 0, "completion_tokens": 0}, "dry-run", []
     system = system_override if system_override is not None else agent_md(agent)
+    model = agent_model(agent)
     resp = chat_deepseek(
-        "deepseek-v4-flash", system, user, temperature=temperature,
+        model, system, user, temperature=temperature,
         max_tokens=max_tokens, messages=messages, tools=tools,
     )
     record_cost(conn, novel_id, agent, resp["usage"], resp["model"])

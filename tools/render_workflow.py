@@ -9,7 +9,7 @@ knowledge index + get_knowledge tool), so n8n only carries agent name, model,
 temperature, the dynamic target_words expression and the user task.
 
     python tools/render_workflow.py            # updates n8n/novel_workflow.json
-    node tools/archive/validate_workflow_deep.mjs
+    node tools/validate_workflow_deep.mjs
 """
 
 import json
@@ -19,7 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 WF = ROOT / "n8n" / "novel_workflow.json"
 AGENTS = ROOT / "prompts" / "agents"
-PROXY_BASE = "http://127.0.0.1:8001/api/agent/run"
+PROXY_BASE = "http://127.0.0.1:8000/api/agent/run"
 PROXY_MODE = True
 
 AGENT_FILES = {
@@ -138,14 +138,18 @@ def main():
             new_body = build_proxy_body(
                 node_name, meta, "{TARGET_WORDS}" in system, user_expr
             )
+            node["parameters"]["url"] = PROXY_BASE
+            node["parameters"]["headerParameters"] = {
+                "parameters": [
+                    {"name": "Content-Type", "value": "application/json"},
+                    {
+                        "name": "Authorization",
+                        "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}",
+                    },
+                ]
+            }
             if new_body != body:
                 node["parameters"]["jsonBody"] = new_body
-                node["parameters"]["url"] = PROXY_BASE
-                node["parameters"]["headerParameters"] = {
-                    "parameters": [
-                        {"name": "Content-Type", "value": "application/json"}
-                    ]
-                }
                 changed.append(node_name)
             continue
         model = meta.get("model", "")

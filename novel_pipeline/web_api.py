@@ -32,6 +32,23 @@ _SNAPSHOT_LOCK = threading.Lock()
 _SNAPSHOT_THREAD_STARTED = False
 
 
+def _panel_token():
+    """Optional bearer token from ~/.n8n/.env; empty means token auth is off."""
+    return (config.load_env().get("PANEL_TOKEN") or "").strip()
+
+
+def _origin_allowed(origin, port):
+    if not origin:
+        return True
+    allowed = {
+        f"http://127.0.0.1:{port}",
+        f"http://localhost:{port}",
+        "http://127.0.0.1",
+        "http://localhost",
+    }
+    return origin in allowed
+
+
 def _snapshot_loop(db_path):
     while True:
         try:
@@ -51,8 +68,16 @@ def _snapshot_loop(db_path):
                 conn.close()
             with _SNAPSHOT_LOCK:
                 _SNAPSHOT["data"] = snapshot
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            try:
+                config.ALERTS_LOG.parent.mkdir(parents=True, exist_ok=True)
+                with config.ALERTS_LOG.open("a", encoding="utf-8") as f:
+                    f.write(
+                        f"[{datetime.now():%Y-%m-%d %H:%M:%S}] 快照线程异常："
+                        f"{exc.__class__.__name__}: {exc}\n"
+                    )
+            except Exception:  # noqa: BLE001
+                pass
         time.sleep(5)
 
 
@@ -90,10 +115,30 @@ def make_handler(db_path):
     _ensure_snapshot_thread(db_path)
 
     class Handler(BaseHTTPRequestHandler):
+        def _guard(self):
+            """Reject browser CSRF and unsafe non-browser writes."""
+            port = self.server.server_port
+            origin = self.headers.get("Origin") or ""
+            if origin and not _origin_allowed(origin, port):
+                return False, "cross-origin request denied"
+            ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            if self.command == "POST" and ctype == "text/plain":
+                return False, "text/plain requests denied"
+            token = _panel_token()
+            if self.command == "POST" and not origin and token:
+                auth = self.headers.get("Authorization") or ""
+                if auth != "Bearer " + token:
+                    return False, "missing panel token"
+            return True, ""
+
         def do_GET(self):  # noqa: N802
             parsed = urlparse(self.path)
             path = parsed.path
             try:
+                ok, reason = self._guard()
+                if not ok:
+                    self._json({"error": reason}, status=403)
+                    return
                 if path in ("/", "/index.html"):
                     self._serve_index()
                 elif path == "/api/dashboard":
@@ -263,6 +308,10 @@ def make_handler(db_path):
 
         def do_POST(self):  # noqa: N802
             parsed = urlparse(self.path)
+            ok, reason = self._guard()
+            if not ok:
+                self._json({"error": reason}, status=403)
+                return
             if parsed.path not in (
                 "/api/control",
                 "/api/agents",
@@ -337,7 +386,9 @@ def make_handler(db_path):
                         conn.close()
                 elif parsed.path == "/api/meetings/start":
                     conn.close()
-                    result = meeting_service.start_session_async(payload.get("topic"))
+                    result = meeting_service.start_session_async(
+                        payload.get("topic"), db_path=str(db_path)
+                    )
                 elif parsed.path == "/api/meetings/advance":
                     try:
                         result = meeting_service.advance_session(
@@ -370,6 +421,7 @@ def make_handler(db_path):
                             max_tokens=int(payload.get("max_tokens") or 1600),
                             target_words=payload.get("target_words"),
                             novel_id=payload.get("novel_id"),
+                            db_path=str(db_path),
                         )
                         if loop_result.get("ok"):
                             result = {
@@ -377,6 +429,7 @@ def make_handler(db_path):
                                 "choices": [
                                     {"message": {"content": loop_result["text"]}}
                                 ],
+                                "usage": loop_result.get("usage") or {},
                                 "used_knowledge": loop_result.get("used_knowledge") or [],
                                 "model": loop_result.get("model"),
                                 "attempts": loop_result.get("attempts"),
@@ -531,7 +584,10 @@ def make_handler(db_path):
             data = index.read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Access-Control-Allow-Origin", "*")
+            origin = self.headers.get("Origin") or ""
+            if origin and _origin_allowed(origin, self.server.server_port):
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Vary", "Origin")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
@@ -553,7 +609,10 @@ def make_handler(db_path):
             data = target.read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", ctype)
-            self.send_header("Access-Control-Allow-Origin", "*")
+            origin = self.headers.get("Origin") or ""
+            if origin and _origin_allowed(origin, self.server.server_port):
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Vary", "Origin")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
@@ -585,10 +644,17 @@ def make_handler(db_path):
             data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Access-Control-Allow-Origin", "*")
+            origin = self.headers.get("Origin") or ""
+            if origin and _origin_allowed(origin, self.server.server_port):
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Vary", "Origin")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+
+        def do_OPTIONS(self):  # noqa: N802
+            self.send_response(403)
+            self.end_headers()
 
         def log_message(self, *args):
             pass
@@ -606,6 +672,8 @@ def main():
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8000)
     args = ap.parse_args()
+    if args.host not in ("127.0.0.1", "localhost"):
+        raise SystemExit("本机控制台只允许绑定 127.0.0.1，禁止暴露到局域网")
     server = ThreadingHTTPServer((args.host, args.port), make_handler(args.db))
     print(f"监控面板：http://{args.host}:{args.port}/  （Ctrl+C 停止）")
     try:

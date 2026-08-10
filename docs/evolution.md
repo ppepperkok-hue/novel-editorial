@@ -5,7 +5,7 @@
 
 ## 1. Agent 提示词资产化
 
-13 个 LLM 节点的 system prompt 抽到了 `prompts/agents/*.md`，每个文件带
+15 个 LLM 节点的 system prompt 抽到了 `prompts/agents/*.md`，每个文件带
 frontmatter（model / temperature），正文即系统提示词：
 
 ```text
@@ -278,3 +278,33 @@ Toast 带图标、执行失败可查看原因弹窗、作品库搜索与批量�
   命令示例与关键参数（工作流 ID、端口、阈值、单价、番茄接口路径）。
 - 自检：Markdown 围栏配对、目录锚点与章节一致、关键数字（节点数/Agent 数/知识包数/
   测试数/分类数）逐项对照代码核对。
+
+## 15. 严格审查清单逐条修复（2026-08-10）
+
+按外部审查清单（23 项）逐条修复，全部阻断级/高危项落地并实测：
+
+- **日更链路**：B 轨接线修复（整理剧情B → 排版B 直连，同步设定知识库移到收尾）；
+  novels 补 volume_id 列（publish_stock 不再查空列）；端口统一 8000（render 无条件
+  重写 agent 节点 URL，并注入可选 PANEL_TOKEN 头）；直发成功章节落库 status='published'
+  （幂等护栏恢复，收尾发布存稿不再捞已发章节）。
+- **executeCommand 参数模型**：三份工作流全部改为 `command + commandArguments + cwd`，
+  解释器/项目根走 `$env.PYTHON_EXE` / `$env.PIPELINE_ROOT`（已写入 ~/.n8n/.env），
+  去除 `&` 与硬编码路径；get_meta/record_work ROOT 相对化，launch_desktop.vbs 相对化。
+- **成本记账**：/api/agent/run 返回 usage；日记/会议/知识管家/蒸馏按模型单价折算
+  （estimate_cost）；cost_logs 加 run_id 幂等去重；会议按 Agent frontmatter 选模型。
+- **预检与监控**：手动补更请求失败不再被吞（成功才清零）；Windows 锁检测改用
+  OpenProcess/GetExitCodeProcess（不再可能杀进程）；发布失败计数统一 7 天窗口；
+  面板预算改读 settings 表（与熔断同源）。
+- **安全**：web_api 强制 127.0.0.1、Origin 本机校验、POST 拒 text/plain、可选
+  PANEL_TOKEN；知识包读写路径穿越防护；静态服务 CORS 收紧；快照线程异常落 alerts.log。
+- **数据一致性**：demo.db 写死穿透修复（会议会话、agent 工具、check_stock 支持
+  实际 db 路径）；record_work 角色 upsert 保留配角、伏笔回收精确匹配、成本幂等；
+  建书标签改为词级匹配 + 交集打分；题材闭环（设置/环境变量 → check_stock → 设定题材），
+  解析大纲拒绝静默兜底（缺章纲直接报错）。
+- **工程质量**：LLM 配置统一（进程优先/.env 兜底）、chat_deepseek 加重试、空 content
+  报错；n8n 服务空 key 不缓存、错误缓存限容；SQLite 单次建表迁移 + WAL + 外键 + 索引；
+  桌面 pythonw 路径可配置；文档数字统一（61/7/4/116/11）、「已跑通」宣称修正。
+- **校验与测试**：validate_workflow_deep 升级为数据流语义校验（排版上游、发布链、
+  收尾链、executeCommand 参数化、端口统一）；新增 publish_stock/preflight 守卫/
+  record_work/check_stock/control/misc/n8n 服务/鉴权/路径穿越测试，全量 120 后端 +
+  6 前端全绿；三份工作流已推送到 n8n 并保持激活。

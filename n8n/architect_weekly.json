@@ -23,10 +23,11 @@
     },
     {
       "parameters": {
-        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe -m novel_pipeline.hot_topics --refresh",
+        "command": "={{ $env.PYTHON_EXE }}",
         "options": {
-          "cwd": "E:/code/novel-pipeline"
-        }
+          "cwd": "={{ $env.PIPELINE_ROOT }}"
+        },
+        "commandArguments": "={{ [$env.PYTHON_EXE, '-m', 'novel_pipeline.hot_topics', '--refresh'] }}"
       },
       "onError": "continueRegularOutput",
       "id": "n-hot-refresh",
@@ -40,10 +41,11 @@
     },
     {
       "parameters": {
-        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe E:/code/novel-pipeline/tools/architect_weekly.py --db demo.db",
+        "command": "={{ $env.PYTHON_EXE }}",
         "options": {
-          "cwd": "E:/code/novel-pipeline"
-        }
+          "cwd": "={{ $env.PIPELINE_ROOT }}"
+        },
+        "commandArguments": "={{ [$env.PYTHON_EXE, 'tools/architect_weekly.py', '--db', 'demo.db'] }}"
       },
       "onError": "continueRegularOutput",
       "id": "n-arch-read",
@@ -74,10 +76,11 @@
     },
     {
       "parameters": {
-        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe E:/code/novel-pipeline/tools/agent_meeting.py --db demo.db",
+        "command": "={{ $env.PYTHON_EXE }}",
         "options": {
-          "cwd": "E:/code/novel-pipeline"
-        }
+          "cwd": "={{ $env.PIPELINE_ROOT }}"
+        },
+        "commandArguments": "={{ [$env.PYTHON_EXE, 'tools/agent_meeting.py', '--db', 'demo.db'] }}"
       },
       "id": "n-meeting",
       "name": "开会",
@@ -103,10 +106,11 @@
     },
     {
       "parameters": {
-        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe E:/code/novel-pipeline/tools/distill_lessons.py --db demo.db",
+        "command": "={{ $env.PYTHON_EXE }}",
         "options": {
-          "cwd": "E:/code/novel-pipeline"
-        }
+          "cwd": "={{ $env.PIPELINE_ROOT }}"
+        },
+        "commandArguments": "={{ [$env.PYTHON_EXE, 'tools/distill_lessons.py', '--db', 'demo.db'] }}"
       },
       "onError": "continueRegularOutput",
       "id": "n-distill",

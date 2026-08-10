@@ -107,18 +107,20 @@ def build_system(agent, target_words=None):
     return meta, body
 
 
-def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None, novel_id=None):
+def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None,
+        novel_id=None, db_path=None):
     meta, system = build_system(agent, target_words)
     model = meta.get("model") or "deepseek-v4-flash"
     temp = float(temperature) if temperature is not None else float(meta.get("temperature") or 0.5)
     used_knowledge = []
     degraded = False
 
-    def _final(text):
+    def _final(text, usage=None):
         return {
             "ok": True,
             "text": text,
             "model": model,
+            "usage": usage or {"prompt_tokens": 0, "completion_tokens": 0},
             "used_knowledge": used_knowledge,
             "attempts": 2 if used_knowledge else 1,
             "degraded": degraded,
@@ -141,11 +143,11 @@ def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None, 
                 "error": f"tool loop failed (tools={str(exc)[:120]}, plain={str(exc2)[:120]})",
                 "degraded": True,
             }
-        return _final(first["text"])
+        return _final(first["text"], first.get("usage") or {})
 
     tool_calls = first.get("tool_calls") or []
     if not tool_calls:
-        return _final(first["text"])
+        return _final(first["text"], first.get("usage") or {})
 
     msgs = [
         {"role": "system", "content": system},
@@ -173,7 +175,7 @@ def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None, 
         elif name == "get_novel_knowledge":
             from tools import novel_knowledge  # noqa: PLC0415
 
-            conn = db.connect(config.DB_PATH)
+            conn = db.connect(db_path or config.DB_PATH)
             try:
                 hits = novel_knowledge.resolve(conn, novel_id or 0, topic)
             finally:
@@ -195,10 +197,31 @@ def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None, 
             }
         )
 
-    final = chat_deepseek(
-        model, None, None, temperature=temp, max_tokens=max_tokens, messages=msgs
-    )
-    return _final(final["text"])
+    try:
+        final = chat_deepseek(
+            model, None, None, temperature=temp, max_tokens=max_tokens, messages=msgs
+        )
+    except Exception as exc:  # noqa: BLE001 - degraded: keep first-round text
+        degraded = True
+        return {
+            "ok": True,
+            "text": first.get("text") or "",
+            "model": model,
+            "usage": first.get("usage") or {"prompt_tokens": 0, "completion_tokens": 0},
+            "used_knowledge": used_knowledge,
+            "attempts": 1,
+            "degraded": True,
+            "warning": f"final round failed: {str(exc)[:120]}",
+        }
+    first_usage = first.get("usage") or {}
+    final_usage = final.get("usage") or {}
+    usage = {
+        "prompt_tokens": int(first_usage.get("prompt_tokens") or 0)
+        + int(final_usage.get("prompt_tokens") or 0),
+        "completion_tokens": int(first_usage.get("completion_tokens") or 0)
+        + int(final_usage.get("completion_tokens") or 0),
+    }
+    return _final(final["text"], usage)
 
 
 def main():

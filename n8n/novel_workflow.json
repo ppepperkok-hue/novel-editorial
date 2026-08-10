@@ -30,7 +30,7 @@
             {
               "id": "a1",
               "name": "premise",
-              "value": "凡人修仙：捡到一只会提纯灵物的破碗，从杂灵根苟到无敌",
+              "value": "={{ $json.novel_premise || $env.NOVEL_PREMISE || '凡人修仙：捡到一只会提纯灵物的破碗，从杂灵根苟到无敌' }}",
               "type": "string"
             },
             {
@@ -48,11 +48,17 @@
             {
               "id": "a4",
               "name": "keywords",
-              "value": "修仙,苟,提纯,杂灵根",
+              "value": "={{ $json.novel_keywords || $env.NOVEL_KEYWORDS || '修仙,苟,提纯,杂灵根' }}",
               "type": "string"
             },
             {
               "id": "a5",
+              "name": "genre",
+              "value": "={{ $json.novel_genre || $env.NOVEL_GENRE || '玄幻' }}",
+              "type": "string"
+            },
+            {
+              "id": "a6",
               "name": "book_id",
               "value": "={{ $env.FANQIE_BOOK_ID }}",
               "type": "string"
@@ -73,7 +79,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://127.0.0.1:8001/api/agent/run",
+        "url": "http://127.0.0.1:8000/api/agent/run",
         "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
@@ -81,6 +87,10 @@
             {
               "name": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
             }
           ]
         },
@@ -100,7 +110,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const raw = $input.first().json;\nconst data = typeof raw === 'string' ? JSON.parse(raw) : raw;\nconst msg = data.choices[0].message;\nconst content = (typeof msg.content === 'string' && msg.content.trim())\n  ? msg.content\n  : (typeof msg.reasoning_content === 'string' ? msg.reasoning_content : '');\nconst tryParse = (s) => { const t = String(s).replace(/```json/g, '').replace(/```/g, '').trim(); try { return JSON.parse(t); } catch { const m = t.match(/\\{[\\s\\S]*\\}/); if (m) return JSON.parse(m[0]); throw new Error('JSON解析失败: ' + t.slice(0, 200)); } };\nconst outline = tryParse(content);\nconst norm = (ch, i) => {\n  if (ch && typeof ch === 'object') {\n    const t = String(ch.title || ch.chapter_title || ('第' + (i + 1) + '章 开局'));\n    return { title: t, outline: String(ch.outline || ch.content || ch.summary || JSON.stringify(ch)), hook: String(ch.hook || ''), hook_type: String(ch.hook_type || ''), emotion: String(ch.emotion || ''), position: String(ch.position || ''), pacing: String(ch.pacing || ''), scenes: Array.isArray(ch.scenes) ? ch.scenes : [], plant_foreshadow: String(ch.plant_foreshadow || ''), recover_foreshadow: String(ch.recover_foreshadow || ''), character_arc: (ch.character_arc && typeof ch.character_arc === 'object') ? ch.character_arc : {} };\n  }\n  const s = String(ch || ('第' + (i + 1) + '章 开局'));\n  return { title: s, outline: s, hook: '' };\n};\nconst arr = Array.isArray(outline.chapter_outlines) && outline.chapter_outlines.length >= 2\n  ? outline.chapter_outlines.map(norm)\n  : [{ title: '第1章 开局', outline: '主角获得金手指并定下目标', hook: '' }, { title: '第2章 转折', outline: '遭遇第一次危机并化解', hook: '' }];\nconst meta = $('解析作品资料').first().json || {};\nconst prev = meta.prev_meta || {};\nconst mergeBible = (prevBible, nextBible) => {\n  if (!nextBible || typeof nextBible !== 'object') return prevBible || null;\n  const out = { ...(prevBible || {}), ...nextBible };\n  const byName = {};\n  const chars = [];\n  for (const c of (prevBible && prevBible.characters) || []) { if (c && c.name) { byName[c.name] = { ...c }; chars.push(byName[c.name]); } }\n  for (const c of (nextBible.characters || [])) { if (c && c.name) { if (byName[c.name]) { Object.assign(byName[c.name], c); } else { byName[c.name] = { ...c }; chars.push(byName[c.name]); } } }\n  if (chars.length) out.characters = chars;\n  const rel = [];\n  const seen = new Set();\n  for (const r of [...((prevBible && prevBible.relationships) || []), ...(nextBible.relationships || [])]) {\n    if (!r || !r.from || !r.to) continue;\n    const k = String(r.from) + '|' + String(r.to) + '|' + String(r.relation || '');\n    if (seen.has(k)) continue;\n    seen.add(k); rel.push(r);\n  }\n  if (rel.length) out.relationships = rel;\n  const wr = [...new Set([...((prevBible && prevBible.world_rules) || []), ...(nextBible.world_rules || [])].filter(Boolean))];\n  if (wr.length) out.world_rules = wr;\n  return out;\n};\nconst bible = mergeBible(prev.bible, outline.bible);\nreturn [{ json: { premise: outline.premise || meta.premise, genre: outline.genre || '', title: outline.title || '', keywords: (outline.keywords || []).join(','), bible: bible, chapter1: arr[0], chapter2: arr[1] } }];\n"
+        "jsCode": "const raw = $input.first().json;\nconst data = typeof raw === 'string' ? JSON.parse(raw) : raw;\nconst msg = data.choices[0].message;\nconst content = (typeof msg.content === 'string' && msg.content.trim())\n  ? msg.content\n  : (typeof msg.reasoning_content === 'string' ? msg.reasoning_content : '');\nconst tryParse = (s) => { const t = String(s).replace(/```json/g, '').replace(/```/g, '').trim(); try { return JSON.parse(t); } catch { const m = t.match(/\\{[\\s\\S]*\\}/); if (m) return JSON.parse(m[0]); throw new Error('JSON解析失败: ' + t.slice(0, 200)); } };\nconst outline = tryParse(content);\nconst norm = (ch, i) => {\n  if (ch && typeof ch === 'object') {\n    const t = String(ch.title || ch.chapter_title || ('第' + (i + 1) + '章 开局'));\n    return { title: t, outline: String(ch.outline || ch.content || ch.summary || JSON.stringify(ch)), hook: String(ch.hook || ''), hook_type: String(ch.hook_type || ''), emotion: String(ch.emotion || ''), position: String(ch.position || ''), pacing: String(ch.pacing || ''), scenes: Array.isArray(ch.scenes) ? ch.scenes : [], plant_foreshadow: String(ch.plant_foreshadow || ''), recover_foreshadow: String(ch.recover_foreshadow || ''), character_arc: (ch.character_arc && typeof ch.character_arc === 'object') ? ch.character_arc : {} };\n  }\n  const s = String(ch || ('第' + (i + 1) + '章 开局'));\n  return { title: s, outline: s, hook: '' };\n};\nif (!Array.isArray(outline.chapter_outlines) || outline.chapter_outlines.length < 2) throw new Error('Planner输出缺少两章章纲，拒绝静默兜底');\nconst arr = outline.chapter_outlines.map(norm);\nconst meta = $('解析作品资料').first().json || {};\nconst prev = meta.prev_meta || {};\nconst mergeBible = (prevBible, nextBible) => {\n  if (!nextBible || typeof nextBible !== 'object') return prevBible || null;\n  const out = { ...(prevBible || {}), ...nextBible };\n  const byName = {};\n  const chars = [];\n  for (const c of (prevBible && prevBible.characters) || []) { if (c && c.name) { byName[c.name] = { ...c }; chars.push(byName[c.name]); } }\n  for (const c of (nextBible.characters || [])) { if (c && c.name) { if (byName[c.name]) { Object.assign(byName[c.name], c); } else { byName[c.name] = { ...c }; chars.push(byName[c.name]); } } }\n  if (chars.length) out.characters = chars;\n  const rel = [];\n  const seen = new Set();\n  for (const r of [...((prevBible && prevBible.relationships) || []), ...(nextBible.relationships || [])]) {\n    if (!r || !r.from || !r.to) continue;\n    const k = String(r.from) + '|' + String(r.to) + '|' + String(r.relation || '');\n    if (seen.has(k)) continue;\n    seen.add(k); rel.push(r);\n  }\n  if (rel.length) out.relationships = rel;\n  const wr = [...new Set([...((prevBible && prevBible.world_rules) || []), ...(nextBible.world_rules || [])].filter(Boolean))];\n  if (wr.length) out.world_rules = wr;\n  return out;\n};\nconst bible = mergeBible(prev.bible, outline.bible);\nreturn [{ json: { premise: outline.premise || meta.premise, genre: outline.genre || '', title: outline.title || '', keywords: (outline.keywords || []).join(','), bible: bible, chapter1: arr[0], chapter2: arr[1] } }];\n"
       },
       "id": "n-parse",
       "name": "解析大纲",
@@ -114,7 +124,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://127.0.0.1:8001/api/agent/run",
+        "url": "http://127.0.0.1:8000/api/agent/run",
         "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
@@ -122,6 +132,10 @@
             {
               "name": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
             }
           ]
         },
@@ -142,7 +156,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://127.0.0.1:8001/api/agent/run",
+        "url": "http://127.0.0.1:8000/api/agent/run",
         "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
@@ -150,6 +164,10 @@
             {
               "name": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
             }
           ]
         },
@@ -170,7 +188,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://127.0.0.1:8001/api/agent/run",
+        "url": "http://127.0.0.1:8000/api/agent/run",
         "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
@@ -178,6 +196,10 @@
             {
               "name": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
             }
           ]
         },
@@ -224,7 +246,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://127.0.0.1:8001/api/agent/run",
+        "url": "http://127.0.0.1:8000/api/agent/run",
         "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
@@ -232,6 +254,10 @@
             {
               "name": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
             }
           ]
         },
@@ -252,7 +278,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://127.0.0.1:8001/api/agent/run",
+        "url": "http://127.0.0.1:8000/api/agent/run",
         "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
@@ -260,6 +286,10 @@
             {
               "name": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
             }
           ]
         },
@@ -280,7 +310,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://127.0.0.1:8001/api/agent/run",
+        "url": "http://127.0.0.1:8000/api/agent/run",
         "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
@@ -288,6 +318,10 @@
             {
               "name": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
             }
           ]
         },
@@ -1033,7 +1067,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $input.first().json;\nconst resp = typeof input.body === 'string' ? JSON.parse(input.body) : (input.body || input);\nconst list = resp && resp.data && Array.isArray(resp.data.book_list) ? resp.data.book_list : [];\nconst cfg = $('设定题材').first().json;\nconst target = list.find(b => String(b.book_id) === String(cfg.book_id)) || list[0] || {};\nconst startNum = (Number(target.chapter_number) || 0) + 1;\nconst bookName = String(target.book_name || '');\nconst abstract = String(target.abstract || '');\nconst metaNeeded = bookName.indexOf('用户') === 0 || abstract.length < 50;\nreturn [{ json: { premise: cfg.premise, platform: cfg.platform, daily: cfg.daily, keywords: cfg.keywords, book_id: cfg.book_id, start_num: startNum, book_name: bookName, abstract: abstract, meta_needed: metaNeeded } }];"
+        "jsCode": "const input = $input.first().json;\nconst resp = typeof input.body === 'string' ? JSON.parse(input.body) : (input.body || input);\nconst list = resp && resp.data && Array.isArray(resp.data.book_list) ? resp.data.book_list : [];\nconst cfg = $('设定题材').first().json;\nconst target = list.find(b => String(b.book_id) === String(cfg.book_id)) || list[0] || {};\nconst startNum = (Number(target.chapter_number) || 0) + 1;\nconst bookName = String(target.book_name || '');\nconst abstract = String(target.abstract || '');\nconst metaNeeded = bookName.indexOf('用户') === 0 || abstract.length < 50;\nreturn [{ json: { premise: cfg.premise, platform: cfg.platform, daily: cfg.daily, keywords: cfg.keywords, genre: cfg.genre || '', book_id: cfg.book_id, start_num: startNum, book_name: bookName, abstract: abstract, meta_needed: metaNeeded } }];"
       },
       "id": "n-chapter-count-code",
       "name": "算章节号",
@@ -1046,9 +1080,12 @@
     },
     {
       "parameters": {
-        "command": "={{ 'C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe E:/code/novel-pipeline/tools/get_meta.py ' + $json.book_id }}",
+        "command": "={{ $env.PYTHON_EXE }}",
         "executeOnce": true,
-        "options": {}
+        "options": {
+          "cwd": "={{ $env.PIPELINE_ROOT }}"
+        },
+        "commandArguments": "={{ $json.book_id ? [$env.PYTHON_EXE, 'tools/get_meta.py', $json.book_id] : [$env.PYTHON_EXE, 'tools/get_meta.py'] }}"
       },
       "id": "n-read-meta",
       "name": "读本地资料",
@@ -1075,7 +1112,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://127.0.0.1:8001/api/agent/run",
+        "url": "http://127.0.0.1:8000/api/agent/run",
         "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
@@ -1083,13 +1120,17 @@
             {
               "name": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
             }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
         "options": {},
-        "jsonBody": "={{ JSON.stringify({agent:'生成作品资料', model:'deepseek-v4-flash', temperature:0.7, task:'premise：'+$json.premise+'；题材：'+$json.genre+'；关键词：'+$json.keywords+'；现有书名：'+$json.book_name+'；现有主角：'+JSON.stringify(($json.prev_meta&&$json.prev_meta.protagonists)||[])+'；上一章：'+JSON.stringify(($json.prev_meta&&$json.prev_meta.last_chapter)||null)+'。已有主角/书名请沿用，只补全缺的字段；上一章不为空时卷目标要衔接剧情。}) }}"
+        "jsonBody": "={{ JSON.stringify({agent:'生成作品资料', model:'deepseek-v4-flash', temperature:0.7, task:'premise：'+$json.premise+'；题材：'+($json.genre || ($json.prev_meta && $json.prev_meta.genre) || '')+'；关键词：'+$json.keywords+'；现有书名：'+$json.book_name+'；现有主角：'+JSON.stringify(($json.prev_meta&&$json.prev_meta.protagonists)||[])+'；上一章：'+JSON.stringify(($json.prev_meta&&$json.prev_meta.last_chapter)||null)+'。已有主角/书名请沿用，只补全缺的字段；上一章不为空时卷目标要衔接剧情。}) }}"
       },
       "id": "n-meta-llm",
       "name": "生成作品资料",
@@ -1243,7 +1284,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const safe = (name) => { try { const d = $(name).first(); return d ? d.json : null; } catch { return null; } };\nconst meta = safe('解析作品资料') || {};\nconst outline = safe('解析大纲') || { chapter1: {}, chapter2: {} };\nconst ch1 = outline.chapter1 || {};\nconst ch2 = outline.chapter2 || {};\nconst now = new Date().toISOString().slice(0, 19).replace('T', ' ');\nconst chapters = [];\nconst pubA = safe('校验发布A');\nconst pubB = safe('校验发布B');\nconst draftA = safe('解析草稿A');\nconst draftB = safe('解析草稿B');\nconst qa = safe('质量门A');\nconst qb = safe('质量门B');\nconst sumA = (safe('整理剧情A') || {}).summary || {};\nconst verifyA = safe('解析复核A');\nconst verifyB = safe('解析复核B');\nconst sumB = (safe('整理剧情B') || {}).summary || {};\nconst aOk = !!(pubA && pubA.published);\nconst bOk = !!(pubB && pubB.published);\nif (draftA && draftA.item_id) {\n  chapters.push({ seq: meta.start_num, title: draftA.title, outline: ch1.outline || '', status: 'reviewed', words: Number(qa.chars || 0), fanqie_item_id: draftA.item_id, published_at: aOk ? now : '', error: aOk ? '' : ((pubA && pubA.error) || JSON.stringify(pubA || {}).slice(0, 200)), summary: sumA, ending_excerpt: qa.editedText ? String(qa.editedText).slice(-220) : '', content: qa.editedText ? String(qa.editedText) : '' });\n}\nif (draftB && draftB.item_id) {\n  chapters.push({ seq: meta.start_num + 1, title: draftB.title, outline: ch2.outline || '', status: 'reviewed', words: Number(qb.chars || 0), fanqie_item_id: draftB.item_id, published_at: bOk ? now : '', error: bOk ? '' : ((pubB && pubB.error) || JSON.stringify(pubB || {}).slice(0, 200)), summary: sumB, ending_excerpt: qb.editedText ? String(qb.editedText).slice(-220) : '', content: qb.editedText ? String(qb.editedText) : '' });\n}\nconst payload = {\n  book_id: meta.book_id,\n  book_name: meta.book_name,\n  genre: outline.genre || '',\n  premise: outline.premise || meta.premise,\n  selling_point: '',\n  platform: meta.platform || 'fanqie',\n  tags: meta.tags || [],\n  abstract: meta.abstract || '',\n  protagonists: meta.protagonists || [],\n  volume_goal: meta.volume_goal || '',\n  outline: { premise: outline.premise, genre: outline.genre, title: outline.title, keywords: outline.keywords, bible: outline.bible || null, chapter1: ch1, chapter2: ch2 },\n  chapters: chapters,\n  costs: (() => {\n    const llmNodes = ['Planner出大纲','守护细纲','生成作品资料','写手A','写手B','润色A','润色B','审稿A','审稿B','读者审稿A','读者审稿B','提炼剧情A','提炼剧情B'];\n    const costs = [];\n    for (const nm of llmNodes) {\n      const d = safe(nm);\n      if (d && d.usage) costs.push({ node: nm, model: String(d.model || ''), prompt_tokens: Number(d.usage.prompt_tokens || 0), completion_tokens: Number(d.usage.completion_tokens || 0) });\n    }\n    return costs;\n  })()\n};\nconst fs = require('fs');\nconst resultFile = 'E:/code/novel-pipeline/n8n_tmp/daily_result.json';\nfs.mkdirSync(resultFile.slice(0, resultFile.lastIndexOf('/')), { recursive: true });\nfs.writeFileSync(resultFile, JSON.stringify(payload));\nreturn [{ json: { payload_b64: Buffer.from(JSON.stringify(payload)).toString('base64'), result_file: resultFile } }];\n"
+        "jsCode": "const safe = (name) => { try { const d = $(name).first(); return d ? d.json : null; } catch { return null; } };\nconst meta = safe('解析作品资料') || {};\nconst outline = safe('解析大纲') || { chapter1: {}, chapter2: {} };\nconst ch1 = outline.chapter1 || {};\nconst ch2 = outline.chapter2 || {};\nconst now = new Date().toISOString().slice(0, 19).replace('T', ' ');\nconst runId = new Date().toISOString() + '-' + Math.floor(Math.random() * 1e6);\nconst chapters = [];\nconst pubA = safe('校验发布A');\nconst pubB = safe('校验发布B');\nconst draftA = safe('解析草稿A');\nconst draftB = safe('解析草稿B');\nconst qa = safe('质量门A');\nconst qb = safe('质量门B');\nconst sumA = (safe('整理剧情A') || {}).summary || {};\nconst verifyA = safe('解析复核A');\nconst verifyB = safe('解析复核B');\nconst sumB = (safe('整理剧情B') || {}).summary || {};\nconst aOk = !!(pubA && pubA.published);\nconst bOk = !!(pubB && pubB.published);\nif (draftA && draftA.item_id) {\n  chapters.push({ seq: meta.start_num, title: draftA.title, outline: ch1.outline || '', status: aOk ? 'published' : 'draft', words: Number(qa.chars || 0), fanqie_item_id: draftA.item_id, published_at: aOk ? now : '', error: aOk ? '' : ((pubA && pubA.error) || JSON.stringify(pubA || {}).slice(0, 200)), summary: sumA, ending_excerpt: qa.editedText ? String(qa.editedText).slice(-220) : '', content: qa.editedText ? String(qa.editedText) : '' });\n}\nif (draftB && draftB.item_id) {\n  chapters.push({ seq: meta.start_num + 1, title: draftB.title, outline: ch2.outline || '', status: bOk ? 'published' : 'draft', words: Number(qb.chars || 0), fanqie_item_id: draftB.item_id, published_at: bOk ? now : '', error: bOk ? '' : ((pubB && pubB.error) || JSON.stringify(pubB || {}).slice(0, 200)), summary: sumB, ending_excerpt: qb.editedText ? String(qb.editedText).slice(-220) : '', content: qb.editedText ? String(qb.editedText) : '' });\n}\nconst payload = {\n  run_id: runId,\n  book_id: meta.book_id,\n  book_name: meta.book_name,\n  genre: outline.genre || '',\n  premise: outline.premise || meta.premise,\n  selling_point: '',\n  platform: meta.platform || 'fanqie',\n  tags: meta.tags || [],\n  abstract: meta.abstract || '',\n  protagonists: meta.protagonists || [],\n  volume_goal: meta.volume_goal || '',\n  outline: { premise: outline.premise, genre: outline.genre, title: outline.title, keywords: outline.keywords, bible: outline.bible || null, chapter1: ch1, chapter2: ch2 },\n  chapters: chapters,\n  costs: (() => {\n    const llmNodes = ['Planner出大纲','守护细纲','生成作品资料','写手A','写手B','润色A','润色B','审稿A','审稿B','读者审稿A','读者审稿B','提炼剧情A','提炼剧情B'];\n    const costs = [];\n    for (const nm of llmNodes) {\n      const d = safe(nm);\n      if (d && d.usage) costs.push({ node: nm, model: String(d.model || ''), prompt_tokens: Number(d.usage.prompt_tokens || 0), completion_tokens: Number(d.usage.completion_tokens || 0) });\n    }\n    return costs;\n  })()\n};\nconst fs = require('fs');\nconst resultFile = 'E:/code/novel-pipeline/n8n_tmp/daily_result.json';\nfs.mkdirSync(resultFile.slice(0, resultFile.lastIndexOf('/')), { recursive: true });\nfs.writeFileSync(resultFile, JSON.stringify(payload));\nreturn [{ json: { payload_b64: Buffer.from(JSON.stringify(payload)).toString('base64'), result_file: resultFile } }];"
       },
       "id": "n-summary",
       "name": "汇总运行结果",
@@ -1256,9 +1297,12 @@
     },
     {
       "parameters": {
-        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe E:/code/novel-pipeline/tools/record_work.py --file E:/code/novel-pipeline/n8n_tmp/daily_result.json",
+        "command": "={{ $env.PYTHON_EXE }}",
         "executeOnce": true,
-        "options": {}
+        "options": {
+          "cwd": "={{ $env.PIPELINE_ROOT }}"
+        },
+        "commandArguments": "={{ [$env.PYTHON_EXE, 'tools/record_work.py', '--file', 'n8n_tmp/daily_result.json'] }}"
       },
       "id": "n-record",
       "name": "记录作品资料",
@@ -1286,7 +1330,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://127.0.0.1:8001/api/agent/run",
+        "url": "http://127.0.0.1:8000/api/agent/run",
         "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
@@ -1294,6 +1338,10 @@
             {
               "name": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
             }
           ]
         },
@@ -1326,7 +1374,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://127.0.0.1:8001/api/agent/run",
+        "url": "http://127.0.0.1:8000/api/agent/run",
         "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
@@ -1334,6 +1382,10 @@
             {
               "name": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
             }
           ]
         },
@@ -1365,10 +1417,11 @@
     },
     {
       "parameters": {
-        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe E:/code/novel-pipeline/novel_pipeline/backup.py --db demo.db --backup-dir backups",
+        "command": "={{ $env.PYTHON_EXE }}",
         "options": {
-          "cwd": "E:/code/novel-pipeline"
-        }
+          "cwd": "={{ $env.PIPELINE_ROOT }}"
+        },
+        "commandArguments": "={{ [$env.PYTHON_EXE, 'novel_pipeline/backup.py', '--db', 'demo.db', '--backup-dir', 'backups'] }}"
       },
       "id": "n-backup",
       "name": "备份数据库",
@@ -1382,7 +1435,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://127.0.0.1:8001/api/agent/run",
+        "url": "http://127.0.0.1:8000/api/agent/run",
         "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
@@ -1390,6 +1443,10 @@
             {
               "name": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
             }
           ]
         },
@@ -1423,7 +1480,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://127.0.0.1:8001/api/agent/run",
+        "url": "http://127.0.0.1:8000/api/agent/run",
         "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
@@ -1431,6 +1488,10 @@
             {
               "name": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
             }
           ]
         },
@@ -1451,7 +1512,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://127.0.0.1:8001/api/agent/run",
+        "url": "http://127.0.0.1:8000/api/agent/run",
         "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
@@ -1459,6 +1520,10 @@
             {
               "name": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
             }
           ]
         },
@@ -1478,10 +1543,11 @@
     },
     {
       "parameters": {
-        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe E:/code/novel-pipeline/tools/preflight.py --db demo.db --budget 100",
+        "command": "={{ $env.PYTHON_EXE }}",
         "options": {
-          "cwd": "E:/code/novel-pipeline"
-        }
+          "cwd": "={{ $env.PIPELINE_ROOT }}"
+        },
+        "commandArguments": "={{ [$env.PYTHON_EXE, 'tools/preflight.py', '--db', 'demo.db'] }}"
       },
       "onError": "continueRegularOutput",
       "id": "n-preflight",
@@ -1511,7 +1577,7 @@
     },
     {
       "parameters": {
-        "jsCode": "try { require('fs').unlinkSync('E:/code/novel-pipeline/n8n_tmp/daily.lock'); } catch (e) {} return [];"
+        "jsCode": "const p = require('path');\nconst root = process.env.PIPELINE_ROOT || '';\nconst lock = root ? p.join(root, 'n8n_tmp', 'daily.lock') : 'n8n_tmp/daily.lock';\ntry { require('fs').unlinkSync(lock); } catch (e) {}\nreturn [];"
       },
       "id": "n-stop",
       "name": "结束",
@@ -1698,10 +1764,11 @@
     },
     {
       "parameters": {
-        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe E:/code/novel-pipeline/tools/collect_reader_stats.py --db demo.db & E:/code/novel-pipeline/tools/release_lock.py",
+        "command": "={{ $env.PYTHON_EXE }}",
         "options": {
-          "cwd": "E:/code/novel-pipeline"
-        }
+          "cwd": "={{ $env.PIPELINE_ROOT }}"
+        },
+        "commandArguments": "={{ [$env.PYTHON_EXE, 'tools/collect_reader_stats.py', '--db', 'demo.db'] }}"
       },
       "onError": "continueRegularOutput",
       "id": "n-stats",
@@ -1716,7 +1783,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://127.0.0.1:8001/api/agent/run",
+        "url": "http://127.0.0.1:8000/api/agent/run",
         "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
@@ -1724,6 +1791,10 @@
             {
               "name": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
             }
           ]
         },
@@ -1744,7 +1815,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://127.0.0.1:8001/api/agent/run",
+        "url": "http://127.0.0.1:8000/api/agent/run",
         "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
@@ -1752,6 +1823,10 @@
             {
               "name": "Content-Type",
               "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
             }
           ]
         },
@@ -1788,10 +1863,11 @@
     },
     {
       "parameters": {
-        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe E:/code/novel-pipeline/tools/check_stock.py",
+        "command": "={{ $env.PYTHON_EXE }}",
         "options": {
-          "cwd": "E:/code/novel-pipeline"
-        }
+          "cwd": "={{ $env.PIPELINE_ROOT }}"
+        },
+        "commandArguments": "={{ [$env.PYTHON_EXE, 'tools/check_stock.py', '--db', 'demo.db'] }}"
       },
       "id": "n-check-stock",
       "name": "查存稿",
@@ -1820,10 +1896,11 @@
     },
     {
       "parameters": {
-        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe E:/code/novel-pipeline/tools/publish_stock.py",
+        "command": "={{ $env.PYTHON_EXE }}",
         "options": {
-          "cwd": "E:/code/novel-pipeline"
-        }
+          "cwd": "={{ $env.PIPELINE_ROOT }}"
+        },
+        "commandArguments": "={{ [$env.PYTHON_EXE, 'tools/publish_stock.py', '--db', 'demo.db'] }}"
       },
       "id": "n-publish-stock",
       "name": "发布存稿",
@@ -1836,10 +1913,11 @@
     },
     {
       "parameters": {
-        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe E:/code/novel-pipeline/tools/write_diaries.py --mode daily --db demo.db",
+        "command": "={{ $env.PYTHON_EXE }}",
         "options": {
-          "cwd": "E:/code/novel-pipeline"
-        }
+          "cwd": "={{ $env.PIPELINE_ROOT }}"
+        },
+        "commandArguments": "={{ [$env.PYTHON_EXE, 'tools/write_diaries.py', '--mode', 'daily', '--db', 'demo.db'] }}"
       },
       "id": "n-diaries",
       "name": "全员写日记",
@@ -1852,10 +1930,11 @@
     },
     {
       "parameters": {
-        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe E:/code/novel-pipeline/tools/novel_knowledge.py --sync-latest --db demo.db",
+        "command": "={{ $env.PYTHON_EXE }}",
         "options": {
-          "cwd": "E:/code/novel-pipeline"
-        }
+          "cwd": "={{ $env.PIPELINE_ROOT }}"
+        },
+        "commandArguments": "={{ [$env.PYTHON_EXE, 'tools/novel_knowledge.py', '--sync-latest', '--db', 'demo.db'] }}"
       },
       "onError": "continueRegularOutput",
       "id": "n-knowledge-sync",
@@ -2303,7 +2382,7 @@
       "main": [
         [
           {
-            "node": "同步设定知识库",
+            "node": "排版B",
             "type": "main",
             "index": 0
           }
@@ -2537,7 +2616,7 @@
       "main": [
         [
           {
-            "node": "发布存稿",
+            "node": "同步设定知识库",
             "type": "main",
             "index": 0
           }
@@ -2548,7 +2627,7 @@
       "main": [
         [
           {
-            "node": "排版B",
+            "node": "发布存稿",
             "type": "main",
             "index": 0
           }

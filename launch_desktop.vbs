@@ -1,3 +1,7 @@
+Set fso = CreateObject("Scripting.FileSystemObject")
 Set ws = CreateObject("WScript.Shell")
-ws.CurrentDirectory = "E:\code\novel-pipeline\desktop"
-ws.Run """E:\code\novel-pipeline\desktop\node_modules\electron\dist\electron.exe"" ""E:\code\novel-pipeline\desktop""", 1, False
+base = fso.GetParentFolderName(WScript.ScriptFullName)
+desktopDir = base & "\desktop"
+exe = desktopDir & "\node_modules\electron\dist\electron.exe"
+ws.CurrentDirectory = desktopDir
+ws.Run """" & exe & """ """ & desktopDir & """", 1, False

@@ -72,7 +72,12 @@ class RenderWorkflowTests(unittest.TestCase):
         )
         self.assertIn("task:'章纲：'+JSON.stringify", body)
         self.assertNotIn("role:'system'", body)
-        self.assertNotIn("Bearer", json.dumps(node["parameters"], ensure_ascii=False))
+        params = node["parameters"]
+        headers = params.get("headerParameters", {}).get("parameters", [])
+        auth = next((h for h in headers if h.get("name") == "Authorization"), None)
+        self.assertIsNotNone(auth, "Authorization header should be rendered")
+        self.assertIn("$env.PANEL_TOKEN", auth["value"])
+        self.assertIn("Bearer", auth["value"])
 
 
 if __name__ == "__main__":

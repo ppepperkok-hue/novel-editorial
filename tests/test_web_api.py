@@ -5,6 +5,7 @@ import threading
 import unittest
 from http.server import ThreadingHTTPServer
 from unittest import mock
+from urllib.error import HTTPError
 from urllib.request import urlopen
 
 from novel_pipeline import db
@@ -129,6 +130,65 @@ class WebApiTests(unittest.TestCase):
             data = json.loads(resp.read().decode("utf-8"))
         self.assertEqual(len(data["items"]), 1)
         self.assertEqual(data["items"][0]["entity"], "苏晚晴")
+
+    def test_cross_origin_post_rejected(self):
+        req = __import__("urllib.request", fromlist=["Request"]).Request(
+            f"{self.base}/api/control",
+            data=json.dumps({"action": "run_now", "workflow": "daily"}).encode("utf-8"),
+            headers={"Origin": "http://evil.example", "Content-Type": "application/json"},
+            method="POST",
+        )
+        with self.assertRaises(HTTPError) as ctx:
+            urlopen(req, timeout=10)
+        self.assertEqual(ctx.exception.code, 403)
+
+    def test_text_plain_post_rejected(self):
+        req = __import__("urllib.request", fromlist=["Request"]).Request(
+            f"{self.base}/api/control",
+            data=b'{"action":"run_now"}',
+            headers={"Content-Type": "text/plain"},
+            method="POST",
+        )
+        with self.assertRaises(HTTPError) as ctx:
+            urlopen(req, timeout=10)
+        self.assertEqual(ctx.exception.code, 403)
+
+    def test_panel_token_required_for_non_browser_post(self):
+        with mock.patch("novel_pipeline.web_api._panel_token", return_value="secret"):
+            req = __import__("urllib.request", fromlist=["Request"]).Request(
+                f"{self.base}/api/control",
+                data=json.dumps({"action": "run_now", "workflow": "daily"}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with self.assertRaises(HTTPError) as ctx:
+                urlopen(req, timeout=10)
+            self.assertEqual(ctx.exception.code, 403)
+            req = __import__("urllib.request", fromlist=["Request"]).Request(
+                f"{self.base}/api/control",
+                data=json.dumps({"action": "run_now", "workflow": "daily"}).encode("utf-8"),
+                headers={"Content-Type": "application/json", "Authorization": "Bearer secret"},
+                method="POST",
+            )
+            with urlopen(req, timeout=10) as resp:
+                self.assertEqual(resp.status, 200)
+
+    def test_knowledge_save_rejects_path_traversal(self):
+        body = json.dumps(
+            {"action": "save", "file": "../escape.md", "meta": {"title": "x"}, "body": "内容"}
+        ).encode("utf-8")
+        req = __import__("urllib.request", fromlist=["Request"]).Request(
+            f"{self.base}/api/knowledge",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with self.assertRaises(HTTPError) as ctx:
+            urlopen(req, timeout=10)
+        self.assertEqual(ctx.exception.code, 500)
+        from novel_pipeline import config
+
+        self.assertFalse((config.ROOT / "escape.md").exists())
 
 
 if __name__ == "__main__":

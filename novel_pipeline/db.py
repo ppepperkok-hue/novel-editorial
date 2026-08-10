@@ -2,6 +2,11 @@
 
 import json
 import sqlite3
+import threading
+from pathlib import Path
+
+_INIT_LOCK = threading.Lock()
+_INITIALIZED = set()
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS novels (
@@ -15,6 +20,7 @@ CREATE TABLE IF NOT EXISTS novels (
     platform TEXT DEFAULT 'fanqie',
     status TEXT DEFAULT 'planning',
     book_id TEXT DEFAULT '',
+    volume_id TEXT DEFAULT '',
     tags TEXT DEFAULT '[]',
     abstract TEXT DEFAULT '',
     protagonists TEXT DEFAULT '[]',
@@ -118,6 +124,7 @@ CREATE TABLE IF NOT EXISTS cost_logs (
     prompt_tokens INTEGER DEFAULT 0,
     completion_tokens INTEGER DEFAULT 0,
     cost REAL DEFAULT 0,
+    run_id TEXT DEFAULT '',
     created_at TEXT DEFAULT ''
 );
 
@@ -228,10 +235,26 @@ CREATE TABLE IF NOT EXISTS novel_knowledge_history (
 
 
 def connect(db_path):
-    conn = sqlite3.connect(str(db_path))
+    """Connect to the SQLite database.
+
+    Schema creation/migration runs exactly once per database path (process
+    lifetime); subsequent connects are lightweight and set per-connection
+    pragmas. WAL mode is enabled once and persists in the database file.
+    """
+    key = str(Path(db_path).resolve())
+    with _INIT_LOCK:
+        if key not in _INITIALIZED:
+            conn = sqlite3.connect(str(db_path))
+            conn.row_factory = sqlite3.Row
+            conn.executescript(SCHEMA)
+            _migrate(conn)
+            conn.execute("PRAGMA journal_mode=WAL").fetchall()
+            conn.commit()
+            conn.close()
+            _INITIALIZED.add(key)
+    conn = sqlite3.connect(str(db_path), timeout=15)
     conn.row_factory = sqlite3.Row
-    conn.executescript(SCHEMA)
-    _migrate(conn)
+    conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 
@@ -240,6 +263,7 @@ def _migrate(conn):
     novel_cols = {r["name"] for r in conn.execute("PRAGMA table_info(novels)")}
     for col, ddl in {
         "book_id": "TEXT DEFAULT ''",
+        "volume_id": "TEXT DEFAULT ''",
         "tags": "TEXT DEFAULT '[]'",
         "abstract": "TEXT DEFAULT ''",
         "protagonists": "TEXT DEFAULT '[]'",
@@ -270,12 +294,25 @@ def _migrate(conn):
     summary_cols = {r["name"] for r in conn.execute("PRAGMA table_info(chapter_summaries)")}
     if "ending_excerpt" not in summary_cols:
         conn.execute("ALTER TABLE chapter_summaries ADD COLUMN ending_excerpt TEXT DEFAULT ''")
+    cost_cols = {r["name"] for r in conn.execute("PRAGMA table_info(cost_logs)")}
+    if "run_id" not in cost_cols:
+        conn.execute("ALTER TABLE cost_logs ADD COLUMN run_id TEXT DEFAULT ''")
     thread_cols = {r["name"] for r in conn.execute("PRAGMA table_info(plot_threads)")}
     if "description" not in thread_cols:
         conn.execute("ALTER TABLE plot_threads ADD COLUMN description TEXT DEFAULT ''")
     meeting_cols = {r["name"] for r in conn.execute("PRAGMA table_info(weekly_meetings)")}
     if "kind" not in meeting_cols:
         conn.execute("ALTER TABLE weekly_meetings ADD COLUMN kind TEXT DEFAULT 'weekly'")
+    conn.executescript(
+        """
+        CREATE INDEX IF NOT EXISTS idx_chapters_novel_seq ON chapters(novel_id, seq);
+        CREATE INDEX IF NOT EXISTS idx_publish_logs_chapter ON publish_logs(chapter_id);
+        CREATE INDEX IF NOT EXISTS idx_cost_logs_created ON cost_logs(created_at);
+        CREATE INDEX IF NOT EXISTS idx_diaries_agent ON agent_diaries(agent, novel_id, diary_type);
+        CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at);
+        CREATE INDEX IF NOT EXISTS idx_knowledge_lookup ON novel_knowledge(novel_id, category, entity);
+        """
+    )
     conn.commit()
 
 

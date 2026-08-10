@@ -17,6 +17,7 @@ Run from the pipeline root:
 
 import argparse
 import json
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -123,17 +124,39 @@ def _find_label_ids(labels, genre, tags, max_count=4):
         v = l.get("label_id") or l.get("id") or l.get("category_id")
         return str(v) if v else ""
 
-    tokens = set((genre or "") + " " + " ".join(tags or []))
+    genre_tokens = set(re.findall(r"[\u4e00-\u9fff]{2,}", genre or ""))
+    tag_tokens = set()
+    for t in tags or []:
+        tag_tokens.update(re.findall(r"[\u4e00-\u9fff]{2,}", str(t)))
+    tokens = genre_tokens | tag_tokens
     selected = []
     for l in labels or []:
         name = get_name(l)
         lid = get_id(l)
         if not name or not lid:
             continue
-        if any(ch in name for ch in tokens) or name in genre or name in tags:
+        if (
+            any(w in name or name in w for w in tokens)
+            or name in (genre or "")
+            or name in tags
+        ):
             selected.append(lid)
         if len(selected) >= max_count:
             break
+    if not selected:
+        # Fallback: score labels by single-char intersection with the genre
+        # string (still better than a random pick), then first two labels.
+        scored = []
+        for l in labels or []:
+            name = get_name(l)
+            lid = get_id(l)
+            if not name or not lid:
+                continue
+            score = sum(1 for ch in (genre or "") if ch in name)
+            if score:
+                scored.append((score, lid))
+        scored.sort(key=lambda x: -x[0])
+        selected = [lid for _score, lid in scored[:2]]
     if not selected:
         selected = [get_id(l) for l in (labels or [])[:2] if get_id(l)]
     return selected
