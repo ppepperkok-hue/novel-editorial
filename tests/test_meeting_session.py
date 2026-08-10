@@ -42,7 +42,8 @@ class MeetingSessionTests(unittest.TestCase):
         self.assertTrue(r["ok"])
         sid = r["session_id"]
 
-        def fake_ask(conn, novel_id, agent, user, temperature, dry_run, mock_text, max_tokens=1600):
+        def fake_ask(conn, novel_id, agent, user, temperature, dry_run, mock_text,
+                     max_tokens=1600, tools=None, messages=None, system_override=None):
             if agent == "eic" and "决定本次参会名单" in user:
                 text = json.dumps(
                     {
@@ -87,7 +88,7 @@ class MeetingSessionTests(unittest.TestCase):
                     },
                     ensure_ascii=False,
                 )
-            return text, {"prompt_tokens": 1, "completion_tokens": 1}, "mock"
+            return text, {"prompt_tokens": 1, "completion_tokens": 1}, "mock", []
 
         waits = {"n": 0}
 

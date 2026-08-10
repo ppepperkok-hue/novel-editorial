@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT))
 
 from novel_pipeline import db  # noqa: E402
 from novel_pipeline.llm_client import chat_deepseek  # noqa: E402
+from novel_pipeline.services import knowledge  # noqa: E402
 from tools import architect_weekly, write_diaries  # noqa: E402
 
 AGENTS_DIR = ROOT / "prompts" / "agents"
@@ -76,12 +77,39 @@ def mood_of(conn, novel_id, agent):
     return json.loads(row[0]["mood"]) if row and row[0]["mood"] else None
 
 
-def ask(conn, novel_id, agent, user, temperature, dry_run, mock_text, max_tokens=1600):
+GET_KNOWLEDGE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "get_knowledge",
+        "description": (
+            "获取与当前议题相关的写作知识包。当讨论涉及开篇/钩子、节奏/爽点、"
+            "人设/OOC、伏笔、去AI味、市场热点/选题等主题时，调用本工具获取内容后再发言。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "topic": {
+                    "type": "string",
+                    "description": "知识主题关键词，例如：章末钩子、节奏、OOC、伏笔、去AI味、市场热点",
+                }
+            },
+            "required": ["topic"],
+        },
+    },
+}
+
+
+def ask(conn, novel_id, agent, user, temperature, dry_run, mock_text, max_tokens=1600,
+        tools=None, messages=None, system_override=None):
     if dry_run:
-        return mock_text, {"prompt_tokens": 0, "completion_tokens": 0}, "dry-run"
-    resp = chat_deepseek("deepseek-v4-flash", agent_md(agent), user, temperature=temperature, max_tokens=max_tokens)
+        return mock_text, {"prompt_tokens": 0, "completion_tokens": 0}, "dry-run", []
+    system = system_override if system_override is not None else agent_md(agent)
+    resp = chat_deepseek(
+        "deepseek-v4-flash", system, user, temperature=temperature,
+        max_tokens=max_tokens, messages=messages, tools=tools,
+    )
     record_cost(conn, novel_id, agent, resp["usage"], resp["model"])
-    return resp["text"], resp["usage"], resp["model"]
+    return resp["text"], resp["usage"], resp["model"], resp.get("tool_calls") or []
 
 
 def build_materials_dict(conn, novel_id):
@@ -102,7 +130,7 @@ def write_weekly_diaries(conn, novel_id, dry_run):
                 write_diaries.weekly_payload(conn, novel_id, agent), ensure_ascii=False
             )
         )
-        text, usage, model = ask(
+        text, usage, model, _tc = ask(
             conn, novel_id, agent, user,
             temperature=0.6, dry_run=dry_run,
             mock_text=json.dumps(
@@ -155,7 +183,7 @@ def chair_pick(conn, novel_id, dry_run):
             {a: mood_of(conn, novel_id, a) for a in ALL_AGENTS}, ensure_ascii=False
         )
     )
-    text, _, _ = ask(
+    text, _, _, _ = ask(
         conn, novel_id, "eic", user, temperature=0.2, dry_run=dry_run,
         mock_text=json.dumps(
             {"attendees": ["planner", "memory", "reader", "guard", "writer", "eic"],
@@ -176,7 +204,7 @@ def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run, i
     mood = mood_of(conn, novel_id, agent)
     brief = materials["agent_briefs"].get(agent, {})
     planning = bool((materials.get("context") or {}).get("new_book_planning"))
-    base = (
+    user = (
         f"现在是会议第 {round_no} 轮。"
         + (f"本次会议主题：{topic}。" if topic else "这是周会。")
         + (
@@ -208,25 +236,62 @@ def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run, i
         "不要输出 JSON 以外的任何文字、Markdown、注释或解释。"
     )
     mock_text = json.dumps(
-        {"speech": f"[dry-run] {agent} 的发言", "weekly_summary": f"[dry-run] {agent} 本周小结", "feelings": "平稳",
-         "opinion": "建议保持节奏", "concerns": [], "proposals": ["观察下一周数据"],
-         "priority": "中"},
+        {"speech": f"[dry-run] {agent} 的发言", "weekly_summary": f"[dry-run] {agent} 本周小结",
+         "feelings": "平稳", "opinion": "建议保持节奏", "concerns": [],
+         "proposals": ["观察下一周数据"], "priority": "中"},
         ensure_ascii=False,
     )
-    last_text = ""
-    for attempt in range(2):
-        extra = json_rule if attempt == 0 else (
-            json_rule + "你上一次输出不是合法 JSON，请重新严格只输出 JSON 对象，不要任何多余内容。"
+    index = knowledge.build_knowledge_index(agent)
+    tool_rule = (
+        "\n\n[知识库工具]\n讨论涉及知识库索引中的主题时，必须调用 get_knowledge 工具"
+        "获取知识包内容，再基于内容按[会议模式]输出最终 JSON。"
+    )
+    system = agent_md(agent) + tool_rule + ("\n\n" + index if index else "")
+    user += "；" + natural_rule + "；" + json_rule
+
+    text, _usage, _model, tool_calls = ask(
+        conn, novel_id, agent, user, temperature=0.6, dry_run=dry_run,
+        mock_text=mock_text, tools=[GET_KNOWLEDGE_TOOL], system_override=system,
+    )
+    if tool_calls:
+        msgs = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+            {"role": "assistant", "content": text or "", "tool_calls": tool_calls},
+        ]
+        for tc in tool_calls:
+            fn = tc.get("function") or {}
+            try:
+                args = json.loads(fn.get("arguments") or "{}")
+            except ValueError:
+                args = {}
+            tool_topic = str(args.get("topic") or "")
+            hits = knowledge.resolve_knowledge(agent, tool_topic)
+            content = "\n\n".join(
+                f"【{h['title']}】\n{h['content']}" for h in hits
+            ) or f"未找到与「{tool_topic}」匹配的知识包，请直接发言。"
+            msgs.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc.get("id") or "",
+                    "content": content,
+                }
+            )
+        text, _usage, _model, _tc2 = ask(
+            conn, novel_id, agent, None, temperature=0.6, dry_run=dry_run,
+            mock_text=mock_text, messages=msgs, system_override=system,
         )
-        text, _, _ = ask(
-            conn, novel_id, agent, base + "；" + natural_rule + "；" + extra,
-            temperature=0.6, dry_run=dry_run, mock_text=mock_text,
-        )
-        last_text = text
-        parsed = parse_json(text)
-        if parsed:
-            return parsed
-    return {"raw": last_text[:2000]}
+        return parse_json(text) or {"raw": text[:2000]}
+
+    parsed = parse_json(text)
+    if parsed:
+        return parsed
+    text, _usage, _model, _tc3 = ask(
+        conn, novel_id, agent,
+        user + "；你上一次输出不是合法 JSON，请重新严格只输出 JSON 对象，不要任何多余内容。",
+        temperature=0.6, dry_run=dry_run, mock_text=mock_text, system_override=system,
+    )
+    return parse_json(text) or {"raw": text[:2000]}
 
 
 def chair_summary(conn, novel_id, attendees, topics, transcript, dry_run):
@@ -249,7 +314,7 @@ def chair_summary(conn, novel_id, attendees, topics, transcript, dry_run):
         "disagreements(数组), action_items(数组)}"
         + decision_note
     )
-    text, _, _ = ask(
+    text, _, _, _ = ask(
         conn, novel_id, "eic", user, temperature=0.2, dry_run=dry_run,
         mock_text=json.dumps(
             {"meeting_id": "dry-run", "date": datetime.now().strftime("%Y-%m-%d"),

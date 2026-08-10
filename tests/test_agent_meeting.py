@@ -127,7 +127,8 @@ class RoundSpeechRetryTests(unittest.TestCase):
             materials = architect_weekly.build_materials(conn, 1)
             calls = {"n": 0}
 
-            def fake_ask(conn, novel_id, agent, user, temperature, dry_run, mock_text, max_tokens=1600):
+            def fake_ask(conn, novel_id, agent, user, temperature, dry_run, mock_text,
+                         max_tokens=1600, tools=None, messages=None, system_override=None):
                 calls["n"] += 1
                 if calls["n"] == 1:
                     text = "好的，我来发言……（散文，不是 JSON）"
@@ -143,7 +144,7 @@ class RoundSpeechRetryTests(unittest.TestCase):
                         },
                         ensure_ascii=False,
                     )
-                return text, {"prompt_tokens": 1, "completion_tokens": 1}, "mock"
+                return text, {"prompt_tokens": 1, "completion_tokens": 1}, "mock", []
 
             with mock.patch("tools.agent_meeting.ask", side_effect=fake_ask):
                 speech = agent_meeting.round_speech(
@@ -163,9 +164,10 @@ class RoundSpeechRetryTests(unittest.TestCase):
             materials = architect_weekly.build_materials(conn, 1)
             calls = {"n": 0}
 
-            def fake_ask(conn, novel_id, agent, user, temperature, dry_run, mock_text, max_tokens=1600):
+            def fake_ask(conn, novel_id, agent, user, temperature, dry_run, mock_text,
+                         max_tokens=1600, tools=None, messages=None, system_override=None):
                 calls["n"] += 1
-                return "我不会 JSON，就说散文吧。", {"prompt_tokens": 1, "completion_tokens": 1}, "mock"
+                return "我不会 JSON，就说散文吧。", {"prompt_tokens": 1, "completion_tokens": 1}, "mock", []
 
             with mock.patch("tools.agent_meeting.ask", side_effect=fake_ask):
                 speech = agent_meeting.round_speech(
@@ -174,6 +176,59 @@ class RoundSpeechRetryTests(unittest.TestCase):
             self.assertEqual(calls["n"], 2)
             self.assertIn("raw", speech)
             self.assertIn("散文", speech["raw"])
+        finally:
+            conn.close()
+
+    def test_round_speech_calls_knowledge_tool_in_meeting(self):
+        path = make_db()
+        from tools import agent_meeting, architect_weekly
+
+        conn = db.connect(path)
+        try:
+            materials = architect_weekly.build_materials(conn, 1)
+            calls = {"n": 0, "first_tools": None, "first_system": None, "second_messages": None}
+
+            def fake_ask(conn, novel_id, agent, user, temperature, dry_run, mock_text,
+                         max_tokens=1600, tools=None, messages=None, system_override=None):
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    calls["first_tools"] = tools
+                    calls["first_system"] = system_override
+                    tool_call = {
+                        "id": "call_9",
+                        "type": "function",
+                        "function": {
+                            "name": "get_knowledge",
+                            "arguments": '{"topic": "伏笔"}',
+                        },
+                    }
+                    return "", {"prompt_tokens": 1, "completion_tokens": 1}, "mock", [tool_call]
+                calls["second_messages"] = messages
+                text = json.dumps(
+                    {
+                        "speech": "我觉得伏笔回收得按知识库来。",
+                        "weekly_summary": "小结",
+                        "feelings": "平稳",
+                        "opinion": "意见",
+                        "concerns": [],
+                        "proposals": [],
+                        "priority": "中",
+                    },
+                    ensure_ascii=False,
+                )
+                return text, {"prompt_tokens": 1, "completion_tokens": 1}, "mock", []
+
+            with mock.patch("tools.agent_meeting.ask", side_effect=fake_ask):
+                speech = agent_meeting.round_speech(
+                    conn, 1, "planner", materials, [], 1, dry_run=False
+                )
+            self.assertEqual(calls["n"], 2)
+            self.assertEqual(calls["first_tools"][0]["function"]["name"], "get_knowledge")
+            self.assertIn("知识库工具", calls["first_system"])
+            self.assertIn("开篇钩子", calls["first_system"])
+            roles = [m["role"] for m in calls["second_messages"]]
+            self.assertIn("tool", roles)
+            self.assertEqual(speech["speech"], "我觉得伏笔回收得按知识库来。")
         finally:
             conn.close()
 
