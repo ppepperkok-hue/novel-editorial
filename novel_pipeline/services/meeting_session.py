@@ -143,17 +143,29 @@ def _run_locked(conn, session_id):
                 ).fetchone()
                 instruction = r["instruction"] if r else ""
             for agent in attendees:
-                speech = agent_meeting.round_speech(
-                    conn,
-                    novel_id,
-                    agent,
-                    materials,
-                    transcript,
-                    round_no,
-                    dry_run=False,
-                    instruction=instruction if round_no > 1 else "",
-                    topic=topic,
+                conn.execute(
+                    "UPDATE meeting_sessions SET current_agent=?, heartbeat_at=? WHERE id=?",
+                    (agent, _now(), session_id),
                 )
+                conn.commit()
+                try:
+                    speech = agent_meeting.round_speech(
+                        conn,
+                        novel_id,
+                        agent,
+                        materials,
+                        transcript,
+                        round_no,
+                        dry_run=False,
+                        instruction=instruction if round_no > 1 else "",
+                        topic=topic,
+                    )
+                finally:
+                    conn.execute(
+                        "UPDATE meeting_sessions SET current_agent='', heartbeat_at=? WHERE id=?",
+                        (_now(), session_id),
+                    )
+                    conn.commit()
                 transcript.append({"round": round_no, "agent": agent, "speech": speech})
                 conn.execute(
                     "UPDATE meeting_sessions SET transcript=?, updated_at=? WHERE id=?",
@@ -260,6 +272,14 @@ def _run_locked(conn, session_id):
                 )
                 conn.commit()
             except Exception:  # noqa: BLE001
+                try:
+                    conn.execute(
+                        "UPDATE meeting_sessions SET current_agent='', heartbeat_at=? WHERE id=?",
+                        (_now(), session_id),
+                    )
+                    conn.commit()
+                except Exception:  # noqa: BLE001
+                    pass
                 pass
 
 

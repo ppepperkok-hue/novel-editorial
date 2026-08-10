@@ -43,6 +43,7 @@ export default function MeetingLive({ onArchived }) {
   const [starting, setStarting] = useState(false);
   const [session, setSession] = useState(null);
   const [pollTick, setPollTick] = useState(0);
+  const [nowMs, setNowMs] = useState(Date.now());
   const [instruction, setInstruction] = useState("");
   const [advancing, setAdvancing] = useState(false);
   const [msg, setMsg] = useState("");
@@ -81,6 +82,11 @@ export default function MeetingLive({ onArchived }) {
       if (timer) clearInterval(timer);
     };
   }, [pollTick, session?.id]);
+
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   useEffect(() => {
     // restore an in-progress meeting after a page refresh
@@ -171,6 +177,19 @@ export default function MeetingLive({ onArchived }) {
               {session.status === "finished" && "已完成"}
               {session.status === "failed" && "失败"}
             </span>
+            {session.status === "running" && session.current_agent ? (
+              <span className="chip chip-info !px-2 !py-0.5 text-xs">
+                <span className="mr-1 inline-block animate-pulse">●</span>
+                {AGENT_NAMES[session.current_agent] || session.current_agent} 正在思考…
+                {(() => {
+                  const hb = session.heartbeat_at
+                    ? new Date(String(session.heartbeat_at).replace(" ", "T")).getTime()
+                    : 0;
+                  const secs = hb ? Math.max(0, Math.floor((nowMs - hb) / 1000)) : 0;
+                  return secs > 300 ? `已 ${Math.floor(secs / 60)} 分钟，可能卡住` : `已 ${secs} 秒`;
+                })()}
+              </span>
+            ) : null}
             {session.attendees?.length ? (
               <span className="muted text-xs">参会：{session.attendees.map((a) => AGENT_NAMES[a] || a).join("、")}</span>
             ) : null}

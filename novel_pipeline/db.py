@@ -195,6 +195,8 @@ CREATE TABLE IF NOT EXISTS meeting_sessions (
     instruction TEXT DEFAULT '',
     report TEXT DEFAULT '',
     db_path TEXT DEFAULT '',
+    current_agent TEXT DEFAULT '',
+    heartbeat_at TEXT DEFAULT '',
     created_at TEXT DEFAULT '',
     updated_at TEXT DEFAULT ''
 );
@@ -307,6 +309,10 @@ def _migrate(conn):
     session_cols = {r["name"] for r in conn.execute("PRAGMA table_info(meeting_sessions)")}
     if "db_path" not in session_cols:
         conn.execute("ALTER TABLE meeting_sessions ADD COLUMN db_path TEXT DEFAULT ''")
+    if "current_agent" not in session_cols:
+        conn.execute("ALTER TABLE meeting_sessions ADD COLUMN current_agent TEXT DEFAULT ''")
+    if "heartbeat_at" not in session_cols:
+        conn.execute("ALTER TABLE meeting_sessions ADD COLUMN heartbeat_at TEXT DEFAULT ''")
     conn.executescript(
         """
         CREATE INDEX IF NOT EXISTS idx_chapters_novel_seq ON chapters(novel_id, seq);
