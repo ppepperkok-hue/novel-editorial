@@ -23,7 +23,7 @@ def build_outline(client, premise, chapters=3, platform="fanqie"):
         {"premise": premise, "chapters": chapters, "platform": platform},
         ensure_ascii=False,
     )
-    raw = client.chat(PLANNER_PROMPT, user, tier="planning")
+    raw = client.chat(PLANNER_PROMPT, user, tier="planning", max_tokens=3000)
     start, end = raw.find("{"), raw.rfind("}")
     if start == -1 or end <= start:
         raise ValueError("Planner 输出不是合法 JSON 对象")

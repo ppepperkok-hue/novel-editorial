@@ -197,6 +197,23 @@ for (const file of files) {
         issues.push(`${file}: ${name} is missing max_tokens (truncation risk)`);
       }
     }
+    // H3/H7: memory/整理 nodes must tolerate errors so one track does not
+    // kill the other; merge fallback must read quality gates; 算章节号 must
+    // fail loudly when the active book is missing.
+    for (const name of ["提炼剧情A", "提炼剧情B", "整理剧情A", "整理剧情B"]) {
+      const node = nodes.find((n) => n.name === name);
+      if (node && node.onError !== "continueRegularOutput") {
+        issues.push(`${file}: ${name} must tolerate errors (B-track isolation)`);
+      }
+    }
+    const fallback = nodes.find((n) => n.name === "合并兜底");
+    if (fallback && !/质量门A/.test(fallback.parameters.jsCode || "")) {
+      issues.push(`${file}: 合并兜底 must read quality gates, not 校验发布`);
+    }
+    const seqNode = nodes.find((n) => n.name === "算章节号");
+    if (seqNode && !/未找到活跃作品/.test(seqNode.parameters.jsCode || "")) {
+      issues.push(`${file}: 算章节号 must fail loudly without an active book`);
+    }
   }
 
   // 5. executeCommand nodes: parameterized command + args + relative cwd.

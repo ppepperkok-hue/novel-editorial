@@ -134,7 +134,7 @@ class MockLLMClient(LLMClient):
         self.responses = dict(responses or {})
         self.calls = []
 
-    def chat(self, system, user, tier="writing", temperature=0.8):
+    def chat(self, system, user, tier="writing", temperature=0.8, max_tokens=None):
         self.calls.append({"tier": tier, "system": system, "user": user})
         resp = self.responses.get(tier)
         if callable(resp):

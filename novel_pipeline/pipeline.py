@@ -50,14 +50,18 @@ def generate_chapter(client, chapter_outline, prev_summary="", character_states=
         min_chars=min_chars,
         max_chars=max_chars,
     )
-    draft = client.chat(writer_prompt, "请开始写作。", tier="writing")
+    draft = client.chat(
+        writer_prompt, "请开始写作。", tier="writing", max_tokens=max_chars * 2 + 800
+    )
 
     editor_prompt = fill(
         load_prompt("editor"),
         min_chars=min_chars,
         max_chars=max_chars,
     )
-    edited = client.chat(editor_prompt, f"初稿：\n{draft}", tier="editing")
+    edited = client.chat(
+        editor_prompt, f"初稿：\n{draft}", tier="editing", max_tokens=max_chars * 2 + 800
+    )
 
     review_raw = client.chat(
         load_prompt("reviewer"),
