@@ -144,6 +144,14 @@ class MeetingSessionTests(unittest.TestCase):
         self.assertEqual(s["status"], "running")
         self.assertEqual(s["instruction"], meeting_session.FINISH_TOKEN)
 
+    def test_get_active_session_returns_latest_in_progress(self):
+        self.assertIsNone(meeting_session.get_active_session(self.conn))
+        r = meeting_session.create_session(self.conn, "进行中的会")
+        self.assertTrue(r["ok"])
+        active = meeting_session.get_active_session(self.conn)
+        self.assertEqual(active["id"], r["session_id"])
+        self.assertEqual(active["status"], "running")
+
     def test_create_and_advance_state_machine(self):
         self.conn.execute(
             "INSERT INTO novels(title,genre,premise,status) VALUES('测试书','都市','x','planning')"

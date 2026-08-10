@@ -57,6 +57,18 @@ def get_session(conn, session_id):
     return d
 
 
+def get_active_session(conn):
+    """Latest in-progress topic session (running or awaiting input)."""
+    row = conn.execute(
+        "SELECT id FROM meeting_sessions "
+        "WHERE status IN ('running','awaiting_input') "
+        "ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    if row is None:
+        return None
+    return get_session(conn, row["id"])
+
+
 def advance_session(conn, session_id, instruction="", finish=False):
     row = conn.execute(
         "SELECT id, status FROM meeting_sessions WHERE id=?", (session_id,)

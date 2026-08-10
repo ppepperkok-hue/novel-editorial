@@ -94,6 +94,12 @@ export async function getSession(id) {
   return r.json();
 }
 
+export async function getActiveSession() {
+  const r = await fetch(API_BASE + "/api/meetings/active");
+  if (!r.ok) throw new Error("active session " + r.status);
+  return r.json();
+}
+
 export async function advanceSession(id, instruction, finish = false) {
   const r = await fetch(API_BASE + "/api/meetings/advance", {
     method: "POST",

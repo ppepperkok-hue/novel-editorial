@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { advanceSession, getSession, startMeeting } from "../api.js";
+import { advanceSession, getActiveSession, getSession, startMeeting } from "../api.js";
 
 const AGENT_NAMES = {
   planner: "文策",
@@ -81,6 +81,15 @@ export default function MeetingLive({ onArchived }) {
       if (timer) clearInterval(timer);
     };
   }, [pollTick, session?.id]);
+
+  useEffect(() => {
+    // restore an in-progress meeting after a page refresh
+    getActiveSession()
+      .then((r) => {
+        if (r?.session) setSession(r.session);
+      })
+      .catch(() => {});
+  }, []);
 
   const start = async () => {
     if (!topic.trim()) return;

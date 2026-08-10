@@ -156,6 +156,14 @@ def make_handler(db_path):
                             self._json(session if session else {"error": "session not found"}, status=200 if session else 404)
                     finally:
                         conn.close()
+                elif path == "/api/meetings/active":
+                    conn = db.connect(db_path)
+                    try:
+                        self._json(
+                            {"session": meeting_service.get_active_session(conn)}
+                        )
+                    finally:
+                        conn.close()
                 elif path == "/api/ai_taste":
                     conn = db.connect(db_path)
                     try:
