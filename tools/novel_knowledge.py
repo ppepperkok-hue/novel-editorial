@@ -195,14 +195,149 @@ def sync_from_chapters(conn, novel_id, chapter_id=None, limit=3):
     return {"updated": updated, "count": len(updated)}
 
 
+def _as_list(value):
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
+def _upsert_if_changed(conn, novel_id, category, entity, content, source_chapter=None):
+    """Upsert only when the stored content differs (keeps versions stable)."""
+    content = str(content or "").strip()
+    if not entity or not content:
+        return None
+    row = conn.execute(
+        "SELECT id, content FROM novel_knowledge "
+        "WHERE novel_id=? AND category=? AND entity=?",
+        (novel_id, category, entity),
+    ).fetchone()
+    if row and str(row["content"] or "").strip() == content:
+        return None
+    return upsert(
+        conn, novel_id, category, entity, content,
+        source_chapter=source_chapter,
+        change_note="故事圣经初始化",
+    )
+
+
+def sync_from_bible(conn, novel_id, bible, source_chapter=None):
+    """Initialize the per-novel knowledge store from the story bible.
+
+    The Planner writes the first bible before chapter 1 is generated; without
+    this sync the world-rule/item/power/plot categories stay empty until a
+    human enters them manually (the chapter sync only covers character/plot/
+    timeline). Idempotent: unchanged content is not re-versioned.
+    """
+    bible = bible or {}
+    updated = []
+
+    for i, rule in enumerate(_as_list(bible.get("world_rules")), start=1):
+        if isinstance(rule, dict):
+            title = str(rule.get("rule") or rule.get("name") or f"规则{i}")[:40]
+            content = str(
+                rule.get("content")
+                or rule.get("description")
+                or rule.get("detail")
+                or ""
+            )
+            if not content.strip():
+                content = str(rule)
+        else:
+            title = str(rule)[:24]
+            content = str(rule)
+        kid = _upsert_if_changed(
+            conn, novel_id, "world_rule", title, content, source_chapter
+        )
+        if kid:
+            updated.append(f"world_rule:{title}")
+
+    for c in _as_list(bible.get("characters")):
+        if not isinstance(c, dict):
+            continue
+        name = str(c.get("name") or "").strip()
+        if not name:
+            continue
+        parts = []
+        for key in ("identity", "personality", "speech_style", "ooc_redline",
+                    "current_state", "goals"):
+            value = c.get(key)
+            if value:
+                parts.append(f"{key}: {value}")
+        content = "；".join(parts)
+        kid = _upsert_if_changed(
+            conn, novel_id, "character", name, content, source_chapter
+        )
+        if kid:
+            updated.append(f"character:{name}")
+
+    rel_text = "；".join(
+        f"{r.get('from')}→{r.get('to')}({r.get('relation', '')})"
+        for r in _as_list(bible.get("relationships"))
+        if isinstance(r, dict) and r.get("from") and r.get("to")
+    )
+    if rel_text:
+        kid = _upsert_if_changed(
+            conn, novel_id, "plot", "人物关系", rel_text, source_chapter
+        )
+        if kid:
+            updated.append("plot:人物关系")
+
+    gf = str(bible.get("golden_finger") or "").strip()
+    if gf:
+        kid = _upsert_if_changed(conn, novel_id, "item", "金手指", gf, source_chapter)
+        if kid:
+            updated.append("item:金手指")
+        kid = _upsert_if_changed(conn, novel_id, "power", "金手指", gf, source_chapter)
+        if kid:
+            updated.append("power:金手指")
+
+    mp = str(bible.get("main_plot") or "").strip()
+    if mp:
+        kid = _upsert_if_changed(conn, novel_id, "plot", "主线", mp, source_chapter)
+        if kid:
+            updated.append("plot:主线")
+
+    sg = str(bible.get("style_guide") or "").strip()
+    if sg:
+        kid = _upsert_if_changed(
+            conn, novel_id, "world_rule", "文风", sg, source_chapter
+        )
+        if kid:
+            updated.append("world_rule:文风")
+
+    return {"updated": updated, "count": len(updated)}
+
+
 def sync_latest(conn):
     row = conn.execute(
         "SELECT DISTINCT c.novel_id FROM chapter_summaries cs "
         "JOIN chapters c ON c.id=cs.chapter_id ORDER BY cs.id DESC LIMIT 1"
     ).fetchone()
     if row is None:
-        return {"ok": True, "novel_id": None, "updated": []}
-    return {"ok": True, "novel_id": row["novel_id"], **sync_from_chapters(conn, row["novel_id"])}
+        # No chapters yet: still initialize the bible into the knowledge store
+        # so agents can query world rules before chapter 1 is published.
+        novel = conn.execute(
+            "SELECT id, outline FROM novels ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if novel is None:
+            return {"ok": True, "novel_id": None, "updated": []}
+        bible = (json.loads(novel["outline"] or "{}") or {}).get("bible") or {}
+        return {
+            "ok": True,
+            "novel_id": novel["id"],
+            **sync_from_bible(conn, novel["id"], bible),
+        }
+    novel = conn.execute(
+        "SELECT outline FROM novels WHERE id=?", (row["novel_id"],)
+    ).fetchone()
+    updated = []
+    if novel:
+        bible = (json.loads(novel["outline"] or "{}") or {}).get("bible") or {}
+        updated += sync_from_bible(conn, row["novel_id"], bible).get("updated", [])
+    updated += sync_from_chapters(conn, row["novel_id"]).get("updated", [])
+    return {"ok": True, "novel_id": row["novel_id"], "updated": updated}
 
 
 def main():
@@ -216,12 +351,31 @@ def main():
     ap.add_argument("--sync", type=int, default=None, metavar="NOVEL_ID")
     ap.add_argument("--snapshot", type=int, default=None, metavar="NOVEL_ID")
     ap.add_argument("--upsert", nargs=4, metavar=("NOVEL_ID", "CATEGORY", "ENTITY", "CONTENT"))
+    ap.add_argument("--sync-bible", metavar="FILE", default=None)
     args = ap.parse_args()
     path = Path(args.db) if args.db else config.DB_PATH
     conn = db.connect(path)
     try:
         if args.sync_latest:
             result = sync_latest(conn)
+        elif args.sync_bible:
+            payload = json.loads(Path(args.sync_bible).read_text(encoding="utf-8"))
+            book_id = str(payload.get("book_id") or "")
+            novel_id = 0
+            if book_id:
+                r = conn.execute(
+                    "SELECT id FROM novels WHERE book_id=? ORDER BY id DESC LIMIT 1",
+                    (book_id,),
+                ).fetchone()
+                novel_id = r["id"] if r else 0
+            if not novel_id:
+                r = conn.execute("SELECT id FROM novels ORDER BY id DESC LIMIT 1").fetchone()
+                novel_id = r["id"] if r else 0
+            result = {
+                "ok": True,
+                "novel_id": novel_id,
+                **sync_from_bible(conn, novel_id, payload.get("bible") or {}),
+            }
         elif args.sync is not None:
             result = sync_from_chapters(conn, args.sync)
         elif args.snapshot is not None:

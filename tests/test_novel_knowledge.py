@@ -88,7 +88,9 @@ class NovelKnowledgeTests(unittest.TestCase):
         self.conn.commit()
         result = novel_knowledge.sync_latest(self.conn)
         self.assertTrue(result["ok"])
-        self.assertIsNone(result["novel_id"])
+        # No chapters yet: sync_latest still resolves the latest novel so the
+        # story bible can initialize the knowledge store before chapter 1.
+        self.assertEqual(result["novel_id"], self.nid)
 
 
 if __name__ == "__main__":

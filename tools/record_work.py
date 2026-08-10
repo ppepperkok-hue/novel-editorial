@@ -296,6 +296,25 @@ def upsert_chapters(conn, novel_id, chapters):
                 "updated_at=excluded.updated_at",
                 (chapter_id, content),
             )
+        if ch.get("quality_passed") is not None:
+            qp = 1 if ch.get("quality_passed") else 0
+            qrow = conn.execute(
+                "SELECT id FROM quality_reports WHERE chapter_id=? ORDER BY id DESC LIMIT 1",
+                (chapter_id,),
+            ).fetchone()
+            scores = json.dumps({"gate": qp}, ensure_ascii=False)
+            if qrow:
+                conn.execute(
+                    "UPDATE quality_reports SET scores=?, passed=?, "
+                    "revision_count=COALESCE(revision_count,0) WHERE id=?",
+                    (scores, qp, qrow["id"]),
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO quality_reports(chapter_id,scores,passed,revision_count) "
+                    "VALUES(?,?,?,0)",
+                    (chapter_id, scores, qp),
+                )
         if status == "published":
             dup = conn.execute(
                 "SELECT id FROM publish_logs WHERE chapter_id=? AND action='publish' "

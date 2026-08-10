@@ -13,24 +13,40 @@ from novel_pipeline import db, monitor, novel_flow
 from novel_pipeline.llm_client import LLMClient
 from novel_pipeline.publisher import FanqieHttpAdapter
 from novel_pipeline.scheduler import Scheduler
+from tools import preflight
 
 
 def daily_run(conn, client, premise, chapters=3, chapters_per_day=2,
               platform="fanqie", min_chars=800, max_chars=1300,
               monthly_budget=100.0, spent=0.0, env=None, adapter=None):
     env = env if env is not None else os.environ
-    generation = novel_flow.run_novel(
-        conn, client, premise,
-        chapters=chapters, platform=platform,
-        min_chars=min_chars, max_chars=max_chars,
-    )
-    publish = Scheduler(
-        adapter=adapter if adapter is not None else FanqieHttpAdapter(conn),
-        chapters_per_day=chapters_per_day,
-    ).tick(conn)
-    issues = monitor.run_checks(
-        conn, env=env, monthly_budget=monthly_budget, spent=spent
-    )
+    # Same lock as the n8n preflight: the scheduled task and the n8n daily
+    # workflow must never run concurrently or chapters get double-published.
+    locked, lock_reason = preflight.acquire_lock()
+    if not locked:
+        return {
+            "ok": False,
+            "skipped": True,
+            "reason": lock_reason,
+            "generation": None,
+            "publish": None,
+            "health_issues": [lock_reason],
+        }
+    try:
+        generation = novel_flow.run_novel(
+            conn, client, premise,
+            chapters=chapters, platform=platform,
+            min_chars=min_chars, max_chars=max_chars,
+        )
+        publish = Scheduler(
+            adapter=adapter if adapter is not None else FanqieHttpAdapter(conn),
+            chapters_per_day=chapters_per_day,
+        ).tick(conn)
+        issues = monitor.run_checks(
+            conn, env=env, monthly_budget=monthly_budget, spent=spent
+        )
+    finally:
+        preflight.release_lock()
     return {
         "generation": generation,
         "publish": publish,

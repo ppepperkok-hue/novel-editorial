@@ -130,6 +130,16 @@ for (const file of files) {
         issues.push(`${file}: merge fallback chain broken ${src} -> ${dst}`);
       }
     }
+    // bible init chain: 解析大纲 -> 初始化设定知识库 -> 守护细纲
+    for (const [src, dst] of [
+      ["解析大纲", "初始化设定知识库"],
+      ["初始化设定知识库", "守护细纲"],
+    ]) {
+      const targets = (conns[src]?.main?.[0] || []).map((x) => x.node);
+      if (!targets.includes(dst)) {
+        issues.push(`${file}: bible init chain broken ${src} -> ${dst}`);
+      }
+    }
   }
 
   // 5. executeCommand nodes: parameterized command + args + relative cwd.
