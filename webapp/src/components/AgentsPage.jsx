@@ -290,6 +290,16 @@ const ACTIVITY_LABELS = {
   action_done: { text: "完成任务", cls: "chip-ok" },
   action_status: { text: "任务状态", cls: "chip" },
   knowledge: { text: "知识维护", cls: "chip" },
+  plan: { text: "规划大纲", cls: "chip-primary" },
+  chapter: { text: "写作 / 润色", cls: "chip-info" },
+  review: { text: "审稿 / 终审", cls: "chip-warn" },
+  guard: { text: "设定守护", cls: "chip" },
+  summary: { text: "提炼剧情", cls: "chip" },
+  meta: { text: "作品资料", cls: "chip" },
+  ending: { text: "完结评估", cls: "chip" },
+  distill: { text: "经验蒸馏", cls: "chip-ok" },
+  daily_summary: { text: "日更归档", cls: "chip-info" },
+  agent: { text: "智能体任务", cls: "chip" },
   system: { text: "系统", cls: "chip" },
 };
 
@@ -529,6 +539,15 @@ function ActivityPanel({ pushToast }) {
                       ) : null}
                       {it.detail?.task ? (
                         <span className="muted ml-1">：{String(it.detail.task).slice(0, 80)}</span>
+                      ) : null}
+                      {it.detail?.output ? (
+                        <span className="muted ml-1">：{String(it.detail.output).slice(0, 80)}</span>
+                      ) : null}
+                      {it.detail?.error ? (
+                        <span className="ml-1 text-red-400">：失败 {String(it.detail.error).slice(0, 80)}</span>
+                      ) : null}
+                      {it.detail?.published != null ? (
+                        <span className="muted ml-1">：发布 {it.detail.published} 章</span>
                       ) : null}
                     </span>
                     <span className="muted shrink-0">{(it.created_at || "").slice(11, 19)}</span>

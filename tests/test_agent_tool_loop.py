@@ -1,7 +1,10 @@
 import json
+import os
+import tempfile
 import unittest
 from unittest import mock
 
+from novel_pipeline import db
 from tools import agent_tool_loop
 
 
@@ -23,12 +26,16 @@ def _tool_call(name="get_knowledge", arguments='{"topic": "钩子"}'):
 
 
 class AgentToolLoopTests(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.tmpdir, "t.db")
+
     def test_no_tool_calls_single_round(self):
         with mock.patch(
             "tools.agent_tool_loop.chat_deepseek",
             return_value=_resp("直接回答"),
         ) as chat:
-            r = agent_tool_loop.run("writer", "写一章", target_words=2000)
+            r = agent_tool_loop.run("writer", "写一章", target_words=2000, db_path=self.db_path)
         self.assertTrue(r["ok"])
         self.assertEqual(r["text"], "直接回答")
         self.assertEqual(r["attempts"], 1)
@@ -56,7 +63,7 @@ class AgentToolLoopTests(unittest.TestCase):
             return _resp("基于知识包的最终回答")
 
         with mock.patch("tools.agent_tool_loop.chat_deepseek", side_effect=fake):
-            r = agent_tool_loop.run("writer", "写章末钩子")
+            r = agent_tool_loop.run("writer", "写章末钩子", db_path=self.db_path)
         self.assertEqual(calls["n"], 4)
         self.assertEqual(r["text"], "基于知识包的最终回答")
         self.assertEqual(r["attempts"], 2)
@@ -73,7 +80,7 @@ class AgentToolLoopTests(unittest.TestCase):
             return _resp("降级回答")
 
         with mock.patch("tools.agent_tool_loop.chat_deepseek", side_effect=fake):
-            r = agent_tool_loop.run("planner", "做大纲")
+            r = agent_tool_loop.run("planner", "做大纲", db_path=self.db_path)
         self.assertTrue(r["ok"])
         self.assertEqual(r["text"], "降级回答")
         self.assertTrue(r["degraded"])
@@ -81,7 +88,38 @@ class AgentToolLoopTests(unittest.TestCase):
 
     def test_unknown_agent_raises(self):
         with self.assertRaises(ValueError):
-            agent_tool_loop.run("nobody", "x")
+            agent_tool_loop.run("nobody", "x", db_path=self.db_path)
+
+
+    def test_activity_traced_after_run(self):
+        with mock.patch(
+            "tools.agent_tool_loop.chat_deepseek",
+            return_value=_resp("reply"),
+        ):
+            r = agent_tool_loop.run("writer", "task", db_path=self.db_path)
+        self.assertTrue(r["ok"])
+        conn = db.connect(self.db_path)
+        try:
+            rows = conn.execute(
+                "SELECT agent, activity_type, title FROM agent_activity"
+            ).fetchall()
+        finally:
+            conn.close()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["agent"], "writer")
+        self.assertEqual(rows[0]["activity_type"], "chapter")
+
+    def test_model_override_reaches_llm(self):
+        with mock.patch(
+            "tools.agent_tool_loop.chat_deepseek",
+            return_value=_resp("ok"),
+        ) as chat:
+            r = agent_tool_loop.run(
+                "writer", "task", model="deepseek-v4-pro",
+                db_path=self.db_path,
+            )
+        self.assertTrue(r["ok"])
+        self.assertEqual(chat.call_args.args[0], "deepseek-v4-pro")
 
 
 if __name__ == "__main__":

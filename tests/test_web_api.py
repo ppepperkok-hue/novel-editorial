@@ -205,6 +205,30 @@ class WebApiTests(unittest.TestCase):
 
         self.assertFalse((config.ROOT / "escape.md").exists())
 
+    def test_agent_run_injects_pending_actions_and_model(self):
+        from novel_pipeline.services import activity
+
+        conn = db.connect(self.db_path)
+        activity.create_action(conn, "writer", "伏笔台账", novel_id=1)
+        conn.close()
+        with mock.patch("tools.agent_tool_loop.run") as run:
+            run.return_value = {
+                "ok": True, "text": "done", "used_knowledge": [],
+                "model": "deepseek-v4-pro", "attempts": 1,
+                "degraded": False,
+            }
+            body = json.dumps(
+                {"agent": "writer", "task": "润色正文", "novel_id": 1,
+                 "model": "deepseek-v4-pro"}
+            ).encode("utf-8")
+            with urlopen(f"{self.base}/api/agent/run", data=body, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        self.assertTrue(data["ok"])
+        call = run.call_args
+        self.assertIn("我的待办行动项", call.args[1])
+        self.assertIn("伏笔台账", call.args[1])
+        self.assertEqual(call.kwargs["model"], "deepseek-v4-pro")
+
     def test_activity_and_actions_endpoints(self):
         from novel_pipeline.services import activity
 

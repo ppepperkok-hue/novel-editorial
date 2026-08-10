@@ -152,16 +152,65 @@ def _unwrap_text(text):
         return obj["text"]
     return text
 
+
+_ACTIVITY_TYPES = {
+    "planner": "plan",
+    "guard": "guard",
+    "writer": "chapter",
+    "editor": "chapter",
+    "reviewer": "review",
+    "reader": "review",
+    "memory": "summary",
+    "work_meta": "meta",
+    "eic": "review",
+    "ending_judge": "ending",
+    "knowledge_keeper": "knowledge",
+}
+
+
+def _log_activity(agent, novel_id, activity_type, title, detail, db_path):
+    """Best-effort activity trace; never fail the agent call over logging."""
+    try:
+        from novel_pipeline.services import activity  # noqa: PLC0415
+
+        conn = db.connect(db_path or config.DB_PATH)
+        try:
+            activity.log_activity(
+                conn, agent, novel_id or 0, activity_type, title, detail
+            )
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None,
-        novel_id=None, db_path=None):
+        novel_id=None, db_path=None, model=None):
+    stem = _resolve_agent_file(agent)
+    canonical = stem.stem if stem is not None else agent
     meta, system = build_system(agent, target_words)
-    model = meta.get("model") or "deepseek-v4-flash"
+    model = model or meta.get("model") or "deepseek-v4-flash"
     temp = float(temperature) if temperature is not None else float(meta.get("temperature") or 0.5)
     used_knowledge = []
     degraded = False
+    activity_type = _ACTIVITY_TYPES.get(canonical, "agent")
 
     def _final(text, usage=None):
         text = _unwrap_text(text)
+        _log_activity(
+            canonical,
+            novel_id,
+            activity_type,
+            "完成智能体任务",
+            {
+                "agent_key": canonical,
+                "task": str(task_text or "")[:400],
+                "used_knowledge": used_knowledge,
+                "degraded": degraded,
+                "output": text[:300],
+            },
+            db_path,
+        )
         return {
             "ok": True,
             "text": text,
@@ -200,6 +249,21 @@ def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None,
             except Exception as exc2:  # noqa: BLE001
                 plain_err = exc2
         if plain is None:
+            _log_activity(
+                canonical,
+                novel_id,
+                "agent",
+                "智能体调用失败",
+                {
+                    "agent_key": canonical,
+                    "task": str(task_text or "")[:400],
+                    "error": (
+                        "tool loop failed "
+                        f"(tools={str(tool_err)[:120]}, plain={str(plain_err)[:120]})"
+                    ),
+                },
+                db_path,
+            )
             return {
                 "ok": False,
                 "error": (

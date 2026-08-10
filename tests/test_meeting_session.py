@@ -1,6 +1,7 @@
 import os
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -170,6 +171,33 @@ class MeetingSessionTests(unittest.TestCase):
             "SELECT session_id FROM weekly_meetings ORDER BY id DESC LIMIT 1"
         ).fetchone()
         self.assertEqual(weekly["session_id"], sid)
+
+    def test_session_times_out_after_hard_limit(self):
+        from tools import agent_meeting
+
+        r = meeting_session.create_session(self.conn, "超时测试")
+        sid = r["session_id"]
+        self.conn.execute(
+            "UPDATE meeting_sessions SET attendees='[\"eic\"]', "
+            "current_round=0 WHERE id=?", (sid,)
+        )
+        self.conn.commit()
+        old = meeting_session.MEETING_TIMEOUT_SECONDS
+        meeting_session.MEETING_TIMEOUT_SECONDS = -1
+        try:
+            with (
+                mock.patch("tools.agent_meeting.ask"),
+                mock.patch("time.sleep"),
+            ):
+                meeting_session._run_locked(self.conn, sid)
+        finally:
+            meeting_session.MEETING_TIMEOUT_SECONDS = old
+        s = meeting_session.get_session(self.conn, sid)
+        self.assertEqual(s["status"], "failed")
+        row = self.conn.execute(
+            "SELECT COUNT(*) c FROM audit_logs WHERE action='session_timeout'"
+        ).fetchone()
+        self.assertEqual(row["c"], 1)
 
     def test_advance_with_finish_flag(self):
         self.conn.execute(

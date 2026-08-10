@@ -8,6 +8,7 @@ import argparse
 import json
 import re
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -178,10 +179,27 @@ def ask(conn, novel_id, agent, user, temperature, dry_run, mock_text, max_tokens
         return mock_text, {"prompt_tokens": 0, "completion_tokens": 0}, "dry-run", []
     system = system_override if system_override is not None else agent_md(agent)
     model = agent_model(agent)
-    first = chat_deepseek(
-        model, system, user, temperature=temperature,
-        max_tokens=max_tokens, messages=messages, tools=tools,
-    )
+    # Retry transient failures like the agent tool loop does; a single
+    # network blip must not kill the whole meeting.
+    first = None
+    last_exc = None
+    for attempt in range(3):
+        try:
+            cand = chat_deepseek(
+                model, system, user, temperature=temperature,
+                max_tokens=max_tokens, messages=messages, tools=tools,
+            )
+            if (cand.get("text") or "").strip() or cand.get("tool_calls"):
+                first = cand
+                break
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if attempt < 2:
+                time.sleep(1.0 * (attempt + 1))
+    if first is None:
+        raise RuntimeError(
+            f"LLM call failed for {agent} after 3 attempts: {str(last_exc)[:200]}"
+        ) from last_exc
     tool_calls = first.get("tool_calls") or []
     usage = dict(first.get("usage") or {})
     if not tool_calls:
@@ -536,6 +554,24 @@ def main():
         )
         if topic:
             topics = [topic] + [t for t in (topics or []) if t != topic]
+        # Create a replayable session so the panel can show the full
+        # transcript for scheduled weekly meetings too (not only interactive
+        # topic meetings).
+        cur = conn.execute(
+            "INSERT INTO meeting_sessions(kind,topic,status,novel_id,attendees,current_round,created_at,updated_at) "
+            "VALUES(?,?,?,?,?,0,?,?)",
+            (
+                args.kind,
+                topic or "周会",
+                "running",
+                novel_id,
+                json.dumps(attendees, ensure_ascii=False),
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            ),
+        )
+        conn.commit()
+        session_id = cur.lastrowid
         transcript = []
         for round_no in range(1, args.rounds + 1):
             for agent in attendees:
@@ -581,11 +617,21 @@ def main():
                 json.dumps(report, ensure_ascii=False),
                 "completed",
                 args.kind,
-                0,
+                session_id,
             ),
         )
         conn.commit()
         weekly_id = cur.lastrowid
+        conn.execute(
+            "UPDATE meeting_sessions SET status='finished', report=?, transcript=?, updated_at=? WHERE id=?",
+            (
+                json.dumps(report, ensure_ascii=False),
+                json.dumps(transcript, ensure_ascii=False),
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                session_id,
+            ),
+        )
+        conn.commit()
         activity.log_activity(
             conn,
             "eic",

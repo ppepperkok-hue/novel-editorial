@@ -110,20 +110,33 @@ def resolve_knowledge(agent, topic):
     if not KNOWLEDGE_DIR.exists():
         return []
     topic = (topic or "").strip().lower()
+    if not topic:
+        # No topic means the model did not ask precisely: returning every
+        # package would bloat the context. Ask it to name a topic instead.
+        return []
     hits = []
     for path in sorted(KNOWLEDGE_DIR.glob("*.md")):
         meta, body = _parse(path)
         if not _matches(agent, meta):
             continue
+        keywords = [str(k).lower() for k in (meta.get("keywords") or [])]
         hay = " ".join(
             [
                 path.stem,
                 str(meta.get("title", "")),
                 str(meta.get("type", "")),
-                " ".join(str(k) for k in (meta.get("keywords") or [])),
+                " ".join(keywords),
             ]
         ).lower()
-        if not topic or topic in hay or any(t in hay for t in topic.split()):
+        matched = (
+            topic in hay
+            or any(
+                (len(t) >= 2 and (t in kw or kw in t))
+                for kw in keywords
+                for t in topic.split()
+            )
+        )
+        if matched:
             hits.append(
                 {
                     "file": path.name,
@@ -132,7 +145,7 @@ def resolve_knowledge(agent, topic):
                     "content": body,
                 }
             )
-    return hits
+    return hits[:3]
 
 
 def build_knowledge_index(agent):

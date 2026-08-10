@@ -184,7 +184,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({agent:'润色A', model:'deepseek-v4-flash', temperature:0.5, max_tokens:8000, target_words:(($('解析本地资料').first().json.target_words)||2000), novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'初稿：'+(((($('写手A').item.json.choices||[])[0]||{}).message||{}).content||'')}) }}",
+        "jsonBody": "={{ JSON.stringify({agent:'润色A', model:'deepseek-v4-flash', temperature:0.5, max_tokens:8000, target_words:(($('解析本地资料').first().json.target_words)||2000), novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'初稿：'+(((($('写手A').item.json.choices||[])[0]||{}).message||{}).content||'')+'；角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；文风指南：'+((($('解析大纲').item.json.bible||{}).style_guide)||'')}) }}",
         "options": {
           "timeout": 900000
         }
@@ -316,7 +316,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({agent:'润色B', model:'deepseek-v4-flash', temperature:0.5, max_tokens:8000, target_words:(($('解析本地资料').first().json.target_words)||2000), novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'初稿：'+(((($('写手B').item.json.choices||[])[0]||{}).message||{}).content||'')}) }}",
+        "jsonBody": "={{ JSON.stringify({agent:'润色B', model:'deepseek-v4-flash', temperature:0.5, max_tokens:8000, target_words:(($('解析本地资料').first().json.target_words)||2000), novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'初稿：'+(((($('写手B').item.json.choices||[])[0]||{}).message||{}).content||'')+'；角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；文风指南：'+((($('解析大纲').item.json.bible||{}).style_guide)||'')}) }}",
         "options": {
           "timeout": 900000
         }

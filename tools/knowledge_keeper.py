@@ -213,6 +213,21 @@ def run(conn, dry_run=False):
         conn, "knowledge", "keeper_run",
         detail={"auto_updates": auto, "drafts": drafts, "deprecations": deprecated},
     )
+    from novel_pipeline.services import activity  # noqa: PLC0415
+
+    activity.log_activity(
+        conn,
+        "knowledge_keeper",
+        0,
+        "knowledge",
+        "知识管家维护完成",
+        {
+            "auto_updates": auto,
+            "skipped_to_draft": skipped,
+            "draft_suggestions": drafts,
+            "deprecations": deprecated,
+        },
+    )
     return {
         "ok": True,
         "auto_updates": auto,

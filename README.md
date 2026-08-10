@@ -39,7 +39,7 @@ Python 记忆/知识层（SQLite）+ 番茄 HTTP 发布 + Electron 桌面控制�
 | 平台 | 番茄小说（Cookie + CSRF 鉴权） | `~/.n8n/.env` 的 `FANQIE_COOKIE` / `FANQIE_CSRF_TOKEN` |
 | 发布方式 | 存稿池优先：有存货发存货，没存货现造 | `tools/check_stock.py` + `tools/publish_stock.py` |
 | 健康线 | 存稿池 < 3 章触发断更预警 | `novel_pipeline/scheduler.py` 的 `SAFE_BACKLOG` |
-| 测试基线 | 154 个后端 unittest + 6 个前端 Vitest | `python run_tests.py` / `cd webapp && npm test` |
+| 测试基线 | 159 个后端 unittest + 6 个前端 Vitest | `python run_tests.py` / `cd webapp && npm test` |
 
 ## 二、架构总览
 

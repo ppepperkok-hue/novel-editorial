@@ -55,6 +55,7 @@ def _meeting_material(conn, meeting_id=None, session_id=None):
             "id": d["id"],
             "kind": "topic",
             "topic": d.get("topic", ""),
+            "novel_id": d.get("novel_id") or 0,
             "attendees": [],
             "transcript": transcript,
             "report": report,
@@ -84,6 +85,7 @@ def _meeting_material(conn, meeting_id=None, session_id=None):
             if d.get("topics")
             else []
         ),
+        "novel_id": d.get("novel_id") or 0,
         "attendees": json.loads(d.get("attendees") or "[]"),
         "transcript": [],
         "report": report,
@@ -189,6 +191,20 @@ def distill(conn, meeting_id=None, session_id=None):
             agents=[a for a in agents if a],
         )
         drafted += 1
+    from novel_pipeline.services import activity  # noqa: PLC0415
+
+    activity.log_activity(
+        conn,
+        "system",
+        mat.get("novel_id") or 0,
+        "distill",
+        "会议经验蒸馏",
+        {
+            "source": mat["source"],
+            "kind": mat["kind"],
+            "drafted": drafted,
+        },
+    )
     return {
         "ok": True,
         "meeting": mat["source"],

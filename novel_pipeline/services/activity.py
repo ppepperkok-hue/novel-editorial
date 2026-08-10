@@ -10,10 +10,12 @@ their weekly briefs so the tasks actually get executed.
 import json
 import re
 from datetime import datetime
+from pathlib import Path
 
 from novel_pipeline.llm_client import chat_deepseek
 
 ACTION_STATUSES = ("pending", "done", "skipped")
+AGENTS_DIR = Path(__file__).resolve().parent.parent.parent / "prompts" / "agents"
 
 
 def _now():
@@ -219,9 +221,21 @@ def generate_post_meeting_actions(conn, session_id, meeting_id, novel_id,
         tasks = None
         if not dry_run:
             try:
+                system = (
+                    "你是会议行动项整理器。任务要具体、可执行、和 agent 职责匹配，"
+                    "不要泛泛而谈。"
+                )
+                try:
+                    md = AGENTS_DIR / f"{agent}.md"
+                    if md.exists():
+                        head = md.read_text(encoding="utf-8")[:800]
+                        if head.strip():
+                            system += "\n该 agent 的职责档案摘录（据此派活）：\n" + head
+                except OSError:
+                    pass
                 resp = chat_deepseek(
                     "deepseek-v4-flash",
-                    "你是会议行动项整理器。任务要具体、可执行、和 agent 职责匹配，不要泛泛而谈。",
+                    system,
                     user,
                     temperature=0.3,
                     max_tokens=900,

@@ -420,6 +420,24 @@ def main():
         upsert_volume(conn, novel_id, payload)
         upsert_chapters(conn, novel_id, payload.get("chapters") or [])
         upsert_costs(conn, novel_id, payload, run_id=str(payload.get("run_id") or ""))
+        from novel_pipeline.services import activity  # noqa: PLC0415
+
+        activity.log_activity(
+            conn,
+            "system",
+            novel_id,
+            "daily_summary",
+            "日更运行结果已归档",
+            {
+                "chapters": len(payload.get("chapters") or []),
+                "published": sum(
+                    1 for c in (payload.get("chapters") or []) if c.get("published")
+                ),
+                "failed": sum(
+                    1 for c in (payload.get("chapters") or []) if c.get("error")
+                ),
+            },
+        )
         print("recorded novel_id=", novel_id, "chapters=", len(payload.get("chapters") or []))
     finally:
         conn.close()

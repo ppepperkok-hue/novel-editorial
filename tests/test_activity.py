@@ -118,6 +118,30 @@ class ActivityTests(unittest.TestCase):
         self.assertTrue(res["ok"])
         self.assertEqual(len(activity.list_actions(self.conn, agent="writer")), 1)
 
+    def test_post_meeting_actions_system_includes_persona(self):
+        captured = {}
+        from novel_pipeline.services import activity as act
+
+        def fake_chat(model, system, user, temperature=0.5, max_tokens=1600):
+            captured["system"] = system
+            return {
+                "text": json.dumps([{"task": "落实会议结论"}]),
+                "usage": {},
+                "model": "mock",
+            }
+
+        with mock.patch(
+            "novel_pipeline.services.activity.chat_deepseek",
+            side_effect=fake_chat,
+        ):
+            act.generate_post_meeting_actions(
+                self.conn, 1, 1, 1, ["writer"],
+                {"action_items": []}, [{"agent": "writer", "speech": {}}],
+                dry_run=False,
+            )
+        self.assertIn("人物档案", captured["system"])
+        self.assertIn("墨白", captured["system"])
+
     def test_llm_parsed_tasks_are_used(self):
         with mock.patch(
             "novel_pipeline.services.activity.chat_deepseek",

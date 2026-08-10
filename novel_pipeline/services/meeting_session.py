@@ -14,6 +14,7 @@ from tools import agent_meeting, architect_weekly
 _MEETING_LOCK = threading.Lock()
 FINISH_TOKEN = "__FINISH__"
 MAX_ROUNDS = 20
+MEETING_TIMEOUT_SECONDS = 60 * 60
 
 
 def _now():
@@ -103,12 +104,16 @@ def run_session(session_id, db_path=""):
 
 
 def _run_locked(conn, session_id):
+    started_at = time.time()
     try:
         row = conn.execute("SELECT * FROM meeting_sessions WHERE id=?", (session_id,)).fetchone()
         if row is None:
             return
         novel_id = row["novel_id"]
         topic = row["topic"]
+        if time.time() - started_at > MEETING_TIMEOUT_SECONDS:
+            _fail_timeout(conn, session_id, 0)
+            return
         materials = architect_weekly.build_materials(
             conn, novel_id, allow_empty=(novel_id == 0)
         )
@@ -131,6 +136,9 @@ def _run_locked(conn, session_id):
         compressed = {"summary": "", "until": 0}
         round_no = 0
         while True:
+            if time.time() - started_at > MEETING_TIMEOUT_SECONDS:
+                _fail_timeout(conn, session_id, round_no)
+                return
             round_no += 1
             conn.execute(
                 "UPDATE meeting_sessions SET current_round=?, status='running', updated_at=? WHERE id=?",
@@ -391,6 +399,22 @@ def _run_locked(conn, session_id):
                 except Exception:  # noqa: BLE001
                     pass
                 pass
+
+
+def _fail_timeout(conn, session_id, round_no):
+    conn.execute(
+        "UPDATE meeting_sessions SET status='failed', updated_at=? WHERE id=?",
+        (_now(), session_id),
+    )
+    audit.log(
+        conn,
+        "meeting",
+        "session_timeout",
+        target_type="session",
+        target_id=session_id,
+        detail={"round": round_no, "timeout_seconds": MEETING_TIMEOUT_SECONDS},
+    )
+    conn.commit()
 
 
 def start_session_async(topic, novel_id=0, db_path=None):

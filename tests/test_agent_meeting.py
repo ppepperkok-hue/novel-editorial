@@ -268,6 +268,14 @@ class MeetingDryRunTests(unittest.TestCase):
                 11,
             )
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM weekly_meetings").fetchone()[0], 1)
+            session = conn.execute(
+                "SELECT id, status FROM meeting_sessions ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            self.assertEqual(session["status"], "finished")
+            weekly = conn.execute(
+                "SELECT session_id FROM weekly_meetings ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            self.assertEqual(weekly["session_id"], session["id"])
         finally:
             conn.close()
 

@@ -58,7 +58,9 @@ class KnowledgeTests(unittest.TestCase):
             hits = knowledge.resolve_knowledge("reader", "钩子")
             self.assertEqual(hits, [])
             hits = knowledge.resolve_knowledge("planner", "")
-            self.assertEqual(len(hits), 2)
+            self.assertEqual(hits, [], "empty topic must not return every package")
+            hits = knowledge.resolve_knowledge("planner", "钩子")
+            self.assertEqual([h["file"] for h in hits], ["opening.md"])
 
     def test_index_only_applicable_packages(self):
         with mock.patch.object(knowledge, "KNOWLEDGE_DIR", make_tmp_knowledge()):

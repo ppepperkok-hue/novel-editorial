@@ -509,7 +509,40 @@ def make_handler(db_path):
                     agent = str(payload.get("agent") or "").strip()
                     if not agent:
                         result = {"ok": False, "error": "agent required"}
+                        conn.close()
                     else:
+                        # Inject the agent's pending post-meeting actions so
+                        # daily-run agents actually see and execute meeting
+                        # conclusions (best effort; logging failure must not
+                        # block the call).
+                        try:
+                            from novel_pipeline.services import activity as activity_service  # noqa: PLC0415
+
+                            stem_file = agent_tool_loop._resolve_agent_file(agent)
+                            stem = stem_file.stem if stem_file is not None else agent
+                            novel_id = int(payload.get("novel_id") or 0)
+                            pending = []
+                            if stem:
+                                for a in activity_service.list_actions(
+                                    conn, agent=stem, status="pending", limit=10
+                                ):
+                                    if novel_id in (0, int(a.get("novel_id") or 0)):
+                                        pending.append(a)
+                            if pending:
+                                lines = []
+                                for a in pending:
+                                    due = (a.get("detail") or {}).get("due") or ""
+                                    lines.append(
+                                        f"- {a['task']}" + (f"（期限：{due}）" if due else "")
+                                    )
+                                task = (
+                                    task.rstrip()
+                                    + "\n\n[我的待办行动项]（来自会议结论，请落实；"
+                                    "完成后在结果中简述进展）\n"
+                                    + "\n".join(lines)
+                                )
+                        except Exception:  # noqa: BLE001
+                            pass
                         loop_result = agent_tool_loop.run(
                             agent,
                             task,
@@ -518,6 +551,7 @@ def make_handler(db_path):
                             target_words=payload.get("target_words"),
                             novel_id=payload.get("novel_id"),
                             db_path=str(db_path),
+                            model=payload.get("model"),
                         )
                         if loop_result.get("ok"):
                             result = {
@@ -536,6 +570,7 @@ def make_handler(db_path):
                                 "ok": False,
                                 "error": loop_result.get("error") or "agent tool loop failed",
                             }
+                    conn.close()
                 elif parsed.path == "/api/knowledge":
                     from novel_pipeline.services import knowledge as knowledge_service  # noqa: PLC0415
 
