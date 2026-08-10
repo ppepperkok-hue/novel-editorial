@@ -250,6 +250,9 @@ def _migrate(conn):
     thread_cols = {r["name"] for r in conn.execute("PRAGMA table_info(plot_threads)")}
     if "description" not in thread_cols:
         conn.execute("ALTER TABLE plot_threads ADD COLUMN description TEXT DEFAULT ''")
+    meeting_cols = {r["name"] for r in conn.execute("PRAGMA table_info(weekly_meetings)")}
+    if "kind" not in meeting_cols:
+        conn.execute("ALTER TABLE weekly_meetings ADD COLUMN kind TEXT DEFAULT 'weekly'")
     conn.commit()
 
 
