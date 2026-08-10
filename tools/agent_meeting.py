@@ -204,6 +204,37 @@ def build_materials_dict(conn, novel_id):
     return m
 
 
+def compress_history(conn, novel_id, new_speeches, prev_summary="", dry_run=False):
+    """Incrementally compress meeting history with the memory agent.
+
+    Each round compresses only the speeches added since the last compression,
+    merging them into the previous summary. Keeps global context without
+    blowing up the per-attendee prompt (long raw histories pushed some
+    models into empty-content loops).
+    """
+    if not new_speeches:
+        return {"summary": prev_summary}
+    user = (
+        "你是会议记录员。请把以下新增发言合并进已有的会议进展摘要，只输出 JSON："
+        "{summary(200-350字，覆盖已提出的方向/观点/分歧/共识/待决问题), "
+        "positions(对象：角色名->一句话立场), open_questions(数组), agreements(数组)}。"
+        "要求：保留每位参会者的核心观点与分歧，不遗漏新信息，语言精炼、像人话。"
+        "已有摘要：" + (prev_summary or "无")
+        + "；新增发言：" + json.dumps(new_speeches, ensure_ascii=False)
+    )
+    text, _usage, _model, _tc = ask(
+        conn, novel_id, "memory", user, temperature=0.3, dry_run=dry_run,
+        mock_text=json.dumps(
+            {"summary": "[dry-run] 会议进展摘要", "positions": {},
+             "open_questions": [], "agreements": []},
+            ensure_ascii=False,
+        ),
+        max_tokens=1200,
+    )
+    parsed = parse_json(text) or {"summary": text[:1000]}
+    return {"summary": json.dumps(parsed, ensure_ascii=False)}
+
+
 def chair_pick(conn, novel_id, dry_run, materials, topic=""):
     ctx = materials["context"]
     planning = bool(ctx.get("new_book_planning"))
@@ -248,7 +279,7 @@ def chair_pick(conn, novel_id, dry_run, materials, topic=""):
 
 
 def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run,
-                 instruction="", topic=""):
+                 instruction="", topic="", compressed_history=""):
     weekly = latest_weekly(conn, novel_id, agent)
     mood = mood_of(conn, novel_id, agent)
     brief = materials["agent_briefs"].get(agent, {})
@@ -271,8 +302,17 @@ def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run,
             "book_name", "volume_goal", "published_chapters", "stock_chapters",
             "quality_summary", "reader_stats", "open_plot_threads", "last_chapter_seq",
         )}, ensure_ascii=False)
-        + "；历史发言（共 " + str(len(history)) + " 条，展示最近 2 条）："
-        + json.dumps(history[-2:], ensure_ascii=False)
+        + (
+            "；历史发言摘要：" + compressed_history
+            if compressed_history
+            else "；历史发言（共 " + str(len(history)) + " 条，展示最近 2 条）："
+            + json.dumps(history[-2:], ensure_ascii=False)
+        )
+        + (
+            "；最近发言：" + json.dumps(history[-2:], ensure_ascii=False)
+            if compressed_history
+            else ""
+        )
     )
     natural_rule = (
         "发言要像一个真实的人在群里说话：先输出 speech 字段——第一人称、自然口语、"

@@ -127,6 +127,7 @@ def _run_locked(conn, session_id):
         conn.commit()
 
         transcript = []
+        compressed = {"summary": "", "until": 0}
         round_no = 0
         while True:
             round_no += 1
@@ -135,6 +136,25 @@ def _run_locked(conn, session_id):
                 (round_no, _now(), session_id),
             )
             conn.commit()
+            # Incrementally compress history once per round (round 2+):
+            # the memory agent merges new speeches into the running summary.
+            if len(transcript) > 2 and len(transcript) > compressed["until"]:
+                new_part = transcript[compressed["until"]:]
+                try:
+                    compressed = agent_meeting.compress_history(
+                        conn, novel_id, new_part,
+                        prev_summary=compressed["summary"], dry_run=False,
+                    )
+                    compressed["until"] = len(transcript)
+                except Exception as exc:  # noqa: BLE001
+                    audit.log(
+                        conn,
+                        "meeting",
+                        "compress_history_failed",
+                        target_type="session",
+                        target_id=session_id,
+                        detail={"round": round_no, "error": str(exc)[:300]},
+                    )
             instruction = ""
             if round_no > 1:
                 # read user instruction placed while awaiting
@@ -159,6 +179,7 @@ def _run_locked(conn, session_id):
                         dry_run=False,
                         instruction=instruction if round_no > 1 else "",
                         topic=topic,
+                        compressed_history=compressed["summary"],
                     )
                 except Exception as exc:  # noqa: BLE001
                     # One attendee failing must not kill the whole meeting:
