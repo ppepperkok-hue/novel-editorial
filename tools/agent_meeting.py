@@ -196,13 +196,19 @@ def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run, i
         )}, ensure_ascii=False)
         + "；历史发言：" + json.dumps(history, ensure_ascii=False)
     )
+    natural_rule = (
+        "发言要像一个真实的人在群里说话：先输出 speech 字段——第一人称、自然口语、"
+        "带自己的性格和情绪（可以有小停顿、口头禅、语气词），像在群里打字聊天，"
+        "150-300 字，不要分点列举、不要用「首先/其次/最后」、不要 AI 腔总结。"
+        "再输出结构化字段供会议记录使用。"
+    )
     json_rule = (
-        "严格只输出一个 JSON 对象，字段为：weekly_summary(字符串), feelings(字符串), "
+        "严格只输出一个 JSON 对象，字段为：speech(字符串,自然发言全文), weekly_summary(字符串), feelings(字符串), "
         "opinion(字符串), concerns(字符串数组), proposals(字符串数组), priority(字符串)。"
         "不要输出 JSON 以外的任何文字、Markdown、注释或解释。"
     )
     mock_text = json.dumps(
-        {"weekly_summary": f"[dry-run] {agent} 本周小结", "feelings": "平稳",
+        {"speech": f"[dry-run] {agent} 的发言", "weekly_summary": f"[dry-run] {agent} 本周小结", "feelings": "平稳",
          "opinion": "建议保持节奏", "concerns": [], "proposals": ["观察下一周数据"],
          "priority": "中"},
         ensure_ascii=False,
@@ -213,7 +219,7 @@ def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run, i
             json_rule + "你上一次输出不是合法 JSON，请重新严格只输出 JSON 对象，不要任何多余内容。"
         )
         text, _, _ = ask(
-            conn, novel_id, agent, base + "；" + extra,
+            conn, novel_id, agent, base + "；" + natural_rule + "；" + extra,
             temperature=0.6, dry_run=dry_run, mock_text=mock_text,
         )
         last_text = text

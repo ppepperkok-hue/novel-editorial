@@ -28,7 +28,7 @@ export default function MeetingsPage() {
       ) : null}
 
       <section className="panel p-4">
-        <div className="section-title !mb-3">发起专题会议</div>
+        <div className="section-title !mb-3">会议中心</div>
         <MeetingLive onArchived={() => setRefreshTick((t) => t + 1)} />
       </section>
 

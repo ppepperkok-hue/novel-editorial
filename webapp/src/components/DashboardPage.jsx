@@ -3,7 +3,6 @@ import { getControl, postControl, refreshHotTopics } from "../api.js";
 import ReaderChart from "./ReaderChart.jsx";
 import { ConfirmDialog, fmtRelative, fmtTime } from "./ui.jsx";
 import { getMeetings } from "../api.js";
-import MeetingLive from "./MeetingLive.jsx";
 
 function Kpi({ label, value, sub, tone }) {
   return (
@@ -197,30 +196,26 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
         </div>
       </section>
 
-      <section className="panel p-4">
-        <div className="section-title !mb-3">会议中心</div>
-        <MeetingLive
-          onArchived={() => {
-            onRefresh();
-            getMeetings()
-              .then((r) => setLatestMeeting(r.meetings?.[0] || null))
-              .catch(() => {});
-          }}
-        />
-        {latestMeeting ? (
-          <div className="mt-3 border-t border-[var(--line)] pt-3">
-            <div className="mb-2 flex flex-wrap items-center gap-2 text-sm">
-              <span className="text-xs font-semibold">最近周会</span>
-              <span className="chip">#{latestMeeting.id}</span>
-              <span className="muted text-xs">{fmtTime(latestMeeting.held_at)}</span>
-              <span className="muted text-xs">参会：{latestMeeting.attendees.join("、")}</span>
-              {latestMeeting.blueprint_count ? <span className="chip chip-info">蓝图 {latestMeeting.blueprint_count} 条</span> : null}
-              {latestMeeting.volume_goal_adjust ? <span className="chip chip-warn">卷目标已调整</span> : null}
-            </div>
-            <div className="muted text-xs leading-relaxed">{latestMeeting.summary}</div>
+      {latestMeeting ? (
+        <section className="panel p-4">
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-xs font-semibold">最近会议</span>
+            <span className="chip">#{latestMeeting.id}</span>
+            <span className="muted text-xs">{fmtTime(latestMeeting.held_at)}</span>
+            <span className="muted text-xs">参会：{latestMeeting.attendees.join("、")}</span>
+            <a className="btn ml-auto !px-3 !py-1 text-xs" href="#meetings">▦ 打开会议中心</a>
           </div>
-        ) : null}
-      </section>
+          <div className="muted text-xs leading-relaxed">{latestMeeting.summary}</div>
+        </section>
+      ) : (
+        <section className="panel p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold">会议中心</span>
+            <a className="btn ml-auto !px-3 !py-1 text-xs" href="#meetings">▦ 发起专题会议</a>
+          </div>
+          <div className="muted mt-1.5 text-xs">还没有会议记录，去会议中心让 Agent 们开一场吧。</div>
+        </section>
+      )}
 
       <section>
         <div className="section-title">工作流状态与补更</div>

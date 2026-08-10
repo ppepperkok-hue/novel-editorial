@@ -22,7 +22,7 @@ const NAV = [
   { id: "executions", label: "执行记录", icon: "⏱" },
   { id: "reader", label: "阅读数据", icon: "◔" },
   { id: "settings", label: "系统设置", icon: "⚙" },
-  { id: "meetings", label: "周会档案", icon: "▦" },
+  { id: "meetings", label: "会议中心", icon: "▦" },
   { id: "audit", label: "留痕档案", icon: "≡" },
 ];
 
@@ -35,7 +35,7 @@ const PAGE_META = {
   executions: ["执行记录", "日更与周会工作流的最近执行历史与失败详情"],
   reader: ["阅读数据", "完读率、追读率趋势与读者反馈报告"],
   settings: ["系统设置", "运行开关、预算、目标字数、更新时间与风格微调"],
-  meetings: ["周会档案", "多 Agent 周会的历次会议记录与决策"],
+  meetings: ["会议中心", "发起专题会议、围观 Agent 讨论、历次会议记录与决策"],
   audit: ["留痕档案", "流水线全量事件审计：设置、操作、Agent、发布、预检"],
 };
 

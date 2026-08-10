@@ -165,29 +165,53 @@ export default function MeetingLive({ onArchived }) {
                 <div className="min-w-0 flex-1 rounded-xl rounded-tl-sm border border-[var(--line)] bg-[var(--panel)] p-3">
                   <div className="mb-1.5 flex items-center gap-2">
                     <span className="text-xs font-bold">{AGENT_NAMES[m.agent] || m.agent}</span>
-                    <span className="chip">第 {m.round} 轮</span>
+                    <span className="muted text-xs">第 {m.round} 轮</span>
                   </div>
-                  <div className="grid grid-cols-1 gap-1.5 lg:grid-cols-2">
-                    {SPEECH_FIELDS.some(([k]) => {
-                      const v = m.speech?.[k];
-                      return v !== undefined && v !== null && v !== "";
-                    }) ? (
-                      SPEECH_FIELDS.map(([k, l]) => {
+                  {m.speech?.speech ? (
+                    <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-200">
+                      {m.speech.speech}
+                    </div>
+                  ) : SPEECH_FIELDS.some(([k]) => {
+                    const v = m.speech?.[k];
+                    return v !== undefined && v !== null && v !== "";
+                  }) ? (
+                    <div className="flex flex-col gap-1.5 text-sm leading-relaxed text-slate-200">
+                      {SPEECH_FIELDS.map(([k, l]) => {
                         const v = m.speech?.[k];
                         if (v === undefined || v === null || v === "") return null;
                         return (
-                          <div key={k} className="text-xs leading-relaxed text-slate-300">
-                            <span className="mr-1.5 text-[var(--accent-text)]">{l}：</span>
+                          <div key={k}>
+                            <span className="mr-1.5 text-xs text-[var(--accent-text)]">{l}：</span>
                             {Array.isArray(v) ? v.join("；") : typeof v === "object" ? JSON.stringify(v) : v}
                           </div>
                         );
-                      })
-                    ) : m.speech?.raw ? (
-                      <div className="text-xs leading-relaxed text-slate-300">{m.speech.raw}</div>
-                    ) : (
-                      <div className="muted text-xs">（本次发言未能结构化，跳过）</div>
-                    )}
-                  </div>
+                      })}
+                    </div>
+                  ) : m.speech?.raw ? (
+                    <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-200">{m.speech.raw}</div>
+                  ) : (
+                    <div className="muted text-xs">（本次发言未能结构化，跳过）</div>
+                  )}
+                  {m.speech?.speech && SPEECH_FIELDS.some(([k]) => {
+                    const v = m.speech?.[k];
+                    return v !== undefined && v !== null && v !== "";
+                  }) ? (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-xs text-sky-400">查看结构化记录</summary>
+                      <div className="mt-1.5 flex flex-col gap-1">
+                        {SPEECH_FIELDS.map(([k, l]) => {
+                          const v = m.speech?.[k];
+                          if (v === undefined || v === null || v === "") return null;
+                          return (
+                            <div key={k} className="text-xs leading-relaxed text-slate-400">
+                              <span className="mr-1 text-[var(--accent-text)]">{l}：</span>
+                              {Array.isArray(v) ? v.join("；") : typeof v === "object" ? JSON.stringify(v) : v}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </details>
+                  ) : null}
                 </div>
               </div>
             ))}
