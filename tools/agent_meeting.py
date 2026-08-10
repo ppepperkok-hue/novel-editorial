@@ -174,7 +174,7 @@ def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run, i
     mood = mood_of(conn, novel_id, agent)
     brief = materials["agent_briefs"].get(agent, {})
     planning = bool((materials.get("context") or {}).get("new_book_planning"))
-    user = (
+    base = (
         f"现在是会议第 {round_no} 轮。"
         + (f"本次会议主题：{topic}。" if topic else "这是周会。")
         + (
@@ -194,15 +194,31 @@ def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run, i
         )}, ensure_ascii=False)
         + "；历史发言：" + json.dumps(history, ensure_ascii=False)
     )
-    text, _, _ = ask(
-        conn, novel_id, agent, user, temperature=0.6, dry_run=dry_run,
-        mock_text=json.dumps(
-            {"weekly_summary": f"[dry-run] {agent} 本周小结", "feelings": "平稳",
-             "opinion": "建议保持节奏", "concerns": [], "proposals": ["观察下一周数据"],
-             "priority": "中"}
-        ),
+    json_rule = (
+        "严格只输出一个 JSON 对象，字段为：weekly_summary(字符串), feelings(字符串), "
+        "opinion(字符串), concerns(字符串数组), proposals(字符串数组), priority(字符串)。"
+        "不要输出 JSON 以外的任何文字、Markdown、注释或解释。"
     )
-    return parse_json(text) or {"raw": text[:2000]}
+    mock_text = json.dumps(
+        {"weekly_summary": f"[dry-run] {agent} 本周小结", "feelings": "平稳",
+         "opinion": "建议保持节奏", "concerns": [], "proposals": ["观察下一周数据"],
+         "priority": "中"},
+        ensure_ascii=False,
+    )
+    last_text = ""
+    for attempt in range(2):
+        extra = json_rule if attempt == 0 else (
+            json_rule + "你上一次输出不是合法 JSON，请重新严格只输出 JSON 对象，不要任何多余内容。"
+        )
+        text, _, _ = ask(
+            conn, novel_id, agent, base + "；" + extra,
+            temperature=0.6, dry_run=dry_run, mock_text=mock_text,
+        )
+        last_text = text
+        parsed = parse_json(text)
+        if parsed:
+            return parsed
+    return {"raw": last_text[:2000]}
 
 
 def chair_summary(conn, novel_id, attendees, topics, transcript, dry_run):

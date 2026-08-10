@@ -168,16 +168,25 @@ export default function MeetingLive({ onArchived }) {
                     <span className="chip">第 {m.round} 轮</span>
                   </div>
                   <div className="grid grid-cols-1 gap-1.5 lg:grid-cols-2">
-                    {SPEECH_FIELDS.map(([k, l]) => {
+                    {SPEECH_FIELDS.some(([k]) => {
                       const v = m.speech?.[k];
-                      if (v === undefined || v === null || v === "") return null;
-                      return (
-                        <div key={k} className="text-xs leading-relaxed text-slate-300">
-                          <span className="mr-1.5 text-[var(--accent-text)]">{l}：</span>
-                          {Array.isArray(v) ? v.join("；") : typeof v === "object" ? JSON.stringify(v) : v}
-                        </div>
-                      );
-                    })}
+                      return v !== undefined && v !== null && v !== "";
+                    }) ? (
+                      SPEECH_FIELDS.map(([k, l]) => {
+                        const v = m.speech?.[k];
+                        if (v === undefined || v === null || v === "") return null;
+                        return (
+                          <div key={k} className="text-xs leading-relaxed text-slate-300">
+                            <span className="mr-1.5 text-[var(--accent-text)]">{l}：</span>
+                            {Array.isArray(v) ? v.join("；") : typeof v === "object" ? JSON.stringify(v) : v}
+                          </div>
+                        );
+                      })
+                    ) : m.speech?.raw ? (
+                      <div className="text-xs leading-relaxed text-slate-300">{m.speech.raw}</div>
+                    ) : (
+                      <div className="muted text-xs">（本次发言未能结构化，跳过）</div>
+                    )}
                   </div>
                 </div>
               </div>

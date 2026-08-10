@@ -117,6 +117,67 @@ class MaterialsTests(unittest.TestCase):
             conn.close()
 
 
+class RoundSpeechRetryTests(unittest.TestCase):
+    def test_round_speech_retries_and_uses_structured_json(self):
+        path = make_db()
+        from tools import agent_meeting, architect_weekly
+
+        conn = db.connect(path)
+        try:
+            materials = architect_weekly.build_materials(conn, 1)
+            calls = {"n": 0}
+
+            def fake_ask(conn, novel_id, agent, user, temperature, dry_run, mock_text, max_tokens=1600):
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    text = "好的，我来发言……（散文，不是 JSON）"
+                else:
+                    text = json.dumps(
+                        {
+                            "weekly_summary": "本周写了三章",
+                            "feelings": "平稳",
+                            "opinion": "保持节奏",
+                            "concerns": [],
+                            "proposals": ["继续推进"],
+                            "priority": "中",
+                        },
+                        ensure_ascii=False,
+                    )
+                return text, {"prompt_tokens": 1, "completion_tokens": 1}, "mock"
+
+            with mock.patch("tools.agent_meeting.ask", side_effect=fake_ask):
+                speech = agent_meeting.round_speech(
+                    conn, 1, "planner", materials, [], 1, dry_run=False
+                )
+            self.assertEqual(calls["n"], 2)
+            self.assertEqual(speech["weekly_summary"], "本周写了三章")
+        finally:
+            conn.close()
+
+    def test_round_speech_keeps_raw_when_all_attempts_fail(self):
+        path = make_db()
+        from tools import agent_meeting, architect_weekly
+
+        conn = db.connect(path)
+        try:
+            materials = architect_weekly.build_materials(conn, 1)
+            calls = {"n": 0}
+
+            def fake_ask(conn, novel_id, agent, user, temperature, dry_run, mock_text, max_tokens=1600):
+                calls["n"] += 1
+                return "我不会 JSON，就说散文吧。", {"prompt_tokens": 1, "completion_tokens": 1}, "mock"
+
+            with mock.patch("tools.agent_meeting.ask", side_effect=fake_ask):
+                speech = agent_meeting.round_speech(
+                    conn, 1, "guard", materials, [], 1, dry_run=False
+                )
+            self.assertEqual(calls["n"], 2)
+            self.assertIn("raw", speech)
+            self.assertIn("散文", speech["raw"])
+        finally:
+            conn.close()
+
+
 class MeetingDryRunTests(unittest.TestCase):
     def test_meeting_dry_run_full_chain(self):
         path = make_db()
