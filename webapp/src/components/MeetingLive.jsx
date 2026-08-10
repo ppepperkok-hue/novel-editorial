@@ -103,12 +103,27 @@ export default function MeetingLive({ onArchived }) {
   const nextRound = async () => {
     setAdvancing(true);
     try {
-      const r = await advanceSession(session.id, instruction);
+      const r = await advanceSession(session.id, instruction, false);
       if (r.ok) {
         setInstruction("");
         setPollTick((t) => t + 1);
       } else {
         setMsg(r.error || "推进失败");
+      }
+    } finally {
+      setAdvancing(false);
+    }
+  };
+
+  const finishMeeting = async () => {
+    setAdvancing(true);
+    try {
+      const r = await advanceSession(session.id, "", true);
+      if (r.ok) {
+        setInstruction("");
+        setPollTick((t) => t + 1);
+      } else {
+        setMsg(r.error || "结束失败");
       }
     } finally {
       setAdvancing(false);
@@ -232,12 +247,16 @@ export default function MeetingLive({ onArchived }) {
                   placeholder="例：大家针对主角的性格再讨论一下"
                   value={instruction}
                   onChange={(e) => setInstruction(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && nextRound()}
+                  onKeyDown={(e) => e.key === "Enter" && (e.ctrlKey || e.metaKey ? finishMeeting() : nextRound())}
                 />
                 <button className="btn btn-primary" disabled={advancing} onClick={nextRound}>
                   {advancing ? "推进中…" : "继续下一轮"}
                 </button>
+                <button className="btn btn-ok" disabled={advancing} onClick={finishMeeting}>
+                  {advancing ? "总结中…" : "✓ 结束讨论并总结"}
+                </button>
               </div>
+              <div className="muted mt-1.5 text-xs">会议不限轮数，您随时可以点「结束讨论并总结」收尾。</div>
             </div>
           ) : null}
 

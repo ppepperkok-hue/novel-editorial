@@ -94,11 +94,11 @@ export async function getSession(id) {
   return r.json();
 }
 
-export async function advanceSession(id, instruction) {
+export async function advanceSession(id, instruction, finish = false) {
   const r = await fetch(API_BASE + "/api/meetings/advance", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: id, instruction }),
+    body: JSON.stringify({ session_id: id, instruction, finish }),
   });
   return r.json();
 }

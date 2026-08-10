@@ -323,7 +323,10 @@ def make_handler(db_path):
                 elif parsed.path == "/api/meetings/advance":
                     try:
                         result = meeting_service.advance_session(
-                            conn, payload.get("session_id"), payload.get("instruction", "")
+                            conn,
+                            payload.get("session_id"),
+                            payload.get("instruction", ""),
+                            finish=bool(payload.get("finish")),
                         )
                     finally:
                         conn.close()

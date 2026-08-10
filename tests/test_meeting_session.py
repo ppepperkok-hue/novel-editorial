@@ -102,6 +102,14 @@ class MeetingSessionTests(unittest.TestCase):
                     (sid,),
                 )
                 self.conn.commit()
+            elif waits["n"] == 3:
+                # user decides round 3 is the last one: finish and summarize
+                self.conn.execute(
+                    "UPDATE meeting_sessions SET status='running', instruction=?, "
+                    "updated_at=datetime('now','localtime') WHERE id=?",
+                    (meeting_session.FINISH_TOKEN, sid),
+                )
+                self.conn.commit()
 
         with (
             mock.patch("tools.agent_meeting.ask", side_effect=fake_ask),
@@ -122,6 +130,19 @@ class MeetingSessionTests(unittest.TestCase):
             "SELECT COUNT(*) c FROM agent_diaries WHERE diary_type='meeting'"
         ).fetchone()["c"]
         self.assertEqual(n, 6)
+
+    def test_advance_with_finish_flag(self):
+        self.conn.execute(
+            "INSERT INTO meeting_sessions(kind,topic,status,novel_id,created_at,updated_at) "
+            "VALUES('topic','x','awaiting_input',0,datetime('now','localtime'),datetime('now','localtime'))"
+        )
+        self.conn.commit()
+        sid = self.conn.execute("SELECT id FROM meeting_sessions ORDER BY id DESC LIMIT 1").fetchone()["id"]
+        r = meeting_session.advance_session(self.conn, sid, "继续讨论", finish=True)
+        self.assertTrue(r["ok"])
+        s = meeting_session.get_session(self.conn, sid)
+        self.assertEqual(s["status"], "running")
+        self.assertEqual(s["instruction"], meeting_session.FINISH_TOKEN)
 
     def test_create_and_advance_state_machine(self):
         self.conn.execute(

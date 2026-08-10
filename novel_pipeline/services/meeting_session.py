@@ -11,6 +11,8 @@ from novel_pipeline.services import audit
 from tools import agent_meeting, architect_weekly
 
 _MEETING_LOCK = threading.Lock()
+FINISH_TOKEN = "__FINISH__"
+MAX_ROUNDS = 20
 
 
 def _now():
@@ -55,7 +57,7 @@ def get_session(conn, session_id):
     return d
 
 
-def advance_session(conn, session_id, instruction=""):
+def advance_session(conn, session_id, instruction="", finish=False):
     row = conn.execute(
         "SELECT id, status FROM meeting_sessions WHERE id=?", (session_id,)
     ).fetchone()
@@ -63,6 +65,8 @@ def advance_session(conn, session_id, instruction=""):
         return {"ok": False, "error": "session not found"}
     if row["status"] != "awaiting_input":
         return {"ok": False, "error": f"当前状态不是等待输入（{row['status']}）"}
+    if finish:
+        instruction = FINISH_TOKEN
     conn.execute(
         "UPDATE meeting_sessions SET instruction=?, status='running', updated_at=? WHERE id=?",
         (str(instruction or "").strip(), _now(), session_id),
@@ -109,7 +113,9 @@ def _run_locked(conn, session_id):
         conn.commit()
 
         transcript = []
-        for round_no in range(1, 4):
+        round_no = 0
+        while True:
+            round_no += 1
             conn.execute(
                 "UPDATE meeting_sessions SET current_round=?, status='running', updated_at=? WHERE id=?",
                 (round_no, _now(), session_id),
@@ -139,22 +145,23 @@ def _run_locked(conn, session_id):
                     (json.dumps(transcript, ensure_ascii=False), _now(), session_id),
                 )
                 conn.commit()
-            if round_no < 3:
-                conn.execute(
-                    "UPDATE meeting_sessions SET status='awaiting_input', instruction='', updated_at=? WHERE id=?",
-                    (_now(), session_id),
-                )
-                conn.commit()
-                # wait for user instruction or cancel
-                while True:
-                    r = conn.execute(
-                        "SELECT status, instruction FROM meeting_sessions WHERE id=?", (session_id,)
-                    ).fetchone()
-                    if r["status"] == "cancelled":
-                        return
-                    if r["status"] == "running":
-                        break
-                    time.sleep(2)
+            conn.execute(
+                "UPDATE meeting_sessions SET status='awaiting_input', instruction='', updated_at=? WHERE id=?",
+                (_now(), session_id),
+            )
+            conn.commit()
+            # wait for the user: continue to the next round or finish
+            while True:
+                r = conn.execute(
+                    "SELECT status, instruction FROM meeting_sessions WHERE id=?", (session_id,)
+                ).fetchone()
+                if r["status"] == "cancelled":
+                    return
+                if r["status"] == "running":
+                    break
+                time.sleep(2)
+            if r["instruction"] == FINISH_TOKEN or round_no >= MAX_ROUNDS:
+                break
         # summary
         report = agent_meeting.chair_summary(conn, novel_id, attendees, topics, transcript, dry_run=False)
         report["attendees"] = attendees
