@@ -495,6 +495,15 @@ def chair_summary(conn, novel_id, attendees, topics, transcript, dry_run, materi
         "disagreements(数组), action_items(数组)}"
         + decision_note
     )
+    if planning:
+        user = user.replace(
+            "仅当作品已完结时输出",
+            "本次新书选题会必须输出",
+        )
+        user = user.replace(
+            "action_items(数组)}",
+            "action_items(数组，必须包含散会后的具体执行项，至少3条，每条带负责人与期限)}",
+        )
     text, _, _, _ = ask(
         conn, novel_id, "eic", user, temperature=0.2, dry_run=dry_run,
         mock_text=json.dumps(

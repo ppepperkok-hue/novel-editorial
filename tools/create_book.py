@@ -178,20 +178,20 @@ def _get_category_id(env, gender, genre):
 
 
 def _get_label_ids(env, gender, genre, tags):
+    """Resolve label ids for the create-book call.
+
+    Note: ``group_category_list`` currently returns the *category* list
+    (category_id/name/group_id), not label entries. Sending category ids as
+    label ids is invalid and made Fanqie reject every create call. Until the
+    real label endpoint/params are captured from the browser, keep the list
+    empty so we do not send bogus ids.
+    """
     res = http_json(
         "GET", "/api/author/book/group_category_list/v0/", {"gender": gender}, env
     )
     if res.get("code") != 0:
         raise RuntimeError(f"group_category_list: {res.get('message') or res}")
-    data = res.get("data")
-    labels = []
-    if isinstance(data, list):
-        labels = data
-    elif isinstance(data, dict):
-        for group in data.get("group_list") or data.get("label_list") or []:
-            if isinstance(group, dict):
-                labels.extend(group.get("label_list") or group.get("labels") or [])
-    return _find_label_ids(labels, genre, tags)
+    return []
 
 
 def _get_volume_id(env, book_id):
