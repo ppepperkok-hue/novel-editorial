@@ -1,5 +1,7 @@
 # 运行时产物
 demo.db
+demo.db-shm
+demo.db-wal
 backups/
 hot_topics.json
 publish_queue.jsonl
