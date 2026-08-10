@@ -131,8 +131,15 @@ def make_handler(db_path):
             ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
             if self.command == "POST" and ctype == "text/plain":
                 return False, "text/plain requests denied"
+            if self.command == "POST":
+                try:
+                    length = int(self.headers.get("Content-Length") or 0)
+                except (TypeError, ValueError):
+                    length = 0
+                if length > 5 * 1024 * 1024:
+                    return False, "request body too large"
             token = _panel_token()
-            if self.command == "POST" and not origin and token:
+            if not origin and token:
                 auth = self.headers.get("Authorization") or ""
                 if auth != "Bearer " + token:
                     return False, "missing panel token"
@@ -311,7 +318,16 @@ def make_handler(db_path):
             except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
                 return
             except Exception as exc:  # noqa: BLE001
-                self._json({"error": str(exc)}, status=500)
+                try:
+                    config.ALERTS_LOG.parent.mkdir(parents=True, exist_ok=True)
+                    with config.ALERTS_LOG.open("a", encoding="utf-8") as f:
+                        f.write(
+                            f"[{datetime.now():%Y-%m-%d %H:%M:%S}] API {self.command} "
+                            f"{path} 异常：{exc.__class__.__name__}: {exc}\n"
+                        )
+                except Exception:  # noqa: BLE001
+                    pass
+                self._json({"ok": False, "error": "internal error"}, status=500)
 
         def do_POST(self):  # noqa: N802
             parsed = urlparse(self.path)
@@ -589,7 +605,16 @@ def make_handler(db_path):
                         conn.close()
                     except Exception:  # noqa: BLE001
                         pass
-                self._json({"ok": False, "error": str(exc)}, status=500)
+                try:
+                    config.ALERTS_LOG.parent.mkdir(parents=True, exist_ok=True)
+                    with config.ALERTS_LOG.open("a", encoding="utf-8") as f:
+                        f.write(
+                            f"[{datetime.now():%Y-%m-%d %H:%M:%S}] API POST "
+                            f"{parsed.path} 异常：{exc.__class__.__name__}: {exc}\n"
+                        )
+                except Exception:  # noqa: BLE001
+                    pass
+                self._json({"ok": False, "error": "internal error"}, status=500)
 
         def _serve_index(self):
             dist = config.ROOT / "webapp" / "dist"
@@ -641,7 +666,10 @@ def make_handler(db_path):
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
             self.send_header("Connection", "keep-alive")
-            self.send_header("Access-Control-Allow-Origin", "*")
+            origin = self.headers.get("Origin") or ""
+            if origin and _origin_allowed(origin, self.server.server_port):
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Vary", "Origin")
             self.end_headers()
             last = None
             while True:
@@ -674,8 +702,16 @@ def make_handler(db_path):
             self.send_response(403)
             self.end_headers()
 
-        def log_message(self, *args):
-            pass
+        def log_message(self, format, *args):  # noqa: A002
+            if args and str(args[0]).startswith(("4", "5")):
+                try:
+                    import sys as _sys
+
+                    _sys.stderr.write(
+                        f"[{datetime.now():%H:%M:%S}] {self.command} {self.path} {args[0]}\n"
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
 
     return Handler
 

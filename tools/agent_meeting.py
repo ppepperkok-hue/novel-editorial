@@ -24,8 +24,6 @@ CORE_AGENTS = ["planner", "guard", "writer", "reader", "memory", "eic"]
 ALL_AGENTS = CORE_AGENTS + [
     "editor", "reviewer", "work_meta", "ending_judge", "knowledge_keeper",
 ]
-materials = {"context": {}, "agent_briefs": {}}
-topic = ""
 
 
 def parse_json(text):
@@ -157,44 +155,7 @@ def build_materials_dict(conn, novel_id):
     return m
 
 
-def write_weekly_diaries(conn, novel_id, dry_run):
-    for agent in ALL_AGENTS:
-        brief = materials["agent_briefs"].get(agent, {})
-        user = (
-            "写本周日记，回顾这周我干了什么、关键事件、学到的东西、看法变化、心情变化，"
-            "并额外输出 mood 字段 {satisfaction(0-1), concern(0-1), excitement(0-1), fatigue(0-1), note}。"
-            "我的本周简报：" + json.dumps(brief, ensure_ascii=False)
-            + "；我的本周日记与上周周记：" + json.dumps(
-                write_diaries.weekly_payload(conn, novel_id, agent), ensure_ascii=False
-            )
-        )
-        text, usage, model, _tc = ask(
-            conn, novel_id, agent, user,
-            temperature=0.6, dry_run=dry_run,
-            mock_text=json.dumps(
-                {"week_summary": f"[dry-run] {agent} 本周小结", "key_events": [], "learnings": [],
-                 "opinions_changed": [], "mood_trend": "平稳", "next_week_focus": "观察",
-                 "mood": {"satisfaction": 0.5, "concern": 0.5, "excitement": 0.5, "fatigue": 0.3, "note": ""}}
-            ),
-        )
-        content = parse_json(text) or {"raw": text[:2000]}
-        conn.execute(
-            "INSERT INTO agent_diaries(agent,novel_id,diary_type,content,created_at) "
-            "VALUES(?,?,?,?,datetime('now','localtime'))",
-            (agent, novel_id, "weekly", json.dumps(content, ensure_ascii=False)),
-        )
-        mood = content.get("mood") if isinstance(content, dict) else None
-        if not isinstance(mood, dict):
-            mood = {"satisfaction": 0.5, "concern": 0.5, "excitement": 0.5, "fatigue": 0.3, "note": ""}
-        conn.execute("DELETE FROM agent_states WHERE agent=? AND novel_id=?", (agent, novel_id))
-        conn.execute(
-            "INSERT INTO agent_states(agent,novel_id,mood,updated_at) VALUES(?,?,?,datetime('now','localtime'))",
-            (agent, novel_id, json.dumps(mood, ensure_ascii=False)),
-        )
-        conn.commit()
-
-
-def chair_pick(conn, novel_id, dry_run):
+def chair_pick(conn, novel_id, dry_run, materials, topic=""):
     ctx = materials["context"]
     planning = bool(ctx.get("new_book_planning"))
     finish_metrics = {
@@ -237,7 +198,8 @@ def chair_pick(conn, novel_id, dry_run):
     return attendees, parsed.get("topics") or ["下一周规划"], parsed
 
 
-def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run, instruction=""):
+def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run,
+                 instruction="", topic=""):
     weekly = latest_weekly(conn, novel_id, agent)
     mood = mood_of(conn, novel_id, agent)
     brief = materials["agent_briefs"].get(agent, {})
@@ -365,7 +327,7 @@ def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run, i
     return parse_json(text) or {"raw": text[:2000]}
 
 
-def chair_summary(conn, novel_id, attendees, topics, transcript, dry_run):
+def chair_summary(conn, novel_id, attendees, topics, transcript, dry_run, materials):
     planning = bool((materials.get("context") or {}).get("new_book_planning"))
     decision_note = (
         "本次是新书选题会：decisions.next_book 必须输出完整的选题提案"
@@ -415,7 +377,6 @@ def main():
     ap.add_argument("--kind", choices=["weekly", "topic"], default="weekly")
     args = ap.parse_args()
 
-    global materials, topic
     topic = args.topic
     db_path = Path(args.db)
     if not db_path.is_absolute():
@@ -431,18 +392,23 @@ def main():
             return
         materials = build_materials_dict(conn, novel_id)
         if args.kind == "weekly":
-            write_weekly_diaries(conn, novel_id, args.dry_run)
-        attendees, topics, pick = chair_pick(conn, novel_id, args.dry_run)
+            write_diaries.write(conn, novel_id, "weekly", dry_run=args.dry_run)
+        attendees, topics, pick = chair_pick(
+            conn, novel_id, args.dry_run, materials, topic
+        )
         if topic:
             topics = [topic] + [t for t in (topics or []) if t != topic]
         transcript = []
         for round_no in range(1, args.rounds + 1):
             for agent in attendees:
                 speech = round_speech(
-                    conn, novel_id, agent, materials, transcript, round_no, args.dry_run
+                    conn, novel_id, agent, materials, transcript, round_no,
+                    args.dry_run, topic=topic,
                 )
                 transcript.append({"round": round_no, "agent": agent, "speech": speech})
-        report = chair_summary(conn, novel_id, attendees, topics, transcript, args.dry_run)
+        report = chair_summary(
+            conn, novel_id, attendees, topics, transcript, args.dry_run, materials
+        )
         report["attendees"] = attendees
         report["topics"] = topics
         report["date"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

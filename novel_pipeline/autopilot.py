@@ -11,13 +11,13 @@ sys.path.insert(0, str(ROOT))
 
 from novel_pipeline import db, monitor, novel_flow
 from novel_pipeline.llm_client import LLMClient
-from novel_pipeline.publisher import ManualAdapter
+from novel_pipeline.publisher import FanqieHttpAdapter
 from novel_pipeline.scheduler import Scheduler
 
 
 def daily_run(conn, client, premise, chapters=3, chapters_per_day=2,
               platform="fanqie", min_chars=800, max_chars=1300,
-              monthly_budget=100.0, spent=0.0, env=None):
+              monthly_budget=100.0, spent=0.0, env=None, adapter=None):
     env = env if env is not None else os.environ
     generation = novel_flow.run_novel(
         conn, client, premise,
@@ -25,7 +25,7 @@ def daily_run(conn, client, premise, chapters=3, chapters_per_day=2,
         min_chars=min_chars, max_chars=max_chars,
     )
     publish = Scheduler(
-        adapter=ManualAdapter(),
+        adapter=adapter if adapter is not None else FanqieHttpAdapter(conn),
         chapters_per_day=chapters_per_day,
     ).tick(conn)
     issues = monitor.run_checks(

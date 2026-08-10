@@ -333,3 +333,34 @@ Toast 带图标、执行失败可查看原因弹窗、作品库搜索与批量�
   历史段落清理绝对路径与 8000/8001 字样。
 - **验证**：后端 120 + 前端 6 全绿；validate 全工作流通过；三份工作流重新部署
   到 n8n 保持激活；8000/8001 服务重启，鉴权实测 dashboard 200 / 跨站 403。
+
+## 17. 三审报告修复（2026-08-10）
+
+按第三方审查报告（40 项）继续修复，重点：
+
+- **发布状态管理**：汇总运行结果显式记录质量门失败章节（status=draft +
+  错误原因落库，publish_logs 可见）；发布失败章节保留 `reviewed` 供存稿池补发；
+  scheduler 改用 chapter_content 正文（不再把章纲当正文发）；record_work 不再
+  无条件覆盖作品状态（finished 书不会被复活）。
+- **安全边界**：agents_save 补路径穿越防护（必须 .md 且位于 AGENTS_DIR 内）；
+  web_api token 校验扩展到 GET；POST 请求体上限 5MB；SSE CORS 与其他端点一致；
+  500 响应不再向客户端泄露内部异常（写 alerts.log）。
+- **监控与成本**：load_alerts 接入真实当月花费与预算（成本超限告警可触发）；
+  record_work 单价改读 ~/.n8n/.env；n8n 汇总补「主编终审A/B」成本记账；
+  写手/策划 max_tokens 上调（writer 4000 / planner 3000，frontmatter 可配，
+  agent_save 保留额外 frontmatter 键）。
+- **autopilot 真发布**：FanqieHttpAdapter 实现三步发布（复用 publish_stock）；
+  pipeline 生成正文落库 chapter_content；计划任务模式不再只写无人消费的 jsonl。
+- **一致性**：create_book 性别判定去掉「穿越」归女频、错误提示精确化；run_demo
+  合规门失败不再标 reviewed；会议 20 轮到点自动封顶；agent_meeting 去掉模块级
+  全局（materials/topic 参数化），周记统一走 write_diaries；锁文件 30 分钟
+  陈旧回收（防 PID 复用卡死）；chat_deepseek 兼容 LLM_BASE_URL/LLM_API_KEY、
+  LLMClient 4xx 不重试；ai_taste_check 排比检测按真实位置计数；AI 词表统一到
+  `ai_words.json`（Python 与 n8n 质量门同源）。
+- **工程**：备份改 sqlite3 backup API（WAL 一致性）；load_env 五处统一到
+  config.load_env；静默异常补日志；chapters 唯一索引（novel_id, seq）；
+  publish_stock 多书按活跃书发布；pyproject 显式 dependencies；desktop
+  package.json 核实为正常 UTF-8（审查误判）；export_agent_prompts 代理模式
+  明确提示无需导出。
+- **验证**：后端 128 + 前端 6 全绿；validate 全工作流通过；新增质量门失败落库、
+  成本告警、agents_save 穿越、导出短路、scheduler 正文、会议库隔离等回归测试。

@@ -6,6 +6,8 @@
 """
 
 import re
+import json
+from pathlib import Path
 
 CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 
@@ -15,6 +17,12 @@ AI_FLAVOR_WORDS = [
     "眼神一凝", "低沉", "冷哼一声", "心中一动", "不禁", "瞬间",
     "面无表情", "淡淡",
 ]
+_WORDS_FILE = Path(__file__).resolve().parent.parent / "ai_words.json"
+try:
+    _AI_DATA = json.loads(_WORDS_FILE.read_text(encoding="utf-8"))
+    AI_FLAVOR_WORDS = _AI_DATA.get("ai_flavor", AI_FLAVOR_WORDS)
+except (OSError, ValueError):
+    pass
 
 
 def count_chinese_chars(text):

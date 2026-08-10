@@ -16,10 +16,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import db  # noqa: E402
+from novel_pipeline import config, db  # noqa: E402
 from novel_pipeline.services import audit  # noqa: E402
 
-ENV_FILE = Path.home() / ".n8n" / ".env"
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
@@ -27,13 +26,8 @@ UA = (
 
 
 def load_env():
-    env = {}
-    if ENV_FILE.exists():
-        for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
-            if "=" in line:
-                k, v = line.split("=", 1)
-                env[k.strip()] = v.strip()
-    return env
+    """Shared env loader: ~/.n8n/.env filled in by config.load_env()."""
+    return config.load_env()
 
 
 def http_form(url, fields, env):
@@ -189,15 +183,25 @@ def main():
     conn = db.connect(db_path)
     env = load_env()
     try:
-        first = conn.execute(
-            "SELECT novel_id FROM chapters WHERE status='reviewed' ORDER BY seq LIMIT 1"
-        ).fetchone()
-        novel_id = first["novel_id"] if first else None
         novel = None
-        if novel_id:
-            novel = conn.execute(
-                "SELECT id, status, finish_remaining FROM novels WHERE id=?", (novel_id,)
+        novel_id = None
+        for r in conn.execute(
+            "SELECT DISTINCT novel_id FROM chapters WHERE status='reviewed' "
+            "ORDER BY novel_id"
+        ).fetchall():
+            cand = conn.execute(
+                "SELECT id, status, finish_remaining FROM novels WHERE id=?",
+                (r["novel_id"],),
             ).fetchone()
+            if cand and cand["status"] != "finished":
+                novel = cand
+                novel_id = cand["id"]
+                break
+        if novel is None and conn.execute(
+            "SELECT COUNT(*) c FROM chapters WHERE status='reviewed'"
+        ).fetchone()["c"]:
+            print(json.dumps({"ok": True, "published": 0, "note": "仅剩已完结作品的存稿，停止发布"}, ensure_ascii=False))
+            return
         if novel and novel["status"] == "finished":
             print(json.dumps({"ok": True, "published": 0, "note": "作品已完结，停止发布"}, ensure_ascii=False))
             return
@@ -219,8 +223,8 @@ def main():
             "SELECT c.id, c.novel_id, c.seq, c.title, c.status, "
             "COALESCE(cc.content, '') AS content "
             "FROM chapters c LEFT JOIN chapter_content cc ON cc.chapter_id=c.id "
-            "WHERE c.status='reviewed' ORDER BY c.seq LIMIT ?",
-            (target,),
+            "WHERE c.status='reviewed' AND c.novel_id=? ORDER BY c.seq LIMIT ?",
+            (novel_id, target),
         ).fetchall()
         if not rows:
             print(json.dumps({"ok": True, "published": 0, "note": "存稿池为空"}, ensure_ascii=False))

@@ -6,6 +6,7 @@ import unittest
 from novel_pipeline import db
 from novel_pipeline.autopilot import daily_run
 from novel_pipeline.llm_client import MockLLMClient
+from novel_pipeline.publisher import ManualAdapter
 
 PLAN = json.dumps({
     "title": "重启：从高三教室开始",
@@ -59,7 +60,7 @@ class AutopilotTests(unittest.TestCase):
         result = daily_run(
             self.conn, self.client, "林舟重生回到高考前三个月。",
             chapters=5, chapters_per_day=2, min_chars=20, max_chars=60,
-            env=self.env,
+            env=self.env, adapter=ManualAdapter(),
         )
         self.assertTrue(result["ok"])
         self.assertEqual(len(result["publish"]["published"]), 2)
@@ -74,7 +75,7 @@ class AutopilotTests(unittest.TestCase):
         result = daily_run(
             self.conn, self.client, "林舟重生回到高考前三个月。",
             chapters=3, chapters_per_day=2, min_chars=20, max_chars=60,
-            env=self.env,
+            env=self.env, adapter=ManualAdapter(),
         )
         self.assertFalse(result["ok"])
         self.assertTrue(any("存稿池" in i for i in result["health_issues"]))

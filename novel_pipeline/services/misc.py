@@ -11,7 +11,15 @@ from novel_pipeline.services import audit
 
 
 def load_alerts(conn):
-    issues = monitor.run_checks(conn)
+    from tools.app_settings import get_float  # noqa: PLC0415
+
+    spent_row = conn.execute(
+        "SELECT COALESCE(SUM(cost),0) s FROM cost_logs "
+        "WHERE created_at >= date('now','localtime','start of month')"
+    ).fetchone()
+    spent = round(spent_row["s"] or 0.0, 4)
+    budget = get_float(conn, "monthly_budget", 100.0)
+    issues = monitor.run_checks(conn, monthly_budget=budget, spent=spent)
     tail = []
     if config.ALERTS_LOG.exists():
         tail = config.ALERTS_LOG.read_text(encoding="utf-8").strip().splitlines()[-20:]
@@ -138,8 +146,16 @@ def start_topic_meeting(topic, db_path="demo.db"):
                 errors="replace",
                 timeout=3600,
             )
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            try:
+                config.ALERTS_LOG.parent.mkdir(parents=True, exist_ok=True)
+                with config.ALERTS_LOG.open("a", encoding="utf-8") as f:
+                    f.write(
+                        f"[{datetime.now():%Y-%m-%d %H:%M:%S}] 专题会议线程异常："
+                        f"{exc.__class__.__name__}: {exc}\n"
+                    )
+            except Exception:  # noqa: BLE001
+                pass
 
     threading.Thread(target=_run, daemon=True).start()
     return {"ok": True, "note": "专题会议已启动，完成后可在周会档案查看"}

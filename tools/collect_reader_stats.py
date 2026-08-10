@@ -16,9 +16,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import db  # noqa: E402
+from novel_pipeline import config, db  # noqa: E402
 
-ENV_FILE = Path.home() / ".n8n" / ".env"
 OUT_CSV = ROOT / "demo_data" / "reader_stats.csv"
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -27,11 +26,8 @@ UA = (
 
 
 def load_env(env_file):
-    for line in Path(env_file).read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line and "=" in line:
-            k, v = line.split("=", 1)
-            os.environ.setdefault(k.strip(), v.strip())
+    for k, v in config.load_env().items():
+        os.environ.setdefault(k, v)
 
 
 def norm_rate(value):

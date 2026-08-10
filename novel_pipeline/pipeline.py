@@ -135,6 +135,14 @@ def generate_one_chapter(conn, client, novel_id, volume_id, chapter_seq,
         json.dumps(memory.get("character_states", {}), ensure_ascii=False),
         json.dumps(memory.get("world_events", []), ensure_ascii=False),
     )
+    conn.execute(
+        "INSERT INTO chapter_content(chapter_id,content,updated_at) "
+        "VALUES(?,?,datetime('now','localtime')) "
+        "ON CONFLICT(chapter_id) DO UPDATE SET content=excluded.content, "
+        "updated_at=excluded.updated_at",
+        (chapter_id, result["edited"]),
+    )
+    conn.commit()
     return {"chapter_id": chapter_id, "seq": chapter_seq, "passed": passed,
             "quality": report, "review": llm_review, "memory": memory,
             "compliance": comp, "revisions": result["revisions"]}
@@ -179,7 +187,7 @@ def run_demo(db_path=None):
     comp = compliance.check(text, platform=outline.get("platform", "fanqie"))
     passed_all = report["passed"] and comp["passed"]
 
-    status = "reviewed" if report["passed"] else "draft"
+    status = "reviewed" if passed_all else "draft"
     conn.execute("UPDATE chapters SET words=?, score=?, status=? WHERE id=?",
                  (report["char_count"], report["scores"]["words"], status, chapter_id))
     conn.commit()

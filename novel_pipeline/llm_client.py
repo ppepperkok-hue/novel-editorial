@@ -80,7 +80,7 @@ class LLMClient:
     def configured(self):
         return bool(self.api_key and self.base_url)
 
-    def chat(self, system, user, tier="writing", temperature=0.8):
+    def chat(self, system, user, tier="writing", temperature=0.8, max_tokens=2000):
         if not self.configured:
             raise LLMError(
                 "未配置 LLM_API_KEY / LLM_BASE_URL；"
@@ -94,6 +94,7 @@ class LLMClient:
                 {"role": "user", "content": user},
             ],
             "temperature": temperature,
+            "max_tokens": max_tokens,
         }
         url = f"{self.base_url}/chat/completions"
         data = json.dumps(payload).encode("utf-8")
@@ -112,6 +113,12 @@ class LLMClient:
                 with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                     body = json.loads(resp.read().decode("utf-8"))
                 return body["choices"][0]["message"]["content"]
+            except urllib.error.HTTPError as exc:
+                if exc.code < 500:
+                    raise LLMError(f"LLM 调用被拒：HTTP {exc.code}") from exc
+                last_err = exc
+                if attempt < self.max_retries:
+                    time.sleep(1.0 * (attempt + 1))
             except (urllib.error.URLError, KeyError, ValueError) as exc:
                 last_err = exc
                 if attempt < self.max_retries:
@@ -155,9 +162,10 @@ def chat_deepseek(model, system, user, temperature=0.5, max_tokens=1600,
     DeepSeek V4 thinking mode rejects forced tool_choice with HTTP 400.
     """
     env = config.load_env()
-    key = env.get("DEEPSEEK_API_KEY", "")
+    key = env.get("DEEPSEEK_API_KEY") or env.get("LLM_API_KEY") or ""
     if not key:
-        raise RuntimeError("DEEPSEEK_API_KEY missing")
+        raise RuntimeError("DEEPSEEK_API_KEY / LLM_API_KEY missing")
+    base_url = (env.get("LLM_BASE_URL") or "https://api.deepseek.com").rstrip("/")
     msgs = messages if messages is not None else [
         {"role": "system", "content": system},
         {"role": "user", "content": user},
@@ -177,7 +185,7 @@ def chat_deepseek(model, system, user, temperature=0.5, max_tokens=1600,
     for attempt in range(3):
         try:
             req = urllib.request.Request(
-                "https://api.deepseek.com/chat/completions",
+                base_url + "/chat/completions",
                 data=json.dumps(body).encode("utf-8"),
                 headers={
                     "Content-Type": "application/json",

@@ -22,7 +22,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import db  # noqa: E402
+from novel_pipeline import config, db  # noqa: E402
 from novel_pipeline.services import audit  # noqa: E402
 from tools.app_settings import get_all, get_bool, get_float  # noqa: E402
 
@@ -36,13 +36,8 @@ UA = (
 
 
 def load_env(env_file):
-    if not Path(env_file).exists():
-        return
-    for line in Path(env_file).read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line and "=" in line:
-            k, v = line.split("=", 1)
-            os.environ.setdefault(k.strip(), v.strip())
+    for k, v in config.load_env().items():
+        os.environ.setdefault(k, v)
 
 
 def alert(message):
@@ -117,6 +112,16 @@ def acquire_lock():
                 return acquire_lock()
             except OSError:
                 pass
+        else:
+            age = time.time() - LOCK_FILE.stat().st_mtime
+            if age > 1800:
+                # A healthy daily run finishes well under 30 minutes; a live
+                # PID here is likely reused, so treat the lock as stale.
+                try:
+                    LOCK_FILE.unlink()
+                    return acquire_lock()
+                except OSError:
+                    pass
         return False, "已有日更运行在途中（运行锁占用），本次跳过防双发"
 
 

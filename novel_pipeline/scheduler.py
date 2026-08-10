@@ -50,13 +50,14 @@ class Scheduler:
                     self.alert_sink.send(warning)
 
             rows = conn.execute(
-                "SELECT id, seq, outline FROM chapters "
-                "WHERE novel_id=? AND status IN ('reviewed','queued') "
-                "ORDER BY seq LIMIT ?",
+                "SELECT c.id, c.seq, c.outline, COALESCE(cc.content, c.outline) AS body "
+                "FROM chapters c LEFT JOIN chapter_content cc ON cc.chapter_id=c.id "
+                "WHERE c.novel_id=? AND c.status IN ('reviewed','queued') "
+                "ORDER BY c.seq LIMIT ?",
                 (novel["id"], self.chapters_per_day),
             ).fetchall()
             for row in rows:
-                result = self.adapter.publish(row["id"], text=row["outline"])
+                result = self.adapter.publish(row["id"], text=row["body"])
                 conn.execute("UPDATE chapters SET status='published' WHERE id=?", (row["id"],))
                 report["published"].append({"chapter_id": row["id"], "result": result})
         conn.commit()

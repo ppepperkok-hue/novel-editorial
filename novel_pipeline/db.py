@@ -317,6 +317,14 @@ def _migrate(conn):
         CREATE INDEX IF NOT EXISTS idx_knowledge_lookup ON novel_knowledge(novel_id, category, entity);
         """
     )
+    conn.execute(
+        "DELETE FROM chapters WHERE id NOT IN "
+        "(SELECT MIN(id) FROM chapters GROUP BY novel_id, seq)"
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_chapters_novel_seq_unique "
+        "ON chapters(novel_id, seq)"
+    )
     conn.commit()
 
 

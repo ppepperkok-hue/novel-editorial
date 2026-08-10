@@ -1,7 +1,7 @@
 """发布适配器：平台无关接口 + 人工确认通道 + 番茄 HTTP 适配器骨架。"""
 
 import json
-import os
+from datetime import datetime
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -31,15 +31,41 @@ class ManualAdapter(PublisherAdapter):
 class FanqieHttpAdapter(PublisherAdapter):
     """番茄作者后台 HTTP 适配器。
 
-    需要环境变量 TOMATO_COOKIE / TOMATO_CSRF_TOKEN（登录态约 1-2 个月失效）。
-    生产实现建议直接复用开源 tomato-writer-mcp 的 publish_chapter 能力，
-    避免自行逆向接口签名。
+    Uses the same three-step chain as tools/publish_stock.py:
+    new_article -> cover_article -> publish_article. Cookie/CSRF come from
+    ~/.n8n/.env (FANQIE_COOKIE / FANQIE_CSRF_TOKEN).
     """
 
+    def __init__(self, conn=None):
+        self.conn = conn
+
     def publish(self, chapter_id, text, scheduled_at=None, as_draft=False):
-        cookie = os.environ.get("TOMATO_COOKIE")
-        csrf = os.environ.get("TOMATO_CSRF_TOKEN")
-        if not cookie or not csrf:
-            raise RuntimeError("缺少 TOMATO_COOKIE / TOMATO_CSRF_TOKEN，请从番茄作者后台登录态获取。")
-        # TODO: 接入 tomato-writer-mcp publish_chapter（HTTP + CSRF，支持定时发布）
-        return {"result": "stub", "note": "接入 tomato-writer-mcp 后实现真实发布"}
+        from novel_pipeline import config, db  # noqa: PLC0415
+        from tools import publish_stock  # noqa: PLC0415
+
+        if self.conn is None:
+            self.conn = db.connect(config.DB_PATH)
+        row = self.conn.execute(
+            "SELECT c.id, c.novel_id, c.seq, c.title, "
+            "COALESCE(cc.content, ?) AS content "
+            "FROM chapters c LEFT JOIN chapter_content cc ON cc.chapter_id=c.id "
+            "WHERE c.id=?",
+            (str(text or ""), chapter_id),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError(f"chapter {chapter_id} not found")
+        env = publish_stock.load_env()
+        ok, item_id, error = publish_stock.publish_chapter(self.conn, dict(row), env)
+        if not ok:
+            raise RuntimeError(error or "publish failed")
+        self.conn.execute(
+            "UPDATE chapters SET status='published', fanqie_item_id=?, published_at=? "
+            "WHERE id=?",
+            (
+                item_id,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                chapter_id,
+            ),
+        )
+        self.conn.commit()
+        return {"result": "published", "item_id": item_id}

@@ -87,19 +87,13 @@ def advance_session(conn, session_id, instruction="", finish=False):
     return {"ok": True}
 
 
-def run_session(session_id):
+def run_session(session_id, db_path=""):
     """Background worker: executes rounds, pauses for user instructions."""
     conn = None
     try:
-        probe = novel_pipeline.db.connect(config.DB_PATH)
-        try:
-            row = probe.execute(
-                "SELECT db_path FROM meeting_sessions WHERE id=?", (session_id,)
-            ).fetchone()
-        finally:
-            probe.close()
-        db_path = (row["db_path"] if row and row["db_path"] else config.DB_PATH)
-        conn = novel_pipeline.db.connect(db_path)
+        # Use the database the session was created on; never fall back to a
+        # hardcoded demo.db lookup that silently misses sessions in other DBs.
+        conn = novel_pipeline.db.connect(db_path or config.DB_PATH)
         with _MEETING_LOCK:
             _run_locked(conn, session_id)
     finally:
@@ -121,9 +115,9 @@ def _run_locked(conn, session_id):
             conn.execute("UPDATE meeting_sessions SET status='failed' WHERE id=?", (session_id,))
             conn.commit()
             return
-        agent_meeting.materials = materials
-        agent_meeting.topic = topic
-        attendees, topics, pick = agent_meeting.chair_pick(conn, novel_id, dry_run=False)
+        attendees, topics, pick = agent_meeting.chair_pick(
+            conn, novel_id, dry_run=False, materials=materials, topic=topic
+        )
         if topic:
             topics = [topic] + [t for t in (topics or []) if t != topic]
         conn.execute(
@@ -158,6 +152,7 @@ def _run_locked(conn, session_id):
                     round_no,
                     dry_run=False,
                     instruction=instruction if round_no > 1 else "",
+                    topic=topic,
                 )
                 transcript.append({"round": round_no, "agent": agent, "speech": speech})
                 conn.execute(
@@ -170,6 +165,9 @@ def _run_locked(conn, session_id):
                 (_now(), session_id),
             )
             conn.commit()
+            if round_no >= MAX_ROUNDS:
+                # Hard cap: auto-finish instead of waiting forever for a click.
+                break
             # wait for the user: continue to the next round or finish
             while True:
                 r = conn.execute(
@@ -180,10 +178,13 @@ def _run_locked(conn, session_id):
                 if r["status"] == "running":
                     break
                 time.sleep(2)
-            if r["instruction"] == FINISH_TOKEN or round_no >= MAX_ROUNDS:
+            if r["instruction"] == FINISH_TOKEN:
                 break
         # summary
-        report = agent_meeting.chair_summary(conn, novel_id, attendees, topics, transcript, dry_run=False)
+        report = agent_meeting.chair_summary(
+            conn, novel_id, attendees, topics, transcript, dry_run=False,
+            materials=materials,
+        )
         report["attendees"] = attendees
         report["topics"] = topics
         report["date"] = _now()
@@ -245,10 +246,18 @@ def _run_locked(conn, session_id):
         )
         conn.commit()
         audit.log(conn, "meeting", "finish_session", target_type="session", target_id=session_id, detail={"topic": topic})
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
         if conn is not None:
             try:
                 conn.execute("UPDATE meeting_sessions SET status='failed' WHERE id=?", (session_id,))
+                audit.log(
+                    conn,
+                    "meeting",
+                    "session_failed",
+                    target_type="session",
+                    target_id=session_id,
+                    detail={"error": f"{exc.__class__.__name__}: {exc}"},
+                )
                 conn.commit()
             except Exception:  # noqa: BLE001
                 pass
@@ -263,5 +272,9 @@ def start_session_async(topic, novel_id=0, db_path=None):
         conn.close()
     if not result["ok"]:
         return result
-    threading.Thread(target=run_session, args=(result["session_id"],), daemon=True).start()
+    threading.Thread(
+        target=run_session,
+        args=(result["session_id"], db_path or ""),
+        daemon=True,
+    ).start()
     return result

@@ -81,7 +81,7 @@ Python 记忆/知识层（SQLite）+ 番茄 HTTP 发布 + Electron 桌面控制�
 
 ```bash
 # 1. 安装
-cd E:\code\novel-pipeline
+cd novel-pipeline
 python -m pip install -e .          # 或使用 uv
 cd webapp && npm install && npm run build
 cd ../desktop && npm install
@@ -168,7 +168,7 @@ A/B 双轨互相隔离：质量门失败只在排版处短路，另一章照常�
   存货策略让测试期多余章节自动留存，断更时也不至于空窗。
 - **发布三步**（接口经 OpenNovel 等开源实现交叉验证）：`new_article/v0` 拿 `item_id`+`volume_id` →
   `cover_article/v0` 保存标题正文 → `publish_article/v0` 提交审核（`use_ai=2` 声明 AI 创作）。
-- **校验发布 / 复核发布**：发布后查 `chapter_list/v1` / `draft_list/v1` 确认状态，失败即短路。
+- **校验发布 / 复核发布**：发布后查 `chapter_list/v1` 确认状态，失败即短路。
 
 ### 4.5 收尾沉淀
 
@@ -208,7 +208,8 @@ A/B 双轨互相隔离：质量门失败只在排版处短路，另一章照常�
 
 ### 5.2 代理模式（Prompt 资产 ↔ 工作流）
 
-- `tools/export_agent_prompts.py`：把 n8n 工作流里的系统提示词导出成 `prompts/agents/*.md`；
+- `tools/export_agent_prompts.py`：旧版（非代理模式）工作流的系统提示词导出入口；
+  代理模式下提示词资产直接维护在 `prompts/agents/*.md`，脚本会明确提示无需导出；
 - `tools/render_workflow.py`（`PROXY_MODE=True`）：反向把 Agent 资产渲染回工作流——
   日更 15 个 LLM 节点全部改为请求本地 `POST /api/agent/run`，n8n 只携带
   `agent / model / temperature / target_words / task`，系统提示词由
@@ -216,7 +217,8 @@ A/B 双轨互相隔离：质量门失败只在排版处短路，另一章照常�
 - `node tools/validate_workflow_deep.mjs`：深度校验渲染结果；
 - 前端「Agent 管理」页：编辑提示词/模型/温度 → 保存（自动 render + validate）→ 一键部署到 n8n。
 
-这个闭环是「流水线进化」的入口：改一段人格提示词，保存即渲染、校验、部署，不需要手动改画布。
+这个闭环是「流水线进化」的入口：改一段人格提示词，保存即渲染 + 校验，再点「部署」
+推送到 n8n，不需要手动改画布。
 
 ### 5.3 工具式知识调用（function calling）
 
@@ -342,7 +344,7 @@ render + deploy 到 n8n，拒绝则归档。这样 Agent 的成长来自「会�
 
 | 表 | 内容 | 消费方 |
 | --- | --- | --- |
-| novels / volumes | 作品信息、状态机（planning→ready→publishing→finishing→finished）、封面提示词 | 前端作品库、日更 |
+| novels / volumes | 作品信息、状态机（planning→ready→publishing→finishing→finished；record_work 落库不覆盖既有状态）、封面提示词 | 前端作品库、日更 |
 | chapters / chapter_content | 章节元数据 + 正文存档 | 章节管理、阅读器、发布 |
 | characters / character_evolution | 角色卡 + 成长轨迹快照 | 记忆包、作品库 |
 | world_events / plot_threads | 世界事件与伏笔台账（埋/收） | 守护、记忆包、周会 |
@@ -435,9 +437,11 @@ novel-pipeline/
 │   └── debug/                # 一次性调试/探索脚本（probe_*/cdp_*/query_*）
 ├── webapp/                   # React + Vite 前端（Electron 壳加载 dist）
 ├── desktop/                  # Electron 壳（main/preload/release.js）
+├── web/                      # 旧版单文件 HTML 兜底页（web_api 在 dist 缺失时回退）
 ├── n8n/                      # 三个工作流 JSON（日更 61 节点 / 周会 7 节点 / 知识管家 4 节点）
 ├── docs/                     # evolution / planning / research
-├── tests/                    # 104 个后端 unittest + 前端 Vitest
+├── ai_words.json             # 共享 AI 味词表（Python 质量门与 n8n 质量门同源）
+├── tests/                    # 120 个后端 unittest + 前端 Vitest
 ├── scripts/install_daily_task.ps1   # Windows 计划任务备选注册脚本
 ├── launch_desktop.vbs        # 开发态桌面一键启动
 └── demo.db / exports / n8n_tmp / backups / hot_topics.json / alerts.log
@@ -449,7 +453,7 @@ novel-pipeline/
 
 ```bash
 # 导出当前工作流提示词 → prompts/agents/*.md（首次或回归时）
-python tools/export_agent_prompts.py
+python tools/export_agent_prompts.py   # 代理模式下会提示直接维护 prompts/agents/*.md
 
 # 编辑 md 文件后渲染回工作流并深度校验
 python tools/render_workflow.py
@@ -461,7 +465,7 @@ node tools/validate_workflow_deep.mjs
 ### 15.2 测试
 
 ```bash
-python run_tests.py          # 104 个后端测试（标准库 unittest）
+python run_tests.py          # 120 个后端测试（标准库 unittest）
 cd webapp && npm test        # 6 个前端 Vitest 测试
 cd webapp && npm run build   # 构建 dist 供 web_api 托管
 ```
@@ -487,6 +491,8 @@ cd webapp && npm run build   # 构建 dist 供 web_api 托管
   日记/会议等 flash 调用计入成本，周会一次约几十次调用。
 - **封面未全自动**：封面提示词自动生成，但出图与上传由用户在豆包 + 番茄后台完成。
 - **测试数据**：`demo.db` 当前无作品（已清空旧书）；首次日更会从选题会结论或手动创建新书开始。
+- **番茄 `chapter_number` 语义待核对**：算章节号按「返回值为当前最大章号 +1」处理；
+  若真实 API 返回的本身就是下一章号，会产生跳号，需以真实登录态实测确认。
 
 ## 十七、后续路线
 

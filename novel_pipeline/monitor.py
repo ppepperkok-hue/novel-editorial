@@ -16,16 +16,10 @@ N8N_ENV = Path.home() / ".n8n" / ".env"
 
 
 def _load_n8n_env():
-    """Fallback: read n8n's .env so the dashboard sees the real credentials."""
-    if not N8N_ENV.exists():
-        return {}
-    vals = {}
-    for line in N8N_ENV.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line and "=" in line:
-            k, v = line.split("=", 1)
-            vals[k.strip()] = v.strip()
-    return vals
+    """Shared env loader: ~/.n8n/.env filled in by config.load_env()."""
+    from novel_pipeline import config  # noqa: PLC0415
+
+    return config.load_env()
 
 
 class AlertSink:

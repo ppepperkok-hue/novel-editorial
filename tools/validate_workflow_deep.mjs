@@ -110,8 +110,12 @@ for (const file of files) {
     }
     // idempotency: summary must mark direct publishes as published/draft.
     const summary = nodes.find((n) => n.name === "汇总运行结果");
-    if (summary && !/aOk \? 'published' : 'draft'/.test(summary.parameters.jsCode || "")) {
-      issues.push(`${file}: 汇总运行结果 does not mark successful direct publishes as 'published'`);
+    const sumCode = summary ? summary.parameters.jsCode || "" : "";
+    if (!/aOk \? 'published' : 'reviewed'/.test(sumCode)) {
+      issues.push(`${file}: 汇总运行结果 must keep publish failures as 'reviewed' for retry`);
+    }
+    if (!/qa\.passed === false/.test(sumCode)) {
+      issues.push(`${file}: 汇总运行结果 must record quality-gate failures explicitly`);
     }
   }
 

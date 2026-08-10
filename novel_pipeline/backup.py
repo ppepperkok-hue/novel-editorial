@@ -1,7 +1,7 @@
 """SQLite 数据库备份：复制到 backups/，只保留最近 N 份。"""
 
 import argparse
-import shutil
+import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -12,11 +12,21 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def backup_db(db_path, backup_dir, keep=DEFAULT_KEEP):
     db_path = Path(db_path)
+    if not db_path.exists():
+        raise FileNotFoundError(f"database not found: {db_path}")
     backup_dir = Path(backup_dir)
     backup_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     target = backup_dir / f"{db_path.stem}_{stamp}.db"
-    shutil.copy2(db_path, target)
+    src = sqlite3.connect(str(db_path))
+    dst = sqlite3.connect(str(target))
+    try:
+        # sqlite3 backup API produces a consistent snapshot even in WAL mode
+        # (a plain file copy would miss -wal/-shm and yield a torn database).
+        src.backup(dst)
+    finally:
+        dst.close()
+        src.close()
     backups = sorted(backup_dir.glob(f"{db_path.stem}_*.db"))
     for old in backups[:-keep]:
         old.unlink()

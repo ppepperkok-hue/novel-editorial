@@ -86,11 +86,14 @@ def extract_target_words_expr(system):
 def build_proxy_body(agent, meta, system_has_target_words, user_expr):
     model = meta.get("model", "")
     temperature = meta.get("temperature", "")
+    max_tokens = meta.get("max_tokens", "")
     fields = [f"agent:'{agent}'"]
     if model:
         fields.append(f"model:'{model}'")
     if temperature:
         fields.append(f"temperature:{temperature}")
+    if max_tokens:
+        fields.append(f"max_tokens:{max_tokens}")
     if system_has_target_words:
         fields.append("target_words:(($('解析本地资料').first().json.target_words)||2000)")
     fields.append(f"task:{user_expr}")

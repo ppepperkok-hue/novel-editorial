@@ -22,7 +22,7 @@ FLOWERY = [
     "蜿蜒", "笼罩", "萦绕", "弥漫", "迸发", "喷薄", "倾泻", "翻涌", "铺天盖地",
     "如诗如画", "美轮美奂", "如梦似幻", "不可思议", "无法言喻", "难以名状",
     "心潮澎湃", "热血沸腾", "气势磅礴", "威压滔天", "深不可测", "高深莫测",
-    "神秘莫测", "玄之又玄", "仙气飘飘", "不怒自威", "氤氲",
+    "神秘莫测", "玄之又玄", "仙气飘飘", "不怒自威",
 ]
 
 FILLER = [
@@ -63,22 +63,19 @@ def detect(text):
     exclam = len(EXCLAMATION_PATTERN.findall(text))
     if exclam > 3:
         notes.append(f"连续感叹/问号 {exclam} 处")
-    # parallel four-character stacking heuristic
-    four = re.findall(r"[\u4e00-\u9fff]{4}", text)
+    # parallel four-character stacking heuristic: count adjacent 4-char
+    # sequences by their real positions (text.find() gave wrong offsets when
+    # a phrase repeated).
+    positions = [m.start() for m in re.finditer(r"[\u4e00-\u9fff]{4}", text)]
     runs = 0
     i = 0
-    while i < len(four) - 1:
-        j = i
-        while j < len(four) - 1 and text.find(four[j + 1]) >= 0:
-            # conservative: consecutive positions in source
-            start = text.find(four[j])
-            nxt = text.find(four[j + 1])
-            if nxt - start - len(four[j]) <= 1:
+    while i < len(positions) - 1:
+        if positions[i + 1] - positions[i] == 4:
+            j = i + 1
+            while j < len(positions) - 1 and positions[j + 1] - positions[j] == 4:
                 j += 1
-            else:
-                break
-        if j > i:
-            runs += 1
+            if j > i:
+                runs += 1
             i = j + 1
         else:
             i += 1

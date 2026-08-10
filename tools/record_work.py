@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = ROOT / "demo.db"
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import db  # noqa: E402
+from novel_pipeline import config, db  # noqa: E402
 
 
 def _j(value, fallback):
@@ -56,14 +56,14 @@ def upsert_novel(conn, payload):
             "INSERT INTO novels(title,genre,premise,selling_point,platform,status,"
             "book_id,tags,abstract,protagonists,outline,volume_goal,updated_at) "
             "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (title, genre, premise, selling, "fanqie", "running",
+            (title, genre, premise, selling, "fanqie", "publishing",
              book_id, tags, abstract, protagonists, outline, volume_goal, updated),
         )
         novel_id = cur.lastrowid
     else:
         novel_id = row["id"]
         conn.execute(
-            "UPDATE novels SET title=?,genre=?,premise=?,selling_point=?,status='running',"
+            "UPDATE novels SET title=?,genre=?,premise=?,selling_point=?,"
             "book_id=?,tags=?,abstract=?,protagonists=?,outline=?,volume_goal=?,updated_at=? "
             "WHERE id=?",
             (title, genre, premise, selling, book_id, tags, abstract, protagonists,
@@ -325,9 +325,16 @@ def upsert_chapters(conn, novel_id, chapters):
 
 
 def _rate_for_model(model):
+    env = config.load_env()
     if "flash" in model:
-        return float(os.environ.get("COST_FLASH_PER_1K", "0.002"))
-    return float(os.environ.get("COST_PRO_PER_1K", "0.01"))
+        try:
+            return float(env.get("COST_FLASH_PER_1K") or 0.002)
+        except (TypeError, ValueError):
+            return 0.002
+    try:
+        return float(env.get("COST_PRO_PER_1K") or 0.01)
+    except (TypeError, ValueError):
+        return 0.01
 
 
 def upsert_costs(conn, novel_id, payload, run_id=""):

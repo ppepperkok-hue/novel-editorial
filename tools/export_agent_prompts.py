@@ -40,6 +40,16 @@ END_MARK = "'},{role:'user'"
 def main():
     wf = json.loads(WF.read_text(encoding="utf-8"))
     nodes = {n["name"]: n for n in wf["nodes"]}
+    proxy = any(
+        "{agent:'" in str(n.get("parameters", {}).get("jsonBody") or "")
+        for n in wf["nodes"]
+    )
+    if proxy:
+        print(
+            "PROXY_MODE=True：提示词资产直接维护在 prompts/agents/*.md，"
+            "无需从工作流导出（工作流只携带 agent 名/模型/温度/task）。"
+        )
+        return
     OUT.mkdir(parents=True, exist_ok=True)
     written = set()
     for node_name, filename in AGENT_FILES.items():

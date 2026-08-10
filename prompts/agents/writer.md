@@ -1,6 +1,7 @@
 ---
 model: deepseek-v4-pro
 temperature: 0.85
+max_tokens: 4000
 ---
 
 [人物档案]

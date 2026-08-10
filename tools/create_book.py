@@ -39,18 +39,13 @@ UA = (
 )
 
 # Female-only genres; anything with a male keyword below stays male (gender=1).
-_FEMALE_GENRES = {"言情", "女频", "现代言情", "古代言情", "仙侠言情", "豪门", "穿越", "宫斗"}
+_FEMALE_GENRES = {"言情", "女频", "现代言情", "古代言情", "仙侠言情", "豪门", "宫斗"}
 _MALE_KEYWORDS = ("仙侠", "玄幻", "武侠", "男频", "都市", "科幻")
 
 
 def load_env():
-    env = {}
-    if config.N8N_ENV_FILE.exists():
-        for line in config.N8N_ENV_FILE.read_text(encoding="utf-8").splitlines():
-            if "=" in line:
-                k, v = line.split("=", 1)
-                env[k.strip()] = v.strip()
-    return env
+    """Shared env loader: ~/.n8n/.env filled in by config.load_env()."""
+    return config.load_env()
 
 
 def http_json(method, path, fields, env):
@@ -273,7 +268,7 @@ def create_book_on_fanqie(conn, novel_id):
 
     if res.get("code") != 0:
         msg = str(res.get("message") or res)
-        if "每天" in msg or "当日" in msg or "1" in msg:
+        if "每天" in msg or "当日" in msg or "每日" in msg:
             msg += "（番茄每天最多创建 1 本新书，失败当天无法重试）"
         return {"ok": False, "error": f"番茄拒绝建书：{msg}"}
 

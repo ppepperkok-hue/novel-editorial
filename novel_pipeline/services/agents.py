@@ -90,7 +90,11 @@ def agents_list():
 
 def agent_save(payload, conn=None):
     f = str(payload.get("file") or "")
-    if not (config.AGENTS_DIR / f).exists():
+    path = (config.AGENTS_DIR / f).resolve()
+    root = config.AGENTS_DIR.resolve()
+    if path.suffix != ".md" or (path != root and root not in path.parents):
+        return {"ok": False, "error": "invalid agent file path"}
+    if not path.exists():
         return {"ok": False, "error": "unknown agent file"}
     model = str(payload.get("model") or "").strip()
     try:
@@ -102,8 +106,14 @@ def agent_save(payload, conn=None):
     prompt = str(payload.get("prompt") or "").strip()
     if len(prompt) < 20:
         return {"ok": False, "error": "prompt too short"}
-    (config.AGENTS_DIR / f).write_text(
-        f"---\nmodel: {model}\ntemperature: {temperature}\n---\n\n{prompt}\n",
+    old_head = path.read_text(encoding="utf-8").split("---", 2)
+    extra = ""
+    if len(old_head) >= 3:
+        for line in old_head[1].strip().splitlines():
+            if ":" in line and not line.strip().startswith(("model:", "temperature:")):
+                extra += line.strip() + "\n"
+    path.write_text(
+        f"---\nmodel: {model}\ntemperature: {temperature}\n{extra}---\n\n{prompt}\n",
         encoding="utf-8",
     )
     try:

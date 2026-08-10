@@ -7,6 +7,7 @@ name = "novel-pipeline"
 version = "0.1.0"
 description = "自动生成小说并发布到指定平台的全自动工作流（MVP 脚手架）"
 requires-python = ">=3.9"
+dependencies = []
 
 [project.optional-dependencies]
 desktop = ["pywebview>=5.0"]
