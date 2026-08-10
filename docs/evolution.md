@@ -430,3 +430,18 @@ Toast 带图标、执行失败可查看原因弹窗、作品库搜索与批量�
   路径约定、8001 兼容实例说明，均写入 README 已知限制。
 - **验证**：后端 141 + 前端 6 全绿；validate 全工作流通过；新增 bible 初始化
   幂等/autopilot 锁/质量落库测试。
+
+## 21. 世界观/人物卡链路梳理与审查（2026-08-10）
+
+- **读取盲区修复**：读者审稿/主编终审/提炼剧情（A/B 共 6 节点）此前不读故事圣经——
+  首轮 writing_context 早于 Planner 生成，不含 bible，导致首章 OOC/设定审查盲区；
+  现在 6 个节点的 task 统一注入角色卡/人物关系/世界观规则，validator 增加断言。
+- **bible 字段补齐**：Planner 提示词新增 `golden_finger`（金手指规则）与
+  `main_plot`（主线），sync_from_bible 的 item/power/主线初始化真正有数据可写。
+- **防覆盖**：章节增量同步的角色状态实体改为「名字·状态」，不再覆盖 bible 初始化的
+  角色卡（人格/口吻/OOC 红线保留），测试同步更新。
+- **链路定稿**：定义层（bible，Planner/周会写）、可查设定库（novel_knowledge，
+  bible 初始化 + 章节增量 + 前端手动）、动态状态层（characters/evolution，
+  record_work 写）三套分工，get_meta 合并；读取时机为「bible 产出后立即初始化、
+  写手前可查、收尾增量入库」，已写入 README 6.3。
+- **验证**：后端 141 + 前端 6 全绿；validate 全工作流通过；工作流重新部署激活。

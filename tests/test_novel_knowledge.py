@@ -75,7 +75,7 @@ class NovelKnowledgeTests(unittest.TestCase):
         result = novel_knowledge.sync_from_chapters(self.conn, self.nid)
         self.assertGreaterEqual(result["count"], 4)
         chars = novel_knowledge.get(self.conn, self.nid, category="character")
-        su = next(c for c in chars if c["entity"] == "苏晚晴")
+        su = next(c for c in chars if c["entity"] == "苏晚晴·状态")
         self.assertEqual(su["content"], "筑基中期，痊愈")
         self.assertEqual(su["version"], 2)
         plots = novel_knowledge.get(self.conn, self.nid, category="plot")

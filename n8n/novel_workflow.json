@@ -1347,7 +1347,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({agent:'提炼剧情A', model:'deepseek-v4-flash', temperature:0.3, task:'章纲：'+JSON.stringify($('解析大纲').item.json.chapter1)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+(($('润色A').item.json.choices[0].message.content)||'')}) }}"
+        "jsonBody": "={{ JSON.stringify({agent:'提炼剧情A', model:'deepseek-v4-flash', temperature:0.3, task:'角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；'章纲：'+JSON.stringify($('解析大纲').item.json.chapter1)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+(($('润色A').item.json.choices[0].message.content)||'')}) }}"
       },
       "id": "n-extract-a",
       "name": "提炼剧情A",
@@ -1391,7 +1391,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({agent:'提炼剧情B', model:'deepseek-v4-flash', temperature:0.3, task:'章纲：'+JSON.stringify($('解析大纲').item.json.chapter2)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+(($('润色B').item.json.choices[0].message.content)||'')}) }}"
+        "jsonBody": "={{ JSON.stringify({agent:'提炼剧情B', model:'deepseek-v4-flash', temperature:0.3, task:'角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；'章纲：'+JSON.stringify($('解析大纲').item.json.chapter2)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+(($('润色B').item.json.choices[0].message.content)||'')}) }}"
       },
       "id": "n-extract-b",
       "name": "提炼剧情B",
@@ -1497,7 +1497,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({agent:'读者审稿A', model:'deepseek-v4-flash', temperature:0.3, task:'章纲：'+JSON.stringify($('解析大纲').item.json.chapter1)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+$('润色A').item.json.choices[0].message.content+'}) }}"
+        "jsonBody": "={{ JSON.stringify({agent:'读者审稿A', model:'deepseek-v4-flash', temperature:0.3, task:'角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；'章纲：'+JSON.stringify($('解析大纲').item.json.chapter1)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+$('润色A').item.json.choices[0].message.content+'}) }}"
       },
       "onError": "continueRegularOutput",
       "id": "n-reader-a",
@@ -1529,7 +1529,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({agent:'读者审稿B', model:'deepseek-v4-flash', temperature:0.3, task:'章纲：'+JSON.stringify($('解析大纲').item.json.chapter2)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+$('润色B').item.json.choices[0].message.content+'}) }}"
+        "jsonBody": "={{ JSON.stringify({agent:'读者审稿B', model:'deepseek-v4-flash', temperature:0.3, task:'角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；'章纲：'+JSON.stringify($('解析大纲').item.json.chapter2)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+$('润色B').item.json.choices[0].message.content+'}) }}"
       },
       "onError": "continueRegularOutput",
       "id": "n-reader-b",
@@ -1800,7 +1800,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({agent:'主编终审A', model:'deepseek-v4-flash', temperature:0.2, task:'章纲：'+JSON.stringify($('解析大纲').item.json.chapter1)+'；逻辑审稿原始输出：'+$('审稿A').item.json.choices[0].message.content+'；读者审稿原始输出：'+$('读者审稿A').item.json.choices[0].message.content+'；正文前800字：'+(($('润色A').item.json.choices[0].message.content)||'').slice(0,800)+'}) }}"
+        "jsonBody": "={{ JSON.stringify({agent:'主编终审A', model:'deepseek-v4-flash', temperature:0.2, task:'角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；'章纲：'+JSON.stringify($('解析大纲').item.json.chapter1)+'；逻辑审稿原始输出：'+$('审稿A').item.json.choices[0].message.content+'；读者审稿原始输出：'+$('读者审稿A').item.json.choices[0].message.content+'；正文前800字：'+(($('润色A').item.json.choices[0].message.content)||'').slice(0,800)+'}) }}"
       },
       "onError": "continueRegularOutput",
       "id": "n-eic-a",
@@ -1832,7 +1832,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({agent:'主编终审B', model:'deepseek-v4-flash', temperature:0.2, task:'章纲：'+JSON.stringify($('解析大纲').item.json.chapter2)+'；逻辑审稿原始输出：'+$('审稿B').item.json.choices[0].message.content+'；读者审稿原始输出：'+$('读者审稿B').item.json.choices[0].message.content+'；正文前800字：'+(($('润色B').item.json.choices[0].message.content)||'').slice(0,800)+'}) }}"
+        "jsonBody": "={{ JSON.stringify({agent:'主编终审B', model:'deepseek-v4-flash', temperature:0.2, task:'角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；'章纲：'+JSON.stringify($('解析大纲').item.json.chapter2)+'；逻辑审稿原始输出：'+$('审稿B').item.json.choices[0].message.content+'；读者审稿原始输出：'+$('读者审稿B').item.json.choices[0].message.content+'；正文前800字：'+(($('润色B').item.json.choices[0].message.content)||'').slice(0,800)+'}) }}"
       },
       "onError": "continueRegularOutput",
       "id": "n-eic-b",

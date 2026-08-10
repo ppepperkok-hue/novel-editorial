@@ -158,11 +158,13 @@ def sync_from_chapters(conn, novel_id, chapter_id=None, limit=3):
             if not content:
                 continue
             kid = upsert(
-                conn, novel_id, "character", str(name), str(content),
+                # Keep chapter-derived state under its own entity so it never
+                # overwrites the character card initialized from the bible.
+                conn, novel_id, "character", f"{name}·状态", str(content),
                 source_chapter=cid, change_note=f"第{seq}章",
             )
             if kid:
-                updated.append(f"character:{name}")
+                updated.append(f"character:{name}·状态")
         for ev in events or []:
             if not isinstance(ev, dict):
                 continue

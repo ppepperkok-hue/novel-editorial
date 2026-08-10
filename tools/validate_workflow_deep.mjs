@@ -140,6 +140,17 @@ for (const file of files) {
         issues.push(`${file}: bible init chain broken ${src} -> ${dst}`);
       }
     }
+    // reviewing/memory agents must see the bible (characters/relations/world)
+    // in their task; otherwise first-run OOC/setting checks are blind.
+    for (const name of [
+      "读者审稿A", "读者审稿B", "主编终审A", "主编终审B",
+      "提炼剧情A", "提炼剧情B",
+    ]) {
+      const node = nodes.find((n) => n.name === name);
+      if (node && !/角色卡：/.test(node.parameters.jsonBody || "")) {
+        issues.push(`${file}: ${name} task does not reference the bible characters`);
+      }
+    }
   }
 
   // 5. executeCommand nodes: parameterized command + args + relative cwd.

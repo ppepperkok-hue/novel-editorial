@@ -278,7 +278,26 @@ Agent 首轮携带 `get_knowledge`（通用写作知识包）与 `get_novel_know
 （`sync_from_bible`：世界规则/角色卡/人物关系/金手指/主线/文风），内容未变化时不会
 重复版本化；之后每次日更由章节摘要增量同步角色状态、剧情事件与时间线。
 
-### 6.3 知识管家「博闻」（第 11 位 Agent）
+### 6.3 世界观与人物卡数据链路
+
+世界观/人物卡是三套分工明确的数据，避免单一事实源互相覆盖：
+
+| 数据载体 | 角色 | 写入者 | 读取者 |
+| --- | --- | --- | --- |
+| `novels.outline.bible` | 定义层：角色卡/世界观/关系/金手指/主线/文风 | Planner 首轮创建、每轮增量；周会 `character_updates` 固化 | 写手/守护/审稿/读者/主编/记忆的 task 直接引用；get_meta 组装记忆包；周会材料 |
+| `novel_knowledge` | 可查设定库：8 分类、版本化 | `sync_from_bible`（bible 初始化，每轮解析大纲后执行 + 收尾兜底）、`sync_from_chapters`（章节增量）、前端手动 | Agent 通过 `get_novel_knowledge` 按需查询（硬规则，禁止凭记忆） |
+| `characters` + `character_evolution` | 动态状态层：当前状态与成长轨迹 | record_work（主角 + 章节摘要角色变化） | get_meta 合并进 bible 角色卡的 `current_state` 与写前记忆包 |
+
+读取时机：
+
+- Planner 出 bible → 「初始化设定知识库」立即同步（每轮都跑，幂等）→ 守护/写手/审稿
+  等任何 Agent 查询设定库时拿到的都是最新世界观；
+- 章节状态（角色当前状态/事件/时间线）在收尾 `sync-latest` 增量入库，供次日记忆包与
+  周会使用；章节状态以「名字·状态」实体存储，不会覆盖 bible 初始化的角色卡；
+- 首轮日更的 writing_context 不含 bible（读取早于 Planner），因此写手/守护/审稿/读者/
+  主编/记忆的 task 都直接引用解析大纲的 bible，读者审稿与主编仲裁不缺设定上下文。
+
+### 6.4 知识管家「博闻」（第 11 位 Agent）
 
 `tools/knowledge_keeper.py` + n8n 定时工作流（每天 03:30 + 手动 webhook）：
 
@@ -288,7 +307,7 @@ Agent 首轮携带 `get_knowledge`（通用写作知识包）与 `get_novel_know
   `knowledge_drafts` 人工采纳）、`deprecations`（废弃建议）；
 - 缩水保护：模型把知识包改短到原正文 50% 以下时强制转人工草稿，防模型自我循环污染。
 
-### 6.4 反思蒸馏 `tools/distill_lessons.py`
+### 6.5 反思蒸馏 `tools/distill_lessons.py`
 
 周会/专题会议结束后自动蒸馏 2-6 条可执行经验卡（受益 Agent、标题、教训与下次具体改法、依据），
 落 `knowledge_drafts`。前端 Agent 管理页可预览/编辑草稿，采纳即写入知识包并自动
