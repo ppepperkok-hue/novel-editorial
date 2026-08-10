@@ -38,6 +38,22 @@ const SPEECH_FIELDS = [
   ["priority", "优先级"],
 ];
 
+
+function RawSpeech({ raw }) {
+  let display = raw;
+  try {
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === "object") {
+      display = obj.speech || obj.opinion || obj.weekly_summary || JSON.stringify(obj, null, 2);
+    }
+  } catch (e) {
+    /* keep raw text */
+  }
+  return (
+    <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-200">{display}</div>
+  );
+}
+
 export default function MeetingLive({ onArchived }) {
   const [topic, setTopic] = useState("");
   const [starting, setStarting] = useState(false);
@@ -234,7 +250,7 @@ export default function MeetingLive({ onArchived }) {
                       })}
                     </div>
                   ) : m.speech?.raw ? (
-                    <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-200">{m.speech.raw}</div>
+                    <RawSpeech raw={m.speech.raw} />
                   ) : (
                     <div className="muted text-xs">（本次发言未能结构化，跳过）</div>
                   )}

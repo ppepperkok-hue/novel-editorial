@@ -20,6 +20,24 @@ class MeetingSessionTests(unittest.TestCase):
     def tearDown(self):
         self.conn.close()
 
+    def test_parse_json_repairs_truncated_speech(self):
+        from tools.agent_meeting import parse_json  # noqa: E402
+
+        full = '{"speech": "hello", "weekly_summary": "ok", "feelings": "calm"}'
+        self.assertEqual(parse_json(full)["speech"], "hello")
+
+        truncated = '{"speech": "hello world", "weekly_summary": "this text is cut'
+        obj = parse_json(truncated)
+        self.assertIsNotNone(obj)
+        self.assertEqual(obj.get("speech"), "hello world")
+
+        unterminated = '{"speech": "hello", "weekly_summary": "x"'
+        obj2 = parse_json(unterminated)
+        self.assertIsNotNone(obj2)
+        self.assertEqual(obj2.get("speech"), "hello")
+
+        self.assertIsNone(parse_json("not json at all"))
+
     def test_create_requires_topic(self):
         r = meeting_session.create_session(self.conn, "  ")
         self.assertFalse(r["ok"])

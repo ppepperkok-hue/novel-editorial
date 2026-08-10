@@ -29,13 +29,50 @@ ALL_AGENTS = CORE_AGENTS + [
 def parse_json(text):
     if not text:
         return None
-    m = re.search(r"\{[\s\S]*\}", text)
+    m = re.search(r"\{[\s\S]*\}", text) or re.search(r"\{[\s\S]*$", text)
     if not m:
         return None
     try:
         return json.loads(m.group(0))
     except json.JSONDecodeError:
-        return None
+        t = m.group(0)
+        import re as _re
+        clean = _re.sub(r",\s*([}\]])", "\\1", t)
+        for _ in range(8):
+            m1 = _re.search(r',\s*"[^"]*"?\s*:\s*"[^"]*$', clean)
+            if m1:
+                clean = clean[: m1.start()]
+                continue
+            m2 = _re.search(r',\s*"[^"]*"$', clean)
+            if m2:
+                clean = clean[: m2.start()]
+                continue
+            break
+        stack = []
+        in_str = False
+        esc = False
+        for ch in clean:
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+                continue
+            if ch == '"':
+                in_str = True
+                continue
+            if ch in "{[":
+                stack.append(ch)
+            elif ch in "}]" and stack:
+                stack.pop()
+        while stack:
+            clean += "}" if stack.pop() == "{" else "]"
+        try:
+            return json.loads(clean)
+        except json.JSONDecodeError:
+            return None
 
 
 def agent_md(agent):
@@ -134,7 +171,7 @@ GET_NOVEL_KNOWLEDGE_TOOL = {
 }
 
 
-def ask(conn, novel_id, agent, user, temperature, dry_run, mock_text, max_tokens=1600,
+def ask(conn, novel_id, agent, user, temperature, dry_run, mock_text, max_tokens=3000,
         tools=None, messages=None, system_override=None):
     if dry_run:
         return mock_text, {"prompt_tokens": 0, "completion_tokens": 0}, "dry-run", []
