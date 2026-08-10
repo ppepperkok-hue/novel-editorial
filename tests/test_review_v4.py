@@ -291,6 +291,35 @@ class TokenGetTests(unittest.TestCase):
 
 
 class BookIsolationTests(unittest.TestCase):
+    def test_current_book_resolves_active_novel(self):
+        import subprocess
+
+        path = make_db()
+        conn = db.connect(path)
+        try:
+            conn.execute(
+                "UPDATE novels SET book_id='b1', volume_id='v1' WHERE id=1"
+            )
+            conn.commit()
+            out = subprocess.run(
+                [
+                    sys.executable,
+                    os.path.join(ROOT, "tools", "current_book.py"),
+                    "--db",
+                    path,
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                cwd=ROOT,
+                timeout=30,
+            )
+            payload = json.loads(out.stdout)
+            self.assertEqual(payload["book_id"], "b1")
+            self.assertEqual(payload["volume_id"], "v1")
+        finally:
+            conn.close()
+
     def test_get_meta_exposes_novel_id(self):
         path = make_db()
         conn = db.connect(path)

@@ -475,3 +475,17 @@ Toast 带图标、执行失败可查看原因弹窗、作品库搜索与批量�
   主编终审额外读两审原始输出；写手B 读整理剧情A 摘要与质量门A 结尾（失败时
   为空串容错）；润色读写手正文与 target_words。
 - **验证**：后端 143 + 前端 6 全绿；validate 全工作流通过；工作流重新部署激活。
+
+## 24. 链路审查、前端重构与严谨复查（2026-08-10）
+
+- **链路审查修复**：发现「自动建书/绑定后 n8n 进程不重读 .env」——新增
+  `tools/current_book.py` 与「读当前书」节点（64 节点），设定题材的 book_id
+  改从数据库读（fallback env），绑定新书后无需重启 n8n 即切换；validator
+  增加当前书链路断言与字段透传检查（target_words 等）。
+- **前端重构**：`api.js` 统一为 getJSON/postJSON 封装（230 行样板 → 90 行）；
+  `App.jsx` 壳层拆到 `components/Shell.jsx`（TitleBar/Sidebar/Topbar/Toasts/
+  HelpModal/NAV/PAGE_META），App 从 380 行减到约 230 行，聚焦数据与路由；
+  页面组件与文案不变，6 个 Vitest 测试与构建保持全绿。
+- **严谨复查**：全量 144 后端 + 6 前端测试通过；validator 全工作流通过；
+  三份工作流重新部署激活（64/7/4）；服务重启后鉴权实测正常；README 同步
+  64 节点与当前书切换说明。

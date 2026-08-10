@@ -12,76 +12,16 @@ import SettingsPage from "./components/SettingsPage.jsx";
 import CommandPalette from "./components/CommandPalette.jsx";
 import MeetingsPage from "./components/MeetingsPage.jsx";
 import AuditPage from "./components/AuditPage.jsx";
-
-const NAV = [
-  { id: "dashboard", label: "仪表盘", icon: "◈" },
-  { id: "works", label: "作品库", icon: "▤" },
-  { id: "chapters", label: "章节管理", icon: "≡" },
-  { id: "agents", label: "Agent 管理", icon: "◇" },
-  { id: "cost", label: "成本中心", icon: "¥" },
-  { id: "executions", label: "执行记录", icon: "⏱" },
-  { id: "reader", label: "阅读数据", icon: "◔" },
-  { id: "settings", label: "系统设置", icon: "⚙" },
-  { id: "meetings", label: "会议中心", icon: "▦" },
-  { id: "audit", label: "留痕档案", icon: "≡" },
-];
-
-const PAGE_META = {
-  dashboard: ["仪表盘", "流水线实时总览：作品、质量、成本、健康与热点"],
-  works: ["作品库", "每部作品的完整设定：大纲、主角、角色卡与世界规则"],
-  chapters: ["章节管理", "全部章节的写作状态、评分与发布进度"],
-  agents: ["Agent 管理", "编辑每个写作智能体的提示词、模型与温度，保存后一键部署"],
-  cost: ["成本中心", "API 花费按日与按节点统计，控制月预算"],
-  executions: ["执行记录", "日更与周会工作流的最近执行历史与失败详情"],
-  reader: ["阅读数据", "完读率、追读率趋势与读者反馈报告"],
-  settings: ["系统设置", "运行开关、预算、目标字数、更新时间与风格微调"],
-  meetings: ["会议中心", "发起专题会议、围观 Agent 讨论、历次会议记录与决策"],
-  audit: ["留痕档案", "流水线全量事件审计：设置、操作、Agent、发布、预检"],
-};
-
-const TOAST_ICON = { ok: "✓", bad: "✕", warn: "!" };
-const desktopApi = typeof window !== "undefined" ? window.desktopApi || null : null;
-
-function TitleBar() {
-  const [maximized, setMaximized] = useState(false);
-  useEffect(() => {
-    desktopApi?.isMaximized?.().then(setMaximized).catch(() => {});
-  }, []);
-  return (
-    <header className="titlebar">
-      <div className="titlebar-brand">
-        <span className="titlebar-logo">笔</span>
-        <span className="titlebar-name">小说流水线</span>
-        <span className="titlebar-sub">Novel Pipeline Console</span>
-      </div>
-      <div className="titlebar-controls">
-        <button className="win-btn" title="最小化" onClick={() => desktopApi.minimize()}>─</button>
-        <button
-          className="win-btn"
-          title={maximized ? "还原" : "最大化"}
-          onClick={async () => {
-            await desktopApi.maximize();
-            setMaximized(await desktopApi.isMaximized());
-          }}
-        >
-          {maximized ? "❐" : "▢"}
-        </button>
-        <button className="win-btn win-close" title="关闭" onClick={() => desktopApi.close()}>✕</button>
-      </div>
-    </header>
-  );
-}
-
-function SidebarSkeleton() {
-  return (
-    <aside className="sidebar">
-      <div className="skeleton mb-4 h-9 w-44" />
-      {Array.from({ length: 8 }).map((_, i) => (
-        <div key={i} className="skeleton mb-2 h-8 w-full" />
-      ))}
-    </aside>
-  );
-}
+import {
+  HelpModal,
+  NAV,
+  Sidebar,
+  SidebarSkeleton,
+  TitleBar,
+  Toasts,
+  Topbar,
+  desktopApi,
+} from "./components/Shell.jsx";
 
 export default function App() {
   const pageFromHash = () => {
@@ -250,68 +190,18 @@ export default function App() {
     <div className={`app-shell ${mini ? "mini-sidebar" : ""}`}>
       {desktopApi ? <TitleBar /> : null}
       <div className="app-body">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-logo">笔</div>
-          {!mini && (
-            <div>
-              <div className="brand-name">小说流水线</div>
-              <div className="brand-sub">Novel Pipeline</div>
-            </div>
-          )}
-        </div>
-
-        <nav>
-          {NAV.map((n) => (
-            <div
-              key={n.id}
-              className={`nav-item ${page === n.id ? "active" : ""}`}
-              title={mini ? n.label : undefined}
-              onClick={() => go(n.id)}
-            >
-              <span className="nav-icon">{n.icon}</span>
-              {!mini && n.label}
-            </div>
-          ))}
-        </nav>
-
-        <div className="sidebar-foot">
-          <div className={`mb-2 flex items-center ${mini ? "justify-center" : ""}`}>
-            <span className={`dot ${online ? "ok" : "bad"}`} />
-            {!mini && <>n8n {online ? "在线" : "离线"}</>}
-          </div>
-          {!mini && (
-            <>
-              <div>数据更新 {liveSnapshot?.updated_at || data?.updated_at || "—"}</div>
-              <button className="sidebar-mini-btn" onClick={toggleMini}>⇤ 收起侧栏</button>
-            </>
-          )}
-          {mini && (
-            <button className="sidebar-mini-btn" onClick={toggleMini} title="展开侧栏">⇥</button>
-          )}
-        </div>
-      </aside>
+      <Sidebar
+        page={page}
+        go={go}
+        mini={mini}
+        toggleMini={toggleMini}
+        online={online}
+        liveSnapshot={liveSnapshot}
+        data={data}
+      />
 
       <main className="main">
-        <header className="topbar">
-          <div>
-            <div className="topbar-title">{PAGE_META[page][0]}</div>
-            <div className="topbar-sub">{PAGE_META[page][1]}</div>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="muted hidden text-xs tabular-nums sm:inline">
-              {now.toLocaleDateString("zh-CN")} {now.toLocaleTimeString("zh-CN", { hour12: false })}
-            </span>
-            {error ? (
-              <span className="chip chip-bad" title={error}>连接失败</span>
-            ) : (
-              <span className="chip chip-ok">● 实时</span>
-            )}
-            <button className="btn" onClick={refresh} disabled={refreshing}>
-              <span className={refreshing ? "spin" : ""}>⟳</span> 刷新
-            </button>
-          </div>
-        </header>
+        <Topbar page={page} now={now} error={error} refreshing={refreshing} refresh={refresh} />
 
         <div className="content fade-page">
           <ErrorBoundary>
@@ -330,14 +220,7 @@ export default function App() {
       </main>
       </div>
 
-      <div className="toast-wrap">
-        {toasts.map((t) => (
-          <div key={t.id} className={`toast toast-${t.kind}`}>
-            <span className="toast-icon">{TOAST_ICON[t.kind]}</span>
-            {t.text}
-          </div>
-        ))}
-      </div>
+      <Toasts toasts={toasts} />
 
       <CommandPalette
         onRefresh={refresh}
@@ -347,34 +230,7 @@ export default function App() {
         theme={theme}
       />
 
-      {helpOpen ? (
-        <div className="modal-mask" onMouseDown={(e) => e.target === e.currentTarget && setHelpOpen(false)}>
-          <div className="modal confirm-modal">
-            <div className="modal-head">
-              <div className="text-sm font-bold">键盘快捷键</div>
-              <button className="btn !px-2 !py-0.5 text-sm" onClick={() => setHelpOpen(false)}>✕</button>
-            </div>
-            <div className="modal-body">
-              <div className="flex flex-col gap-2 text-sm">
-                {[
-                  ["1 – 8", "切换页面"],
-                  ["Ctrl+K", "打开命令面板"],
-                  ["Ctrl+R", "刷新数据"],
-                  ["?", "显示/隐藏本帮助"],
-                ].map(([keys, desc]) => (
-                  <div key={keys} className="flex items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--code-bg)] px-3 py-2">
-                    <kbd className="code text-xs text-[var(--accent-text)]">{keys}</kbd>
-                    <span className="text-xs text-[var(--text)]">{desc}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="muted mt-4 text-xs leading-relaxed">
-                在输入框内打字时数字键不会触发页面切换。更多操作（立即更新、切换主题等）用 Ctrl+K 命令面板。
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );
 }

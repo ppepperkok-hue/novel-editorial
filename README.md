@@ -13,7 +13,7 @@ Python 记忆/知识层（SQLite）+ 番茄 HTTP 发布 + Electron 桌面控制�
 - [一、核心指标](#一核心指标)
 - [二、架构总览](#二架构总览)
 - [三、快速开始](#三快速开始)
-- [四、自动日更流水线（63 节点）](#四自动日更流水线63-节点)
+- [四、自动日更流水线（64 节点）](#四自动日更流水线64-节点)
 - [五、多 Agent 系统（11 位）](#五多-agent-系统11-位)
 - [六、知识体系与成长闭环](#六知识体系与成长闭环)
 - [七、热点采集（HTML + 浏览器双轨）](#七热点采集html--浏览器双轨)
@@ -43,7 +43,7 @@ Python 记忆/知识层（SQLite）+ 番茄 HTTP 发布 + Electron 桌面控制�
 ## 二、架构总览
 
 ```text
-[n8n 日更工作流 · 63 节点]              [n8n 周会工作流 · 7 节点]        [n8n 知识管家 · 4 节点]
+[n8n 日更工作流 · 64 节点]              [n8n 周会工作流 · 7 节点]        [n8n 知识管家 · 4 节点]
   每日 08:00 / 手动 webhook                每周日 08:10 / 手动              每日 03:30 / 手动
   ├─ 备份 → 预检 → 查章节号 → 生成作品资料  ├─ 采集热点(双轨)                ├─ 读热点/知识包/草稿/质量反馈
   ├─ 读本地资料(记忆包) → Planner → 守护    ├─ 读上下文(周会材料+简报)       ├─ 博闻维护知识库
@@ -120,7 +120,7 @@ python run_tests.py
 cd webapp && npm test && npm run build
 ```
 
-## 四、自动日更流水线（63 节点）
+## 四、自动日更流水线（64 节点）
 
 日更工作流 `n8n/novel_workflow.json`（n8n 工作流 ID `SkLUnm3uRyBSY84F`）是整条流水线的核心。
 节点按阶段划分如下。
@@ -504,7 +504,7 @@ novel-pipeline/
 ├── webapp/                   # React + Vite 前端（Electron 壳加载 dist）
 ├── desktop/                  # Electron 壳（main/preload/release.js）
 ├── web/                      # 旧版单文件 HTML 兜底页（web_api 在 dist 缺失时回退）
-├── n8n/                      # 三个工作流 JSON（日更 63 节点 / 周会 7 节点 / 知识管家 4 节点）
+├── n8n/                      # 三个工作流 JSON（日更 64 节点 / 周会 7 节点 / 知识管家 4 节点）
 ├── docs/                     # evolution / planning / research
 ├── ai_words.json             # 共享 AI 味词表（Python 质量门与 n8n 质量门同源）
 ├── tests/                    # 136 个后端 unittest + 前端 Vitest
@@ -602,6 +602,9 @@ n8n 质量门对正文截断无重试断言（max_tokens 已上调缓解）、�
 - **数据库路径约定**：n8n 三份工作流的 executeCommand 固定使用 `demo.db`
   （相对 PIPELINE_ROOT）；`web_api --db 其他库` 只影响面板/专题会议，若使用其他库
   需同步修改工作流的 `--db` 参数保持一致。
+- **当前书自动切换**：日更工作流通过「读当前书」节点从数据库取活跃作品
+  （publishing/finishing 的最新一本），不再依赖 n8n 进程缓存的环境变量——
+  自动建书/绑定后无需重启 n8n，日更即切到新书；`FANQIE_BOOK_ID` 仅作兜底。
 - **8001 兼容实例**：8001 是历史保留的第二个面板实例（同一数据库，WAL 并发安全）；
   日常只使用 8000。
 

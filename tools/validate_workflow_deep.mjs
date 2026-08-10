@@ -140,6 +140,24 @@ for (const file of files) {
         issues.push(`${file}: bible init chain broken ${src} -> ${dst}`);
       }
     }
+    // live book binding: 预检通过? -> 读当前书 -> 查存稿; 设定题材 must read
+    // the book from the database (n8n env does not refresh on bind).
+    for (const [src, dst] of [
+      ["预检通过?", "读当前书"],
+      ["读当前书", "查存稿"],
+    ]) {
+      const targets = (conns[src]?.main?.[0] || []).map((x) => x.node);
+      if (!targets.includes(dst)) {
+        issues.push(`${file}: current-book chain broken ${src} -> ${dst}`);
+      }
+    }
+    const topicNode = nodes.find((n) => n.name === "设定题材");
+    if (topicNode) {
+      const topicJson = JSON.stringify(topicNode.parameters);
+      if (!/JSON\.parse\(\(\$\('读当前书'\)/.test(topicJson)) {
+        issues.push(`${file}: 设定题材 book_id does not read 读当前书`);
+      }
+    }
     // reviewing/memory agents must see the bible (characters/relations/world)
     // in their task; otherwise first-run OOC/setting checks are blind.
     for (const name of [

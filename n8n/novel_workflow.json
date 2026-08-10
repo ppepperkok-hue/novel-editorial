@@ -60,7 +60,7 @@
             {
               "id": "a6",
               "name": "book_id",
-              "value": "={{ $env.FANQIE_BOOK_ID }}",
+              "value": "={{ JSON.parse(($('读当前书').first().json.stdout || '{}')).book_id || $env.FANQIE_BOOK_ID }}",
               "type": "string"
             }
           ]
@@ -1975,6 +1975,23 @@
           "cwd": "={{ $env.PIPELINE_ROOT }}"
         }
       }
+    },
+    {
+      "id": "n-current-book",
+      "name": "读当前书",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        80,
+        460
+      ],
+      "parameters": {
+        "command": "={{ $env.PYTHON_EXE }}",
+        "commandArguments": "={{ ['tools/current_book.py', '--db', 'demo.db'] }}",
+        "options": {
+          "cwd": "={{ $env.PIPELINE_ROOT }}"
+        }
+      }
     }
   ],
   "connections": {
@@ -2494,7 +2511,7 @@
       "main": [
         [
           {
-            "node": "查存稿",
+            "node": "读当前书",
             "type": "main",
             "index": 0
           }
@@ -2685,6 +2702,17 @@
         [
           {
             "node": "守护细纲",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "读当前书": {
+      "main": [
+        [
+          {
+            "node": "查存稿",
             "type": "main",
             "index": 0
           }
