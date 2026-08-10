@@ -38,6 +38,7 @@ Python 记忆/知识层（SQLite）+ 番茄 HTTP 发布 + Electron 桌面控制�
 | 平台 | 番茄小说（Cookie + CSRF 鉴权） | `~/.n8n/.env` 的 `FANQIE_COOKIE` / `FANQIE_CSRF_TOKEN` |
 | 发布方式 | 存稿池优先：有存货发存货，没存货现造 | `tools/check_stock.py` + `tools/publish_stock.py` |
 | 健康线 | 存稿池 < 3 章触发断更预警 | `novel_pipeline/scheduler.py` 的 `SAFE_BACKLOG` |
+| 测试基线 | 134 个后端 unittest + 6 个前端 Vitest | `python run_tests.py` / `cd webapp && npm test` |
 
 ## 二、架构总览
 
@@ -50,7 +51,8 @@ Python 记忆/知识层（SQLite）+ 番茄 HTTP 发布 + Electron 桌面控制�
   │   → 主编终审 → 质量门 → 排版 → 提炼剧情 ├─ 蒸馏经验 → 落盘决策
   ├─ 查存稿 → 发布存稿(三步) / 新建草稿     └─ 封面提示词落盘
   ├─ 提交发布 → 校验 → 复核
-  └─ 汇总 → 记录作品资料 → 采集阅读数据 → 全员写日记 → 同步设定知识库
+  ├─ 汇总 → 记录作品资料 → 采集阅读数据 → 全员写日记 → 同步设定知识库 → 结束
+  └─ 存稿分支：发布存稿 → 采集阅读数据 → 全员写日记 → 同步设定知识库 → 结束
                        │
                        ▼
         Python 本地代理 POST /api/agent/run（DeepSeek function calling：
@@ -77,7 +79,9 @@ Python 记忆/知识层（SQLite）+ 番茄 HTTP 发布 + Electron 桌面控制�
 
 ## 三、快速开始
 
-环境要求：Python 3.9+、Node.js 18+、n8n（自托管）、番茄小号（已完成实名认证）。
+环境要求：Python 3.9+（仅标准库即可运行流水线与测试）、Node.js 18+、n8n（自托管）、
+番茄小号（已完成实名认证）。桌面 `desktop.py` 后备入口需要 `pip install -e ".[desktop]"`
+（pywebview）。
 
 ```bash
 # 1. 安装
@@ -90,6 +94,7 @@ cd ../desktop && npm install
 #    DEEPSEEK_API_KEY / FANQIE_COOKIE / FANQIE_CSRF_TOKEN
 #    COST_PRO_PER_1K / COST_FLASH_PER_1K / MONTHLY_BUDGET / N8N_API_KEY
 #    PYTHON_EXE / PIPELINE_ROOT（n8n executeCommand 运行环境，换机器只改这里）
+#    PANEL_TOKEN（可选，写接口的 Bearer 加固）
 
 # 3. 启动控制台 API（8000 端口，Electron 会自动拉起）
 python -m novel_pipeline.web_api --db demo.db --port 8000
@@ -101,7 +106,8 @@ cd desktop && npm run dist             # 或构建 NSIS 安装包
 # 5. 部署工作流（先渲染，再导入 n8n）
 python tools/render_workflow.py
 node tools/validate_workflow_deep.mjs
-# 导入 n8n/novel_workflow.json、architect_weekly.json、knowledge_keeper.json 并激活
+# 导入 n8n/novel_workflow.json、architect_weekly.json、knowledge_keeper.json 并激活；
+# 也可以在「Agent 管理」页保存任一 Agent 后点「部署」完成日更工作流推送。
 
 # 6. 演示数据（可选）
 python -m novel_pipeline.seed_demo --chapters 5 --published 2 --reviewed 2
@@ -129,11 +135,15 @@ cd webapp && npm test && npm run build
   2. **当日幂等**：今日已有 `published` 章节则跳过，防重复发布；
   3. **预算熔断**：本月 `cost_logs` 累计 ≥ 预算则跳过；
   4. **并发锁**：`n8n_tmp/daily.lock`（O_EXCL 原子创建）防止定时与手动同时触发双发；
-     进程死后锁文件自动回收，运行结束由 `tools/release_lock.py` 释放。
+     Windows 下用 OpenProcess 检测进程存活（不会误杀进程），锁龄超过 2 小时才按
+     陈旧回收（正常一次日更 15+ 次 LLM 调用可能超过 30 分钟）；运行结束由
+     「结束」节点释放。
 
 ### 4.2 作品资料与记忆包
 
-- **查章节号**：调番茄 `book_list/v0` 拿 `chapter_number`（下一章号），A 章 = N、B 章 = N+1。
+- **查章节号**：调番茄 `book_list/v0` 拿 `chapter_number`，按「当前最大章号 +1」算
+  A 章 = N、B 章 = N+1；`chapter_number` 的真实语义（是否本身已是下一章号）需真实
+  登录态核对，见「已知限制」。
 - **生成作品资料**：`work_meta` Agent 生成书名/简介/标签/主角名/卷目标；只有书还是默认名或
   简介过短时才调 `modify_book/v0` 提交番茄，避免每轮覆盖已有资料。
 - **读本地资料**：`tools/get_meta.py` 组装「写前记忆包」，这是连贯性的关键——每章生成前注入：
@@ -153,9 +163,13 @@ cd webapp && npm test && npm run build
 5. **审稿A/B**（flash）：六类底线问题——时间线矛盾 / 设定崩坏 / 人物 OOC / 重复情节 / 信息泄露 / 伏笔死结；
 6. **读者审稿A/B**（flash）：追读欲、章末钩子、情绪满足评分；
 7. **主编终审A/B**（flash）：仲裁审稿与读者审稿冲突，输出 `verdict` 与 `must_fix`；
-8. **质量门A/B**（确定性代码）：终审 `passed=true` 且正文字数 ≥1500 才放行，否则该分支失败并短路。
+8. **质量门A/B**（确定性代码）：终审 `passed=true` 且正文字数 ≥1500 才放行；
+   机械质量（AI 高频词/感叹号/省略号/字数）与终审任一不过都返回 `passed:false`
+   （不再抛错中断 B 轨），失败原因随汇总落库。
 
-A/B 双轨互相隔离：质量门失败只在排版处短路，另一章照常发布；失败原因写库，次日可人工补发。
+A/B 双轨互相隔离：质量门失败在排版处短路（不建草稿、不发布），另一章照常生成发布；
+**失败显式留痕**——质量门失败章节落库为 `draft` + 错误原因（publish_logs 可见），
+发布失败章节保留 `reviewed` 进存稿池，次日由「发布存稿」自动补发。
 
 ### 4.4 排版、提炼与发布
 
@@ -166,14 +180,18 @@ A/B 双轨互相隔离：质量门失败只在排版处短路，另一章照常�
 - **查存稿 / 存稿充足？ / 发布存稿**：`tools/check_stock.py` 读存稿池（`reviewed` 章节）与本次目标；
   有存货直接 `tools/publish_stock.py` 发布，没存货走「新建草稿 → 保存内容 → 提交发布」实时链路。
   存货策略让测试期多余章节自动留存，断更时也不至于空窗。
-- **发布三步**（接口经 OpenNovel 等开源实现交叉验证）：`new_article/v0` 拿 `item_id`+`volume_id` →
+- **发布三步**（接口经 OpenNovel 等开源实现交叉验证，真实上线前需账号实测）：
+  `new_article/v0` 拿 `item_id`+`volume_id` →
   `cover_article/v0` 保存标题正文 → `publish_article/v0` 提交审核（`use_ai=2` 声明 AI 创作）。
-- **校验发布 / 复核发布**：发布后查 `chapter_list/v1` 确认状态，失败即短路。
+- **校验发布 / 复核发布**：n8n 链路发布后查 `chapter_list/v1` 确认状态，失败即短路；
+  Python 工具链（`publish_stock.py` / `FanqieHttpAdapter`）发布后做 best-effort 复核，
+  未在列表中找到会返回警告而不阻塞。
 
 ### 4.5 收尾沉淀
 
-- **汇总运行结果 → 记录作品资料**：`tools/record_work.py` 把整轮结果落库：作品信息 upsert、
-  角色 upsert、分卷、章节（正文进 `chapter_content`）、发布日志、成本（按模型单价折算）。
+- **汇总运行结果 → 记录作品资料**：`tools/record_work.py` 把整轮结果落库：作品信息 upsert
+  （**不覆盖既有状态机**，finished 书不会被复活）、角色 upsert（保留配角状态）、分卷、
+  章节（正文进 `chapter_content`）、发布日志、成本（按模型单价折算，`run_id` 幂等去重）。
 - **采集阅读数据**：`tools/collect_reader_stats.py` 调番茄章节数据接口，写
   `demo_data/reader_stats.csv`（章节、完读率、追读率）。
 - **全员写日记**：`tools/write_diaries.py --mode daily` 让 11 位 Agent 各写一条当日日记
@@ -181,10 +199,14 @@ A/B 双轨互相隔离：质量门失败只在排版处短路，另一章照常�
 - **同步设定知识库**：`tools/novel_knowledge.py --sync-latest` 把最近章节的角色状态/事件/时间线
   同步进每书设定知识库（版本化，历史可查）。
 
+两条触发路径（现造 / 存稿充足）都汇入完整收尾链：采集阅读数据 → 全员写日记 →
+同步设定知识库 → 结束；「发布存稿」位于两条路径的汇合处，存稿分支先发存货再收尾。
+
 ## 五、多 Agent 系统（11 位）
 
-所有 Agent 的人格资产在 `prompts/agents/*.md`，文件头 frontmatter 记录 `model` 与
-`temperature`，正文是人物档案 + 三种模式指令（日常任务 / 日记周记 / 会议发言）。
+所有 Agent 的人格资产在 `prompts/agents/*.md`，文件头 frontmatter 记录 `model`、
+`temperature` 与可选 `max_tokens`，正文是人物档案 + 三种模式指令（日常任务 / 日记周记 /
+会议发言）。
 
 | Agent | 文件 | 模型 | 职责 |
 | --- | --- | --- | --- |
@@ -226,7 +248,8 @@ Agent 首轮携带 `get_knowledge`（通用写作知识包）与 `get_novel_know
 工具声明（不传 `tool_choice`，兼容 DeepSeek V4 thinking 模式）。模型自主决定是否调用：
 
 - 发出 `tool_calls` → 本地检索知识包/设定库 → 以 `role:"tool"` 回传 → 第二轮输出最终结果；
-- 无调用则单轮返回；工具调用异常自动降级为无工具单轮并记录，不阻塞流水线。
+- 无调用则单轮返回；第二轮异常自动降级为返回首轮文本并记录；第二轮若模型仍发出多余
+  `tool_calls` 会被显式标注 ignored（两轮策略），不阻塞流水线。
 
 知识包不常驻上下文，避免长文提示词膨胀；短硬规则（去 AI 味黑名单）以 `generic` 类型常驻。
 
@@ -304,7 +327,7 @@ render + deploy 到 n8n，拒绝则归档。这样 Agent 的成长来自「会�
 适合「讨论下一本书写什么」「这个剧情怎么发展」等即兴议题：
 
 - 每轮结束停在 `awaiting_input`，用户可插入指示（如「聚焦男频玄幻」）再继续下一轮，
-  或点「结束讨论并总结」；20 轮硬上限兜底；
+  或点「结束讨论并总结」；到达 20 轮自动封顶结束（不再等待用户操作）；
 - 直播式展示：像群聊一样按轮次显示每位 Agent 的自然发言与知识工具调用标签；
 - 结束后归档 `weekly_meetings(kind='topic')` + 每位参会者写 meeting 记忆 + 决策统一落盘；
 - 刷新页面可恢复进行中的会议。
@@ -400,10 +423,15 @@ render + deploy 到 n8n，拒绝则归档。这样 Agent 的成长来自「会�
   n8n 仅监听 `127.0.0.1`；
 - web_api 强制绑定 `127.0.0.1`（拒绝 `--host` 暴露到局域网）；所有请求校验 Origin 必须为
   本机（跨站 CSRF 直接 403），POST 拒绝 `text/plain`（堵死 no-cors 简单请求）；可选
-  `PANEL_TOKEN`：配置后非浏览器调用（脚本/n8n）必须带 Bearer 头，n8n 节点由渲染器自动注入；
-- 知识包读写做路径穿越防护（resolve 后必须仍在知识库目录内），静态服务同样防目录逃逸；
+  `PANEL_TOKEN`：配置后「POST 且无 Origin」的写请求必须带 Bearer 头（浏览器与 GET 不受
+  影响，面板可正常打开；n8n 节点由渲染器自动注入）。注意这是本机信任模型下的纵深防御，
+  无法防住能伪造本机 Origin 头的本地进程；
+- POST 请求体上限 5MB；500 响应不向客户端泄露内部异常（写入 `alerts.log`）；
+- 知识包读写与 Agent 提示词保存都做路径穿越防护（resolve 后必须仍在对应目录内且为
+  `.md`），静态服务同样防目录逃逸；
 - 预检熔断：Cookie 失效、预算超限、当日重复、并发锁四重防护，任一命中即短路并告警；
-- 发布失败短路不丢记录：失败章状态写库、A/B 分支隔离，次日可补发；
+- 发布失败短路不丢记录：质量门失败标 draft + 错误、发布失败保留 reviewed，A/B 分支隔离，
+  次日可补发；autopilot 路径同样写 publish_logs；
 - 知识包缩水保护（新正文 < 原 50% 转人工草稿）；会议 20 轮上限；热点单源失败不阻塞；
 - 番茄发布强制 `use_ai=2` 声明 AI 创作，发布日志记录 `ai_declared`，合规透明。
 
@@ -419,7 +447,7 @@ novel-pipeline/
 │   ├── services/            # 服务层：dashboard/control/n8n/agents/audit/misc/
 │   │                        #   meeting_session/ending/knowledge
 │   ├── planner.py / pipeline.py / quality_gate.py / novel_flow.py
-│   ├── publisher.py / scheduler.py / autopilot.py      # 骨架发布与调度
+│   ├── publisher.py / scheduler.py / autopilot.py      # 发布适配器 / 调度 / 计划任务
 │   ├── monitor.py / economics.py / data_feedback.py    # 监控/测算/反馈
 │   ├── backup.py / compliance.py / hot_topics.py       # 备份/合规/热点
 │   └── desktop.py            # pywebview 后备桌面入口
@@ -441,7 +469,7 @@ novel-pipeline/
 ├── n8n/                      # 三个工作流 JSON（日更 61 节点 / 周会 7 节点 / 知识管家 4 节点）
 ├── docs/                     # evolution / planning / research
 ├── ai_words.json             # 共享 AI 味词表（Python 质量门与 n8n 质量门同源）
-├── tests/                    # 128 个后端 unittest + 前端 Vitest
+├── tests/                    # 134 个后端 unittest + 前端 Vitest
 ├── scripts/install_daily_task.ps1   # Windows 计划任务备选注册脚本
 ├── launch_desktop.vbs        # 开发态桌面一键启动
 └── demo.db / exports / n8n_tmp / backups / hot_topics.json / alerts.log
@@ -465,7 +493,7 @@ node tools/validate_workflow_deep.mjs
 ### 15.2 测试
 
 ```bash
-python run_tests.py          # 128 个后端测试（标准库 unittest）
+python run_tests.py          # 134 个后端测试（标准库 unittest）
 cd webapp && npm test        # 6 个前端 Vitest 测试
 cd webapp && npm run build   # 构建 dist 供 web_api 托管
 ```
@@ -473,14 +501,45 @@ cd webapp && npm run build   # 构建 dist 供 web_api 托管
 覆盖范围：数据库迁移、Planner JSON 校验、质量门、端到端生成（Mock LLM）、调度/存稿池、
 预检熔断、监控、成本测算、备份、热点（html/browser/error 三态）、知识包检索与草稿采纳、
 知识管家、经验蒸馏、会议 dry-run 全链、工具循环三态、自动建书全链路、web_api 端点、
-审计留痕、工作流渲染（保留 TARGET_WORDS 语义）等。
+审计留痕、工作流渲染（保留 TARGET_WORDS 语义）、发布状态机（质量门失败落库/发布失败
+补发）、鉴权与路径穿越、迁移去重（保留已发布章节）、成本超限告警等。
 
 ### 15.3 部署
 
 - 开发态：`launch_desktop.vbs` 或 `python -m novel_pipeline.web_api --db demo.db --port 8000`；
 - 安装版：`cd desktop && npm run dist` 产出 NSIS 安装包；打 tag 后 `--publish always`
   上传 GitHub Releases，客户端自动更新；
-- 备选：`scripts/install_daily_task.ps1` 注册 Windows 计划任务运行 `autopilot`（不依赖 n8n 的模式）。
+- 工作流推送：改完工作流 JSON 后校验并 PUT 到 n8n（前端「Agent 管理 → 部署」只推日更，
+  周会/知识管家需手动导入或调用 n8n API）；
+- 备选：`scripts/install_daily_task.ps1` 注册 Windows 计划任务运行 `autopilot`
+  （不依赖 n8n 的模式，使用 `FanqieHttpAdapter` 真实三步发布，需同样配置
+  `FANQIE_COOKIE` / `FANQIE_CSRF_TOKEN` 与目标字数）。
+
+### 15.4 升级与故障排查
+
+升级流程（保持仓库与线上一致）：
+
+```bash
+git pull
+python run_tests.py                # 后端回归
+python tools/render_workflow.py    # 提示词资产 → 工作流
+node tools/validate_workflow_deep.mjs
+cd webapp && npm test && npm run build
+# 推送三份工作流到 n8n（日更/周会/知识管家），重启 8000/8001 web_api
+```
+
+排查入口：
+
+- **执行记录**：前端「执行记录」页 / n8n Executions，看失败节点与错误；
+- **告警日志**：`alerts.log`（预检熔断、发布失败、成本超限、API 异常都会写）；
+- **留痕档案**：前端「留痕档案」页（audit_logs：设置/操作/发布/会议/知识全量事件）；
+- **数据**：`demo.db` 的 `publish_logs` / `chapters` / `cost_logs` 是最权威的账本；
+- **恢复备份**：`backups/` 保留最近 3 份（sqlite3 backup API 生成，WAL 一致），
+  恢复即复制最新备份覆盖 `demo.db` 后重启服务。
+
+已知工程债（不影响当前运行）：frontmatter 解析器仍有几处复制、web_api 路由偏长、
+n8n 质量门对正文截断无重试断言（max_tokens 已上调缓解）、前端 charts 分包后仍有
+500KB 警告。
 
 ## 十六、已知限制与风险
 
@@ -493,6 +552,12 @@ cd webapp && npm run build   # 构建 dist 供 web_api 托管
 - **测试数据**：`demo.db` 当前无作品（已清空旧书）；首次日更会从选题会结论或手动创建新书开始。
 - **番茄 `chapter_number` 语义待核对**：算章节号按「返回值为当前最大章号 +1」处理；
   若真实 API 返回的本身就是下一章号，会产生跳号，需以真实登录态实测确认。
+- **番茄接口真实上线前验证**：三步发布接口与建书接口目前只有开源实现交叉验证与本地
+  测试，正式发布第一本前需用真实账号跑通一次。
+- **PANEL_TOKEN 边界**：本机信任模型下的纵深防御；能伪造本机 Origin 头的本地进程
+  无法被它阻止。
+- **写手截断**：max_tokens 4000 缓解了截断，但 n8n 侧没有「结尾完整性」检测，若模型
+  输出被截断且字数仍达标，会进入发布链（质量门只拦字数不足）。
 
 ## 十七、后续路线
 

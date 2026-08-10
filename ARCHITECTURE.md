@@ -23,7 +23,7 @@ novel-pipeline/
 ├── desktop/                 # Electron 壳（main/preload/release.js）
 ├── n8n/                     # n8n 工作流 JSON（日更 61 节点 / 周会 7 节点 / 知识管家 4 节点）
 ├── docs/                    # evolution / planning / research
-├── tests/                   # 120 个后端测试 + 前端 Vitest
+├── tests/                   # 134 个后端测试 + 前端 Vitest
 └── demo.db / exports / n8n_tmp / backups  # 运行数据
 ```
 
@@ -36,11 +36,10 @@ n8n 每日 08:00 或 Webhook 手动补更
   → 生成作品资料（DeepSeek，仅默认书名时提交修改）
   → 生成两章章纲（Planner，带钩子类型/节奏标注）
   → 写手A/B（记忆包 + 章纲 + 去 AI 味/辞藻平实规则）
-  → 润色/审稿/质量门（连贯性 + 爽点 + AI 词检查）
-  → 直发成功章节落库 status=published（失败保留 reviewed 供补发）
+  → 润色/审稿/质量门（AI 词表来自共享 ai_words.json；质量门失败显式落库 draft+error）
+  → 直发成功章节落库 status=published、发布失败保留 reviewed 供补发
   → tools/publish_stock.py 按「每批发布章数」从存稿池发布番茄（存稿优先）
-  → tools/write_diaries.py 全员写当日日记（agent_diaries）
-  → tools/novel_knowledge.py 同步每书设定知识库（收尾执行，不在 B 轨）
+  → 两条路径汇入收尾：采集阅读数据 → 全员写日记 → 同步设定知识库 → 结束
   → 前端 web_api（services 层）展示作品库/章节/成本/执行/阅读数据
 
 n8n 每周日 08:10（或手动）
