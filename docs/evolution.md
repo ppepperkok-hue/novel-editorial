@@ -489,3 +489,24 @@ Toast 带图标、执行失败可查看原因弹窗、作品库搜索与批量�
 - **严谨复查**：全量 144 后端 + 6 前端测试通过；validator 全工作流通过；
   三份工作流重新部署激活（64/7/4）；服务重启后鉴权实测正常；README 同步
   64 节点与当前书切换说明。
+
+## 25. 最终全链路走查（2026-08-10）
+
+逐节点提取全部 15 个 Agent 的 task 与提示词日常指令、全部关键 code 节点
+（解析/质量门/排版/整理/汇总/校验/复核/兜底）逐对核对，修复三处隐藏问题：
+
+- **润色截断风险**：editor.md 缺 max_tokens，/api/agent/run 兜底 1600 tokens
+  可能截断 2000+ 字正文（质量门只数已有字数，截断仍可能达标发布）；
+  已加 max_tokens: 4000（A/B 均注入），validator 断言。
+- **质量门硬失败**：审稿/读者/主编输出非 JSON 时质量门 extract throw，n8n
+  无 error 分支会中断整轮（连健康轨一起停）；改为软失败返回 passed:false
+  （失败落库留痕），validator 断言。
+- **复核解析崩溃**：番茄复核接口返回非 JSON（反爬/异常页）时解析复核 throw；
+  已容错输出 unknown 状态，汇总仍可落库，validator 断言。
+- **核对通过项**：15 个 Agent 输出格式与下游解析全部一致（reviewer.passed /
+  reader 三字段 / editor.verdict / guard 双字段 / memory 五字段 / planner bible /
+  work_meta 六字段）；task 与提示词字段一一对应；多分支 return 的字段（质量门
+  editedText）确认通过分支有值、失败分支被空串兜底；合并兜底 try/catch 豁免
+  符合设计。
+- **验证**：后端 144 + 前端 6 全绿；validator 通过；工作流重新部署激活；
+  服务重启后鉴权实测正常。

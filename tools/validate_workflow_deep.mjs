@@ -177,6 +177,26 @@ for (const file of files) {
     )) {
       issues.push(`${file}: 解析本地资料 does not expose target_words`);
     }
+    // final walkthrough guards: quality gates fail softly on bad JSON,
+    // verification nodes tolerate non-JSON bodies, editors get max_tokens.
+    for (const name of ["质量门A", "质量门B"]) {
+      const node = nodes.find((n) => n.name === name);
+      if (node && !/审稿输出非JSON/.test(node.parameters.jsCode || "")) {
+        issues.push(`${file}: ${name} must fail softly on non-JSON review`);
+      }
+    }
+    for (const name of ["解析复核A", "解析复核B"]) {
+      const node = nodes.find((n) => n.name === name);
+      if (node && !/复核响应非JSON/.test(node.parameters.jsCode || "")) {
+        issues.push(`${file}: ${name} must tolerate non-JSON API bodies`);
+      }
+    }
+    for (const name of ["润色A", "润色B"]) {
+      const node = nodes.find((n) => n.name === name);
+      if (node && !/max_tokens:4000/.test(node.parameters.jsonBody || "")) {
+        issues.push(`${file}: ${name} is missing max_tokens (truncation risk)`);
+      }
+    }
   }
 
   // 5. executeCommand nodes: parameterized command + args + relative cwd.
