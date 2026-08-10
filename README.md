@@ -26,6 +26,7 @@ Python 记忆/知识层（SQLite）+ 番茄 HTTP 发布 + Electron 桌面控制�
 - [十四、目录结构](#十四目录结构)
 - [十五、开发、测试与部署](#十五开发测试与部署)
 - [十六、已知限制与风险](#十六已知限制与风险)
+- [十六、运行环境约束与工程决策](#十六运行环境约束与工程决策)
 - [十七、后续路线](#十七后续路线)
 
 ## 一、核心指标
@@ -624,6 +625,35 @@ n8n 质量门对正文截断无重试断言（max_tokens 已上调缓解）、�
   `continueErrorOutput`——失败数据沿 error 分支到「失败留痕」，汇总为其补写
   draft+error；A 轨失败时 B 轨不发布但失败可见。Planner/生成作品资料失败直接
   短路（工作流报错，Executions 页面可查）。
+
+## 十六、运行环境约束与工程决策
+
+### n8n 2.8 兼容性（重要）
+
+- 本机 n8n 2.8.4 的 Execute Command 节点只有 v1 单命令形式：`commandArguments` 与 `options.cwd` 会被静默忽略。工作流所有 executeCommand 一律写成 `cd /d $env.PIPELINE_ROOT && $env.PYTHON_EXE <args>` 单命令串。
+- Code 节点内禁用 `process`：环境变量一律用 `$env`；`fs/path` 需在 `~/.n8n/.env` 配置 `NODE_FUNCTION_ALLOW_BUILTIN=fs,path`。
+- HTTP Request 节点超时参数必须放在 `options.timeout`（默认 300s，agent LLM 调用可能 10min+，已设为 900s）。
+- 定时触发时区：`GENERIC_TIMEZONE=Asia/Shanghai` 必须写入 `~/.n8n/.env`，否则按系统时区（美东）触发。
+
+### 日更防并发
+
+- 运行锁按数据库文件派生（`n8n_tmp/{db}.lock`），由 preflight / autopilot / release_lock 三处统一管理；锁 2 小时内视为占用（时间制，不依赖短命 PID），防止定时与手动重复发布。
+- merge 节点在无输入时输出空数组会截断收尾链（汇总/日记/释放锁），「非空兜底」节点用 `alwaysOutputData` 保证收尾必跑。
+
+### 题材与书隔离
+
+- check_stock 从 novels 表读当前 publishing 书的题材/书名/关键词（settings 仅作无书兜底）；「设定题材」从 executeCommand 的 stdout 解析 JSON。
+- 「算章节号」在番茄占位书名与本地书名不一致时强制 meta_needed=true；「生成作品资料」会收到本地正式书名提示。
+
+### LLM 输出健壮性
+
+- DeepSeek V4 会偶发空 content 或把长文包成 `{"text":...}`：agent_tool_loop 空内容重试 3 次，并在返回前统一解包 text 字段。
+- 截断的 JSON（Planner/作品资料/审稿）由 tryParse 修复器兜底（去尾逗号、补括号），质量门在审稿层全缺失时降级为机械检查。
+- 写手/润色 max_tokens 已上调（8000），prompt 强制「直接输出正文，不要 JSON/markdown」。
+
+### 验证
+
+- `python run_tests.py`：145 个测试全绿；`node tools/validate_workflow_deep.mjs` 校验三个工作流。
 
 ## 十七、后续路线
 
