@@ -92,3 +92,21 @@ export const updateDiary = (id, content) =>
   postJSON("/api/diaries/update", { id, content });
 export const updateAgentState = (agent, novelId, mood) =>
   postJSON("/api/agent_states/update", { agent, novel_id: novelId, mood });
+export const getActivity = (agent, day, limit) => {
+  const q = new URLSearchParams();
+  if (agent) q.set("agent", agent);
+  if (day) q.set("day", day);
+  if (limit) q.set("limit", String(limit));
+  return getJSON("/api/activity?" + q.toString());
+};
+export const getAgentActions = (agent, status, limit) => {
+  const q = new URLSearchParams();
+  if (agent) q.set("agent", agent);
+  if (status) q.set("status", status);
+  if (limit) q.set("limit", String(limit));
+  return getJSON("/api/agent_actions?" + q.toString());
+};
+export const updateAgentAction = (id, status, result, task) =>
+  postJSON("/api/agent_actions/update", { id, status, result, task });
+export const createAgentAction = (payload) =>
+  postJSON("/api/agent_actions/create", payload);

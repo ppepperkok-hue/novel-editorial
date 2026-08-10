@@ -234,6 +234,30 @@ CREATE TABLE IF NOT EXISTS novel_knowledge_history (
     change_note TEXT DEFAULT '',
     created_at TEXT DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS agent_actions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER DEFAULT 0,
+    meeting_id INTEGER DEFAULT 0,
+    agent TEXT NOT NULL,
+    novel_id INTEGER,
+    task TEXT NOT NULL,
+    detail TEXT DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT DEFAULT '',
+    completed_at TEXT DEFAULT '',
+    result TEXT DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS agent_activity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent TEXT NOT NULL,
+    novel_id INTEGER,
+    activity_type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    detail TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT ''
+);
 """
 
 
@@ -313,6 +337,9 @@ def _migrate(conn):
         conn.execute("ALTER TABLE meeting_sessions ADD COLUMN current_agent TEXT DEFAULT ''")
     if "heartbeat_at" not in session_cols:
         conn.execute("ALTER TABLE meeting_sessions ADD COLUMN heartbeat_at TEXT DEFAULT ''")
+    weekly_cols = {r["name"] for r in conn.execute("PRAGMA table_info(weekly_meetings)")}
+    if "session_id" not in weekly_cols:
+        conn.execute("ALTER TABLE weekly_meetings ADD COLUMN session_id INTEGER DEFAULT 0")
     conn.executescript(
         """
         CREATE INDEX IF NOT EXISTS idx_chapters_novel_seq ON chapters(novel_id, seq);
@@ -321,6 +348,10 @@ def _migrate(conn):
         CREATE INDEX IF NOT EXISTS idx_diaries_agent ON agent_diaries(agent, novel_id, diary_type);
         CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at);
         CREATE INDEX IF NOT EXISTS idx_knowledge_lookup ON novel_knowledge(novel_id, category, entity);
+        CREATE INDEX IF NOT EXISTS idx_actions_agent_status ON agent_actions(agent, status);
+        CREATE INDEX IF NOT EXISTS idx_actions_session ON agent_actions(session_id);
+        CREATE INDEX IF NOT EXISTS idx_activity_agent_created ON agent_activity(agent, created_at);
+        CREATE INDEX IF NOT EXISTS idx_activity_created ON agent_activity(created_at);
         """
     )
     # Deduplicate (novel_id, seq) keeping the published row when possible;

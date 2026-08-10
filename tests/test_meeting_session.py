@@ -132,6 +132,10 @@ class MeetingSessionTests(unittest.TestCase):
         with (
             mock.patch("tools.agent_meeting.ask", side_effect=fake_ask),
             mock.patch("time.sleep", side_effect=fake_sleep),
+            mock.patch(
+                "novel_pipeline.services.activity.chat_deepseek",
+                side_effect=RuntimeError("offline"),
+            ),
         ):
             meeting_session._run_locked(self.conn, sid)
 
@@ -148,6 +152,24 @@ class MeetingSessionTests(unittest.TestCase):
             "SELECT COUNT(*) c FROM agent_diaries WHERE diary_type='meeting'"
         ).fetchone()["c"]
         self.assertEqual(n, 6)
+        # Post-meeting actions fall back to rule-based assignment on LLM failure.
+        n_actions = self.conn.execute(
+            "SELECT COUNT(*) c FROM agent_actions WHERE status='pending'"
+        ).fetchone()["c"]
+        self.assertEqual(n_actions, 6)
+        # Activity trace covers every speech plus the chair summary.
+        n_speech = self.conn.execute(
+            "SELECT COUNT(*) c FROM agent_activity WHERE activity_type='meeting_speech'"
+        ).fetchone()["c"]
+        self.assertGreaterEqual(n_speech, 18)
+        n_summary = self.conn.execute(
+            "SELECT COUNT(*) c FROM agent_activity WHERE activity_type='meeting_summary'"
+        ).fetchone()["c"]
+        self.assertEqual(n_summary, 1)
+        weekly = self.conn.execute(
+            "SELECT session_id FROM weekly_meetings ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        self.assertEqual(weekly["session_id"], sid)
 
     def test_advance_with_finish_flag(self):
         self.conn.execute(

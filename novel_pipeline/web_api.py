@@ -286,6 +286,45 @@ def make_handler(db_path):
                         self._json({"diaries": misc_service.list_diaries(conn, agent, dtype, limit)})
                     finally:
                         conn.close()
+                elif path == "/api/activity":
+                    from novel_pipeline.services import activity as activity_service  # noqa: PLC0415
+
+                    conn = db.connect(db_path)
+                    try:
+                        qs = parse_qs(parsed.query)
+                        agent = qs["agent"][0] if qs.get("agent") else None
+                        day = qs["day"][0] if qs.get("day") else None
+                        limit = int(qs["limit"][0]) if qs.get("limit") else 300
+                        self._json(
+                            {
+                                "items": activity_service.list_activity(
+                                    conn, agent=agent, day=day, limit=limit
+                                ),
+                                "days": activity_service.activity_days(
+                                    conn, agent=agent
+                                ),
+                            }
+                        )
+                    finally:
+                        conn.close()
+                elif path == "/api/agent_actions":
+                    from novel_pipeline.services import activity as activity_service  # noqa: PLC0415
+
+                    conn = db.connect(db_path)
+                    try:
+                        qs = parse_qs(parsed.query)
+                        agent = qs["agent"][0] if qs.get("agent") else None
+                        status = qs["status"][0] if qs.get("status") else None
+                        limit = int(qs["limit"][0]) if qs.get("limit") else 200
+                        self._json(
+                            {
+                                "actions": activity_service.list_actions(
+                                    conn, agent=agent, status=status, limit=limit
+                                )
+                            }
+                        )
+                    finally:
+                        conn.close()
                 elif path == "/api/agent_states":
                     conn = db.connect(db_path)
                     try:
@@ -346,6 +385,8 @@ def make_handler(db_path):
                 "/api/ending/create_book",
                 "/api/diaries/update",
                 "/api/agent_states/update",
+                "/api/agent_actions/update",
+                "/api/agent_actions/create",
                 "/api/meetings/start",
                 "/api/meetings/advance",
                 "/api/agent/run",
@@ -408,6 +449,34 @@ def make_handler(db_path):
                     try:
                         result = misc_service.update_state(
                             conn, payload.get("agent"), payload.get("novel_id"), payload.get("mood")
+                        )
+                    finally:
+                        conn.close()
+                elif parsed.path == "/api/agent_actions/update":
+                    from novel_pipeline.services import activity as activity_service  # noqa: PLC0415
+
+                    try:
+                        result = activity_service.update_action(
+                            conn,
+                            int(payload.get("id") or 0),
+                            status=payload.get("status"),
+                            result=payload.get("result"),
+                            task=payload.get("task"),
+                        )
+                    finally:
+                        conn.close()
+                elif parsed.path == "/api/agent_actions/create":
+                    from novel_pipeline.services import activity as activity_service  # noqa: PLC0415
+
+                    try:
+                        result = activity_service.create_action(
+                            conn,
+                            payload.get("agent"),
+                            payload.get("task"),
+                            novel_id=payload.get("novel_id") or 0,
+                            session_id=payload.get("session_id") or 0,
+                            meeting_id=payload.get("meeting_id") or 0,
+                            detail=payload.get("detail") or {},
                         )
                     finally:
                         conn.close()
@@ -719,6 +788,30 @@ def make_handler(db_path):
     return Handler
 
 
+def _fail_orphan_sessions(db_path):
+    """Mark running meetings whose background thread died (e.g. web_api restart)."""
+    from datetime import datetime, timedelta
+
+    from novel_pipeline import db  # noqa: PLC0415
+
+    cutoff = (datetime.now() - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        conn = db.connect(db_path)
+        try:
+            cur = conn.execute(
+                "UPDATE meeting_sessions SET status='failed' "
+                "WHERE status IN ('running','awaiting_input') AND heartbeat_at < ?",
+                (cutoff,),
+            )
+            conn.commit()
+            if cur.rowcount:
+                print(f"failed {cur.rowcount} orphan meeting session(s)")
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001
+        print("orphan session cleanup skipped:", str(exc)[:200])
+
+
 def main():
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -731,6 +824,7 @@ def main():
     args = ap.parse_args()
     if args.host not in ("127.0.0.1", "localhost"):
         raise SystemExit("本机控制台只允许绑定 127.0.0.1，禁止暴露到局域网")
+    _fail_orphan_sessions(args.db)
     server = ThreadingHTTPServer((args.host, args.port), make_handler(args.db))
     print(f"监控面板：http://{args.host}:{args.port}/  （Ctrl+C 停止）")
     try:

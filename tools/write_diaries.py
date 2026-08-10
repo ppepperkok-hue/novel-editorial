@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT))
 
 from novel_pipeline import db  # noqa: E402
 from novel_pipeline.llm_client import chat_deepseek, estimate_cost  # noqa: E402
+from novel_pipeline.services import activity  # noqa: E402
 
 AGENTS_DIR = ROOT / "prompts" / "agents"
 AGENTS = [
@@ -184,6 +185,22 @@ def write(conn, novel_id, mode, dry_run=False, materials=None):
             )
         if not dry_run:
             record_cost(conn, novel_id, agent, usage, model)
+        activity.log_activity(
+            conn,
+            agent,
+            novel_id,
+            "diary",
+            f"写了{('周记' if mode == 'weekly' else '今日日记')}",
+            {
+                "diary_type": mode,
+                "what_done": str((content.get("what_done") or content.get("week_summary") or "")[:200])
+                if isinstance(content, dict)
+                else "",
+                "feelings": str((content.get("feelings") or "")[:100])
+                if isinstance(content, dict)
+                else "",
+            },
+        )
         results.append({"agent": agent, "type": mode, "ok": True})
     clean_old(conn)
     print(json.dumps({"ok": True, "mode": mode, "written": len(results)}, ensure_ascii=False))

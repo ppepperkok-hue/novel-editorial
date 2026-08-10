@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT))
 
 from novel_pipeline import db  # noqa: E402
 from novel_pipeline.llm_client import chat_deepseek, estimate_cost  # noqa: E402
+from novel_pipeline.services import activity  # noqa: E402
 from novel_pipeline.services import knowledge  # noqa: E402
 from tools import architect_weekly, write_diaries  # noqa: E402
 
@@ -485,7 +486,7 @@ def chair_summary(conn, novel_id, attendees, topics, transcript, dry_run, materi
              "cover_prompt": "",
              "disagreements": [], "action_items": []}
         ),
-        max_tokens=2400,
+        max_tokens=4000,
     )
     return parse_json(text) or {"raw": text[:2000]}
 
@@ -542,6 +543,19 @@ def main():
                     args.dry_run, topic=topic,
                 )
                 transcript.append({"round": round_no, "agent": agent, "speech": speech})
+                activity.log_activity(
+                    conn,
+                    agent,
+                    novel_id,
+                    "meeting_speech",
+                    f"会议第 {round_no} 轮发言",
+                    {
+                        "round": round_no,
+                        "kind": args.kind,
+                        "speech": str(speech.get("speech") or "")[:500],
+                        "proposals": speech.get("proposals") or [],
+                    },
+                )
         report = chair_summary(
             conn, novel_id, attendees, topics, transcript, args.dry_run, materials
         )
@@ -555,9 +569,9 @@ def main():
         report["kind"] = args.kind
 
         # archive
-        conn.execute(
-            "INSERT INTO weekly_meetings(held_at,novel_id,attendees,topics,report,status,kind) "
-            "VALUES(?,?,?,?,?,?,?)",
+        cur = conn.execute(
+            "INSERT INTO weekly_meetings(held_at,novel_id,attendees,topics,report,status,kind,session_id) "
+            "VALUES(?,?,?,?,?,?,?,?)",
             (
                 report["date"],
                 novel_id,
@@ -566,9 +580,44 @@ def main():
                 json.dumps(report, ensure_ascii=False),
                 "completed",
                 args.kind,
+                0,
             ),
         )
         conn.commit()
+        weekly_id = cur.lastrowid
+        activity.log_activity(
+            conn,
+            "eic",
+            novel_id,
+            "meeting_summary",
+            "主席总结会议",
+            {
+                "meeting_id": weekly_id,
+                "kind": args.kind,
+                "summary": str(report.get("discussion_summary") or "")[:400],
+                "action_items": len(report.get("action_items") or []),
+            },
+        )
+        try:
+            action_result = activity.generate_post_meeting_actions(
+                conn,
+                0,
+                weekly_id,
+                novel_id,
+                attendees,
+                report,
+                transcript,
+                dry_run=args.dry_run,
+            )
+            print(
+                json.dumps(
+                    {"ok": True, "post_meeting_actions": action_result.get("created", 0)},
+                    ensure_ascii=False,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"note: post-meeting actions skipped: {exc}", file=sys.stderr)
+            conn.commit()
 
         # topic meetings write a meeting memory per attendee
         if args.kind == "topic":

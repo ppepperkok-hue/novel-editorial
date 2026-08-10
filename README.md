@@ -39,7 +39,7 @@ Python 记忆/知识层（SQLite）+ 番茄 HTTP 发布 + Electron 桌面控制�
 | 平台 | 番茄小说（Cookie + CSRF 鉴权） | `~/.n8n/.env` 的 `FANQIE_COOKIE` / `FANQIE_CSRF_TOKEN` |
 | 发布方式 | 存稿池优先：有存货发存货，没存货现造 | `tools/check_stock.py` + `tools/publish_stock.py` |
 | 健康线 | 存稿池 < 3 章触发断更预警 | `novel_pipeline/scheduler.py` 的 `SAFE_BACKLOG` |
-| 测试基线 | 144 个后端 unittest + 6 个前端 Vitest | `python run_tests.py` / `cd webapp && npm test` |
+| 测试基线 | 154 个后端 unittest + 6 个前端 Vitest | `python run_tests.py` / `cd webapp && npm test` |
 
 ## 二、架构总览
 
@@ -375,6 +375,11 @@ render + deploy 到 n8n，拒绝则归档。这样 Agent 的成长来自「会�
   或点「结束讨论并总结」；到达 20 轮自动封顶结束（不再等待用户操作）；
 - 直播式展示：像群聊一样按轮次显示每位 Agent 的自然发言与知识工具调用标签；
 - 结束后归档 `weekly_meetings(kind='topic')` + 每位参会者写 meeting 记忆 + 决策统一落盘；
+- **会后任务**：每位参会 Agent 根据会议结论 + 自己的提案生成 1-3 条行动项
+  （`agent_actions`），落盘为待办；LLM 失败或报告截断时自动按 owner 规则降级分配，
+  保证会议结论不落空；
+- **完整日志回放**：`meeting_sessions.transcript` 保留逐轮逐人发言，周会档案页
+  「查看完整对话」按轮次渲染自然发言与结构化字段；
 - 刷新页面可恢复进行中的会议。
 
 ### 8.3 记忆与心情
@@ -382,6 +387,12 @@ render + deploy 到 n8n，拒绝则归档。这样 Agent 的成长来自「会�
 - `agent_diaries`：daily（每天日更后）+ weekly（周会前）+ meeting（会后），保留 8 周；
 - `agent_states`：每周心情（satisfaction/concern/excitement/fatigue），周会发言带着心情说，
   让 Agent 更像「有状态的人」而不是每次从零开始的函数；
+- `agent_activity`：活动日志（谁、何时、干了什么）——会议发言、主席总结、日记、
+  行动项变更、知识维护全部自动留痕，Agent 管理页按天分组展示，可回答
+  「每个 Agent 今天干了什么」；
+- `agent_actions`：会后任务，状态机 pending → done/skipped；周会材料 `agent_briefs`
+  注入 `my_pending_actions`，Agent 参会与写周记时看到自己的待办，形成
+  「会议结论 → 执行 → 下次会议汇报」闭环；面板支持手动添加、编辑与标记完成；
 - 前端「Agent 管理」页内嵌日记与心情编辑，可直接修改 Agent 的自述内容。
 
 ## 九、自动建书与封面提示词
@@ -421,6 +432,7 @@ render + deploy 到 n8n，拒绝则归档。这样 Agent 的成长来自「会�
 | novel_knowledge / novel_knowledge_history | 每书设定知识库（版本化） | agent 工具、前端 |
 | cost_logs / settings | 成本台账与系统设置 | 预算熔断、成本中心 |
 | agent_diaries / agent_states | Agent 日记/周记/会议记忆 + 心情 | Agent 管理、周会 |
+| agent_actions / agent_activity | 会后行动项（含执行结果）+ 全量活动日志 | Agent 管理、会议中心 |
 | weekly_meetings / meeting_sessions | 周会档案与专题会议状态机 | 会议中心 |
 | knowledge_drafts | 经验卡/知识包更新草稿 | Agent 管理 |
 | audit_logs | 全量留痕（预检/设置/操作/发布/会议/知识） | 留痕档案页 |
@@ -667,6 +679,10 @@ n8n 质量门对正文截断无重试断言（max_tokens 已上调缓解）、�
 - **人物卡进化**：record_work 每章写入 character_evolution（快照/变化/弧线），
   get_meta 注入写前记忆包，周会 `character_updates` 固化角色卡，前端作品库展示
   成长轨迹。
+- **多 Agent 协作留痕与会后任务**：agent_activity 记录每位 Agent 每次工作
+  （发言/总结/日记/任务/知识维护），agent_actions 让会议结论变成可追踪的执行项并
+  注入后续周会材料；设计参考与演进方向见
+  `docs/research/multi_agent_coordination.md`。
 
 ### 待做
 

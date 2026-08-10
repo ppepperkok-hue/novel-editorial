@@ -51,7 +51,19 @@ def load_hot_topics():
         return {}
 
 
-def build_planning_materials():
+def _pending_actions(conn, agent):
+    """Pending post-meeting action items for one agent (empty when no conn)."""
+    if conn is None:
+        return []
+    from novel_pipeline.services import activity  # noqa: PLC0415
+
+    return [
+        a
+        for a in activity.list_actions(conn, agent=agent, status="pending", limit=50)
+    ]
+
+
+def build_planning_materials(conn=None):
     """Materials for a new-book planning meeting (no novel yet)."""
     reader_rows = load_reader_stats()
     latest_reader = reader_rows[-1] if reader_rows else None
@@ -91,20 +103,62 @@ def build_planning_materials():
             "blueprints_upcoming": 0,
             "outline_updated_at": "",
             "recent_summaries_count": 0,
+            "my_pending_actions": _pending_actions(conn, "planner"),
         },
-        "guard": {"open_plot_threads": 0, "chapters_this_week": 0, "setting_conflicts_seen": 0},
-        "writer": {"chapters_this_week": 0, "words_total": 0, "avg_score": 0, "quality_pass_rate": 0},
-        "editor": {"chapters_this_week": 0, "avg_score": 0},
-        "reviewer": {"quality_total": 0, "quality_passed": 0, "avg_score": 0},
+        "guard": {
+            "open_plot_threads": 0,
+            "chapters_this_week": 0,
+            "setting_conflicts_seen": 0,
+            "my_pending_actions": _pending_actions(conn, "guard"),
+        },
+        "writer": {
+            "chapters_this_week": 0,
+            "words_total": 0,
+            "avg_score": 0,
+            "quality_pass_rate": 0,
+            "my_pending_actions": _pending_actions(conn, "writer"),
+        },
+        "editor": {
+            "chapters_this_week": 0,
+            "avg_score": 0,
+            "my_pending_actions": _pending_actions(conn, "editor"),
+        },
+        "reviewer": {
+            "quality_total": 0,
+            "quality_passed": 0,
+            "avg_score": 0,
+            "my_pending_actions": _pending_actions(conn, "reviewer"),
+        },
         "reader": {
             "latest_finish_rate": latest_reader.get("finish_rate") if latest_reader else None,
             "latest_follow_rate": latest_reader.get("follow_rate") if latest_reader else None,
             "avg_score": 0,
+            "my_pending_actions": _pending_actions(conn, "reader"),
         },
-        "memory": {"summaries_count": 0, "open_plot_threads": 0, "character_state_count": 0},
-        "work_meta": {"tags": [], "abstract": "", "volume_goal": ""},
-        "eic": {"quality_total": 0, "quality_passed": 0},
-        "ending_judge": {"published": 0, "target": 0, "open_plot_threads": 0, "last_chapter_seq": 0},
+        "memory": {
+            "summaries_count": 0,
+            "open_plot_threads": 0,
+            "character_state_count": 0,
+            "my_pending_actions": _pending_actions(conn, "memory"),
+        },
+        "work_meta": {
+            "tags": [],
+            "abstract": "",
+            "volume_goal": "",
+            "my_pending_actions": _pending_actions(conn, "work_meta"),
+        },
+        "eic": {
+            "quality_total": 0,
+            "quality_passed": 0,
+            "my_pending_actions": _pending_actions(conn, "eic"),
+        },
+        "ending_judge": {
+            "published": 0,
+            "target": 0,
+            "open_plot_threads": 0,
+            "last_chapter_seq": 0,
+            "my_pending_actions": _pending_actions(conn, "ending_judge"),
+        },
         "knowledge_keeper": {
             "knowledge_packages": len(
                 list((ROOT / "prompts" / "knowledge").glob("*.md"))
@@ -113,6 +167,7 @@ def build_planning_materials():
             ),
             "hot_topics_updated_at": (load_hot_topics() or {}).get("updated_at", ""),
             "pending_drafts": 0,
+            "my_pending_actions": _pending_actions(conn, "knowledge_keeper"),
         },
     }
     return {"context": context, "agent_briefs": agent_briefs}
@@ -122,7 +177,7 @@ def build_materials(conn, novel_id, allow_empty=False):
     """Build meeting materials + per-agent weekly briefs."""
     row = conn.execute("SELECT * FROM novels WHERE id=?", (novel_id,)).fetchone()
     if row is None:
-        return build_planning_materials() if allow_empty else None
+        return build_planning_materials(conn) if allow_empty else None
     outline = json.loads(row["outline"] or "{}")
     bible = outline.get("bible") or {}
     blueprints = outline.get("blueprints") or []
@@ -255,11 +310,13 @@ def build_materials(conn, novel_id, allow_empty=False):
             "blueprints_upcoming": sum(1 for b in blueprints if (b.get("seq") or 0) > context["last_chapter_seq"]),
             "outline_updated_at": row["updated_at"],
             "recent_summaries_count": len(summaries),
+            "my_pending_actions": _pending_actions(conn, "planner"),
         },
         "guard": {
             "open_plot_threads": len(threads),
             "chapters_this_week": w["chapters_this_week"],
             "setting_conflicts_seen": 0,  # detailed guard issues land in the unified trace phase
+            "my_pending_actions": _pending_actions(conn, "guard"),
         },
         "writer": {
             "chapters_this_week": w["chapters_this_week"],
@@ -268,40 +325,48 @@ def build_materials(conn, novel_id, allow_empty=False):
             "quality_pass_rate": (
                 round(100 * quality["passed"] / quality["total"], 1) if quality["total"] else 0
             ),
+            "my_pending_actions": _pending_actions(conn, "writer"),
         },
         "editor": {
             "chapters_this_week": w["chapters_this_week"],
             "avg_score": w["avg_score"],
+            "my_pending_actions": _pending_actions(conn, "editor"),
         },
         "reviewer": {
             "quality_total": quality["total"] or 0,
             "quality_passed": quality["passed"] or 0,
             "avg_score": round(quality["avg_score"] or 0, 1),
+            "my_pending_actions": _pending_actions(conn, "reviewer"),
         },
         "reader": {
             "latest_finish_rate": latest_reader.get("finish_rate") if latest_reader else None,
             "latest_follow_rate": latest_reader.get("follow_rate") if latest_reader else None,
             "avg_score": round(quality["avg_score"] or 0, 1),
+            "my_pending_actions": _pending_actions(conn, "reader"),
         },
         "memory": {
             "summaries_count": len(summaries),
             "open_plot_threads": len(threads),
             "character_state_count": len(char_states),
+            "my_pending_actions": _pending_actions(conn, "memory"),
         },
         "work_meta": {
             "tags": json.loads(row["tags"] or "[]"),
             "abstract": row["abstract"],
             "volume_goal": row["volume_goal"],
+            "my_pending_actions": _pending_actions(conn, "work_meta"),
         },
         "eic": {
             "quality_total": quality["total"] or 0,
             "quality_passed": quality["passed"] or 0,
+            "my_pending_actions": _pending_actions(conn, "eic"),
         },
         "ending_judge": {
             "published": len(published),
             "target": int(settings.get("target_chapters") or 0),
             "open_plot_threads": len(threads),
             "last_chapter_seq": context["last_chapter_seq"],
+            "my_pending_actions": _pending_actions(conn, "ending_judge"),
         },
         "knowledge_keeper": {
             "knowledge_packages": len(
@@ -313,6 +378,7 @@ def build_materials(conn, novel_id, allow_empty=False):
             "pending_drafts": conn.execute(
                 "SELECT COUNT(*) c FROM knowledge_drafts WHERE status='draft'"
             ).fetchone()["c"],
+            "my_pending_actions": _pending_actions(conn, "knowledge_keeper"),
         },
     }
     return {"context": context, "agent_briefs": agent_briefs}

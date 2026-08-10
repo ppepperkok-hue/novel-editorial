@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   actOnDraft,
+  createAgentAction,
   distillLessons,
+  getActivity,
+  getAgentActions,
   getAgentStates,
   getAgents,
   getDiaries,
@@ -11,6 +14,7 @@ import {
   postControl,
   readKnowledge,
   saveKnowledge,
+  updateAgentAction,
   updateAgentState,
   updateDiary,
 } from "../api.js";
@@ -267,6 +271,276 @@ function DraftsPanel({ pushToast }) {
           </div>
         ))}
         {!drafts.length ? <div className="empty">暂无经验卡。周会或专题会议后会自动蒸馏，也可手动点击上方按钮。</div> : null}
+      </div>
+    </section>
+  );
+}
+
+const ACTION_LABELS = {
+  pending: { text: "待办", cls: "chip-warn" },
+  done: { text: "已完成", cls: "chip-ok" },
+  skipped: { text: "已跳过", cls: "chip-info" },
+};
+
+const ACTIVITY_LABELS = {
+  meeting_speech: { text: "会议发言", cls: "chip-info" },
+  meeting_summary: { text: "主席总结", cls: "chip-primary" },
+  diary: { text: "日记", cls: "chip-warn" },
+  action_created: { text: "收到任务", cls: "chip" },
+  action_done: { text: "完成任务", cls: "chip-ok" },
+  action_status: { text: "任务状态", cls: "chip" },
+  knowledge: { text: "知识维护", cls: "chip" },
+  system: { text: "系统", cls: "chip" },
+};
+
+function ActionsPanel({ pushToast }) {
+  const [actions, setActions] = useState([]);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(null); // {id, task, result}
+  const [creating, setCreating] = useState(null); // {agent, task}
+
+  const load = () => {
+    getAgentActions("", statusFilter)
+      .then((r) => setActions(r.actions || []))
+      .catch(() => setActions([]));
+  };
+  useEffect(() => {
+    load();
+  }, [statusFilter]);
+
+  const saveStatus = async (id, status) => {
+    setBusy(true);
+    try {
+      const r = await updateAgentAction(id, status, editing?.id === id ? editing.result : "");
+      pushToast(r.ok ? "行动项已更新" : "更新失败：" + (r.error || "未知"), r.ok ? "ok" : "bad");
+      setEditing(null);
+      load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveTask = async (id) => {
+    if (!editing || !editing.task.trim()) return;
+    setBusy(true);
+    try {
+      const r = await updateAgentAction(id, "", editing.result, editing.task);
+      pushToast(r.ok ? "任务内容已更新" : "更新失败：" + (r.error || "未知"), r.ok ? "ok" : "bad");
+      setEditing(null);
+      load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const create = async () => {
+    if (!creating || !creating.agent || !creating.task.trim()) return;
+    setBusy(true);
+    try {
+      const r = await createAgentAction({
+        agent: creating.agent,
+        task: creating.task,
+        novel_id: 0,
+      });
+      pushToast(r.ok ? "已创建行动项" : "创建失败：" + (r.error || "未知"), r.ok ? "ok" : "bad");
+      setCreating(null);
+      load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="panel p-4">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="section-title !mb-0">会后任务（Agent 行动项）</div>
+        <select
+          className="input ml-auto !w-auto !px-2 !py-1 text-xs"
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+        >
+          <option value="">全部状态</option>
+          <option value="pending">待办</option>
+          <option value="done">已完成</option>
+          <option value="skipped">已跳过</option>
+        </select>
+        <button
+          className="btn !px-3 !py-1 text-xs"
+          onClick={() => setCreating({ agent: "planner", task: "" })}
+        >
+          ＋ 手动添加
+        </button>
+      </div>
+
+      {creating ? (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-[var(--line)] p-3">
+          <select
+            className="input !w-auto !px-2 !py-1 text-xs"
+            value={creating.agent}
+            onChange={(e) => setCreating({ ...creating, agent: e.target.value })}
+          >
+            {["planner", "guard", "writer", "editor", "reviewer", "reader", "memory", "work_meta", "eic", "ending_judge", "knowledge_keeper"].map((a) => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+          <input
+            className="input min-w-[240px] flex-1 !px-2 !py-1 text-xs"
+            placeholder="要交给这个 agent 的任务"
+            value={creating.task}
+            onChange={(e) => setCreating({ ...creating, task: e.target.value })}
+            onKeyDown={(e) => e.key === "Enter" && create()}
+          />
+          <button className="btn btn-ok !px-3 !py-1 text-xs" disabled={busy} onClick={create}>创建</button>
+          <button className="btn !px-3 !py-1 text-xs" onClick={() => setCreating(null)}>取消</button>
+        </div>
+      ) : null}
+
+      <div className="flex flex-col gap-2">
+        {actions.map((a) => {
+          const st = ACTION_LABELS[a.status] || ACTION_LABELS.pending;
+          const editingThis = editing?.id === a.id;
+          return (
+            <div key={a.id} className="card panel-hover p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="chip chip-info">{a.agent}</span>
+                <span className={`chip ${st.cls}`}>{st.text}</span>
+                <span className="muted ml-auto text-xs">{a.created_at}</span>
+                {(a.detail?.due || "") ? <span className="chip">期限：{a.detail.due}</span> : null}
+              </div>
+              {editingThis ? (
+                <div className="mt-2 flex flex-col gap-2">
+                  <input
+                    className="input !px-2 !py-1 text-xs"
+                    value={editing.task}
+                    onChange={(e) => setEditing({ ...editing, task: e.target.value })}
+                  />
+                  <textarea
+                    className="input min-h-[60px] !px-2 !py-1 text-xs"
+                    placeholder="完成结果（可选）"
+                    value={editing.result}
+                    onChange={(e) => setEditing({ ...editing, result: e.target.value })}
+                  />
+                  <div className="flex gap-2">
+                    <button className="btn btn-ok !px-2.5 !py-0.5 text-xs" disabled={busy} onClick={() => saveTask(a.id)}>
+                      保存内容
+                    </button>
+                    <button className="btn !px-2.5 !py-0.5 text-xs" onClick={() => setEditing(null)}>取消</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-1.5 text-sm leading-relaxed text-slate-300">{a.task}</div>
+              )}
+              {!editingThis && (a.detail?.reason || a.detail?.expected_output) ? (
+                <div className="muted mt-1 text-xs">
+                  {a.detail.reason ? `原因：${a.detail.reason}；` : ""}
+                  {a.detail.expected_output ? `预期产出：${a.detail.expected_output}` : ""}
+                </div>
+              ) : null}
+              {!editingThis && a.result ? (
+                <div className="mt-1 text-xs text-emerald-400">结果：{a.result}</div>
+              ) : null}
+              {a.status === "pending" ? (
+                <div className="mt-2 flex gap-2">
+                  <button className="btn !px-2.5 !py-0.5 text-xs" disabled={busy} onClick={() => setEditing({ id: a.id, task: a.task, result: "" })}>
+                    编辑 / 完成
+                  </button>
+                  <button className="btn btn-ok !px-2.5 !py-0.5 text-xs" disabled={busy} onClick={() => saveStatus(a.id, "done", "")}>
+                    直接完成
+                  </button>
+                  <button className="btn !px-2.5 !py-0.5 text-xs" disabled={busy} onClick={() => saveStatus(a.id, "skipped")}>
+                    跳过
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+        {!actions.length ? (
+          <div className="empty">暂无行动项。会议结束后每位参会 agent 会自动生成会后任务。</div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function ActivityPanel({ pushToast }) {
+  const [days, setDays] = useState([]);
+  const [agentFilter, setAgentFilter] = useState("");
+  const [limit, setLimit] = useState(7);
+
+  const load = () => {
+    getActivity(agentFilter || "", "", 600)
+      .then((r) => setDays((r.days || []).slice(0, limit)))
+      .catch(() => setDays([]));
+  };
+  useEffect(() => {
+    load();
+  }, [agentFilter, limit]);
+
+  return (
+    <section className="panel p-4">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="section-title !mb-0">Agent 活动日志（谁、何时、干了什么）</div>
+        <select
+          className="input ml-auto !w-auto !px-2 !py-1 text-xs"
+          value={agentFilter}
+          onChange={(e) => setAgentFilter(e.target.value)}
+        >
+          <option value="">全部 Agent</option>
+          {["planner", "guard", "writer", "editor", "reviewer", "reader", "memory", "work_meta", "eic", "ending_judge", "knowledge_keeper", "system"].map((a) => (
+            <option key={a} value={a}>{a}</option>
+          ))}
+        </select>
+        <select
+          className="input !w-auto !px-2 !py-1 text-xs"
+          value={limit}
+          onChange={(e) => setLimit(Number(e.target.value))}
+        >
+          <option value={3}>近 3 天</option>
+          <option value={7}>近 7 天</option>
+          <option value={30}>近 30 天</option>
+        </select>
+        <button className="btn !px-3 !py-1 text-xs" onClick={load}>刷新</button>
+      </div>
+
+      <div className="flex flex-col gap-4">
+        {days.map((d) => (
+          <div key={d.date}>
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-xs font-bold text-[var(--accent-text)]">{d.date}</span>
+              <span className="muted text-xs">{d.items.length} 条记录</span>
+              <div className="h-px flex-1 bg-[var(--line)]" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {d.items.map((it) => {
+                const lb = ACTIVITY_LABELS[it.activity_type] || { text: it.activity_type, cls: "chip" };
+                return (
+                  <div key={it.id} className="flex items-start gap-2 rounded-lg border border-[var(--line)] bg-[var(--code-bg)] px-3 py-2 text-xs">
+                    <span className={`chip shrink-0 !px-1.5 !py-0.5 ${lb.cls}`}>{lb.text}</span>
+                    <span className="chip shrink-0 chip-info">{it.agent}</span>
+                    <span className="min-w-0 flex-1 leading-relaxed text-slate-300">
+                      <span className="font-semibold">{it.title}</span>
+                      {it.detail?.speech ? (
+                        <span className="muted ml-1">：{String(it.detail.speech).slice(0, 80)}</span>
+                      ) : null}
+                      {it.detail?.what_done ? (
+                        <span className="muted ml-1">：{String(it.detail.what_done).slice(0, 80)}</span>
+                      ) : null}
+                      {it.detail?.task ? (
+                        <span className="muted ml-1">：{String(it.detail.task).slice(0, 80)}</span>
+                      ) : null}
+                    </span>
+                    <span className="muted shrink-0">{(it.created_at || "").slice(11, 19)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        {!days.length ? (
+          <div className="empty">暂无活动记录。会议、日更、日记、知识维护都会自动留痕。</div>
+        ) : null}
       </div>
     </section>
   );
@@ -691,6 +965,8 @@ export default function AgentsPage({ pushToast }) {
         }}
       />
       </div>
+      <ActionsPanel pushToast={pushToast} />
+      <ActivityPanel pushToast={pushToast} />
       <KnowledgePanel pushToast={pushToast} />
       <DraftsPanel pushToast={pushToast} />
     </div>

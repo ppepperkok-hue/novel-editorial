@@ -190,6 +190,53 @@ class WebApiTests(unittest.TestCase):
 
         self.assertFalse((config.ROOT / "escape.md").exists())
 
+    def test_activity_and_actions_endpoints(self):
+        from novel_pipeline.services import activity
+
+        conn = db.connect(self.db_path)
+        activity.log_activity(
+            conn, "writer", 1, "meeting_speech", "meeting speech",
+            {"speech": "hook fast"},
+        )
+        r = activity.create_action(
+            conn, "guard", "build foreshadow ledger", novel_id=1, session_id=3,
+            meeting_id=5, detail={"due": "3 days"},
+        )
+        conn.close()
+
+        with urlopen(f"{self.base}/api/activity", timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        speech_items = [i for i in data["items"] if i["activity_type"] == "meeting_speech"]
+        self.assertEqual(len(speech_items), 1)
+        self.assertEqual(speech_items[0]["detail"]["speech"], "hook fast")
+        self.assertEqual(len(data["days"]), 1)
+
+        with urlopen(f"{self.base}/api/agent_actions?status=pending", timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        self.assertEqual(len(data["actions"]), 1)
+        self.assertEqual(data["actions"][0]["agent"], "guard")
+        self.assertEqual(data["actions"][0]["detail"]["due"], "3 days")
+
+        body = json.dumps(
+            {"id": r["id"], "status": "done", "result": "ledger built"}
+        ).encode("utf-8")
+        req = urlopen(f"{self.base}/api/agent_actions/update", data=body, timeout=10)
+        data = json.loads(req.read().decode("utf-8"))
+        self.assertTrue(data["ok"])
+        with urlopen(f"{self.base}/api/agent_actions?status=done", timeout=10) as resp:
+            done = json.loads(resp.read().decode("utf-8"))
+        self.assertEqual(done["actions"][0]["result"], "ledger built")
+
+        body = json.dumps(
+            {"agent": "reader", "task": "organize reader feedback", "novel_id": 1}
+        ).encode("utf-8")
+        req = urlopen(f"{self.base}/api/agent_actions/create", data=body, timeout=10)
+        data = json.loads(req.read().decode("utf-8"))
+        self.assertTrue(data["ok"])
+        with urlopen(f"{self.base}/api/agent_actions?agent=reader", timeout=10) as resp:
+            created = json.loads(resp.read().decode("utf-8"))
+        self.assertEqual(created["actions"][0]["task"], "organize reader feedback")
+
 
 if __name__ == "__main__":
     unittest.main()

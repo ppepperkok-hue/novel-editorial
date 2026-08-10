@@ -8,6 +8,7 @@ from datetime import datetime
 import novel_pipeline
 from novel_pipeline import config
 from novel_pipeline.services import audit
+from novel_pipeline.services import activity
 from tools import agent_meeting, architect_weekly
 
 _MEETING_LOCK = threading.Lock()
@@ -209,6 +210,19 @@ def _run_locked(conn, session_id):
                     )
                     conn.commit()
                 transcript.append({"round": round_no, "agent": agent, "speech": speech})
+                activity.log_activity(
+                    conn,
+                    agent,
+                    novel_id,
+                    "meeting_speech",
+                    f"会议第 {round_no} 轮发言",
+                    {
+                        "session_id": session_id,
+                        "round": round_no,
+                        "speech": str(speech.get("speech") or "")[:500],
+                        "proposals": speech.get("proposals") or [],
+                    },
+                )
                 conn.execute(
                     "UPDATE meeting_sessions SET transcript=?, updated_at=? WHERE id=?",
                     (json.dumps(transcript, ensure_ascii=False), _now(), session_id),
@@ -248,9 +262,9 @@ def _run_locked(conn, session_id):
         report.setdefault("action_items", [])
         report.setdefault("discussion_summary", "")
 
-        conn.execute(
-            "INSERT INTO weekly_meetings(held_at,novel_id,attendees,topics,report,status,kind) "
-            "VALUES(?,?,?,?,?,?,?)",
+        cur = conn.execute(
+            "INSERT INTO weekly_meetings(held_at,novel_id,attendees,topics,report,status,kind,session_id) "
+            "VALUES(?,?,?,?,?,?,?,?)",
             (
                 report["date"],
                 novel_id,
@@ -259,8 +273,55 @@ def _run_locked(conn, session_id):
                 json.dumps(report, ensure_ascii=False),
                 "completed",
                 "topic",
+                session_id,
             ),
         )
+        conn.commit()
+        weekly_id = cur.lastrowid
+        activity.log_activity(
+            conn,
+            "eic",
+            novel_id,
+            "meeting_summary",
+            "主席总结会议",
+            {
+                "session_id": session_id,
+                "meeting_id": weekly_id,
+                "summary": str(report.get("discussion_summary") or "")[:400],
+                "action_items": len(report.get("action_items") or []),
+            },
+        )
+        # Post-meeting tasks: each attendee turns the conclusions into their
+        # own actionable backlog (flash call per agent, rule fallback on error).
+        try:
+            action_result = activity.generate_post_meeting_actions(
+                conn,
+                session_id,
+                weekly_id,
+                novel_id,
+                attendees,
+                report,
+                transcript,
+                dry_run=False,
+            )
+            audit.log(
+                conn,
+                "meeting",
+                "post_meeting_actions",
+                target_type="session",
+                target_id=session_id,
+                detail={"created": action_result.get("created", 0)},
+            )
+        except Exception as exc:  # noqa: BLE001
+            audit.log(
+                conn,
+                "meeting",
+                "post_meeting_actions_failed",
+                target_type="session",
+                target_id=session_id,
+                detail={"error": str(exc)[:300]},
+            )
+            conn.commit()
         # Persist decisions (blueprints / cover_prompt / next_book) for topic
         # meetings too; skip when no novel exists yet (new-book topic meeting).
         if novel_id:

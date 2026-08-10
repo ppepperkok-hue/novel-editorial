@@ -91,7 +91,7 @@ def export_novels(conn):
 
 def load_meetings(conn, limit=20):
     rows = conn.execute(
-        "SELECT id, held_at, novel_id, attendees, topics, report, status, kind "
+        "SELECT id, held_at, novel_id, attendees, topics, report, status, kind, session_id "
         "FROM weekly_meetings ORDER BY id DESC LIMIT ?",
         (limit,),
     ).fetchall()
@@ -116,6 +116,7 @@ def load_meetings(conn, limit=20):
                 "action_items": report.get("action_items", []),
                 "report": report,
                 "kind": r["kind"] if "kind" in r.keys() else "weekly",
+                "session_id": r["session_id"] if "session_id" in r.keys() else 0,
             }
         )
     return out
