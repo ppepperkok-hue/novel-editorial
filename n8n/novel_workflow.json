@@ -1085,7 +1085,7 @@
         "options": {
           "cwd": "={{ $env.PIPELINE_ROOT }}"
         },
-        "commandArguments": "={{ $json.book_id ? [$env.PYTHON_EXE, 'tools/get_meta.py', $json.book_id] : [$env.PYTHON_EXE, 'tools/get_meta.py'] }}"
+        "commandArguments": "={{ $json.book_id ? ['tools/get_meta.py', $json.book_id] : ['tools/get_meta.py'] }}"
       },
       "id": "n-read-meta",
       "name": "读本地资料",
@@ -1284,7 +1284,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const safe = (name) => { try { const d = $(name).first(); return d ? d.json : null; } catch { return null; } };\nconst meta = safe('解析作品资料') || {};\nconst outline = safe('解析大纲') || { chapter1: {}, chapter2: {} };\nconst ch1 = outline.chapter1 || {};\nconst ch2 = outline.chapter2 || {};\nconst now = new Date().toISOString().slice(0, 19).replace('T', ' ');\nconst runId = new Date().toISOString() + '-' + Math.floor(Math.random() * 1e6);\nconst chapters = [];\nconst pubA = safe('校验发布A');\nconst pubB = safe('校验发布B');\nconst draftA = safe('解析草稿A');\nconst draftB = safe('解析草稿B');\nconst qa = safe('质量门A');\nconst qb = safe('质量门B');\nconst sumA = (safe('整理剧情A') || {}).summary || {};\nconst verifyA = safe('解析复核A');\nconst verifyB = safe('解析复核B');\nconst sumB = (safe('整理剧情B') || {}).summary || {};\nconst aOk = !!(pubA && pubA.published);\nconst bOk = !!(pubB && pubB.published);\nif (draftA && draftA.item_id) {\n  chapters.push({ seq: meta.start_num, title: draftA.title, outline: ch1.outline || '', status: aOk ? 'published' : 'draft', words: Number(qa.chars || 0), fanqie_item_id: draftA.item_id, published_at: aOk ? now : '', error: aOk ? '' : ((pubA && pubA.error) || JSON.stringify(pubA || {}).slice(0, 200)), summary: sumA, ending_excerpt: qa.editedText ? String(qa.editedText).slice(-220) : '', content: qa.editedText ? String(qa.editedText) : '' });\n}\nif (draftB && draftB.item_id) {\n  chapters.push({ seq: meta.start_num + 1, title: draftB.title, outline: ch2.outline || '', status: bOk ? 'published' : 'draft', words: Number(qb.chars || 0), fanqie_item_id: draftB.item_id, published_at: bOk ? now : '', error: bOk ? '' : ((pubB && pubB.error) || JSON.stringify(pubB || {}).slice(0, 200)), summary: sumB, ending_excerpt: qb.editedText ? String(qb.editedText).slice(-220) : '', content: qb.editedText ? String(qb.editedText) : '' });\n}\nconst payload = {\n  run_id: runId,\n  book_id: meta.book_id,\n  book_name: meta.book_name,\n  genre: outline.genre || '',\n  premise: outline.premise || meta.premise,\n  selling_point: '',\n  platform: meta.platform || 'fanqie',\n  tags: meta.tags || [],\n  abstract: meta.abstract || '',\n  protagonists: meta.protagonists || [],\n  volume_goal: meta.volume_goal || '',\n  outline: { premise: outline.premise, genre: outline.genre, title: outline.title, keywords: outline.keywords, bible: outline.bible || null, chapter1: ch1, chapter2: ch2 },\n  chapters: chapters,\n  costs: (() => {\n    const llmNodes = ['Planner出大纲','守护细纲','生成作品资料','写手A','写手B','润色A','润色B','审稿A','审稿B','读者审稿A','读者审稿B','提炼剧情A','提炼剧情B'];\n    const costs = [];\n    for (const nm of llmNodes) {\n      const d = safe(nm);\n      if (d && d.usage) costs.push({ node: nm, model: String(d.model || ''), prompt_tokens: Number(d.usage.prompt_tokens || 0), completion_tokens: Number(d.usage.completion_tokens || 0) });\n    }\n    return costs;\n  })()\n};\nconst fs = require('fs');\nconst resultFile = 'E:/code/novel-pipeline/n8n_tmp/daily_result.json';\nfs.mkdirSync(resultFile.slice(0, resultFile.lastIndexOf('/')), { recursive: true });\nfs.writeFileSync(resultFile, JSON.stringify(payload));\nreturn [{ json: { payload_b64: Buffer.from(JSON.stringify(payload)).toString('base64'), result_file: resultFile } }];"
+        "jsCode": "const safe = (name) => { try { const d = $(name).first(); return d ? d.json : null; } catch { return null; } };\nconst meta = safe('解析作品资料') || {};\nconst outline = safe('解析大纲') || { chapter1: {}, chapter2: {} };\nconst ch1 = outline.chapter1 || {};\nconst ch2 = outline.chapter2 || {};\nconst now = new Date().toISOString().slice(0, 19).replace('T', ' ');\nconst runId = new Date().toISOString() + '-' + Math.floor(Math.random() * 1e6);\nconst chapters = [];\nconst pubA = safe('校验发布A');\nconst pubB = safe('校验发布B');\nconst draftA = safe('解析草稿A');\nconst draftB = safe('解析草稿B');\nconst qa = safe('质量门A');\nconst qb = safe('质量门B');\nconst sumA = (safe('整理剧情A') || {}).summary || {};\nconst verifyA = safe('解析复核A');\nconst verifyB = safe('解析复核B');\nconst sumB = (safe('整理剧情B') || {}).summary || {};\nconst aOk = !!(pubA && pubA.published);\nconst bOk = !!(pubB && pubB.published);\nif (draftA && draftA.item_id) {\n  chapters.push({ seq: meta.start_num, title: draftA.title, outline: ch1.outline || '', status: aOk ? 'published' : 'draft', words: Number(qa.chars || 0), fanqie_item_id: draftA.item_id, published_at: aOk ? now : '', error: aOk ? '' : ((pubA && pubA.error) || JSON.stringify(pubA || {}).slice(0, 200)), summary: sumA, ending_excerpt: qa.editedText ? String(qa.editedText).slice(-220) : '', content: qa.editedText ? String(qa.editedText) : '' });\n}\nif (draftB && draftB.item_id) {\n  chapters.push({ seq: meta.start_num + 1, title: draftB.title, outline: ch2.outline || '', status: bOk ? 'published' : 'draft', words: Number(qb.chars || 0), fanqie_item_id: draftB.item_id, published_at: bOk ? now : '', error: bOk ? '' : ((pubB && pubB.error) || JSON.stringify(pubB || {}).slice(0, 200)), summary: sumB, ending_excerpt: qb.editedText ? String(qb.editedText).slice(-220) : '', content: qb.editedText ? String(qb.editedText) : '' });\n}\nconst payload = {\n  run_id: runId,\n  book_id: meta.book_id,\n  book_name: meta.book_name,\n  genre: outline.genre || '',\n  premise: outline.premise || meta.premise,\n  selling_point: '',\n  platform: meta.platform || 'fanqie',\n  tags: meta.tags || [],\n  abstract: meta.abstract || '',\n  protagonists: meta.protagonists || [],\n  volume_goal: meta.volume_goal || '',\n  outline: { premise: outline.premise, genre: outline.genre, title: outline.title, keywords: outline.keywords, bible: outline.bible || null, chapter1: ch1, chapter2: ch2 },\n  chapters: chapters,\n  costs: (() => {\n    const llmNodes = ['Planner出大纲','守护细纲','生成作品资料','写手A','写手B','润色A','润色B','审稿A','审稿B','读者审稿A','读者审稿B','提炼剧情A','提炼剧情B'];\n    const costs = [];\n    for (const nm of llmNodes) {\n      const d = safe(nm);\n      if (d && d.usage) costs.push({ node: nm, model: String(d.model || ''), prompt_tokens: Number(d.usage.prompt_tokens || 0), completion_tokens: Number(d.usage.completion_tokens || 0) });\n    }\n    return costs;\n  })()\n};\nconst fs = require('fs');\nconst p = require('path');\nconst root = process.env.PIPELINE_ROOT || '';\nconst resultFile = root ? p.join(root, 'n8n_tmp', 'daily_result.json') : 'n8n_tmp/daily_result.json';\nfs.mkdirSync(p.dirname(resultFile), { recursive: true });\nfs.writeFileSync(resultFile, JSON.stringify(payload));\nreturn [{ json: { payload_b64: Buffer.from(JSON.stringify(payload)).toString('base64'), result_file: resultFile } }];"
       },
       "id": "n-summary",
       "name": "汇总运行结果",
@@ -1302,7 +1302,7 @@
         "options": {
           "cwd": "={{ $env.PIPELINE_ROOT }}"
         },
-        "commandArguments": "={{ [$env.PYTHON_EXE, 'tools/record_work.py', '--file', 'n8n_tmp/daily_result.json'] }}"
+        "commandArguments": "={{ ['tools/record_work.py', '--file', 'n8n_tmp/daily_result.json'] }}"
       },
       "id": "n-record",
       "name": "记录作品资料",
@@ -1421,7 +1421,7 @@
         "options": {
           "cwd": "={{ $env.PIPELINE_ROOT }}"
         },
-        "commandArguments": "={{ [$env.PYTHON_EXE, 'novel_pipeline/backup.py', '--db', 'demo.db', '--backup-dir', 'backups'] }}"
+        "commandArguments": "={{ ['novel_pipeline/backup.py', '--db', 'demo.db', '--backup-dir', 'backups'] }}"
       },
       "id": "n-backup",
       "name": "备份数据库",
@@ -1547,7 +1547,7 @@
         "options": {
           "cwd": "={{ $env.PIPELINE_ROOT }}"
         },
-        "commandArguments": "={{ [$env.PYTHON_EXE, 'tools/preflight.py', '--db', 'demo.db'] }}"
+        "commandArguments": "={{ ['tools/preflight.py', '--db', 'demo.db'] }}"
       },
       "onError": "continueRegularOutput",
       "id": "n-preflight",
@@ -1768,7 +1768,7 @@
         "options": {
           "cwd": "={{ $env.PIPELINE_ROOT }}"
         },
-        "commandArguments": "={{ [$env.PYTHON_EXE, 'tools/collect_reader_stats.py', '--db', 'demo.db'] }}"
+        "commandArguments": "={{ ['tools/collect_reader_stats.py', '--db', 'demo.db'] }}"
       },
       "onError": "continueRegularOutput",
       "id": "n-stats",
@@ -1867,7 +1867,7 @@
         "options": {
           "cwd": "={{ $env.PIPELINE_ROOT }}"
         },
-        "commandArguments": "={{ [$env.PYTHON_EXE, 'tools/check_stock.py', '--db', 'demo.db'] }}"
+        "commandArguments": "={{ ['tools/check_stock.py', '--db', 'demo.db'] }}"
       },
       "id": "n-check-stock",
       "name": "查存稿",
@@ -1900,7 +1900,7 @@
         "options": {
           "cwd": "={{ $env.PIPELINE_ROOT }}"
         },
-        "commandArguments": "={{ [$env.PYTHON_EXE, 'tools/publish_stock.py', '--db', 'demo.db'] }}"
+        "commandArguments": "={{ ['tools/publish_stock.py', '--db', 'demo.db'] }}"
       },
       "id": "n-publish-stock",
       "name": "发布存稿",
@@ -1917,7 +1917,7 @@
         "options": {
           "cwd": "={{ $env.PIPELINE_ROOT }}"
         },
-        "commandArguments": "={{ [$env.PYTHON_EXE, 'tools/write_diaries.py', '--mode', 'daily', '--db', 'demo.db'] }}"
+        "commandArguments": "={{ ['tools/write_diaries.py', '--mode', 'daily', '--db', 'demo.db'] }}"
       },
       "id": "n-diaries",
       "name": "全员写日记",
@@ -1934,7 +1934,7 @@
         "options": {
           "cwd": "={{ $env.PIPELINE_ROOT }}"
         },
-        "commandArguments": "={{ [$env.PYTHON_EXE, 'tools/novel_knowledge.py', '--sync-latest', '--db', 'demo.db'] }}"
+        "commandArguments": "={{ ['tools/novel_knowledge.py', '--sync-latest', '--db', 'demo.db'] }}"
       },
       "onError": "continueRegularOutput",
       "id": "n-knowledge-sync",
@@ -2605,7 +2605,7 @@
       "main": [
         [
           {
-            "node": "结束",
+            "node": "采集阅读数据",
             "type": "main",
             "index": 0
           }
@@ -2627,7 +2627,7 @@
       "main": [
         [
           {
-            "node": "发布存稿",
+            "node": "结束",
             "type": "main",
             "index": 0
           }

@@ -194,6 +194,7 @@ CREATE TABLE IF NOT EXISTS meeting_sessions (
     transcript TEXT DEFAULT '[]',
     instruction TEXT DEFAULT '',
     report TEXT DEFAULT '',
+    db_path TEXT DEFAULT '',
     created_at TEXT DEFAULT '',
     updated_at TEXT DEFAULT ''
 );
@@ -303,6 +304,9 @@ def _migrate(conn):
     meeting_cols = {r["name"] for r in conn.execute("PRAGMA table_info(weekly_meetings)")}
     if "kind" not in meeting_cols:
         conn.execute("ALTER TABLE weekly_meetings ADD COLUMN kind TEXT DEFAULT 'weekly'")
+    session_cols = {r["name"] for r in conn.execute("PRAGMA table_info(meeting_sessions)")}
+    if "db_path" not in session_cols:
+        conn.execute("ALTER TABLE meeting_sessions ADD COLUMN db_path TEXT DEFAULT ''")
     conn.executescript(
         """
         CREATE INDEX IF NOT EXISTS idx_chapters_novel_seq ON chapters(novel_id, seq);

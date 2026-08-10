@@ -138,14 +138,15 @@ Agent 管理链路：`prompts/agents/*.md` → 保存时 `render_workflow.py` �
 
 本轮同时修掉了三个让流水线在 Windows 上断掉的问题：
 
-- **python 不在 PATH**：所有 ExecuteCommand 的 `python` 换成
-  `C:/Users/.../Python311/python.exe` 绝对路径。
+- **python 不在 PATH**：所有 ExecuteCommand 的 `python` 曾换成
+  `C:/Users/.../Python311/python.exe` 绝对路径；2026-08-10 二审已改为
+  `$env.PYTHON_EXE` / `$env.PIPELINE_ROOT` 参数化，不再硬编码机器路径。
 - **cwd 漂移**：n8n 进程工作目录是 `~/.n8n`，所有相对脚本路径改为绝对路径；
   大 payload（周会蓝图/日更结果）不再走命令行（超过 cmd.exe 8191 字符限制），
   改为 code 节点写 `n8n_tmp/*.json`，Python 端用 `--file` 读取。
 - **Code 节点模块限制**：`~/.n8n/.env` 增加 `NODE_FUNCTION_ALLOW_BUILTIN=fs`。
 
-开机自启：`shell:startup` 下放了三个 vbs（n8n、8000/8001 面板服务），
+开机自启：`shell:startup` 下放了三个 vbs（n8n、8000 面板服务），
 登录后自动拉起，无需管理员权限。
 
 ## 8. 前端高完成度与后端健壮性（2026-08-10）
@@ -308,3 +309,27 @@ Toast 带图标、执行失败可查看原因弹窗、作品库搜索与批量�
   收尾链、executeCommand 参数化、端口统一）；新增 publish_stock/preflight 守卫/
   record_work/check_stock/control/misc/n8n 服务/鉴权/路径穿越测试，全量 120 后端 +
   6 前端全绿；三份工作流已推送到 n8n 并保持激活。
+
+## 16. 二审清单修复（2026-08-10，提交后对账）
+
+按二审清单（P0-P3）继续修复：
+
+- **P0 双解释器**：所有 executeCommand 的 commandArguments 首元素误带
+  `$env.PYTHON_EXE`（command 已是解释器，等于让 Python 解析 python.exe），
+  已全部移除；validator 新增「args 不得重复解释器」检查。
+- **P1 汇总节点路径**：写 `n8n_tmp/daily_result.json` 改用
+  `process.env.PIPELINE_ROOT` 拼接，不再硬编码 E 盘；validator 新增 code 节点
+  机器路径扫描。
+- **P2 收尾链**：存稿充足分支（发布存稿 → 结束）现在接入完整收尾链
+  （发布存稿 → 采集阅读数据 → 全员写日记 → 同步设定知识库 → 结束），两条路径
+  收尾一致，语义校验同步更新。
+- **P2 题材配置**：设置页新增「日更题材 · 核心设定 / 题材 / 关键词」输入框，
+  保存写入 settings，经 check_stock 流入设定题材节点，周会选题可真正进入日更。
+- **P3 清理**：meeting_session 去掉模块级 `_DB_PATH` 全局（会话表加 db_path 列，
+  后台线程按会话读取）；estimate_cost 与 PANEL_TOKEN 加 5 秒环境缓存与数值容错；
+  web_api do_POST 异常路径兜底关闭连接；publish_stock 不再 SELECT 冗余 volume_id；
+  `Origin: null`（file:// 兜底页）只放行 GET、拒绝 POST；agent_tool_loop 第二轮
+  若出现多余 tool_calls 明确标注 ignored；ARCHITECTURE 测试数改 120、evolution
+  历史段落清理绝对路径与 8000/8001 字样。
+- **验证**：后端 120 + 前端 6 全绿；validate 全工作流通过；三份工作流重新部署
+  到 n8n 保持激活；8000/8001 服务重启，鉴权实测 dashboard 200 / 跨站 403。

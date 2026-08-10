@@ -221,7 +221,15 @@ def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None,
         "completion_tokens": int(first_usage.get("completion_tokens") or 0)
         + int(final_usage.get("completion_tokens") or 0),
     }
-    return _final(final["text"], usage)
+    result = _final(final["text"], usage)
+    if final.get("tool_calls"):
+        # No tools are declared in the final round; a stray tool_calls is
+        # semantically ignored under the two-round policy.
+        result["warning"] = (
+            f"final round returned {len(final.get('tool_calls') or [])} "
+            "tool_calls; ignored"
+        )
+    return result
 
 
 def main():

@@ -87,7 +87,7 @@ def to_html(text):
 def publish_chapter(conn, chapter, env):
     """Publish one chapter; returns (ok, item_id, error)."""
     novel = conn.execute(
-        "SELECT id, book_id, volume_id FROM novels WHERE id=?",
+        "SELECT id, book_id FROM novels WHERE id=?",
         (chapter["novel_id"],),
     ).fetchone()
     book_id = str((novel["book_id"] if novel else "") or env.get("FANQIE_BOOK_ID", ""))

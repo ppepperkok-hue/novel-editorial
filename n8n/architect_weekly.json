@@ -27,7 +27,7 @@
         "options": {
           "cwd": "={{ $env.PIPELINE_ROOT }}"
         },
-        "commandArguments": "={{ [$env.PYTHON_EXE, '-m', 'novel_pipeline.hot_topics', '--refresh'] }}"
+        "commandArguments": "={{ ['-m', 'novel_pipeline.hot_topics', '--refresh'] }}"
       },
       "onError": "continueRegularOutput",
       "id": "n-hot-refresh",
@@ -45,7 +45,7 @@
         "options": {
           "cwd": "={{ $env.PIPELINE_ROOT }}"
         },
-        "commandArguments": "={{ [$env.PYTHON_EXE, 'tools/architect_weekly.py', '--db', 'demo.db'] }}"
+        "commandArguments": "={{ ['tools/architect_weekly.py', '--db', 'demo.db'] }}"
       },
       "onError": "continueRegularOutput",
       "id": "n-arch-read",
@@ -80,7 +80,7 @@
         "options": {
           "cwd": "={{ $env.PIPELINE_ROOT }}"
         },
-        "commandArguments": "={{ [$env.PYTHON_EXE, 'tools/agent_meeting.py', '--db', 'demo.db'] }}"
+        "commandArguments": "={{ ['tools/agent_meeting.py', '--db', 'demo.db'] }}"
       },
       "id": "n-meeting",
       "name": "开会",
@@ -110,7 +110,7 @@
         "options": {
           "cwd": "={{ $env.PIPELINE_ROOT }}"
         },
-        "commandArguments": "={{ [$env.PYTHON_EXE, 'tools/distill_lessons.py', '--db', 'demo.db'] }}"
+        "commandArguments": "={{ ['tools/distill_lessons.py', '--db', 'demo.db'] }}"
       },
       "onError": "continueRegularOutput",
       "id": "n-distill",

@@ -12,6 +12,7 @@ import urllib.request
 from novel_pipeline import config  # noqa: E402
 
 MODEL_TIERS = ("planning", "writing", "editing", "reviewing", "memory")
+_ENV_CACHE = {"ts": 0.0, "env": {}}
 
 
 class LLMError(RuntimeError):
@@ -22,13 +23,25 @@ def _env_str(name, default=""):
     return os.environ.get(name, default)
 
 
+def cached_env(ttl=5.0):
+    """Environment snapshot with a short TTL to avoid per-call file IO."""
+    now = time.time()
+    if now - _ENV_CACHE["ts"] > ttl:
+        _ENV_CACHE["env"] = config.load_env()
+        _ENV_CACHE["ts"] = now
+    return _ENV_CACHE["env"]
+
+
 def estimate_cost(model, usage, env=None):
     """Estimate RMB cost for a model+usage pair using per-1k-token rates."""
-    env = env if env is not None else config.load_env()
-    if "flash" in str(model or ""):
-        rate = float(env.get("COST_FLASH_PER_1K") or 0.002)
-    else:
-        rate = float(env.get("COST_PRO_PER_1K") or 0.01)
+    env = env if env is not None else cached_env()
+    is_flash = "flash" in str(model or "")
+    try:
+        rate = float(env.get("COST_FLASH_PER_1K") or 0.002) if is_flash else float(
+            env.get("COST_PRO_PER_1K") or 0.01
+        )
+    except (TypeError, ValueError):
+        rate = 0.002 if is_flash else 0.01
     pt = int(usage.get("prompt_tokens") or 0)
     ct = int(usage.get("completion_tokens") or 0)
     return round(pt / 1000.0 * rate + ct / 1000.0 * rate, 6)

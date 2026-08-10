@@ -23,7 +23,7 @@ novel-pipeline/
 ├── desktop/                 # Electron 壳（main/preload/release.js）
 ├── n8n/                     # n8n 工作流 JSON（日更 61 节点 / 周会 7 节点 / 知识管家 4 节点）
 ├── docs/                    # evolution / planning / research
-├── tests/                   # 116 个后端测试 + 前端 Vitest
+├── tests/                   # 120 个后端测试 + 前端 Vitest
 └── demo.db / exports / n8n_tmp / backups  # 运行数据
 ```
 

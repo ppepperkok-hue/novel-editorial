@@ -29,6 +29,9 @@ for (const file of files) {
   for (const n of nodes) {
     if (n.type === "n8n-nodes-base.code") {
       const code = n.parameters.jsCode || "";
+      if (/E:\/code|Python311|C:\/Users\/Administrator/.test(code)) {
+        issues.push(`${file}: code node ${n.name} contains a hardcoded machine path`);
+      }
       try {
         // eslint-disable-next-line no-new-func
         new Function(code);
@@ -97,9 +100,10 @@ for (const file of files) {
     }
     // tail chain
     for (const [src, dst] of [
+      ["发布存稿", "采集阅读数据"],
+      ["采集阅读数据", "全员写日记"],
       ["全员写日记", "同步设定知识库"],
-      ["同步设定知识库", "发布存稿"],
-      ["发布存稿", "结束"],
+      ["同步设定知识库", "结束"],
     ]) {
       const targets = (conns[src]?.main?.[0] || []).map((x) => x.node);
       if (!targets.includes(dst)) issues.push(`${file}: tail chain broken ${src} -> ${dst}`);
@@ -130,6 +134,9 @@ for (const file of files) {
     const hay = command + JSON.stringify(args || "") + cwd;
     if (/E:\/code|Python311|&/.test(hay)) {
       issues.push(`${file}: executeCommand ${n.name} contains hardcoded paths or shell '&'`);
+    }
+    if (typeof args === "string" && args.includes("$env.PYTHON_EXE")) {
+      issues.push(`${file}: executeCommand ${n.name} repeats the interpreter in commandArguments`);
     }
   }
 

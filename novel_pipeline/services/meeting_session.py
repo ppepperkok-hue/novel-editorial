@@ -13,23 +13,22 @@ from tools import agent_meeting, architect_weekly
 _MEETING_LOCK = threading.Lock()
 FINISH_TOKEN = "__FINISH__"
 MAX_ROUNDS = 20
-_DB_PATH = config.DB_PATH
 
 
 def _now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def create_session(conn, topic, novel_id=0):
+def create_session(conn, topic, novel_id=0, db_path=""):
     if not topic or not str(topic).strip():
         return {"ok": False, "error": "topic 不能为空"}
     if not novel_id:
         row = conn.execute("SELECT id FROM novels ORDER BY id DESC LIMIT 1").fetchone()
         novel_id = row["id"] if row else 0
     cur = conn.execute(
-        "INSERT INTO meeting_sessions(kind,topic,status,novel_id,created_at,updated_at) "
-        "VALUES('topic',?,?,?,?,?)",
-        (str(topic).strip(), "running", novel_id, _now(), _now()),
+        "INSERT INTO meeting_sessions(kind,topic,status,novel_id,db_path,created_at,updated_at) "
+        "VALUES('topic',?,?,?,?,?,?)",
+        (str(topic).strip(), "running", novel_id, str(db_path or ""), _now(), _now()),
     )
     conn.commit()
     session_id = cur.lastrowid
@@ -92,7 +91,15 @@ def run_session(session_id):
     """Background worker: executes rounds, pauses for user instructions."""
     conn = None
     try:
-        conn = novel_pipeline.db.connect(_DB_PATH)
+        probe = novel_pipeline.db.connect(config.DB_PATH)
+        try:
+            row = probe.execute(
+                "SELECT db_path FROM meeting_sessions WHERE id=?", (session_id,)
+            ).fetchone()
+        finally:
+            probe.close()
+        db_path = (row["db_path"] if row and row["db_path"] else config.DB_PATH)
+        conn = novel_pipeline.db.connect(db_path)
         with _MEETING_LOCK:
             _run_locked(conn, session_id)
     finally:
@@ -249,12 +256,9 @@ def _run_locked(conn, session_id):
 
 def start_session_async(topic, novel_id=0, db_path=None):
     """Create a session and run it in a background thread."""
-    global _DB_PATH
-    if db_path:
-        _DB_PATH = db_path
-    conn = novel_pipeline.db.connect(_DB_PATH)
+    conn = novel_pipeline.db.connect(db_path or config.DB_PATH)
     try:
-        result = create_session(conn, topic, novel_id)
+        result = create_session(conn, topic, novel_id, db_path=db_path or "")
     finally:
         conn.close()
     if not result["ok"]:

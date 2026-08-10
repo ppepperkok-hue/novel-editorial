@@ -56,6 +56,9 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
           daily_run_time: c.settings?.daily_run_time || "08:00",
           daily_chapters: c.settings?.daily_chapters || 2,
           target_chapters: c.settings?.target_chapters || 0,
+          novel_premise: c.settings?.novel_premise || "",
+          novel_keywords: c.settings?.novel_keywords || "",
+          novel_genre: c.settings?.novel_genre || "",
         },
       );
     } catch {
@@ -94,6 +97,9 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
           daily_run_time: form.daily_run_time,
           daily_chapters: String(form.daily_chapters),
           target_chapters: String(form.target_chapters),
+          novel_premise: form.novel_premise,
+          novel_keywords: form.novel_keywords,
+          novel_genre: form.novel_genre,
         },
       });
       if (!r.ok) {
@@ -158,8 +164,8 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
       <section className="panel p-4">
         <div className="section-title !mb-3">工作流控制</div>
         <div className="flex flex-col gap-3">
-          <WorkflowCard label="日更工作流（56 节点）" wf={wfs.daily} onAction={(a) => action({ action: a, workflow: "daily" }, "日更已恢复")} onPause={() => setConfirm("pause-daily")} />
-          <WorkflowCard label="架构师周会（6 节点）" wf={wfs.weekly} onAction={(a) => action({ action: a, workflow: "weekly" }, "周会已恢复")} onPause={() => setConfirm("pause-weekly")} />
+          <WorkflowCard label="日更工作流（61 节点）" wf={wfs.daily} onAction={(a) => action({ action: a, workflow: "daily" }, "日更已恢复")} onPause={() => setConfirm("pause-daily")} />
+          <WorkflowCard label="架构师周会（7 节点）" wf={wfs.weekly} onAction={(a) => action({ action: a, workflow: "weekly" }, "周会已恢复")} onPause={() => setConfirm("pause-weekly")} />
           <div className="grid grid-cols-2 gap-2">
             <button
               className="btn btn-ok"
@@ -238,6 +244,40 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
                 onChange={(e) => setForm({ ...form, style_tweak: e.target.value })}
               />
               <div className="muted mt-1 text-xs">为空时使用 Agent 提示词自带的风格。</div>
+            </div>
+            <div>
+              <label className="label">日更题材 · 核心设定（premise）</label>
+              <textarea
+                className="input min-h-20 w-full"
+                placeholder="例：凡人修仙：捡到一只会提纯灵物的破碗，从杂灵根苟到无敌"
+                value={form.novel_premise}
+                onChange={(e) => setForm({ ...form, novel_premise: e.target.value })}
+              />
+              <div className="muted mt-1 text-xs">
+                留空时使用 .env 的 NOVEL_PREMISE，两者都没有则用工作流内置默认题材。
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">题材（genre）</label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="例：玄幻"
+                  value={form.novel_genre}
+                  onChange={(e) => setForm({ ...form, novel_genre: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="label">关键词（逗号分隔）</label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="例：修仙,苟,提纯,杂灵根"
+                  value={form.novel_keywords}
+                  onChange={(e) => setForm({ ...form, novel_keywords: e.target.value })}
+                />
+              </div>
             </div>
             <div>
               <label className="label">每日更新时间（时:分）</label>

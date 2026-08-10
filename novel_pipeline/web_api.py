@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from novel_pipeline import config, db  # noqa: E402
+from novel_pipeline.llm_client import cached_env  # noqa: E402
 from novel_pipeline.services import (  # noqa: E402
     agents as agents_service,
     audit as audit_service,
@@ -34,7 +35,7 @@ _SNAPSHOT_THREAD_STARTED = False
 
 def _panel_token():
     """Optional bearer token from ~/.n8n/.env; empty means token auth is off."""
-    return (config.load_env().get("PANEL_TOKEN") or "").strip()
+    return (cached_env().get("PANEL_TOKEN") or "").strip()
 
 
 def _origin_allowed(origin, port):
@@ -119,8 +120,14 @@ def make_handler(db_path):
             """Reject browser CSRF and unsafe non-browser writes."""
             port = self.server.server_port
             origin = self.headers.get("Origin") or ""
-            if origin and not _origin_allowed(origin, port):
-                return False, "cross-origin request denied"
+            if origin:
+                if origin == "null":
+                    # file:// fallback page is read-only; writes from a null
+                    # origin (sandboxed iframe etc.) are always rejected.
+                    if self.command == "POST":
+                        return False, "cross-origin request denied"
+                elif not _origin_allowed(origin, port):
+                    return False, "cross-origin request denied"
             ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
             if self.command == "POST" and ctype == "text/plain":
                 return False, "text/plain requests denied"
@@ -329,6 +336,7 @@ def make_handler(db_path):
             ):
                 self.send_error(404, "Not Found")
                 return
+            conn = None
             try:
                 length = int(self.headers.get("Content-Length") or 0)
                 raw = self.rfile.read(length) if length else b"{}"
@@ -569,8 +577,18 @@ def make_handler(db_path):
                         result = {"ok": False, "error": f"unknown action {action}"}
                 self._json(result)
             except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                if conn is not None:
+                    try:
+                        conn.close()
+                    except Exception:  # noqa: BLE001
+                        pass
                 return
             except Exception as exc:  # noqa: BLE001
+                if conn is not None:
+                    try:
+                        conn.close()
+                    except Exception:  # noqa: BLE001
+                        pass
                 self._json({"ok": False, "error": str(exc)}, status=500)
 
         def _serve_index(self):

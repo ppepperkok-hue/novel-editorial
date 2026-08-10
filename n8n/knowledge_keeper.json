@@ -44,7 +44,7 @@
         "options": {
           "cwd": "={{ $env.PIPELINE_ROOT }}"
         },
-        "commandArguments": "={{ [$env.PYTHON_EXE, 'tools/knowledge_keeper.py', '--db', 'demo.db'] }}"
+        "commandArguments": "={{ ['tools/knowledge_keeper.py', '--db', 'demo.db'] }}"
       },
       "onError": "continueRegularOutput",
       "id": "n-keeper-run",
