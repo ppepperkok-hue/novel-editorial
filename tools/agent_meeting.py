@@ -140,12 +140,61 @@ def ask(conn, novel_id, agent, user, temperature, dry_run, mock_text, max_tokens
         return mock_text, {"prompt_tokens": 0, "completion_tokens": 0}, "dry-run", []
     system = system_override if system_override is not None else agent_md(agent)
     model = agent_model(agent)
-    resp = chat_deepseek(
+    first = chat_deepseek(
         model, system, user, temperature=temperature,
         max_tokens=max_tokens, messages=messages, tools=tools,
     )
-    record_cost(conn, novel_id, agent, resp["usage"], resp["model"])
-    return resp["text"], resp["usage"], resp["model"], resp.get("tool_calls") or []
+    tool_calls = first.get("tool_calls") or []
+    usage = dict(first.get("usage") or {})
+    if not tool_calls:
+        record_cost(conn, novel_id, agent, usage, first["model"])
+        return first["text"], usage, first["model"], []
+    # Tool loop: resolve local knowledge, then one final no-tools round.
+    msgs = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
+        {"role": "assistant", "content": first.get("text") or "", "tool_calls": tool_calls},
+    ]
+    from novel_pipeline.services import knowledge  # noqa: PLC0415
+
+    for tc in tool_calls:
+        fn = tc.get("function") or {}
+        name = fn.get("name") or ""
+        try:
+            args = json.loads(fn.get("arguments") or "{}")
+        except ValueError:
+            args = {}
+        topic = str(args.get("topic") or "")
+        if name == "get_knowledge":
+            hits = knowledge.resolve_knowledge(agent, topic)
+            content = "\n\n".join(
+                f"【{h['title']}】\n{h['content']}" for h in hits
+            ) or f"未找到与「{topic}」匹配的知识包，请直接作答。"
+        elif name == "get_novel_knowledge":
+            from tools import novel_knowledge  # noqa: PLC0415
+
+            hits = novel_knowledge.resolve(conn, novel_id or 0, topic)
+            content = "\n\n".join(
+                f"【{h['category']}·{h['entity']} v{h['version']}】\n{h['content']}"
+                for h in hits
+            ) or f"知识库中没有与「{topic}」相关的设定，请基于已有材料作答。"
+        else:
+            content = "未知工具"
+        msgs.append(
+            {"role": "tool", "tool_call_id": tc.get("id") or "", "content": content}
+        )
+    final = chat_deepseek(
+        model, None, None, temperature=temperature, max_tokens=max_tokens, messages=msgs
+    )
+    final_usage = final.get("usage") or {}
+    usage = {
+        "prompt_tokens": int(usage.get("prompt_tokens") or 0)
+        + int(final_usage.get("prompt_tokens") or 0),
+        "completion_tokens": int(usage.get("completion_tokens") or 0)
+        + int(final_usage.get("completion_tokens") or 0),
+    }
+    record_cost(conn, novel_id, agent, usage, final["model"])
+    return final["text"], usage, final["model"], []
 
 
 def build_materials_dict(conn, novel_id):

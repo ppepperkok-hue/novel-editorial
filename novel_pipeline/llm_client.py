@@ -194,20 +194,25 @@ def chat_deepseek(model, system, user, temperature=0.5, max_tokens=1600,
             )
             with urllib.request.urlopen(req, timeout=120) as r:
                 data = json.loads(r.read().decode("utf-8"))
-            break
-        except (urllib.error.URLError, ValueError) as exc:
+            choice = data["choices"][0]["message"]
+            text = choice.get("content") or ""
+            tool_calls = choice.get("tool_calls") or []
+            if text or tool_calls:
+                break
+            # Empty content with no tool calls: transient model behavior,
+            # retry instead of failing the whole meeting/workflow.
+            last_err = RuntimeError("DeepSeek 返回空 content")
+        except (urllib.error.URLError, ValueError, KeyError) as exc:
             last_err = exc
             if attempt < 2:
                 time.sleep(1.0 * (attempt + 1))
     if data is None:
         raise RuntimeError(f"DeepSeek 调用失败：{last_err}")
-    choice = data["choices"][0]["message"]
-    text = choice.get("content") or ""
-    if not text:
-        raise RuntimeError("DeepSeek 返回空 content（不要用思考过程当答案），请重试")
+    if not text and not tool_calls:
+        raise RuntimeError(f"DeepSeek 连续返回空 content：{last_err}")
     return {
         "text": text,
         "usage": data.get("usage", {}),
         "model": model,
-        "tool_calls": choice.get("tool_calls") or [],
+        "tool_calls": tool_calls,
     }
