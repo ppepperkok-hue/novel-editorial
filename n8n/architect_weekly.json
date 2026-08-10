@@ -45,7 +45,7 @@
         "options": {
           "cwd": "={{ $env.PIPELINE_ROOT }}"
         },
-        "commandArguments": "={{ ['tools/architect_weekly.py', '--db', 'demo.db'] }}"
+        "commandArguments": "={{ ['tools/architect_weekly.py', '--book-id', $env.FANQIE_BOOK_ID, '--db', 'demo.db'] }}"
       },
       "onError": "continueRegularOutput",
       "id": "n-arch-read",
@@ -80,7 +80,7 @@
         "options": {
           "cwd": "={{ $env.PIPELINE_ROOT }}"
         },
-        "commandArguments": "={{ ['tools/agent_meeting.py', '--db', 'demo.db'] }}"
+        "commandArguments": "={{ ['tools/agent_meeting.py', '--book-id', $env.FANQIE_BOOK_ID, '--db', 'demo.db'] }}"
       },
       "id": "n-meeting",
       "name": "开会",

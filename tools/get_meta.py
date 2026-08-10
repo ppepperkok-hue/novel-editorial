@@ -22,9 +22,18 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8")
     except (AttributeError, ValueError):
         pass
-    conn = db.connect(DB_PATH)
+    import argparse
+
+    ap = argparse.ArgumentParser(description="读取本地作品资料与记忆包")
+    ap.add_argument("book_id", nargs="?", default="")
+    ap.add_argument("--db", default=str(DB_PATH))
+    args = ap.parse_args()
+    db_path = Path(args.db)
+    if not db_path.is_absolute():
+        db_path = ROOT / db_path
+    conn = db.connect(db_path)
     try:
-        book_id = sys.argv[1] if len(sys.argv) > 1 else ""
+        book_id = args.book_id
         if book_id:
             row = conn.execute(
                 "SELECT * FROM novels WHERE book_id=? ORDER BY id DESC LIMIT 1", (book_id,)
@@ -137,6 +146,7 @@ def main():
                 reader_feedback = {}
 
         meta = {
+            "novel_id": row["id"],
             "book_id": row["book_id"],
             "book_name": row["title"],
             "genre": row["genre"],

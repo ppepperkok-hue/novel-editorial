@@ -290,5 +290,69 @@ class TokenGetTests(unittest.TestCase):
                 self.assertEqual(resp.status, 200)
 
 
+class BookIsolationTests(unittest.TestCase):
+    def test_get_meta_exposes_novel_id(self):
+        path = make_db()
+        conn = db.connect(path)
+        try:
+            conn.execute(
+                "UPDATE novels SET book_id='b1', outline='{\"bible\":{}}' WHERE id=1"
+            )
+            conn.commit()
+            import subprocess
+
+            out = subprocess.run(
+                [
+                    sys.executable,
+                    os.path.join(ROOT, "tools", "get_meta.py"),
+                    "b1",
+                    "--db",
+                    path,
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=ROOT,
+                timeout=30,
+            )
+            payload = json.loads(out.stdout)
+            self.assertEqual(payload["novel_id"], 1)
+        finally:
+            conn.close()
+
+    def test_agent_tool_loop_passes_novel_id_to_knowledge_store(self):
+        from tools import agent_tool_loop
+
+        with mock.patch("tools.agent_tool_loop.chat_deepseek") as chat:
+            chat.side_effect = [
+                {
+                    "text": "",
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+                    "model": "deepseek-v4-flash",
+                    "tool_calls": [
+                        {
+                            "id": "t1",
+                            "function": {
+                                "name": "get_novel_knowledge",
+                                "arguments": '{"topic": "林一"}',
+                            },
+                        }
+                    ],
+                },
+                {
+                    "text": "回答",
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+                    "model": "deepseek-v4-flash",
+                },
+            ]
+            with mock.patch("tools.novel_knowledge.resolve", return_value=[]) as resolve:
+                with mock.patch("novel_pipeline.db.connect"):
+                    agent_tool_loop.run(
+                        "writer", "写一章", novel_id=7, target_words=2000
+                    )
+            self.assertEqual(resolve.call_args[0][1], 7)
+
+
 if __name__ == "__main__":
     unittest.main()

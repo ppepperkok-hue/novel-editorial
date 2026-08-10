@@ -297,6 +297,16 @@ Agent 首轮携带 `get_knowledge`（通用写作知识包）与 `get_novel_know
 - 首轮日更的 writing_context 不含 bible（读取早于 Planner），因此写手/守护/审稿/读者/
   主编/记忆的 task 都直接引用解析大纲的 bible，读者审稿与主编仲裁不缺设定上下文。
 
+多书隔离：
+
+- 所有按书数据（bible / novel_knowledge / characters / character_evolution /
+  diaries / meetings / cost）均以 `novel_id` 隔离，前端作品库按书展示；
+- Agent 每次调用携带当前书 `novel_id`（get_meta 输出 → 解析本地资料 → 渲染器注入
+  全部代理节点），`get_novel_knowledge` 只查本书设定库，不会串书；
+- 「全员写日记」绑定当前书（--novel-id），周会「读上下文 / 开会」绑定
+  `FANQIE_BOOK_ID`（--book-id），多书并存时日记与会议材料不会写错书；
+- 全局数据（settings / hot_topics / 知识包 / 成本单价）按设计跨书共享。
+
 ### 6.4 知识管家「博闻」（第 11 位 Agent）
 
 `tools/knowledge_keeper.py` + n8n 定时工作流（每天 03:30 + 手动 webhook）：

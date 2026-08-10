@@ -185,6 +185,25 @@ for (const file of files) {
     if (url.includes("/api/agent/run") && !url.startsWith("http://127.0.0.1:8000/api/agent/run")) {
       issues.push(`${file}: agent node ${n.name} targets ${url}; expected unified port 8000`);
     }
+    if (url.includes("/api/agent/run") && !/novel_id:\(/.test(n.parameters.jsonBody || "")) {
+      issues.push(`${file}: agent node ${n.name} does not carry novel_id (book isolation)`);
+    }
+  }
+
+  // 7. book isolation: daily diaries and weekly meetings bind to a novel/book.
+  if (file === "novel_workflow.json") {
+    const diary = nodes.find((n) => n.name === "全员写日记");
+    if (diary && !/--novel-id/.test(JSON.stringify(diary.parameters.commandArguments || ""))) {
+      issues.push(`${file}: 全员写日记 does not bind --novel-id`);
+    }
+  }
+  if (file === "architect_weekly.json") {
+    for (const name of ["读上下文", "开会"]) {
+      const node = nodes.find((n) => n.name === name);
+      if (node && !/--book-id/.test(JSON.stringify(node.parameters.commandArguments || ""))) {
+        issues.push(`${file}: ${name} does not bind --book-id`);
+      }
+    }
   }
 }
 

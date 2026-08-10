@@ -96,6 +96,7 @@ def build_proxy_body(agent, meta, system_has_target_words, user_expr):
         fields.append(f"max_tokens:{max_tokens}")
     if system_has_target_words:
         fields.append("target_words:(($('解析本地资料').first().json.target_words)||2000)")
+    fields.append("novel_id:(($('解析本地资料').first().json.novel_id)||0)")
     fields.append(f"task:{user_expr}")
     return "={{ JSON.stringify({" + ", ".join(fields) + "}) }}"
 

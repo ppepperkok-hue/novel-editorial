@@ -371,6 +371,7 @@ def main():
     ap = argparse.ArgumentParser(description="多 Agent 周会会议引擎")
     ap.add_argument("--db", default="demo.db")
     ap.add_argument("--novel-id", type=int, default=0)
+    ap.add_argument("--book-id", default="")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--topic", default="")
@@ -384,6 +385,12 @@ def main():
     conn = db.connect(db_path)
     try:
         novel_id = args.novel_id
+        if not novel_id and args.book_id:
+            r = conn.execute(
+                "SELECT id FROM novels WHERE book_id=? ORDER BY id DESC LIMIT 1",
+                (args.book_id,),
+            ).fetchone()
+            novel_id = r["id"] if r else 0
         if not novel_id:
             r = conn.execute("SELECT id FROM novels ORDER BY id DESC LIMIT 1").fetchone()
             novel_id = r["id"] if r else 0

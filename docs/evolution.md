@@ -445,3 +445,17 @@ Toast 带图标、执行失败可查看原因弹窗、作品库搜索与批量�
   record_work 写）三套分工，get_meta 合并；读取时机为「bible 产出后立即初始化、
   写手前可查、收尾增量入库」，已写入 README 6.3。
 - **验证**：后端 141 + 前端 6 全绿；validate 全工作流通过；工作流重新部署激活。
+
+## 22. 多书隔离审查与修复（2026-08-10）
+
+- **发现**：Agent 代理调用不携带 novel_id（get_novel_knowledge 以 0 查询设定库，
+  设定库形同虚设）；「全员写日记」无 --novel-id 取最新书；周会读上下文/开会
+  无书参数取最新书——多书并存时设定、日记、会议材料都会串。
+- **修复**：get_meta 输出 novel_id；解析本地资料透传；render_workflow 为全部
+  代理节点注入 `novel_id` 表达式；全员写日记绑定 --novel-id；周会两个节点绑定
+  `--book-id $env.FANQIE_BOOK_ID`；agent_meeting 支持 --book-id；get_meta
+  支持 --db。
+- **校验**：validator 增加代理节点 novel_id、日记 --novel-id、周会 --book-id
+  断言；新增 get_meta novel_id 与工具 novel_id 透传测试。
+- **验证**：后端 143 + 前端 6 全绿；validate 全工作流通过；README 6.3 补充
+  多书隔离说明（按书数据表、代理 novel_id、日记/周会绑定、全局数据共享边界）。
