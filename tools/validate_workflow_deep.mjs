@@ -53,6 +53,21 @@ for (const file of files) {
 
   // 3. connections
   const conns = wf.connections || {};
+  // 0. no duplicate edges anywhere
+  for (const [src, v] of Object.entries(conns)) {
+    for (const [port, arrays] of Object.entries(v)) {
+      for (const arr of arrays || []) {
+        const seen = new Set();
+        for (const e of arr || []) {
+          const key = `${e.node}|${e.type}|${e.index}`;
+          if (seen.has(key)) {
+            issues.push(`${file}: duplicate ${port} edge ${src} -> ${e.node}`);
+          }
+          seen.add(key);
+        }
+      }
+    }
+  }
   for (const [src, v] of Object.entries(conns)) {
     if (!names.has(src)) issues.push(`${file}: Connection source missing: ${src}`);
     for (const arr of v.main || []) {
@@ -200,25 +215,41 @@ for (const file of files) {
     // H3/H7: memory/整理 nodes must tolerate errors so one track does not
     // kill the other; merge fallback must read quality gates; 算章节号 must
     // fail loudly when the active book is missing.
-    for (const name of ["提炼剧情A", "提炼剧情B", "整理剧情A", "整理剧情B"]) {
+    // J1/J2: LLM failures must flow to the error branch -> 失败留痕, and the
+    // summary must consume the trace (no silent lost chapters).
+    const errorNodes = [
+      "写手A", "写手B", "润色A", "润色B", "审稿A", "审稿B",
+      "读者审稿A", "读者审稿B", "主编终审A", "主编终审B",
+      "提炼剧情A", "提炼剧情B", "整理剧情A", "整理剧情B",
+      "质量门A", "质量门B",
+    ];
+    for (const name of errorNodes) {
       const node = nodes.find((n) => n.name === name);
-      if (node && node.onError !== "continueRegularOutput") {
-        issues.push(`${file}: ${name} must tolerate errors (B-track isolation)`);
+      if (node && node.onError !== "continueErrorOutput") {
+        issues.push(`${file}: ${name} must route errors to the error branch`);
+      }
+      const errTargets = (conns[name]?.error?.[0] || []).map((x) => x.node);
+      if (node && !errTargets.includes("失败留痕")) {
+        issues.push(`${file}: ${name} error edge must reach 失败留痕`);
       }
     }
-    for (const name of ["写手A", "写手B", "润色A", "润色B", "审稿A", "审稿B"]) {
-      const node = nodes.find((n) => n.name === name);
-      if (node && node.onError !== "continueRegularOutput") {
-        issues.push(`${file}: ${name} must tolerate errors (track isolation)`);
-      }
+    if (!nodes.some((n) => n.name === "失败留痕")) {
+      issues.push(`${file}: missing 失败留痕 node`);
+    }
+    const traceTargets = (conns["失败留痕"]?.main?.[0] || []).map((x) => x.node);
+    if (!traceTargets.includes("合并发布结果")) {
+      issues.push(`${file}: 失败留痕 must feed 合并发布结果`);
     }
     const fallback = nodes.find((n) => n.name === "合并兜底");
-    if (fallback && !/质量门A/.test(fallback.parameters.jsCode || "")) {
-      issues.push(`${file}: 合并兜底 must read quality gates, not 校验发布`);
+    if (fallback && (!/质量门A/.test(fallback.parameters.jsCode || "") || !/质量门B/.test(fallback.parameters.jsCode || ""))) {
+      issues.push(`${file}: 合并兜底 must read both quality gates`);
     }
     const seqNode = nodes.find((n) => n.name === "算章节号");
     if (seqNode && !/未找到活跃作品/.test(seqNode.parameters.jsCode || "")) {
       issues.push(`${file}: 算章节号 must fail loudly without an active book`);
+    }
+    if (!/llmFail/.test(summary?.parameters.jsCode || "")) {
+      issues.push(`${file}: 汇总运行结果 must consume 失败留痕 (no silent failures)`);
     }
   }
 

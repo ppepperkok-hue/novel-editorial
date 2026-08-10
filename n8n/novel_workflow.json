@@ -152,7 +152,7 @@
         880,
         -200
       ],
-      "onError": "continueRegularOutput"
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -185,7 +185,7 @@
         1100,
         -200
       ],
-      "onError": "continueRegularOutput"
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -218,7 +218,7 @@
         1320,
         -200
       ],
-      "onError": "continueRegularOutput"
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -231,7 +231,8 @@
       "position": [
         1540,
         -200
-      ]
+      ],
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -277,7 +278,7 @@
         880,
         220
       ],
-      "onError": "continueRegularOutput"
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -310,7 +311,7 @@
         1100,
         220
       ],
-      "onError": "continueRegularOutput"
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -343,7 +344,7 @@
         1320,
         220
       ],
-      "onError": "continueRegularOutput"
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -356,7 +357,8 @@
       "position": [
         1540,
         220
-      ]
+      ],
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -1290,7 +1292,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const safe = (name) => { try { const d = $(name).first(); return d ? d.json : null; } catch { return null; } };\nconst meta = safe('解析作品资料') || {};\nconst outline = safe('解析大纲') || { chapter1: {}, chapter2: {} };\nconst ch1 = outline.chapter1 || {};\nconst ch2 = outline.chapter2 || {};\nconst now = new Date().toISOString().slice(0, 19).replace('T', ' ');\nconst runId = String($execution.id) + '-' + (meta.book_id || 'unknown');\nconst chapters = [];\nconst pubA = safe('校验发布A');\nconst pubB = safe('校验发布B');\nconst draftA = safe('解析草稿A');\nconst draftB = safe('解析草稿B');\nconst qa = safe('质量门A');\nconst qb = safe('质量门B');\nconst sumA = (safe('整理剧情A') || {}).summary || {};\nconst verifyA = safe('解析复核A');\nconst verifyB = safe('解析复核B');\nconst sumB = (safe('整理剧情B') || {}).summary || {};\nconst aOk = !!(pubA && pubA.published);\nconst bOk = !!(pubB && pubB.published);\nif (qa && qa.passed === false) {\n  chapters.push({ seq: meta.start_num, title: (ch1 && ch1.title) || '', outline: (ch1 && ch1.outline) || '', status: 'draft', words: Number(qa.chars || 0), fanqie_item_id: '', published_at: '', error: '质量门未通过：' + ((qa.errors || []).join(';') || 'unknown'), summary: sumA || {}, ending_excerpt: '', quality_passed: false, content: qa.editedText || '' });\n} else if (draftA && draftA.item_id) {\n  chapters.push({ seq: meta.start_num, title: draftA.title, outline: ch1.outline || '', status: aOk ? 'published' : 'reviewed', words: Number(qa.chars || 0), fanqie_item_id: draftA.item_id, published_at: aOk ? now : '', error: aOk ? '' : ((pubA && pubA.error) || JSON.stringify(pubA || {}).slice(0, 200)), summary: sumA, ending_excerpt: qa.editedText ? String(qa.editedText).slice(-220) : '', quality_passed: true, content: qa.editedText ? String(qa.editedText) : '' });\n}\nif (qb && qb.passed === false) {\n  chapters.push({ seq: meta.start_num + 1, title: (ch2 && ch2.title) || '', outline: (ch2 && ch2.outline) || '', status: 'draft', words: Number(qb.chars || 0), fanqie_item_id: '', published_at: '', error: '质量门未通过：' + ((qb.errors || []).join(';') || 'unknown'), summary: sumB || {}, ending_excerpt: '', quality_passed: false, content: qb.editedText || '' });\n} else if (draftB && draftB.item_id) {\n  chapters.push({ seq: meta.start_num + 1, title: draftB.title, outline: ch2.outline || '', status: bOk ? 'published' : 'reviewed', words: Number(qb.chars || 0), fanqie_item_id: draftB.item_id, published_at: bOk ? now : '', error: bOk ? '' : ((pubB && pubB.error) || JSON.stringify(pubB || {}).slice(0, 200)), summary: sumB, ending_excerpt: qb.editedText ? String(qb.editedText).slice(-220) : '', quality_passed: true, content: qb.editedText ? String(qb.editedText) : '' });\n}\nconst payload = {\n  run_id: runId,\n  book_id: meta.book_id,\n  book_name: meta.book_name,\n  genre: outline.genre || '',\n  premise: outline.premise || meta.premise,\n  selling_point: '',\n  platform: meta.platform || 'fanqie',\n  tags: meta.tags || [],\n  abstract: meta.abstract || '',\n  protagonists: meta.protagonists || [],\n  volume_goal: meta.volume_goal || '',\n  outline: { premise: outline.premise, genre: outline.genre, title: outline.title, keywords: outline.keywords, bible: outline.bible || null, chapter1: ch1, chapter2: ch2 },\n  chapters: chapters,\n  costs: (() => {\n    const llmNodes = ['Planner出大纲','守护细纲','生成作品资料','写手A','写手B','润色A','润色B','审稿A','审稿B','读者审稿A','读者审稿B','主编终审A','主编终审B','提炼剧情A','提炼剧情B'];\n    const costs = [];\n    for (const nm of llmNodes) {\n      const d = safe(nm);\n      if (d && d.usage) costs.push({ node: nm, model: String(d.model || ''), prompt_tokens: Number(d.usage.prompt_tokens || 0), completion_tokens: Number(d.usage.completion_tokens || 0) });\n    }\n    return costs;\n  })()\n};\nconst fs = require('fs');\nconst p = require('path');\nconst root = process.env.PIPELINE_ROOT || '';\nconst resultFile = root ? p.join(root, 'n8n_tmp', 'daily_result.json') : 'n8n_tmp/daily_result.json';\nfs.mkdirSync(p.dirname(resultFile), { recursive: true });\nfs.writeFileSync(resultFile, JSON.stringify(payload));\nreturn [{ json: { payload_b64: Buffer.from(JSON.stringify(payload)).toString('base64'), result_file: resultFile } }];"
+        "jsCode": "const safe = (name) => { try { const d = $(name).first(); return d ? d.json : null; } catch { return null; } };\nconst meta = safe('解析作品资料') || {};\nconst outline = safe('解析大纲') || { chapter1: {}, chapter2: {} };\nconst ch1 = outline.chapter1 || {};\nconst ch2 = outline.chapter2 || {};\nconst now = new Date().toISOString().slice(0, 19).replace('T', ' ');\nconst runId = String($execution.id) + '-' + (meta.book_id || 'unknown');\nconst chapters = [];\nconst pubA = safe('校验发布A');\nconst pubB = safe('校验发布B');\nconst draftA = safe('解析草稿A');\nconst draftB = safe('解析草稿B');\nconst qa = safe('质量门A');\nconst qb = safe('质量门B');\nconst sumA = (safe('整理剧情A') || {}).summary || {};\nconst verifyA = safe('解析复核A');\nconst verifyB = safe('解析复核B');\nconst sumB = (safe('整理剧情B') || {}).summary || {};\nconst aOk = !!(pubA && pubA.published);\nconst bOk = !!(pubB && pubB.published);\nif (qa && qa.passed === false) {\n  chapters.push({ seq: meta.start_num, title: (ch1 && ch1.title) || '', outline: (ch1 && ch1.outline) || '', status: 'draft', words: Number(qa.chars || 0), fanqie_item_id: '', published_at: '', error: '质量门未通过：' + ((qa.errors || []).join(';') || 'unknown'), summary: sumA || {}, ending_excerpt: '', quality_passed: false, content: qa.editedText || '' });\n} else if (draftA && draftA.item_id) {\n  chapters.push({ seq: meta.start_num, title: draftA.title, outline: ch1.outline || '', status: aOk ? 'published' : 'reviewed', words: Number(qa.chars || 0), fanqie_item_id: draftA.item_id, published_at: aOk ? now : '', error: aOk ? '' : ((pubA && pubA.error) || JSON.stringify(pubA || {}).slice(0, 200)), summary: sumA, ending_excerpt: qa.editedText ? String(qa.editedText).slice(-220) : '', quality_passed: true, content: qa.editedText ? String(qa.editedText) : '' });\n}\nif (qb && qb.passed === false) {\n  chapters.push({ seq: meta.start_num + 1, title: (ch2 && ch2.title) || '', outline: (ch2 && ch2.outline) || '', status: 'draft', words: Number(qb.chars || 0), fanqie_item_id: '', published_at: '', error: '质量门未通过：' + ((qb.errors || []).join(';') || 'unknown'), summary: sumB || {}, ending_excerpt: '', quality_passed: false, content: qb.editedText || '' });\n} else if (draftB && draftB.item_id) {\n  chapters.push({ seq: meta.start_num + 1, title: draftB.title, outline: ch2.outline || '', status: bOk ? 'published' : 'reviewed', words: Number(qb.chars || 0), fanqie_item_id: draftB.item_id, published_at: bOk ? now : '', error: bOk ? '' : ((pubB && pubB.error) || JSON.stringify(pubB || {}).slice(0, 200)), summary: sumB, ending_excerpt: qb.editedText ? String(qb.editedText).slice(-220) : '', quality_passed: true, content: qb.editedText ? String(qb.editedText) : '' });\n}\n\nconst llmFail = safe('失败留痕');\nif (llmFail && llmFail.llm_failure) {\n  const fnode = String(llmFail.node || 'unknown');\n  const isA = /A/.test(fnode);\n  const isB = /B/.test(fnode);\n  const aCovered = (qa && qa.passed === false) || (draftA && draftA.item_id);\n  const bCovered = (qb && qb.passed === false) || (draftB && draftB.item_id);\n  if (!aCovered && (isA || fnode === 'unknown')) {\n    chapters.push({ seq: meta.start_num, title: (ch1 && ch1.title) || '', outline: (ch1 && ch1.outline) || '', status: 'draft', words: 0, fanqie_item_id: '', published_at: '', error: 'A轨LLM节点失败：' + fnode, summary: {}, ending_excerpt: '', quality_passed: false, content: '' });\n  }\n  if (!bCovered && (isB || fnode === 'unknown')) {\n    chapters.push({ seq: meta.start_num + 1, title: (ch2 && ch2.title) || '', outline: (ch2 && ch2.outline) || '', status: 'draft', words: 0, fanqie_item_id: '', published_at: '', error: 'B轨LLM节点失败：' + fnode, summary: {}, ending_excerpt: '', quality_passed: false, content: '' });\n  }\n}\nconst payload = {\n  run_id: runId,\n  book_id: meta.book_id,\n  book_name: meta.book_name,\n  genre: outline.genre || '',\n  premise: outline.premise || meta.premise,\n  selling_point: '',\n  platform: meta.platform || 'fanqie',\n  tags: meta.tags || [],\n  abstract: meta.abstract || '',\n  protagonists: meta.protagonists || [],\n  volume_goal: meta.volume_goal || '',\n  outline: { premise: outline.premise, genre: outline.genre, title: outline.title, keywords: outline.keywords, bible: outline.bible || null, chapter1: ch1, chapter2: ch2 },\n  chapters: chapters,\n  costs: (() => {\n    const llmNodes = ['Planner出大纲','守护细纲','生成作品资料','写手A','写手B','润色A','润色B','审稿A','审稿B','读者审稿A','读者审稿B','主编终审A','主编终审B','提炼剧情A','提炼剧情B'];\n    const costs = [];\n    for (const nm of llmNodes) {\n      const d = safe(nm);\n      if (d && d.usage) costs.push({ node: nm, model: String(d.model || ''), prompt_tokens: Number(d.usage.prompt_tokens || 0), completion_tokens: Number(d.usage.completion_tokens || 0) });\n    }\n    return costs;\n  })()\n};\nconst fs = require('fs');\nconst p = require('path');\nconst root = process.env.PIPELINE_ROOT || '';\nconst resultFile = root ? p.join(root, 'n8n_tmp', 'daily_result.json') : 'n8n_tmp/daily_result.json';\nfs.mkdirSync(p.dirname(resultFile), { recursive: true });\nfs.writeFileSync(resultFile, JSON.stringify(payload));\nreturn [{ json: { payload_b64: Buffer.from(JSON.stringify(payload)).toString('base64'), result_file: resultFile } }];"
       },
       "id": "n-summary",
       "name": "汇总运行结果",
@@ -1363,7 +1365,7 @@
         1680,
         -360
       ],
-      "onError": "continueRegularOutput"
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -1377,7 +1379,7 @@
         1820,
         -360
       ],
-      "onError": "continueRegularOutput"
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -1409,7 +1411,7 @@
         1680,
         40
       ],
-      "onError": "continueRegularOutput"
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -1423,7 +1425,7 @@
         1820,
         40
       ],
-      "onError": "continueRegularOutput"
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -1509,7 +1511,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({agent:'读者审稿A', model:'deepseek-v4-flash', temperature:0.3, max_tokens:2000, novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；章纲：'+JSON.stringify($('解析大纲').item.json.chapter1)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+$('润色A').item.json.choices[0].message.content}) }}"
       },
-      "onError": "continueRegularOutput",
+      "onError": "continueErrorOutput",
       "id": "n-reader-a",
       "name": "读者审稿A",
       "type": "n8n-nodes-base.httpRequest",
@@ -1541,7 +1543,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({agent:'读者审稿B', model:'deepseek-v4-flash', temperature:0.3, max_tokens:2000, novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；章纲：'+JSON.stringify($('解析大纲').item.json.chapter2)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+$('润色B').item.json.choices[0].message.content}) }}"
       },
-      "onError": "continueRegularOutput",
+      "onError": "continueErrorOutput",
       "id": "n-reader-b",
       "name": "读者审稿B",
       "type": "n8n-nodes-base.httpRequest",
@@ -1812,7 +1814,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({agent:'主编终审A', model:'deepseek-v4-flash', temperature:0.2, max_tokens:2000, novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；章纲：'+JSON.stringify($('解析大纲').item.json.chapter1)+'；逻辑审稿原始输出：'+$('审稿A').item.json.choices[0].message.content+'；读者审稿原始输出：'+$('读者审稿A').item.json.choices[0].message.content+'；正文前800字：'+(($('润色A').item.json.choices[0].message.content)||'').slice(0,800)}) }}"
       },
-      "onError": "continueRegularOutput",
+      "onError": "continueErrorOutput",
       "id": "n-eic-a",
       "name": "主编终审A",
       "type": "n8n-nodes-base.httpRequest",
@@ -1844,7 +1846,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({agent:'主编终审B', model:'deepseek-v4-flash', temperature:0.2, max_tokens:2000, novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；章纲：'+JSON.stringify($('解析大纲').item.json.chapter2)+'；逻辑审稿原始输出：'+$('审稿B').item.json.choices[0].message.content+'；读者审稿原始输出：'+$('读者审稿B').item.json.choices[0].message.content+'；正文前800字：'+(($('润色B').item.json.choices[0].message.content)||'').slice(0,800)}) }}"
       },
-      "onError": "continueRegularOutput",
+      "onError": "continueErrorOutput",
       "id": "n-eic-b",
       "name": "主编终审B",
       "type": "n8n-nodes-base.httpRequest",
@@ -2002,6 +2004,19 @@
           "cwd": "={{ $env.PIPELINE_ROOT }}"
         }
       }
+    },
+    {
+      "id": "n-llm-failure-trace",
+      "name": "失败留痕",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        640,
+        980
+      ],
+      "parameters": {
+        "jsCode": "const item = $input.first() ? $input.first().json : {};\nconst nodeName = (item && ((item.node && item.node.name) || item.nodeName))\n  || (item && item.error && item.error.node && item.error.node.name)\n  || 'unknown';\nreturn [{ json: { llm_failure: true, node: String(nodeName || 'unknown') } }];"
+      }
     }
   ],
   "connections": {
@@ -2058,6 +2073,15 @@
             "index": 0
           }
         ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "润色A": {
@@ -2065,6 +2089,15 @@
         [
           {
             "node": "审稿A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
             "type": "main",
             "index": 0
           }
@@ -2080,6 +2113,15 @@
             "index": 0
           }
         ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "质量门A": {
@@ -2087,6 +2129,15 @@
         [
           {
             "node": "提炼剧情A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
             "type": "main",
             "index": 0
           }
@@ -2113,6 +2164,15 @@
             "index": 0
           }
         ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "润色B": {
@@ -2120,6 +2180,15 @@
         [
           {
             "node": "审稿B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
             "type": "main",
             "index": 0
           }
@@ -2135,6 +2204,15 @@
             "index": 0
           }
         ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "质量门B": {
@@ -2142,6 +2220,15 @@
         [
           {
             "node": "提炼剧情B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
             "type": "main",
             "index": 0
           }
@@ -2406,6 +2493,15 @@
             "index": 0
           }
         ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "整理剧情A": {
@@ -2427,6 +2523,15 @@
             "index": 0
           }
         ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "提炼剧情B": {
@@ -2438,6 +2543,15 @@
             "index": 0
           }
         ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "整理剧情B": {
@@ -2445,6 +2559,15 @@
         [
           {
             "node": "排版B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
             "type": "main",
             "index": 0
           }
@@ -2493,6 +2616,15 @@
             "index": 0
           }
         ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "读者审稿B": {
@@ -2500,6 +2632,15 @@
         [
           {
             "node": "主编终审B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
             "type": "main",
             "index": 0
           }
@@ -2599,6 +2740,15 @@
             "index": 0
           }
         ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "主编终审B": {
@@ -2606,6 +2756,15 @@
         [
           {
             "node": "质量门B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
             "type": "main",
             "index": 0
           }
@@ -2723,6 +2882,17 @@
         [
           {
             "node": "查存稿",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "失败留痕": {
+      "main": [
+        [
+          {
+            "node": "合并发布结果",
             "type": "main",
             "index": 0
           }
