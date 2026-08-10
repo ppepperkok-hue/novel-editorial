@@ -221,7 +221,7 @@ for (const file of files) {
       "写手A", "写手B", "润色A", "润色B", "审稿A", "审稿B",
       "读者审稿A", "读者审稿B", "主编终审A", "主编终审B",
       "提炼剧情A", "提炼剧情B", "整理剧情A", "整理剧情B",
-      "质量门A", "质量门B",
+      "质量门A", "质量门B", "守护细纲", "新建草稿A", "新建草稿B",
     ];
     for (const name of errorNodes) {
       const node = nodes.find((n) => n.name === name);
@@ -236,9 +236,33 @@ for (const file of files) {
     if (!nodes.some((n) => n.name === "失败留痕")) {
       issues.push(`${file}: missing 失败留痕 node`);
     }
+    const traceNode = nodes.find((n) => n.name === "失败留痕");
+    if (traceNode && !/\$input\.all\(\)/.test(traceNode.parameters.jsCode || "")) {
+      issues.push(`${file}: 失败留痕 must collect all error items`);
+    }
     const traceTargets = (conns["失败留痕"]?.main?.[0] || []).map((x) => x.node);
     if (!traceTargets.includes("合并发布结果")) {
       issues.push(`${file}: 失败留痕 must feed 合并发布结果`);
+    }
+    // K1: merge input ports must be distinct and match numberInputs.
+    const mergeNode = nodes.find((n) => n.name === "合并发布结果");
+    if (mergeNode) {
+      const upstreams = Object.entries(conns)
+        .filter(([, v]) => (v.main?.[0] || []).some((e) => e.node === "合并发布结果"))
+        .map(([src, v]) => ({ src, idx: v.main[0].find((e) => e.node === "合并发布结果").index }));
+      const ports = upstreams.map((u) => u.idx);
+      if (new Set(ports).size !== upstreams.length) {
+        issues.push(`${file}: 合并发布结果 inputs use duplicate ports`);
+      }
+      for (let k = 0; k < upstreams.length; k += 1) {
+        if (!ports.includes(k)) {
+          issues.push(`${file}: 合并发布结果 input port ${k} not assigned`);
+        }
+      }
+      const declared = Number(mergeNode.parameters.numberInputs || 0);
+      if (declared !== upstreams.length) {
+        issues.push(`${file}: 合并发布结果 numberInputs=${declared} != upstreams=${upstreams.length}`);
+      }
     }
     const fallback = nodes.find((n) => n.name === "合并兜底");
     if (fallback && (!/质量门A/.test(fallback.parameters.jsCode || "") || !/质量门B/.test(fallback.parameters.jsCode || ""))) {
@@ -248,8 +272,11 @@ for (const file of files) {
     if (seqNode && !/未找到活跃作品/.test(seqNode.parameters.jsCode || "")) {
       issues.push(`${file}: 算章节号 must fail loudly without an active book`);
     }
-    if (!/llmFail/.test(summary?.parameters.jsCode || "")) {
+    if (!/failNames/.test(summary?.parameters.jsCode || "")) {
       issues.push(`${file}: 汇总运行结果 must consume 失败留痕 (no silent failures)`);
+    }
+    if (!/质量门通过但草稿创建\/发布链中断/.test(summary?.parameters.jsCode || "")) {
+      issues.push(`${file}: 汇总运行结果 must record gate-passed-but-draft-missing`);
     }
   }
 

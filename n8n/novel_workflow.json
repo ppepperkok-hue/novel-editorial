@@ -443,7 +443,7 @@
         1980,
         -200
       ],
-      "onError": "continueRegularOutput"
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -656,7 +656,7 @@
         1980,
         220
       ],
-      "onError": "continueRegularOutput"
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -1292,7 +1292,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const safe = (name) => { try { const d = $(name).first(); return d ? d.json : null; } catch { return null; } };\nconst meta = safe('解析作品资料') || {};\nconst outline = safe('解析大纲') || { chapter1: {}, chapter2: {} };\nconst ch1 = outline.chapter1 || {};\nconst ch2 = outline.chapter2 || {};\nconst now = new Date().toISOString().slice(0, 19).replace('T', ' ');\nconst runId = String($execution.id) + '-' + (meta.book_id || 'unknown');\nconst chapters = [];\nconst pubA = safe('校验发布A');\nconst pubB = safe('校验发布B');\nconst draftA = safe('解析草稿A');\nconst draftB = safe('解析草稿B');\nconst qa = safe('质量门A');\nconst qb = safe('质量门B');\nconst sumA = (safe('整理剧情A') || {}).summary || {};\nconst verifyA = safe('解析复核A');\nconst verifyB = safe('解析复核B');\nconst sumB = (safe('整理剧情B') || {}).summary || {};\nconst aOk = !!(pubA && pubA.published);\nconst bOk = !!(pubB && pubB.published);\nif (qa && qa.passed === false) {\n  chapters.push({ seq: meta.start_num, title: (ch1 && ch1.title) || '', outline: (ch1 && ch1.outline) || '', status: 'draft', words: Number(qa.chars || 0), fanqie_item_id: '', published_at: '', error: '质量门未通过：' + ((qa.errors || []).join(';') || 'unknown'), summary: sumA || {}, ending_excerpt: '', quality_passed: false, content: qa.editedText || '' });\n} else if (draftA && draftA.item_id) {\n  chapters.push({ seq: meta.start_num, title: draftA.title, outline: ch1.outline || '', status: aOk ? 'published' : 'reviewed', words: Number(qa.chars || 0), fanqie_item_id: draftA.item_id, published_at: aOk ? now : '', error: aOk ? '' : ((pubA && pubA.error) || JSON.stringify(pubA || {}).slice(0, 200)), summary: sumA, ending_excerpt: qa.editedText ? String(qa.editedText).slice(-220) : '', quality_passed: true, content: qa.editedText ? String(qa.editedText) : '' });\n}\nif (qb && qb.passed === false) {\n  chapters.push({ seq: meta.start_num + 1, title: (ch2 && ch2.title) || '', outline: (ch2 && ch2.outline) || '', status: 'draft', words: Number(qb.chars || 0), fanqie_item_id: '', published_at: '', error: '质量门未通过：' + ((qb.errors || []).join(';') || 'unknown'), summary: sumB || {}, ending_excerpt: '', quality_passed: false, content: qb.editedText || '' });\n} else if (draftB && draftB.item_id) {\n  chapters.push({ seq: meta.start_num + 1, title: draftB.title, outline: ch2.outline || '', status: bOk ? 'published' : 'reviewed', words: Number(qb.chars || 0), fanqie_item_id: draftB.item_id, published_at: bOk ? now : '', error: bOk ? '' : ((pubB && pubB.error) || JSON.stringify(pubB || {}).slice(0, 200)), summary: sumB, ending_excerpt: qb.editedText ? String(qb.editedText).slice(-220) : '', quality_passed: true, content: qb.editedText ? String(qb.editedText) : '' });\n}\n\nconst llmFail = safe('失败留痕');\nif (llmFail && llmFail.llm_failure) {\n  const fnode = String(llmFail.node || 'unknown');\n  const isA = /A/.test(fnode);\n  const isB = /B/.test(fnode);\n  const aCovered = (qa && qa.passed === false) || (draftA && draftA.item_id);\n  const bCovered = (qb && qb.passed === false) || (draftB && draftB.item_id);\n  if (!aCovered && (isA || fnode === 'unknown')) {\n    chapters.push({ seq: meta.start_num, title: (ch1 && ch1.title) || '', outline: (ch1 && ch1.outline) || '', status: 'draft', words: 0, fanqie_item_id: '', published_at: '', error: 'A轨LLM节点失败：' + fnode, summary: {}, ending_excerpt: '', quality_passed: false, content: '' });\n  }\n  if (!bCovered && (isB || fnode === 'unknown')) {\n    chapters.push({ seq: meta.start_num + 1, title: (ch2 && ch2.title) || '', outline: (ch2 && ch2.outline) || '', status: 'draft', words: 0, fanqie_item_id: '', published_at: '', error: 'B轨LLM节点失败：' + fnode, summary: {}, ending_excerpt: '', quality_passed: false, content: '' });\n  }\n}\nconst payload = {\n  run_id: runId,\n  book_id: meta.book_id,\n  book_name: meta.book_name,\n  genre: outline.genre || '',\n  premise: outline.premise || meta.premise,\n  selling_point: '',\n  platform: meta.platform || 'fanqie',\n  tags: meta.tags || [],\n  abstract: meta.abstract || '',\n  protagonists: meta.protagonists || [],\n  volume_goal: meta.volume_goal || '',\n  outline: { premise: outline.premise, genre: outline.genre, title: outline.title, keywords: outline.keywords, bible: outline.bible || null, chapter1: ch1, chapter2: ch2 },\n  chapters: chapters,\n  costs: (() => {\n    const llmNodes = ['Planner出大纲','守护细纲','生成作品资料','写手A','写手B','润色A','润色B','审稿A','审稿B','读者审稿A','读者审稿B','主编终审A','主编终审B','提炼剧情A','提炼剧情B'];\n    const costs = [];\n    for (const nm of llmNodes) {\n      const d = safe(nm);\n      if (d && d.usage) costs.push({ node: nm, model: String(d.model || ''), prompt_tokens: Number(d.usage.prompt_tokens || 0), completion_tokens: Number(d.usage.completion_tokens || 0) });\n    }\n    return costs;\n  })()\n};\nconst fs = require('fs');\nconst p = require('path');\nconst root = process.env.PIPELINE_ROOT || '';\nconst resultFile = root ? p.join(root, 'n8n_tmp', 'daily_result.json') : 'n8n_tmp/daily_result.json';\nfs.mkdirSync(p.dirname(resultFile), { recursive: true });\nfs.writeFileSync(resultFile, JSON.stringify(payload));\nreturn [{ json: { payload_b64: Buffer.from(JSON.stringify(payload)).toString('base64'), result_file: resultFile } }];"
+        "jsCode": "const safe = (name) => { try { const d = $(name).first(); return d ? d.json : null; } catch { return null; } };\nconst meta = safe('解析作品资料') || {};\nconst outline = safe('解析大纲') || { chapter1: {}, chapter2: {} };\nconst ch1 = outline.chapter1 || {};\nconst ch2 = outline.chapter2 || {};\nconst now = new Date().toISOString().slice(0, 19).replace('T', ' ');\nconst runId = String($execution.id) + '-' + (meta.book_id || 'unknown');\nconst chapters = [];\nconst pubA = safe('校验发布A');\nconst pubB = safe('校验发布B');\nconst draftA = safe('解析草稿A');\nconst draftB = safe('解析草稿B');\nconst qa = safe('质量门A');\nconst qb = safe('质量门B');\nconst sumA = (safe('整理剧情A') || {}).summary || {};\nconst verifyA = safe('解析复核A');\nconst verifyB = safe('解析复核B');\nconst sumB = (safe('整理剧情B') || {}).summary || {};\nconst aOk = !!(pubA && pubA.published);\nconst bOk = !!(pubB && pubB.published);\nif (qa && qa.passed === false) {\n  chapters.push({ seq: meta.start_num, title: (ch1 && ch1.title) || '', outline: (ch1 && ch1.outline) || '', status: 'draft', words: Number(qa.chars || 0), fanqie_item_id: '', published_at: '', error: '质量门未通过：' + ((qa.errors || []).join(';') || 'unknown'), summary: sumA || {}, ending_excerpt: '', quality_passed: false, content: qa.editedText || '' });\n} else if (draftA && draftA.item_id) {\n  chapters.push({ seq: meta.start_num, title: draftA.title, outline: ch1.outline || '', status: aOk ? 'published' : 'reviewed', words: Number(qa.chars || 0), fanqie_item_id: draftA.item_id, published_at: aOk ? now : '', error: aOk ? '' : ((pubA && pubA.error) || JSON.stringify(pubA || {}).slice(0, 200)), summary: sumA, ending_excerpt: qa.editedText ? String(qa.editedText).slice(-220) : '', quality_passed: true, content: qa.editedText ? String(qa.editedText) : '' });\n}\nif (qb && qb.passed === false) {\n  chapters.push({ seq: meta.start_num + 1, title: (ch2 && ch2.title) || '', outline: (ch2 && ch2.outline) || '', status: 'draft', words: Number(qb.chars || 0), fanqie_item_id: '', published_at: '', error: '质量门未通过：' + ((qb.errors || []).join(';') || 'unknown'), summary: sumB || {}, ending_excerpt: '', quality_passed: false, content: qb.editedText || '' });\n} else if (draftB && draftB.item_id) {\n  chapters.push({ seq: meta.start_num + 1, title: draftB.title, outline: ch2.outline || '', status: bOk ? 'published' : 'reviewed', words: Number(qb.chars || 0), fanqie_item_id: draftB.item_id, published_at: bOk ? now : '', error: bOk ? '' : ((pubB && pubB.error) || JSON.stringify(pubB || {}).slice(0, 200)), summary: sumB, ending_excerpt: qb.editedText ? String(qb.editedText).slice(-220) : '', quality_passed: true, content: qb.editedText ? String(qb.editedText) : '' });\n}\n\nconst llmFail = safe('失败留痕');\nconst failNames = (llmFail && llmFail.llm_failure && Array.isArray(llmFail.nodes))\n  ? llmFail.nodes.map(String).join(',') : (llmFail && llmFail.node ? String(llmFail.node) : '');\nconst aCovered = (qa && qa.passed === false) || (draftA && draftA.item_id) || aOk;\nconst bCovered = (qb && qb.passed === false) || (draftB && draftB.item_id) || bOk;\n// K5: gate passed but the draft/publish chain never produced a record.\nif (qa && qa.passed === true && !draftA && !aCovered) {\n  chapters.push({ seq: meta.start_num, title: (ch1 && ch1.title) || '', outline: (ch1 && ch1.outline) || '', status: 'draft', words: Number(qa.chars || 0), fanqie_item_id: '', published_at: '', error: '质量门通过但草稿创建/发布链中断', summary: sumA || {}, ending_excerpt: '', quality_passed: true, content: qa.editedText || '' });\n}\nif (qb && qb.passed === true && !draftB && !bCovered) {\n  chapters.push({ seq: meta.start_num + 1, title: (ch2 && ch2.title) || '', outline: (ch2 && ch2.outline) || '', status: 'draft', words: Number(qb.chars || 0), fanqie_item_id: '', published_at: '', error: '质量门通过但草稿创建/发布链中断', summary: sumB || {}, ending_excerpt: '', quality_passed: true, content: qb.editedText || '' });\n}\nif (failNames) {\n  // K2: any LLM/chain failure fills every uncovered track so no\n  // chapter silently disappears (dependencies may never have run).\n  if (!aCovered && !(qa && qa.passed === false)) {\n    chapters.push({ seq: meta.start_num, title: (ch1 && ch1.title) || '', outline: (ch1 && ch1.outline) || '', status: 'draft', words: 0, fanqie_item_id: '', published_at: '', error: 'LLM链路失败：' + failNames, summary: {}, ending_excerpt: '', quality_passed: false, content: '' });\n  }\n  if (!bCovered && !(qb && qb.passed === false)) {\n    chapters.push({ seq: meta.start_num + 1, title: (ch2 && ch2.title) || '', outline: (ch2 && ch2.outline) || '', status: 'draft', words: 0, fanqie_item_id: '', published_at: '', error: 'LLM链路失败：' + failNames, summary: {}, ending_excerpt: '', quality_passed: false, content: '' });\n  }\n}\n\nconst payload = {\n  run_id: runId,\n  book_id: meta.book_id,\n  book_name: meta.book_name,\n  genre: outline.genre || '',\n  premise: outline.premise || meta.premise,\n  selling_point: '',\n  platform: meta.platform || 'fanqie',\n  tags: meta.tags || [],\n  abstract: meta.abstract || '',\n  protagonists: meta.protagonists || [],\n  volume_goal: meta.volume_goal || '',\n  outline: { premise: outline.premise, genre: outline.genre, title: outline.title, keywords: outline.keywords, bible: outline.bible || null, chapter1: ch1, chapter2: ch2 },\n  chapters: chapters,\n  costs: (() => {\n    const llmNodes = ['Planner出大纲','守护细纲','生成作品资料','写手A','写手B','润色A','润色B','审稿A','审稿B','读者审稿A','读者审稿B','主编终审A','主编终审B','提炼剧情A','提炼剧情B'];\n    const costs = [];\n    for (const nm of llmNodes) {\n      const d = safe(nm);\n      if (d && d.usage) costs.push({ node: nm, model: String(d.model || ''), prompt_tokens: Number(d.usage.prompt_tokens || 0), completion_tokens: Number(d.usage.completion_tokens || 0) });\n    }\n    return costs;\n  })()\n};\nconst fs = require('fs');\nconst p = require('path');\nconst root = process.env.PIPELINE_ROOT || '';\nconst resultFile = root ? p.join(root, 'n8n_tmp', 'daily_result.json') : 'n8n_tmp/daily_result.json';\nfs.mkdirSync(p.dirname(resultFile), { recursive: true });\nfs.writeFileSync(resultFile, JSON.stringify(payload));\nreturn [{ json: { payload_b64: Buffer.from(JSON.stringify(payload)).toString('base64'), result_file: resultFile } }];"
       },
       "id": "n-summary",
       "name": "汇总运行结果",
@@ -1324,7 +1324,8 @@
     {
       "parameters": {
         "mode": "append",
-        "options": {}
+        "options": {},
+        "numberInputs": 4
       },
       "id": "n-merge-pub",
       "name": "合并发布结果",
@@ -1466,7 +1467,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({agent:'守护细纲', model:'deepseek-v4-flash', temperature:0.3, max_tokens:2000, novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'故事圣经：'+JSON.stringify((($('解析大纲').item.json.bible)||{}))+'；两章细纲：'+JSON.stringify({chapter1:$('解析大纲').item.json.chapter1,chapter2:$('解析大纲').item.json.chapter2})+'；记忆包：'+$('解析本地资料').first().json.writing_context}) }}"
       },
-      "onError": "continueRegularOutput",
+      "onError": "continueErrorOutput",
       "id": "n-guard",
       "name": "守护细纲",
       "type": "n8n-nodes-base.httpRequest",
@@ -2015,7 +2016,7 @@
         980
       ],
       "parameters": {
-        "jsCode": "const item = $input.first() ? $input.first().json : {};\nconst nodeName = (item && ((item.node && item.node.name) || item.nodeName))\n  || (item && item.error && item.error.node && item.error.node.name)\n  || 'unknown';\nreturn [{ json: { llm_failure: true, node: String(nodeName || 'unknown') } }];"
+        "jsCode": "const items = $input.all();\nconst names = items.map((it) => {\n  const j = (it && it.json) || {};\n  const direct = (j.node && (j.node.name || j.name)) || j.nodeName;\n  const nested = j.error && j.error.node && j.error.node.name;\n  const raw = (direct || nested || '').toString();\n  return raw || 'unknown';\n}).filter(Boolean);\nreturn [{ json: { llm_failure: true, nodes: names } }];"
       }
     }
   ],
@@ -2255,6 +2256,15 @@
             "index": 0
           }
         ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "解析草稿A": {
@@ -2284,6 +2294,15 @@
         [
           {
             "node": "解析草稿B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
             "type": "main",
             "index": 0
           }
@@ -2594,6 +2613,15 @@
             "index": 0
           }
         ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "解析守护": {
@@ -2715,7 +2743,7 @@
           {
             "node": "合并发布结果",
             "type": "main",
-            "index": 0
+            "index": 1
           }
         ]
       ]
@@ -2861,7 +2889,7 @@
           {
             "node": "合并发布结果",
             "type": "main",
-            "index": 0
+            "index": 2
           }
         ]
       ]
@@ -2894,7 +2922,7 @@
           {
             "node": "合并发布结果",
             "type": "main",
-            "index": 0
+            "index": 3
           }
         ]
       ]
