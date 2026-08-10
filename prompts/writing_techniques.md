@@ -1,5 +1,8 @@
 # 网文写作技巧库（番茄向）
 
+> 已迁移：本文件内容已拆分进 `prompts/knowledge/` 六个知识包，并由 Agent 工具循环按需调用。
+> 本文件仅作为来源归档保留，不再直接注入工作流。
+
 来源：马良写作《网文节奏与爽点设计》、OpenNovel 编辑/审稿提示词、chinese-webnovel-skills 去AI味指南、DankerMu anti-ai-polish。
 
 ## 一、开篇黄金三章

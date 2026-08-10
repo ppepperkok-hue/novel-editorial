@@ -83,6 +83,23 @@
         520,
         0
       ]
+    },
+    {
+      "parameters": {
+        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe E:/code/novel-pipeline/tools/distill_lessons.py --db demo.db",
+        "options": {
+          "cwd": "E:/code/novel-pipeline"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "n-distill",
+      "name": "蒸馏经验",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        720,
+        0
+      ]
     }
   ],
   "connections": {
@@ -120,6 +137,17 @@
       ]
     },
     "开会": {
+      "main": [
+        [
+          {
+            "node": "蒸馏经验",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "蒸馏经验": {
       "main": [
         [
           {

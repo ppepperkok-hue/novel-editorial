@@ -1,9 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  actOnDraft,
+  distillLessons,
   getAgentStates,
   getAgents,
   getDiaries,
+  getKnowledge,
+  getKnowledgeDrafts,
   postAgents,
+  postControl,
+  readKnowledge,
+  saveKnowledge,
   updateAgentState,
   updateDiary,
 } from "../api.js";
@@ -23,6 +30,246 @@ const AVATAR_COLORS = [
 
 function agentTone(a) {
   return a.synced ? { text: "已同步", cls: "chip-ok" } : { text: "未同步", cls: "chip-warn" };
+}
+
+function KnowledgePanel({ pushToast }) {
+  const [list, setList] = useState(null);
+  const [editor, setEditor] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    getKnowledge()
+      .then((r) => setList(r.knowledge || []))
+      .catch(() => setList([]));
+  };
+  useEffect(() => {
+    load();
+  }, []);
+
+  const open = async (item) => {
+    const r = await readKnowledge(item.file);
+    if (!r.ok || !r.item) {
+      pushToast("读取知识包失败", "bad");
+      return;
+    }
+    setEditor({
+      file: r.item.file,
+      title: r.item.meta.title || item.file,
+      type: r.item.meta.type || "craft",
+      agents: (r.item.meta.agents || []).join(","),
+      body: r.item.body,
+    });
+  };
+
+  const save = async () => {
+    if (!editor) return;
+    setBusy(true);
+    try {
+      const agents = editor.agents
+        .split(/[,，\s]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const r = await saveKnowledge(
+        editor.file,
+        { title: editor.title, type: editor.type, agents },
+        editor.body,
+      );
+      pushToast(r.ok ? "知识包已保存" : "保存失败：" + (r.error || "未知"), r.ok ? "ok" : "bad");
+      if (r.ok) {
+        setEditor(null);
+        load();
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runKeeper = async () => {
+    setBusy(true);
+    try {
+      const r = await postControl({ action: "run_knowledge_keeper" });
+      pushToast(
+        r.ok
+          ? `维护完成：自动更新 ${(r.auto_updates || []).length}，草案 ${r.draft_suggestions || 0}，废弃 ${r.deprecations || 0}`
+          : "维护失败：" + (r.error || "未知"),
+        r.ok ? "ok" : "bad",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="panel p-4">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="section-title !mb-0">知识库（Agent Skills）</div>
+        <button className="btn ml-auto !px-3 !py-1 text-xs" disabled={busy} onClick={runKeeper}>
+          {busy ? "维护中…" : "▣ 运行知识维护"}
+        </button>
+      </div>
+
+      {editor ? (
+        <div className="rounded-lg border border-[var(--line)] p-3">
+          <div className="mb-2 grid grid-cols-1 gap-2 md:grid-cols-3">
+            <label className="text-xs muted">
+              标题
+              <input className="input mt-1" value={editor.title} onChange={(e) => setEditor({ ...editor, title: e.target.value })} />
+            </label>
+            <label className="text-xs muted">
+              类型
+              <select className="input mt-1" value={editor.type} onChange={(e) => setEditor({ ...editor, type: e.target.value })}>
+                <option value="craft">craft（技巧）</option>
+                <option value="market">market（市场）</option>
+                <option value="generic">generic（通用常驻）</option>
+              </select>
+            </label>
+            <label className="text-xs muted">
+              适用角色（逗号分隔，all=全员）
+              <input className="input mt-1" value={editor.agents} onChange={(e) => setEditor({ ...editor, agents: e.target.value })} />
+            </label>
+          </div>
+          <textarea
+            className="input mt-2 h-56 w-full font-mono text-xs"
+            value={editor.body}
+            onChange={(e) => setEditor({ ...editor, body: e.target.value })}
+          />
+          <div className="mt-2 flex justify-end gap-2">
+            <button className="btn" onClick={() => setEditor(null)}>取消</button>
+            <button className="btn btn-ok" disabled={busy} onClick={save}>保存知识包</button>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          {(list || []).map((item) => (
+            <div key={item.file} className="card panel-hover p-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold">{item.title}</span>
+                <span className={`chip ${item.type === "market" ? "chip-warn" : item.type === "generic" ? "chip-ok" : "chip-info"}`}>{item.type}</span>
+                <span className="muted ml-auto text-xs">{item.updated_at}</span>
+              </div>
+              <div className="muted mt-1 text-xs leading-relaxed">{item.summary}</div>
+              <div className="mt-1.5 flex items-center gap-1.5 text-xs">
+                <span className="muted">适用：</span>
+                {(item.agents || []).slice(0, 6).map((a) => (
+                  <span key={a} className="chip !px-1.5 !py-0.5">{a}</span>
+                ))}
+                <button className="btn ml-auto !px-2.5 !py-0.5 text-xs" onClick={() => open(item)}>编辑</button>
+              </div>
+            </div>
+          ))}
+          {!list?.length ? <div className="empty">暂无知识包。</div> : null}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function DraftsPanel({ pushToast }) {
+  const [drafts, setDrafts] = useState([]);
+  const [detail, setDetail] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    getKnowledgeDrafts()
+      .then((r) => setDrafts(r.drafts || []))
+      .catch(() => setDrafts([]));
+  };
+  useEffect(() => {
+    load();
+  }, []);
+
+  const act = async (draft, action) => {
+    setBusy(true);
+    try {
+      const r = await actOnDraft(draft.id, action);
+      pushToast(
+        r.ok
+          ? action === "accept"
+            ? "已采纳并写入知识库"
+            : action === "reject"
+              ? "已拒绝"
+              : "已标记废弃"
+          : "操作失败：" + (r.error || "未知"),
+        r.ok ? "ok" : "bad",
+      );
+      setDetail(null);
+      load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const distill = async () => {
+    setBusy(true);
+    try {
+      const r = await distillLessons();
+      pushToast(
+        r.ok ? `蒸馏完成：新增 ${r.drafted || 0} 条经验卡` : "蒸馏失败：" + (r.error || "未知"),
+        r.ok ? "ok" : "bad",
+      );
+      load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="panel p-4">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="section-title !mb-0">经验卡（反思蒸馏）</div>
+        <button className="btn ml-auto !px-3 !py-1 text-xs" disabled={busy} onClick={distill}>
+          {busy ? "蒸馏中…" : "✦ 蒸馏最近一次会议"}
+        </button>
+      </div>
+      <div className="flex flex-col gap-2">
+        {drafts.map((d) => (
+          <div key={d.id} className="card panel-hover p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`chip ${d.kind === "lesson" ? "chip-warn" : d.kind === "deprecation" ? "chip-bad" : "chip-info"}`}>
+                {d.kind === "lesson" ? "经验" : d.kind === "deprecation" ? "废弃" : "知识"}
+              </span>
+              <span className="text-sm font-semibold">{d.title}</span>
+              <span className="muted ml-auto text-xs">{d.created_at}</span>
+              <span className="muted text-xs">{d.source}</span>
+            </div>
+            <div className="muted mt-1.5 text-xs leading-relaxed line-clamp-2">{d.content}</div>
+            {detail === d.id ? (
+              <div className="mt-2 rounded-lg border border-[var(--line)] bg-[var(--code-bg)] p-3">
+                <div className="whitespace-pre-wrap text-xs leading-relaxed text-slate-300">{d.content}</div>
+                {(d.agents || []).length ? (
+                  <div className="mt-2 flex gap-1.5 text-xs">
+                    <span className="muted">适用：</span>
+                    {d.agents.map((a) => <span key={a} className="chip !px-1.5 !py-0.5">{a}</span>)}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {d.status === "draft" ? (
+              <div className="mt-2 flex gap-2">
+                <button className="btn !px-2.5 !py-0.5 text-xs" onClick={() => setDetail(detail === d.id ? null : d.id)}>
+                  {detail === d.id ? "收起" : "查看"}
+                </button>
+                <button className="btn btn-ok !px-2.5 !py-0.5 text-xs" disabled={busy} onClick={() => act(d, "accept")}>
+                  采纳
+                </button>
+                <button className="btn !px-2.5 !py-0.5 text-xs" disabled={busy} onClick={() => act(d, "reject")}>
+                  拒绝
+                </button>
+                {d.kind !== "deprecation" ? (
+                  <button className="btn btn-danger !px-2.5 !py-0.5 text-xs" disabled={busy} onClick={() => act(d, "deprecate")}>
+                    废弃
+                  </button>
+                ) : null}
+              </div>
+            ) : (
+              <div className="muted mt-2 text-xs">已{d.status === "accepted" ? "采纳" : d.status === "rejected" ? "拒绝" : "废弃"}</div>
+            )}
+          </div>
+        ))}
+        {!drafts.length ? <div className="empty">暂无经验卡。周会或专题会议后会自动蒸馏，也可手动点击上方按钮。</div> : null}
+      </div>
+    </section>
+  );
 }
 
 export default function AgentsPage({ pushToast }) {
@@ -197,7 +444,8 @@ export default function AgentsPage({ pushToast }) {
   const modelOptions = ["deepseek-v4-pro", "deepseek-v4-flash"];
 
   return (
-    <div className="grid h-[calc(100vh-150px)] grid-cols-1 gap-4 xl:grid-cols-[330px_1fr]">
+    <div className="flex flex-col gap-4">
+      <div className="grid h-[calc(100vh-150px)] grid-cols-1 gap-4 xl:grid-cols-[330px_1fr]">
       <div className="panel overflow-hidden flex flex-col">
         <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3">
           <div className="text-sm font-semibold">写作智能体</div>
@@ -442,6 +690,9 @@ export default function AgentsPage({ pushToast }) {
           deploy();
         }}
       />
+      </div>
+      <KnowledgePanel pushToast={pushToast} />
+      <DraftsPanel pushToast={pushToast} />
     </div>
   );
 }

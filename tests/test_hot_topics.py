@@ -3,6 +3,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from novel_pipeline.hot_topics import (
     count_keywords,
@@ -45,6 +46,48 @@ class HotTopicsTests(unittest.TestCase):
         self.assertTrue(os.path.exists(out))
         saved = json.loads(Path(out).read_text(encoding="utf-8"))
         self.assertIn("都市之重生系统", saved["sources"][0]["titles"])
+
+    def test_refresh_falls_back_to_browser_when_html_empty(self):
+        tmpdir = tempfile.mkdtemp()
+        out = os.path.join(tmpdir, "hot_topics.json")
+        with mock.patch(
+            "novel_pipeline.hot_topics.fetch_rank_browser",
+            return_value=["都市之重生系统", "修仙从直播开始"],
+        ):
+            payload = refresh(
+                out_path=out,
+                sources=[{"name": "fake", "url": "http://x"}],
+                fetcher=lambda source: "<html></html>",
+            )
+        src = payload["sources"][0]
+        self.assertEqual(src["method"], "browser")
+        self.assertEqual(src["count"], 2)
+
+    def test_browser_extract_cleans_font_glyphs(self):
+        import novel_pipeline.hot_topics as ht
+
+        def fake_bb(args, timeout=60):
+            cmd = args[0]
+            if cmd == "open":
+                return mock.Mock(
+                    returncode=0,
+                    stdout='{"result": {"tab": "abc"}}',
+                    stderr="",
+                )
+            if cmd == "eval" and args[1] == ht.BROWSER_EXTRACT_JS:
+                return mock.Mock(
+                    returncode=0,
+                    stdout=(
+                        '{"result": {"result": "[\\"笨蛋\\ue001\\ue002替嫁\\ue003疯批王爷宠\\ue004\\", '
+                        '\\"首页\\", \\"月票榜\\", \\"短\\"]"}}'
+                    ),
+                    stderr="",
+                )
+            return mock.Mock(returncode=0, stdout="{}", stderr="")
+
+        with mock.patch("novel_pipeline.hot_topics._bb_run", side_effect=fake_bb):
+            titles = ht.fetch_rank_browser({"url": "http://x", "name": "fake"})
+        self.assertEqual(titles, ["笨蛋替嫁疯批王爷宠"])
 
     def test_from_csv(self):
         tmpdir = tempfile.mkdtemp()

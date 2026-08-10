@@ -189,6 +189,19 @@ CREATE TABLE IF NOT EXISTS meeting_sessions (
     created_at TEXT DEFAULT '',
     updated_at TEXT DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS knowledge_drafts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL DEFAULT 'lesson',
+    agent TEXT DEFAULT '',
+    source TEXT DEFAULT '',
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    agents TEXT DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'draft',
+    created_at TEXT DEFAULT '',
+    accepted_at TEXT DEFAULT ''
+);
 """
 
 

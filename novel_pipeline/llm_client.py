@@ -103,26 +103,34 @@ class MockLLMClient(LLMClient):
         return f"[mock:{tier}]"
 
 
-def chat_deepseek(model, system, user, temperature=0.5, max_tokens=1600):
+def chat_deepseek(model, system, user, temperature=0.5, max_tokens=1600,
+                  messages=None, tools=None):
     """Direct DeepSeek chat call used by meeting/diary tools.
 
     Reads DEEPSEEK_API_KEY from ~/.n8n/.env or process env. Returns
-    {text, usage, model}. Raises RuntimeError when the key is missing.
+    {text, usage, model, tool_calls}. `messages` overrides the system/user
+    pair (used by the agent tool loop for multi-turn tool calls); `tools`
+    enables native function calling. `tool_choice` is intentionally omitted:
+    DeepSeek V4 thinking mode rejects forced tool_choice with HTTP 400.
     """
     env = config.load_env()
     key = env.get("DEEPSEEK_API_KEY", "")
     if not key:
         raise RuntimeError("DEEPSEEK_API_KEY missing")
+    msgs = messages if messages is not None else [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
+    ]
     body = {
         "model": model,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
+        "messages": msgs,
         "temperature": temperature,
         "max_tokens": max_tokens,
-        "response_format": {"type": "json_object"},
     }
+    if tools:
+        body["tools"] = tools
+    else:
+        body["response_format"] = {"type": "json_object"}
     req = urllib.request.Request(
         "https://api.deepseek.com/chat/completions",
         data=json.dumps(body).encode("utf-8"),
@@ -139,4 +147,5 @@ def chat_deepseek(model, system, user, temperature=0.5, max_tokens=1600):
         "text": text,
         "usage": data.get("usage", {}),
         "model": model,
+        "tool_calls": choice.get("tool_calls") or [],
     }

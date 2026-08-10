@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getControl, postControl } from "../api.js";
+import { getControl, postControl, refreshHotTopics } from "../api.js";
 import ReaderChart from "./ReaderChart.jsx";
 import { ConfirmDialog, fmtRelative, fmtTime } from "./ui.jsx";
 import { getMeetings } from "../api.js";
@@ -57,6 +57,7 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
   const [runChapters, setRunChapters] = useState(2);
   const [logDetail, setLogDetail] = useState(null);
   const [latestMeeting, setLatestMeeting] = useState(null);
+  const [hotBusy, setHotBusy] = useState(false);
 
   const refreshControl = async () => {
     try {
@@ -101,6 +102,22 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
       onRefresh();
     } finally {
       setRunning(false);
+    }
+  };
+
+  const collectHot = async () => {
+    setHotBusy(true);
+    try {
+      const r = await refreshHotTopics();
+      pushToast(
+        r.ok
+          ? `热点采集完成（${(r.sources || []).filter((s) => s.count > 0).length}/${(r.sources || []).length} 源成功）`
+          : "热点采集失败：" + (r.error || "未知"),
+        r.ok ? "ok" : "bad",
+      );
+      onRefresh();
+    } finally {
+      setHotBusy(false);
     }
   };
 
@@ -313,7 +330,13 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
       </div>
 
       <section className="panel p-4">
-        <div className="section-title !mb-3">热点选题</div>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <div className="section-title !mb-0">热点选题</div>
+          <span className="muted text-xs">{data?.hot_topics?.updated_at ? `更新于 ${data.hot_topics.updated_at}` : ""}</span>
+          <button className="btn ml-auto !px-3 !py-1 text-xs" disabled={hotBusy} onClick={collectHot}>
+            {hotBusy ? "采集中…" : "⇅ 立即采集"}
+          </button>
+        </div>
         {data?.hot_topics?.present ? (
           <>
             <div className="mb-2 flex flex-wrap gap-1.5">
@@ -325,6 +348,7 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
               <div key={src.source} className="mb-2">
                 <div className="muted text-xs">
                   {src.source}（{src.count || 0} 本）
+                  {src.method ? <span className={`chip ml-1 !px-1.5 !py-0.5 ${src.method === "html" ? "chip-ok" : src.method === "browser" ? "chip-warn" : "chip-bad"}`}>{src.method}</span> : ""}
                   {src.error ? <span className="badge-bad"> · {src.error}</span> : ""}
                 </div>
                 <div className="mt-0.5 break-words text-xs leading-relaxed text-slate-400">

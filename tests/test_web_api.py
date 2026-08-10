@@ -4,6 +4,7 @@ import tempfile
 import threading
 import unittest
 from http.server import ThreadingHTTPServer
+from unittest import mock
 from urllib.request import urlopen
 
 from novel_pipeline import db
@@ -50,6 +51,69 @@ class WebApiTests(unittest.TestCase):
         with urlopen(f"{self.base}/api/chapters?novel_id=1", timeout=10) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         self.assertEqual(len(data["chapters"]), 1)
+
+    def test_agent_run_endpoint_shape(self):
+        from novel_pipeline import db as db_mod
+
+        conn = db_mod.connect(self.db_path)
+        conn.execute(
+            "INSERT INTO knowledge_drafts(kind,title,content,status,created_at) "
+            "VALUES('lesson','t','c','draft',datetime('now','localtime'))"
+        )
+        conn.commit()
+        conn.close()
+        with mock.patch("tools.agent_tool_loop.run") as run:
+            run.return_value = {
+                "ok": True,
+                "text": "代理回答",
+                "used_knowledge": [{"topic": "钩子", "files": ["opening-hooks.md"]}],
+                "model": "deepseek-v4-flash",
+                "attempts": 2,
+                "degraded": False,
+            }
+            body = json.dumps(
+                {"agent": "writer", "task": "写一章", "max_tokens": 2000}
+            ).encode("utf-8")
+            req = urlopen(
+                f"{self.base}/api/agent/run",
+                data=body,
+                timeout=10,
+            )
+            data = json.loads(req.read().decode("utf-8"))
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["choices"][0]["message"]["content"], "代理回答")
+        self.assertEqual(data["used_knowledge"][0]["topic"], "钩子")
+
+    def test_knowledge_list_and_draft_reject(self):
+        from novel_pipeline import db as db_mod
+
+        conn = db_mod.connect(self.db_path)
+        cur = conn.execute(
+            "INSERT INTO knowledge_drafts(kind,title,content,status,created_at) "
+            "VALUES('lesson','测试经验','内容','draft',datetime('now','localtime'))"
+        )
+        conn.commit()
+        did = cur.lastrowid
+        conn.close()
+
+        body = json.dumps({"action": "list"}).encode("utf-8")
+        with urlopen(f"{self.base}/api/knowledge", data=body, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        self.assertTrue(data["ok"])
+        self.assertGreaterEqual(len(data["knowledge"]), 6)
+
+        body = json.dumps({"action": "reject", "id": did}).encode("utf-8")
+        with urlopen(
+            f"{self.base}/api/knowledge_drafts", data=body, timeout=10
+        ) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        self.assertTrue(data["ok"])
+        conn = db_mod.connect(self.db_path)
+        status = conn.execute(
+            "SELECT status FROM knowledge_drafts WHERE id=?", (did,)
+        ).fetchone()["status"]
+        conn.close()
+        self.assertEqual(status, "rejected")
 
 
 if __name__ == "__main__":

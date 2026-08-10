@@ -154,7 +154,7 @@ def handle_control(conn, payload):
         res = n8n.n8n_api(
             "POST",
             f"/workflows/{wf_id}/{endpoint}",
-            body={} if action == "resume" else None,
+            body={},
         )
         audit.log(
             conn,
@@ -165,6 +165,50 @@ def handle_control(conn, payload):
             detail={"ok": res is not None},
         )
         return {"ok": res is not None, "response": res}
+    if action == "refresh_hot_topics":
+        from novel_pipeline import hot_topics  # noqa: PLC0415
+
+        payload = hot_topics.refresh(
+            out_path=str(config.HOT_TOPICS_JSON), browser_fallback=True
+        )
+        audit.log(
+            conn, "operation", "refresh_hot_topics",
+            detail={
+                src.get("source"): {
+                    "method": src.get("method"),
+                    "count": src.get("count", 0),
+                    "error": src.get("error", ""),
+                }
+                for src in payload.get("sources", [])
+            },
+        )
+        return {
+            "ok": True,
+            "updated_at": payload.get("updated_at"),
+            "sources": [
+                {
+                    "source": src.get("source"),
+                    "method": src.get("method", "html"),
+                    "count": src.get("count", 0),
+                    "error": src.get("error", ""),
+                }
+                for src in payload.get("sources", [])
+            ],
+        }
+    if action == "run_knowledge_keeper":
+        from tools import knowledge_keeper  # noqa: PLC0415
+
+        result = knowledge_keeper.run(conn)
+        audit.log(
+            conn, "operation", "run_knowledge_keeper",
+            detail={
+                "auto_updates": result.get("auto_updates"),
+                "draft_suggestions": result.get("draft_suggestions"),
+                "deprecations": result.get("deprecations"),
+                "ok": result.get("ok"),
+            },
+        )
+        return result
     return {"ok": False, "error": f"unknown action {action}"}
 
 

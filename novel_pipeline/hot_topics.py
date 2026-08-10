@@ -8,10 +8,15 @@ import argparse
 import csv
 import json
 import re
+import shutil
+import subprocess
 import sys
+import time
 import urllib.request
 from datetime import datetime
 from pathlib import Path
+
+from novel_pipeline.services import knowledge
 
 SOURCES = [
     {"name": "zongheng_rank", "url": "https://www.zongheng.com/rank/", "parser": "zongheng"},
@@ -27,6 +32,21 @@ GENRE_KEYWORDS = [
 
 TITLE_RE = re.compile(r'<a[^>]+class="[^"]*book-name[^"]*"[^>]*>(.*?)</a>', re.S)
 TITLE_ATTR_RE = re.compile(r'<a[^>]+title="([^"]{2,50})"')
+
+BROWSER_EXTRACT_JS = (
+    "JSON.stringify([...new Set([...document.querySelectorAll('a')]"
+    ".filter(a=>/\\/page\\/\\d+/.test(a.href||'')||/\\/book\\/\\d+/.test(a.href||''))"
+    ".map(a=>(a.innerText||'').trim())"
+    ".filter(t=>t&&t.length>1&&t.length<=40))])"
+)
+
+NAV_NOISE = {
+    "首页", "书库", "书架", "原创榜", "作家专区", "版权专区", "番茄小说",
+    "帮助中心", "作家助手", "登录", "注册", "退出", "排行", "全部作品",
+    "完本", "免费", "搜索", "女生网", "客户端", "页游", "起点中文网",
+    "起点女生网", "繁体版", "我的书架", "人气榜单", "月票榜", "畅销榜",
+    "阅读指数榜", "书友榜", "推荐榜", "收藏榜", "消息()", "GO>", "排行",
+}
 
 
 def clean_title(raw):
@@ -69,28 +89,119 @@ def fetch_rank(source, timeout=20):
         return resp.read().decode("utf-8", errors="ignore")
 
 
-def refresh(out_path="hot_topics.json", sources=None, fetcher=None):
+_BB_CMD = None
+
+
+def _bb_cmd():
+    """Resolve a reliable bb-browser invocation (node cli.js, no shell)."""
+    global _BB_CMD
+    if _BB_CMD is not None:
+        return _BB_CMD
+    which = shutil.which("bb-browser") or ""
+    if which.endswith(".js"):
+        _BB_CMD = ["node", which]
+        return _BB_CMD
+    if Path(which).suffix.lower() in (".cmd", ".bat", ".ps1"):
+        cli = Path(which).resolve().parent / "node_modules" / "bb-browser" / "dist" / "cli.js"
+        if cli.exists():
+            _BB_CMD = ["node", str(cli)]
+            return _BB_CMD
+    _BB_CMD = ["bb-browser"]
+    return _BB_CMD
+
+
+def _bb_run(args, timeout=60):
+    return subprocess.run(
+        [*_bb_cmd(), *args],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout,
+    )
+
+
+def fetch_rank_browser(source):
+    """Fetch a rank page through bb-browser (real browser identity).
+
+    bb-browser daemon may restart, so a fresh tab is opened per fetch and
+    closed afterwards; tab ids are never cached.
+    """
+    out = _bb_run(["open", source["url"], "--json"])
+    if out.returncode != 0:
+        raise RuntimeError(f"bb-browser open failed: {out.stderr.strip()[:200]}")
+    try:
+        opened = json.loads(out.stdout.strip())
+    except ValueError as exc:
+        raise RuntimeError(f"bb-browser open output unparsable: {exc}") from exc
+    tab = opened["result"].get("tab") or opened["result"].get("tabId")
+    if not tab:
+        raise RuntimeError("bb-browser returned no tab id")
+    time.sleep(4)
+    eval_out = _bb_run(["eval", BROWSER_EXTRACT_JS, "--tab", tab, "--json"])
+    try:
+        _bb_run(["eval", "window.close()", "--tab", tab, "--json"], timeout=20)
+    except Exception:  # noqa: BLE001 - closing is best-effort
+        pass
+    if eval_out.returncode != 0:
+        raise RuntimeError(f"bb-browser eval failed: {eval_out.stderr.strip()[:200]}")
+    try:
+        payload = json.loads(eval_out.stdout.strip())
+        raw = payload["result"]["result"]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise RuntimeError(f"bb-browser eval output unparsable: {exc}") from exc
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            raw = [raw]
+    titles = []
+    for t in raw or []:
+        cleaned = knowledge.clean_title(str(t))
+        if (
+            cleaned
+            and cleaned not in NAV_NOISE
+            and len(cleaned) >= 2
+            and len(cleaned) <= 40
+        ):
+            titles.append(cleaned)
+    seen, out_titles = set(), []
+    for t in titles:
+        if t not in seen:
+            seen.add(t)
+            out_titles.append(t)
+    return out_titles[:50]
+
+
+def refresh(out_path="hot_topics.json", sources=None, fetcher=None, browser_fallback=True):
     """抓取各榜单并落盘 hot_topics.json；单个源失败不影响整体。"""
     sources = sources or SOURCES
     fetcher = fetcher or fetch_rank
     results = []
     for source in sources:
+        method = "html"
+        error = ""
         try:
             html = fetcher(source)
             titles = parse_rank_html(html, source=source["name"])
-            results.append({
+        except Exception as exc:  # noqa: BLE001
+            titles = []
+            error = str(exc)
+        if not titles and browser_fallback:
+            method = "browser"
+            try:
+                titles = fetch_rank_browser(source)
+                error = ""
+            except Exception as exc:  # noqa: BLE001
+                error = f"html: {error or 'empty'}; browser: {str(exc)[:200]}"
+        results.append({
                 "source": source["name"],
                 "url": source["url"],
                 "fetched_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "method": method,
                 "count": len(titles),
                 "titles": titles[:50],
-            })
-        except Exception as exc:  # noqa: BLE001
-            results.append({
-                "source": source["name"],
-                "url": source["url"],
-                "error": str(exc),
-                "titles": [],
+                "error": error,
             })
     payload = {
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),

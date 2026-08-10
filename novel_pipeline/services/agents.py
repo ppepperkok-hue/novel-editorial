@@ -20,6 +20,7 @@ AGENT_DISPLAY = {
     "memory.md": "记忆官",
     "work_meta.md": "作品资料",
     "ending_judge.md": "完结评估",
+    "knowledge_keeper.md": "知识管家",
 }
 AGENT_DESC = {
     "planner.md": "生成/增量更新故事圣经与两章细纲",
@@ -32,6 +33,7 @@ AGENT_DESC = {
     "memory.md": "提取摘要、角色状态、事件、伏笔台账（A/B 共用）",
     "work_meta.md": "书名/简介/标签/主角/卷目标",
     "ending_judge.md": "完结评估：剧情进度、伏笔回收、收尾建议",
+    "knowledge_keeper.md": "知识库策展人：定时维护知识包、整合经验卡、审查热点",
 }
 
 
@@ -44,8 +46,9 @@ def _extract_node_system(body):
 
 
 def _agent_files():
-    files = sorted(set(render_workflow.AGENT_FILES.values()))
-    return [f for f in files if (config.AGENTS_DIR / f).exists()]
+    if not config.AGENTS_DIR.exists():
+        return []
+    return sorted(p.name for p in config.AGENTS_DIR.glob("*.md"))
 
 
 def agents_list():
@@ -55,22 +58,20 @@ def agents_list():
     for f in _agent_files():
         meta, prompt = render_workflow.parse_asset(config.AGENTS_DIR / f)
         mapped = [name for name, fn in render_workflow.AGENT_FILES.items() if fn == f]
-        synced = True
+        synced = not mapped  # agents without workflow nodes need no sync
         for name in mapped:
             node = nodes.get(name)
             if node is None:
                 synced = False
                 continue
             body = node["parameters"]["jsonBody"]
-            system = _extract_node_system(body)
-            if system is None:
+            if f"agent:'{name}'" not in body:
                 synced = False
                 continue
-            norm = system.replace(
-                render_workflow.TARGET_WORDS_EXPR,
-                render_workflow.TARGET_WORDS_PLACEHOLDER,
-            ).replace("\\'", "'").replace('\\"', '"').replace("\\\\", "\\")
-            if norm != prompt:
+            if f"model:'{meta.get('model', '')}'" not in body:
+                synced = False
+                continue
+            if f"temperature:{meta.get('temperature', '')}" not in body:
                 synced = False
         agents.append(
             {
@@ -89,7 +90,7 @@ def agents_list():
 
 def agent_save(payload, conn=None):
     f = str(payload.get("file") or "")
-    if f not in set(render_workflow.AGENT_FILES.values()):
+    if not (config.AGENTS_DIR / f).exists():
         return {"ok": False, "error": "unknown agent file"}
     model = str(payload.get("model") or "").strip()
     try:

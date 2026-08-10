@@ -24,6 +24,27 @@ prompts/agents/
 写手/编辑提示词里的动态字数用 `{TARGET_WORDS}` 占位符表示，渲染时展开为
 n8n 表达式，实际值由控制台「目标字数」设置决定。
 
+## 0. Agent 成长系统（2026-08-10 升级）
+
+流水线现在是真正会成长的：知识按需调用、经验可沉淀、热点自动更新。
+
+- **工具式知识调用**：`prompts/knowledge/*.md` 是知识库（frontmatter 含
+  agents/type/keywords），长知识包不常驻提示词。n8n 的 15 个 LLM 节点全部
+  改为调用本地 `POST /api/agent/run`，`tools/agent_tool_loop.py` 实现标准
+  function calling 循环：首轮带 `get_knowledge` 工具声明（不传 tool_choice，
+  兼容 DeepSeek V4 thinking 模式），模型自主发 `tool_calls`，本地检索知识包
+  并以 `role:"tool"` 回传，二轮输出最终结果；无工具调用则单轮。
+- **第 11 位 Agent「博闻」**：`prompts/agents/knowledge_keeper.md`，知识库
+  策展人。每天 03:30 由 n8n 工作流「知识管家维护」触发
+  `tools/knowledge_keeper.py`：市场类知识包自动更新，技巧/规则类与经验整合
+  落 `knowledge_drafts` 草案，人工在前端一键采纳后写入知识库并重新部署。
+- **反思蒸馏**：周会结束后自动跑 `tools/distill_lessons.py`，从会议记录、
+  本周日记、质量与读者数据蒸馏经验卡（草稿）；专题会议可手动触发。前端
+  Agent 管理页可预览/编辑/采纳/拒绝，采纳即写知识包并 render+deploy。
+- **热点双轨采集**：`novel_pipeline/hot_topics.py` 先 HTML 直抓，失败或空
+  时降级 bb-browser（每次重新 open，eval 提取书名并清洗字体乱码）；首页
+  「热点选题」有「立即采集」按钮，日更/周会/选题会材料均注入热点数据。
+
 ## 2. 配置驱动生成（进化闭环）
 
 ```bash

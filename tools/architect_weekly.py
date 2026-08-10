@@ -103,6 +103,15 @@ def build_planning_materials():
         "work_meta": {"tags": [], "abstract": "", "volume_goal": ""},
         "eic": {"quality_total": 0, "quality_passed": 0},
         "ending_judge": {"published": 0, "target": 0, "open_plot_threads": 0, "last_chapter_seq": 0},
+        "knowledge_keeper": {
+            "knowledge_packages": len(
+                list((ROOT / "prompts" / "knowledge").glob("*.md"))
+                if (ROOT / "prompts" / "knowledge").exists()
+                else []
+            ),
+            "hot_topics_updated_at": (load_hot_topics() or {}).get("updated_at", ""),
+            "pending_drafts": 0,
+        },
     }
     return {"context": context, "agent_briefs": agent_briefs}
 
@@ -290,6 +299,17 @@ def build_materials(conn, novel_id, allow_empty=False):
             "target": int(settings.get("target_chapters") or 0),
             "open_plot_threads": len(threads),
             "last_chapter_seq": context["last_chapter_seq"],
+        },
+        "knowledge_keeper": {
+            "knowledge_packages": len(
+                list((ROOT / "prompts" / "knowledge").glob("*.md"))
+                if (ROOT / "prompts" / "knowledge").exists()
+                else []
+            ),
+            "hot_topics_updated_at": (load_hot_topics() or {}).get("updated_at", ""),
+            "pending_drafts": conn.execute(
+                "SELECT COUNT(*) c FROM knowledge_drafts WHERE status='draft'"
+            ).fetchone()["c"],
         },
     }
     return {"context": context, "agent_briefs": agent_briefs}

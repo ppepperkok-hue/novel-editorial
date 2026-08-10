@@ -3,6 +3,11 @@
 This is the evolution loop for the pipeline: edit a prompt file (or its
 frontmatter model/temperature), run this script, validate, push to n8n.
 
+PROXY_MODE=True: agent nodes call the local /api/agent/run endpoint. The
+system prompt is assembled at runtime by tools/agent_tool_loop.py (persona +
+knowledge index + get_knowledge tool), so n8n only carries agent name, model,
+temperature, the dynamic target_words expression and the user task.
+
     python tools/render_workflow.py            # updates n8n/novel_workflow.json
     node tools/archive/validate_workflow_deep.mjs
 """
@@ -14,6 +19,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 WF = ROOT / "n8n" / "novel_workflow.json"
 AGENTS = ROOT / "prompts" / "agents"
+PROXY_BASE = "http://127.0.0.1:8001/api/agent/run"
+PROXY_MODE = True
 
 AGENT_FILES = {
     "Planner出大纲": "planner.md",
@@ -37,6 +44,57 @@ TARGET_WORDS_EXPR = "'+(($('解析本地资料').first().json.target_words)||200
 TARGET_WORDS_PLACEHOLDER = "{TARGET_WORDS}"
 START_MARK = "{role:'system',content:'"
 END_MARK = "'},{role:'user'"
+AGENT_MARK = "{agent:'"
+
+
+def extract_user_expr(body):
+    """Extract the n8n user-content expression(s) from a DeepSeek jsonBody."""
+    if "task:" in body and "{role:'system'" not in body:
+        # already in proxy mode: task:<expr>}) }}
+        t0 = body.find("task:")
+        t1 = body.find("}) }}", t0)
+        if t0 >= 0 and t1 > t0:
+            return body[t0 + len("task:") : t1]
+    s0 = body.find(START_MARK)
+    s1 = body.find(END_MARK, s0)
+    if s0 < 0 or s1 < 0:
+        return None
+    # keep the leading quote of the user expression: content:'...'+expr...
+    c0 = body.find("content:", s1)
+    c1 = body.rfind("}]})", c0)
+    if c0 < 0 or c1 < 0:
+        return None
+    return body[c0 + len("content:") : c1]
+
+
+def extract_target_words_expr(system):
+    """Extract the n8n target_words expression from a system string."""
+    idx = system.find(TARGET_WORDS_EXPR)
+    if idx < 0:
+        return None
+    start = system.find("((", idx - 1)
+    end = system.find(")", idx) + 1
+    if start < 0 or end <= 0:
+        return None
+    expr = system[start:end]
+    # close the extra parens of `(($expr||2000))`
+    if not expr.endswith(")||2000))"):
+        return None
+    return expr
+
+
+def build_proxy_body(agent, meta, system_has_target_words, user_expr):
+    model = meta.get("model", "")
+    temperature = meta.get("temperature", "")
+    fields = [f"agent:'{agent}'"]
+    if model:
+        fields.append(f"model:'{model}'")
+    if temperature:
+        fields.append(f"temperature:{temperature}")
+    if system_has_target_words:
+        fields.append("target_words:(($('解析本地资料').first().json.target_words)||2000)")
+    fields.append(f"task:{user_expr}")
+    return "={{ JSON.stringify({" + ", ".join(fields) + "}) }}"
 
 
 def parse_asset(path):
@@ -69,12 +127,29 @@ def main():
         if not asset.exists():
             continue
         meta, system = parse_asset(asset)
-        model = meta.get("model", "")
-        temperature = meta.get("temperature", "")
         node = nodes.get(node_name)
         if node is None:
             continue
         body = node["parameters"]["jsonBody"]
+        if PROXY_MODE:
+            user_expr = extract_user_expr(body)
+            if user_expr is None:
+                continue
+            new_body = build_proxy_body(
+                node_name, meta, "{TARGET_WORDS}" in system, user_expr
+            )
+            if new_body != body:
+                node["parameters"]["jsonBody"] = new_body
+                node["parameters"]["url"] = PROXY_BASE
+                node["parameters"]["headerParameters"] = {
+                    "parameters": [
+                        {"name": "Content-Type", "value": "application/json"}
+                    ]
+                }
+                changed.append(node_name)
+            continue
+        model = meta.get("model", "")
+        temperature = meta.get("temperature", "")
         sm = body.find("model:'")
         tm = body.find("temperature:", sm)
         s0 = body.find(START_MARK)

@@ -248,6 +248,9 @@ def make_handler(db_path):
                 "/api/agent_states/update",
                 "/api/meetings/start",
                 "/api/meetings/advance",
+                "/api/agent/run",
+                "/api/knowledge",
+                "/api/knowledge_drafts",
             ):
                 self.send_error(404, "Not Found")
                 return
@@ -307,6 +310,134 @@ def make_handler(db_path):
                         )
                     finally:
                         conn.close()
+                elif parsed.path == "/api/agent/run":
+                    from tools import agent_tool_loop  # noqa: PLC0415
+
+                    task = str(payload.get("task") or "")
+                    if not task:
+                        msgs = payload.get("messages") or []
+                        task = "\n".join(
+                            str(m.get("content") or "")
+                            for m in msgs
+                            if isinstance(m, dict) and m.get("role") == "user"
+                        )
+                    agent = str(payload.get("agent") or "").strip()
+                    if not agent:
+                        result = {"ok": False, "error": "agent required"}
+                    else:
+                        loop_result = agent_tool_loop.run(
+                            agent,
+                            task,
+                            temperature=payload.get("temperature"),
+                            max_tokens=int(payload.get("max_tokens") or 1600),
+                            target_words=payload.get("target_words"),
+                        )
+                        if loop_result.get("ok"):
+                            result = {
+                                "ok": True,
+                                "choices": [
+                                    {"message": {"content": loop_result["text"]}}
+                                ],
+                                "used_knowledge": loop_result.get("used_knowledge") or [],
+                                "model": loop_result.get("model"),
+                                "attempts": loop_result.get("attempts"),
+                                "degraded": loop_result.get("degraded"),
+                            }
+                        else:
+                            result = {
+                                "ok": False,
+                                "error": loop_result.get("error") or "agent tool loop failed",
+                            }
+                elif parsed.path == "/api/knowledge":
+                    from novel_pipeline.services import knowledge as knowledge_service  # noqa: PLC0415
+
+                    action = payload.get("action") or "list"
+                    if action == "list":
+                        result = {"ok": True, "knowledge": knowledge_service.list_knowledge()}
+                    elif action == "read":
+                        item = knowledge_service.read_knowledge(str(payload.get("file") or ""))
+                        result = {"ok": bool(item), "item": item}
+                    elif action == "save":
+                        file = str(payload.get("file") or "")
+                        meta = payload.get("meta") or {}
+                        body = str(payload.get("body") or "")
+                        if not file or not body.strip():
+                            result = {"ok": False, "error": "file and body required"}
+                        else:
+                            item = knowledge_service.write_knowledge(file, dict(meta), body)
+                            audit_service.log(
+                                conn, "knowledge", "save",
+                                target_type="knowledge", target_id=file,
+                                detail={"title": meta.get("title")},
+                            )
+                            result = {"ok": True, "item": item}
+                    else:
+                        result = {"ok": False, "error": f"unknown action {action}"}
+                elif parsed.path == "/api/knowledge_drafts":
+                    from novel_pipeline.services import knowledge as knowledge_service  # noqa: PLC0415
+
+                    action = payload.get("action") or "list"
+                    if action == "list":
+                        result = {
+                            "ok": True,
+                            "drafts": knowledge_service.list_drafts(
+                                conn, payload.get("status")
+                            ),
+                        }
+                    elif action in ("accept", "reject", "deprecate"):
+                        draft_id = int(payload.get("id") or 0)
+                        status = {"accept": "accepted", "reject": "rejected", "deprecate": "deprecated"}[action]
+                        if action == "accept":
+                            # write into a knowledge package chosen by the draft
+                            rows = conn.execute(
+                                "SELECT * FROM knowledge_drafts WHERE id=?", (draft_id,)
+                            ).fetchall()
+                            if not rows:
+                                result = {"ok": False, "error": "draft not found"}
+                            else:
+                                d = dict(rows[0])
+                                agents = []
+                                try:
+                                    agents = json.loads(d.get("agents") or "[]")
+                                except ValueError:
+                                    agents = []
+                                kind = d.get("kind") or "lesson"
+                                file = (
+                                    "lessons.md"
+                                    if kind in ("lesson", "deprecation")
+                                    else "custom-knowledge.md"
+                                )
+                                meta = {
+                                    "title": d["title"],
+                                    "type": "craft",
+                                    "agents": agents,
+                                    "source": d.get("source") or "agent-draft",
+                                }
+                                knowledge_service.write_knowledge(
+                                    file, meta, d["content"]
+                                )
+                                audit_service.log(
+                                    conn, "knowledge", "accept_draft",
+                                    target_type="knowledge_draft", target_id=draft_id,
+                                    detail={"file": file, "title": d["title"]},
+                                )
+                                knowledge_service.update_draft_status(conn, draft_id, "accepted")
+                                result = {"ok": True, "file": file}
+                        else:
+                            ok = knowledge_service.update_draft_status(conn, draft_id, status)
+                            result = {"ok": ok, "error": None if ok else "draft not found or not in draft state"}
+                    elif action == "distill":
+                        conn.close()
+                        from tools import distill_lessons  # noqa: PLC0415
+
+                        result = distill_lessons.distill_latest(
+                            payload.get("meeting_id"),
+                            payload.get("session_id"),
+                            db_path=str(db_path),
+                        )
+                        conn = db.connect(db_path)
+                    else:
+                        result = {"ok": False, "error": f"unknown action {action}"}
                 self._json(result)
             except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
                 return

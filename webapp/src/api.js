@@ -140,6 +140,69 @@ export async function getAudit(category) {
   return r.json();
 }
 
+export async function refreshHotTopics() {
+  const r = await fetch(API_BASE + "/api/control", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "refresh_hot_topics" }),
+  });
+  return r.json();
+}
+
+export async function getKnowledge() {
+  const r = await fetch(API_BASE + "/api/knowledge", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "list" }),
+  });
+  return r.json();
+}
+
+export async function readKnowledge(file) {
+  const r = await fetch(API_BASE + "/api/knowledge", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "read", file }),
+  });
+  return r.json();
+}
+
+export async function saveKnowledge(file, meta, body) {
+  const r = await fetch(API_BASE + "/api/knowledge", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "save", file, meta, body }),
+  });
+  return r.json();
+}
+
+export async function getKnowledgeDrafts(status) {
+  const r = await fetch(API_BASE + "/api/knowledge_drafts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "list", status }),
+  });
+  return r.json();
+}
+
+export async function actOnDraft(id, action) {
+  const r = await fetch(API_BASE + "/api/knowledge_drafts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, id }),
+  });
+  return r.json();
+}
+
+export async function distillLessons(meetingId, sessionId) {
+  const r = await fetch(API_BASE + "/api/knowledge_drafts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "distill", meeting_id: meetingId, session_id: sessionId }),
+  });
+  return r.json();
+}
+
 export async function getCharacterEvolution(novelId) {
   const r = await fetch(API_BASE + "/api/characters/evolution?novel_id=" + novelId);
   if (!r.ok) throw new Error("evolution " + r.status);

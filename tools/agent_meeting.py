@@ -20,7 +20,9 @@ from tools import architect_weekly, write_diaries  # noqa: E402
 
 AGENTS_DIR = ROOT / "prompts" / "agents"
 CORE_AGENTS = ["planner", "guard", "writer", "reader", "memory", "eic"]
-ALL_AGENTS = CORE_AGENTS + ["editor", "reviewer", "work_meta", "ending_judge"]
+ALL_AGENTS = CORE_AGENTS + [
+    "editor", "reviewer", "work_meta", "ending_judge", "knowledge_keeper",
+]
 materials = {"context": {}, "agent_briefs": {}}
 topic = ""
 

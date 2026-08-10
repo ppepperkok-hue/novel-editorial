@@ -36,6 +36,7 @@ AGENT_NAMES = [
     "work_meta",
     "eic",
     "ending_judge",
+    "knowledge_keeper",
 ]
 
 

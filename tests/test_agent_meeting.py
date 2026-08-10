@@ -54,7 +54,7 @@ class DiaryTests(unittest.TestCase):
                 n = conn.execute(
                     "SELECT COUNT(*) c FROM agent_diaries WHERE diary_type='daily'"
                 ).fetchone()["c"]
-                self.assertEqual(n, 10)
+                self.assertEqual(n, 11)
             finally:
                 conn.close()
 
@@ -81,7 +81,7 @@ class DiaryTests(unittest.TestCase):
             try:
                 write_diaries.write(conn, 1, "weekly")
                 moods = conn.execute("SELECT mood FROM agent_states").fetchall()
-                self.assertEqual(len(moods), 10)
+                self.assertEqual(len(moods), 11)
                 parsed = json.loads(moods[0]["mood"])
                 self.assertAlmostEqual(parsed["satisfaction"], 0.7)
             finally:
@@ -97,7 +97,7 @@ class MaterialsTests(unittest.TestCase):
         try:
             m = architect_weekly.build_materials(conn, 1)
             self.assertIn("published_chapters", m["context"])
-            self.assertEqual(len(m["agent_briefs"]), 10)
+            self.assertEqual(len(m["agent_briefs"]), 11)
             self.assertEqual(m["context"]["quality_summary"]["total"], 1)
         finally:
             conn.close()
@@ -112,7 +112,7 @@ class MaterialsTests(unittest.TestCase):
             m = architect_weekly.build_materials(conn, 0, allow_empty=True)
             self.assertTrue(m["context"]["new_book_planning"])
             self.assertEqual(m["context"]["published_chapters"], 0)
-            self.assertEqual(len(m["agent_briefs"]), 10)
+            self.assertEqual(len(m["agent_briefs"]), 11)
         finally:
             conn.close()
 
@@ -201,7 +201,7 @@ class MeetingDryRunTests(unittest.TestCase):
         try:
             self.assertEqual(
                 conn.execute("SELECT COUNT(*) FROM agent_diaries WHERE diary_type='weekly'").fetchone()[0],
-                10,
+                11,
             )
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM weekly_meetings").fetchone()[0], 1)
         finally:
