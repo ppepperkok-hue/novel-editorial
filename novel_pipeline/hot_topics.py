@@ -35,9 +35,11 @@ TITLE_ATTR_RE = re.compile(r'<a[^>]+title="([^"]{2,50})"')
 
 BROWSER_EXTRACT_JS = (
     "JSON.stringify([...new Set([...document.querySelectorAll('a')]"
-    ".filter(a=>/\\/page\\/\\d+/.test(a.href||'')||/\\/book\\/\\d+/.test(a.href||''))"
-    ".map(a=>(a.innerText||'').trim())"
-    ".filter(t=>t&&t.length>1&&t.length<=40))])"
+    ".filter(a=>(a.href||'').includes('/page/')||(a.href||'').includes('/book/'))"
+    ".map(a=>{var p=a;for(var i=0;i<4&&p;i++){p=p.parentElement;"
+    "if(p&&(p.innerText||'').length>20){break}}"
+    "return {u:a.href,t:p?(p.innerText||''):''}})"
+    ".filter(x=>x.t&&x.t.trim().length>2))])"
 )
 
 NAV_NOISE = {
@@ -47,6 +49,9 @@ NAV_NOISE = {
     "起点女生网", "繁体版", "我的书架", "人气榜单", "月票榜", "畅销榜",
     "阅读指数榜", "书友榜", "推荐榜", "收藏榜", "消息()", "GO>", "排行",
 }
+
+STATUS_WORDS = {"连载", "完结", "全本", "太监", "停更", "作品状态"}
+LATEST_NOISE = {"书籍详情", "加入书架", "立即阅读", "开始阅读", "书友圈"}
 
 
 def clean_title(raw):
@@ -121,6 +126,85 @@ def _bb_run(args, timeout=60):
     )
 
 
+def parse_browser_books(items, source):
+    """Parse browser-extracted {u,t} items into book details.
+
+    Fanqie items (href /page/): lines = title, author, tags/intro.
+    Qidian items (href /book/): lines = rank, title, author, tags,
+    status, intro, 最新更新, chapter, time.
+    """
+    books = []
+    for item in items or []:
+        href = str(item.get("u") or "")
+        lines = [
+            knowledge.clean_title(l)
+            for l in str(item.get("t") or "").splitlines()
+        ]
+        lines = [l for l in lines if l and l not in NAV_NOISE]
+        if not lines:
+            continue
+        title = ""
+        author = ""
+        intro_lines = []
+        latest = ""
+        if "/page/" in href:
+            # fanqie: title / author / tags+intro
+            title = lines[0] if lines else ""
+            author = lines[1] if len(lines) > 1 else ""
+            rest = lines[2:]
+        else:
+            # qidian: rank / title / author / tags / status / intro / 最新更新...
+            idx = 0
+            if lines and lines[0].isdigit():
+                idx = 1
+            title = lines[idx] if len(lines) > idx else ""
+            author = lines[idx + 1] if len(lines) > idx + 1 else ""
+            rest = lines[idx + 2 :]
+        intro_lines = []
+        for i, line in enumerate(rest):
+            if "更新" in line:
+                latest = " ".join(t for t in rest[i : i + 3] if t)
+                break
+            intro_lines.append(line)
+        if not title or len(title) > 40:
+            continue
+        intro = ""
+        for line in intro_lines:
+            if not line:
+                continue
+            if line.startswith(("[", "（", "(", "【")):
+                continue
+            if line in STATUS_WORDS:
+                continue
+            if len(line) <= 15 and ("·" in line or "：" in line or "|" in line):
+                continue
+            if len(line) <= 8 and "卷" in line:
+                continue
+            intro = (intro + " " + line).strip()
+            if len(intro) >= 120:
+                intro = intro[:120]
+                break
+        latest = " ".join(
+            t for t in latest.split() if t not in LATEST_NOISE
+        )
+        books.append(
+            {
+                "title": title,
+                "author": author,
+                "intro": intro[:120],
+                "latest": latest[:60],
+                "url": href,
+                "source": source,
+            }
+        )
+    seen, out = set(), []
+    for b in books:
+        if b["title"] not in seen:
+            seen.add(b["title"])
+            out.append(b)
+    return out[:50]
+
+
 def fetch_rank_browser(source):
     """Fetch a rank page through bb-browser (real browser identity).
 
@@ -155,22 +239,7 @@ def fetch_rank_browser(source):
             raw = json.loads(raw)
         except ValueError:
             raw = [raw]
-    titles = []
-    for t in raw or []:
-        cleaned = knowledge.clean_title(str(t))
-        if (
-            cleaned
-            and cleaned not in NAV_NOISE
-            and len(cleaned) >= 2
-            and len(cleaned) <= 40
-        ):
-            titles.append(cleaned)
-    seen, out_titles = set(), []
-    for t in titles:
-        if t not in seen:
-            seen.add(t)
-            out_titles.append(t)
-    return out_titles[:50]
+    return parse_browser_books(raw, source["name"])
 
 
 def refresh(out_path="hot_topics.json", sources=None, fetcher=None, browser_fallback=True):
@@ -187,10 +256,12 @@ def refresh(out_path="hot_topics.json", sources=None, fetcher=None, browser_fall
         except Exception as exc:  # noqa: BLE001
             titles = []
             error = str(exc)
+        books = []
         if not titles and browser_fallback:
             method = "browser"
             try:
-                titles = fetch_rank_browser(source)
+                books = fetch_rank_browser(source)
+                titles = [b["title"] for b in books]
                 error = ""
             except Exception as exc:  # noqa: BLE001
                 error = f"html: {error or 'empty'}; browser: {str(exc)[:200]}"
@@ -201,6 +272,7 @@ def refresh(out_path="hot_topics.json", sources=None, fetcher=None, browser_fall
                 "method": method,
                 "count": len(titles),
                 "titles": titles[:50],
+                "books": books,
                 "error": error,
             })
     payload = {

@@ -23,6 +23,23 @@
     },
     {
       "parameters": {
+        "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe -m novel_pipeline.hot_topics --refresh",
+        "options": {
+          "cwd": "E:/code/novel-pipeline"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "n-hot-refresh",
+      "name": "采集热点",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        100,
+        0
+      ]
+    },
+    {
+      "parameters": {
         "command": "C:/Users/Administrator/AppData/Local/Programs/Python/Python311/python.exe E:/code/novel-pipeline/tools/architect_weekly.py --db demo.db",
         "options": {
           "cwd": "E:/code/novel-pipeline"
@@ -107,7 +124,7 @@
       "main": [
         [
           {
-            "node": "读上下文",
+            "node": "采集热点",
             "type": "main",
             "index": 0
           }
@@ -129,7 +146,7 @@
       "main": [
         [
           {
-            "node": "读上下文",
+            "node": "采集热点",
             "type": "main",
             "index": 0
           }
@@ -152,6 +169,17 @@
         [
           {
             "node": "结束",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "采集热点": {
+      "main": [
+        [
+          {
+            "node": "读上下文",
             "type": "main",
             "index": 0
           }

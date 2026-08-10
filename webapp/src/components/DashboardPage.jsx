@@ -351,9 +351,26 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
                   {src.method ? <span className={`chip ml-1 !px-1.5 !py-0.5 ${src.method === "html" ? "chip-ok" : src.method === "browser" ? "chip-warn" : "chip-bad"}`}>{src.method}</span> : ""}
                   {src.error ? <span className="badge-bad"> · {src.error}</span> : ""}
                 </div>
-                <div className="mt-0.5 break-words text-xs leading-relaxed text-slate-400">
-                  {(src.titles || []).slice(0, 8).join("、")}
-                </div>
+                {(src.books || []).length ? (
+                  <div className="mt-1 flex flex-col gap-1">
+                    {(src.books || []).slice(0, 8).map((b) => (
+                      <div key={b.url || b.title} className="rounded-md bg-[var(--bg-soft)] px-2 py-1.5">
+                        <div className="text-xs text-slate-300">
+                          <span className="font-semibold">{b.title}</span>
+                          {b.author ? <span className="muted"> · {b.author}</span> : ""}
+                          {b.latest ? <span className="muted"> · {b.latest}</span> : ""}
+                        </div>
+                        {b.intro ? (
+                          <div className="muted mt-0.5 break-words text-xs leading-relaxed">{b.intro}</div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-0.5 break-words text-xs leading-relaxed text-slate-400">
+                    {(src.titles || []).slice(0, 8).join("、")}
+                  </div>
+                )}
               </div>
             ))}
           </>

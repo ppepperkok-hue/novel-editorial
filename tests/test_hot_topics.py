@@ -52,7 +52,10 @@ class HotTopicsTests(unittest.TestCase):
         out = os.path.join(tmpdir, "hot_topics.json")
         with mock.patch(
             "novel_pipeline.hot_topics.fetch_rank_browser",
-            return_value=["都市之重生系统", "修仙从直播开始"],
+            return_value=[
+                {"title": "都市之重生系统", "author": "甲", "intro": "", "latest": "", "url": "http://x/1", "source": "fake"},
+                {"title": "修仙从直播开始", "author": "乙", "intro": "", "latest": "", "url": "http://x/2", "source": "fake"},
+            ],
         ):
             payload = refresh(
                 out_path=out,
@@ -62,6 +65,7 @@ class HotTopicsTests(unittest.TestCase):
         src = payload["sources"][0]
         self.assertEqual(src["method"], "browser")
         self.assertEqual(src["count"], 2)
+        self.assertEqual(len(src["books"]), 2)
 
     def test_browser_extract_cleans_font_glyphs(self):
         import novel_pipeline.hot_topics as ht
@@ -78,16 +82,36 @@ class HotTopicsTests(unittest.TestCase):
                 return mock.Mock(
                     returncode=0,
                     stdout=(
-                        '{"result": {"result": "[\\"笨蛋\\ue001\\ue002替嫁\\ue003疯批王爷宠\\ue004\\", '
-                        '\\"首页\\", \\"月票榜\\", \\"短\\"]"}}'
+                        '{"result": {"result": "[{\\"u\\":\\"https://fanqienovel.com/page/1\\",'
+                        '\\"t\\":\\"笨蛋\\ue001\\ue002替嫁\\ue003疯批王爷宠\\ue004\\\\n莫栖君'
+                        '\\\\n[完结]替嫁+冲喜\\\\n乔韫幼时摔坏脑袋，被爹娘疼继母欺。\\"}]"}}'
                     ),
                     stderr="",
                 )
             return mock.Mock(returncode=0, stdout="{}", stderr="")
 
         with mock.patch("novel_pipeline.hot_topics._bb_run", side_effect=fake_bb):
-            titles = ht.fetch_rank_browser({"url": "http://x", "name": "fake"})
-        self.assertEqual(titles, ["笨蛋替嫁疯批王爷宠"])
+            books = ht.fetch_rank_browser({"url": "http://x", "name": "fake"})
+        self.assertEqual(books[0]["title"], "笨蛋替嫁疯批王爷宠")
+        self.assertEqual(books[0]["author"], "莫栖君")
+        self.assertIn("乔韫", books[0]["intro"])
+
+    def test_parse_qidian_books(self):
+        from novel_pipeline.hot_topics import parse_browser_books
+
+        items = [
+            {
+                "u": "https://www.qidian.com/book/123/",
+                "t": "1\n捞尸人\n纯洁滴小龙\n都市·异术超能\n连载\n"
+                "人知鬼恐怖，鬼晓人心毒。这是一本传统灵异小说。\n"
+                "最新更新\n第七百一十三章 人皮·2026-08-09 23:52",
+            }
+        ]
+        books = parse_browser_books(items, "qidian_rank")
+        self.assertEqual(books[0]["title"], "捞尸人")
+        self.assertEqual(books[0]["author"], "纯洁滴小龙")
+        self.assertIn("鬼晓人心毒", books[0]["intro"])
+        self.assertIn("第七百一十三章", books[0]["latest"])
 
     def test_from_csv(self):
         tmpdir = tempfile.mkdtemp()
