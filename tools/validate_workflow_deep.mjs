@@ -151,6 +151,14 @@ for (const file of files) {
         issues.push(`${file}: ${name} task does not reference the bible characters`);
       }
     }
+    // target_words must flow from settings (get_meta) through 解析本地资料;
+    // otherwise the settings page target-word config silently stays 2000.
+    const parsedLocal = nodes.find((n) => n.name === "解析本地资料");
+    if (parsedLocal && !/target_words: \(pm\.target_words \|\| 2000\)/.test(
+      parsedLocal.parameters.jsCode || "",
+    )) {
+      issues.push(`${file}: 解析本地资料 does not expose target_words`);
+    }
   }
 
   // 5. executeCommand nodes: parameterized command + args + relative cwd.
