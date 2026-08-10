@@ -273,6 +273,30 @@ export default function MeetingLive({ onArchived }) {
             <div className="border-t border-[var(--line)] px-4 py-3">
               <div className="mb-1.5 text-xs font-semibold">会议结论</div>
               <div className="text-xs leading-relaxed text-slate-300">{session.report.discussion_summary || "（无摘要）"}</div>
+              {session.report.cover_prompt ? (
+                <div className="mt-2 rounded-lg border border-[var(--line)] bg-[var(--code-bg)] p-2.5">
+                  <div className="mb-1 flex items-center gap-2">
+                    <span className="text-[11px] font-semibold text-[var(--accent-text)]">封面提示词（豆包出图用）</span>
+                    <button
+                      className="btn !px-2 !py-0.5 text-[11px]"
+                      onClick={async (e) => {
+                        try {
+                          await navigator.clipboard.writeText(session.report.cover_prompt);
+                          e.currentTarget.textContent = "已复制";
+                          setTimeout(() => (e.currentTarget.textContent = "复制"), 2000);
+                        } catch (err) {
+                          alert("复制失败：" + err);
+                        }
+                      }}
+                    >
+                      复制
+                    </button>
+                  </div>
+                  <div className="whitespace-pre-wrap text-xs leading-relaxed text-slate-300">
+                    {session.report.cover_prompt}
+                  </div>
+                </div>
+              ) : null}
               {(session.report.action_items || []).length ? (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {(session.report.action_items || []).map((a, i) => (

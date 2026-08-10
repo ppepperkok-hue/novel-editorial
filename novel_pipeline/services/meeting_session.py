@@ -198,6 +198,23 @@ def _run_locked(conn, session_id):
                 "topic",
             ),
         )
+        # Persist decisions (blueprints / cover_prompt / next_book) for topic
+        # meetings too; skip when no novel exists yet (new-book topic meeting).
+        if novel_id:
+            try:
+                from tools.apply_architect import apply_report  # noqa: PLC0415
+
+                apply_report(conn, novel_id, report)
+            except Exception as exc:  # noqa: BLE001
+                audit.log(
+                    conn,
+                    "meeting",
+                    "apply_report_failed",
+                    target_type="session",
+                    target_id=session_id,
+                    detail={"error": str(exc)},
+                )
+                conn.commit()
         # meeting memory for each attendee
         for agent in attendees:
             speech = next((s["speech"] for s in transcript if s["agent"] == agent), {})

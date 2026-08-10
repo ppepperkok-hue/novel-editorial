@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   bindBook,
   confirmNextBook,
+  createBookOnFanqie,
   exportNovels,
   getCharacterEvolution,
   getEndingStatus,
@@ -159,8 +160,11 @@ export default function WorksPage({ data, pushToast }) {
   const [exporting, setExporting] = useState(false);
   const [ending, setEnding] = useState([]);
   const [binding, setBinding] = useState(null);
+  const [creating, setCreating] = useState(null);
   const [bindBookId, setBindBookId] = useState("");
   const [bindVolumeId, setBindVolumeId] = useState("");
+  const [showManualBind, setShowManualBind] = useState(false);
+  const [copiedCover, setCopiedCover] = useState(false);
   const [evoMap, setEvoMap] = useState({});
   const novels = data?.novels || [];
 
@@ -250,6 +254,30 @@ export default function WorksPage({ data, pushToast }) {
             ))}
             {nextBook.selling_point ? <span className="chip chip-info">卖点：{nextBook.selling_point.slice(0, 40)}</span> : null}
           </div>
+          {nextBook.cover_prompt ? (
+            <div className="mb-3 rounded-lg border border-[var(--line)] bg-[var(--code-bg)] p-3">
+              <div className="mb-1 flex items-center gap-2">
+                <span className="label !mb-0">封面提示词（豆包出图用）</span>
+                <button
+                  className="btn !px-2 !py-0.5 text-xs"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(nextBook.cover_prompt);
+                      setCopiedCover(true);
+                      setTimeout(() => setCopiedCover(false), 2000);
+                    } catch (e) {
+                      pushToast("复制失败：" + e, "bad");
+                    }
+                  }}
+                >
+                  {copiedCover ? "已复制" : "复制"}
+                </button>
+              </div>
+              <div className="whitespace-pre-wrap text-xs leading-relaxed text-slate-300">
+                {nextBook.cover_prompt}
+              </div>
+            </div>
+          ) : null}
           {nextBook.status === "planning" ? (
             <button
               className="btn btn-primary"
@@ -263,30 +291,63 @@ export default function WorksPage({ data, pushToast }) {
             </button>
           ) : (
             <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-end gap-2">
-                <label className="text-xs muted">
-                  番茄 book_id
-                  <input className="input mt-1 !w-64" value={bindBookId} onChange={(e) => setBindBookId(e.target.value)} placeholder="在番茄后台建书后填写" />
-                </label>
-                <label className="text-xs muted">
-                  volume_id（可选）
-                  <input className="input mt-1 !w-40" value={bindVolumeId} onChange={(e) => setBindVolumeId(e.target.value)} />
-                </label>
+              <div className="flex flex-wrap items-center gap-3">
                 <button
                   className="btn btn-ok"
-                  disabled={!bindBookId || binding === nextBook.id}
+                  disabled={creating === nextBook.id}
                   onClick={async () => {
-                    setBinding(nextBook.id);
-                    const r = await bindBook(nextBook.id, bindBookId.trim(), bindVolumeId.trim());
-                    pushToast(r.ok ? r.note : "绑定失败：" + (r.error || "未知"), r.ok ? "ok" : "bad");
-                    setBinding(null);
-                    getEndingStatus().then((x) => setEnding(x.novels || []));
+                    setCreating(nextBook.id);
+                    try {
+                      const r = await createBookOnFanqie(nextBook.id);
+                      pushToast(
+                        r.ok ? r.note : "自动建书失败：" + (r.error || "未知"),
+                        r.ok ? "ok" : "bad"
+                      );
+                    } catch (e) {
+                      pushToast("自动建书请求失败：" + e, "bad");
+                    } finally {
+                      setCreating(null);
+                      getEndingStatus().then((x) => setEnding(x.novels || []));
+                    }
                   }}
                 >
-                  {binding === nextBook.id ? "绑定中…" : "绑定新书"}
+                  {creating === nextBook.id ? "正在番茄建书…" : "一键自动建书"}
+                </button>
+                <button
+                  className="btn !px-2 !py-0.5 text-xs"
+                  onClick={() => setShowManualBind((v) => !v)}
+                >
+                  {showManualBind ? "收起手动绑定" : "手动绑定（备用）"}
                 </button>
               </div>
-              <div className="muted text-xs">绑定后需重启 n8n，日更将自动切换到新书。</div>
+              {showManualBind ? (
+                <div className="flex flex-wrap items-end gap-2">
+                  <label className="text-xs muted">
+                    番茄 book_id
+                    <input className="input mt-1 !w-64" value={bindBookId} onChange={(e) => setBindBookId(e.target.value)} placeholder="在番茄后台建书后填写" />
+                  </label>
+                  <label className="text-xs muted">
+                    volume_id（可选）
+                    <input className="input mt-1 !w-40" value={bindVolumeId} onChange={(e) => setBindVolumeId(e.target.value)} />
+                  </label>
+                  <button
+                    className="btn"
+                    disabled={!bindBookId || binding === nextBook.id}
+                    onClick={async () => {
+                      setBinding(nextBook.id);
+                      const r = await bindBook(nextBook.id, bindBookId.trim(), bindVolumeId.trim());
+                      pushToast(r.ok ? r.note : "绑定失败：" + (r.error || "未知"), r.ok ? "ok" : "bad");
+                      setBinding(null);
+                      getEndingStatus().then((x) => setEnding(x.novels || []));
+                    }}
+                  >
+                    {binding === nextBook.id ? "绑定中…" : "绑定新书"}
+                  </button>
+                </div>
+              ) : null}
+              <div className="muted text-xs">
+                自动建书会用书名/简介/分类/标签/主角名在番茄创建书籍并自动绑定；成功后日更将切换到新书。
+              </div>
             </div>
           )}
         </div>

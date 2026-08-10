@@ -9,7 +9,8 @@ from novel_pipeline.services import audit
 
 def ending_status(conn):
     novels = conn.execute(
-        "SELECT id, title, status, book_id, target_chapters, finish_remaining, finish_note, updated_at "
+        "SELECT id, title, status, book_id, cover_prompt, target_chapters, "
+        "finish_remaining, finish_note, updated_at "
         "FROM novels ORDER BY id"
     ).fetchall()
     out = []

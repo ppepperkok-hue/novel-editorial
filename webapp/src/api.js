@@ -139,6 +139,15 @@ export async function bindBook(novelId, bookId, volumeId) {
   return r.json();
 }
 
+export async function createBookOnFanqie(novelId) {
+  const r = await fetch(API_BASE + "/api/ending/create_book", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ novel_id: novelId }),
+  });
+  return r.json();
+}
+
 export async function getAudit(category) {
   const q = category ? "?category=" + encodeURIComponent(category) : "";
   const r = await fetch(API_BASE + "/api/audit" + q);

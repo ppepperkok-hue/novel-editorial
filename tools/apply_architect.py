@@ -27,8 +27,9 @@ def merge_blueprints(old, updates):
 def apply_report(conn, novel_id, report):
     """Persist a meeting report: blueprints, reader persona, volume goal."""
     decisions = report.get("decisions") or {}
+    cover_prompt = str(report.get("cover_prompt") or "").strip()
     row = conn.execute(
-        "SELECT id, outline, volume_goal, status FROM novels WHERE id=?", (novel_id,)
+        "SELECT id, outline, volume_goal, cover_prompt, status FROM novels WHERE id=?", (novel_id,)
     ).fetchone()
     if row is None:
         return {"ok": False, "error": "no novel"}
@@ -88,8 +89,8 @@ def apply_report(conn, novel_id, report):
                 ensure_ascii=False,
             )
             conn.execute(
-                "INSERT INTO novels(title,genre,premise,selling_point,platform,status,abstract,protagonists,updated_at) "
-                "VALUES(?,?,?,?,?,?,?,?,datetime('now','localtime'))",
+                "INSERT INTO novels(title,genre,premise,selling_point,platform,status,abstract,protagonists,cover_prompt,updated_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,datetime('now','localtime'))",
                 (
                     str(next_book["book_name"])[:50],
                     str(next_book.get("genre") or "都市"),
@@ -99,14 +100,17 @@ def apply_report(conn, novel_id, report):
                     "planning",
                     str(next_book.get("abstract") or ""),
                     protagonists,
+                    cover_prompt,
                 ),
             )
             created_next = True
+    cover_prompt = cover_prompt or str(row["cover_prompt"] or "")
     conn.execute(
-        "UPDATE novels SET outline=?, volume_goal=?, updated_at=? WHERE id=?",
+        "UPDATE novels SET outline=?, volume_goal=?, cover_prompt=?, updated_at=? WHERE id=?",
         (
             json.dumps(outline, ensure_ascii=False),
             str(goal or row["volume_goal"] or ""),
+            cover_prompt,
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             novel_id,
         ),
@@ -119,6 +123,7 @@ def apply_report(conn, novel_id, report):
         "volume_goal": str(goal or ""),
         "finish": finish_note,
         "next_book_created": created_next,
+        "cover_prompt": bool(cover_prompt),
     }
     if char_updates:
         result["character_updates"] = len(char_updates)
@@ -165,13 +170,13 @@ def main():
         row = None
         if book_id:
             row = conn.execute(
-                "SELECT id, outline, volume_goal FROM novels "
+                "SELECT id, outline, volume_goal, cover_prompt FROM novels "
                 "WHERE book_id=? ORDER BY id DESC LIMIT 1",
                 (book_id,),
             ).fetchone()
         if row is None:
             row = conn.execute(
-                "SELECT id, outline, volume_goal FROM novels ORDER BY id DESC LIMIT 1"
+                "SELECT id, outline, volume_goal, cover_prompt FROM novels ORDER BY id DESC LIMIT 1"
             ).fetchone()
         if row is None:
             print(json.dumps({"ok": False, "error": "no novel"}, ensure_ascii=False))
@@ -188,11 +193,16 @@ def main():
         if payload.get("volume_goal"):
             outline["volume_goal"] = str(payload["volume_goal"])
 
+        cover_prompt = (
+            str(payload.get("cover_prompt") or "").strip()
+            or str(row["cover_prompt"] or "")
+        )
         conn.execute(
-            "UPDATE novels SET outline=?, volume_goal=?, updated_at=? WHERE id=?",
+            "UPDATE novels SET outline=?, volume_goal=?, cover_prompt=?, updated_at=? WHERE id=?",
             (
                 json.dumps(outline, ensure_ascii=False),
                 str(payload.get("volume_goal") or row["volume_goal"] or ""),
+                cover_prompt,
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 row["id"],
             ),
@@ -204,6 +214,7 @@ def main():
                     "ok": True,
                     "blueprints": len(outline["blueprints"]),
                     "reader_persona": bool(bible.get("reader_persona")),
+                    "cover_prompt": bool(cover_prompt),
                 },
                 ensure_ascii=False,
             )

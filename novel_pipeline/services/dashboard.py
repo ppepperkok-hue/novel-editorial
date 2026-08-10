@@ -27,7 +27,7 @@ def load_summary(conn):
 def load_novels(conn):
     rows = conn.execute(
         "SELECT n.id, n.title, n.genre, n.platform, n.status, "
-        "n.book_id, n.tags, n.abstract, n.protagonists, n.outline, "
+        "n.book_id, n.tags, n.abstract, n.protagonists, n.outline, n.cover_prompt, "
         "n.volume_goal, n.premise, n.selling_point, n.updated_at, "
         "(SELECT COUNT(*) FROM chapters c WHERE c.novel_id=n.id) AS chapters, "
         "(SELECT COUNT(*) FROM chapters c WHERE c.novel_id=n.id "

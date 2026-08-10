@@ -113,6 +113,55 @@ class EvolutionTests(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_apply_report_cover_prompt(self):
+        path = make_db()
+        from tools import apply_architect
+
+        conn = db.connect(path)
+        try:
+            r = apply_architect.apply_report(
+                conn, 1, {"cover_prompt": "热血玄幻封面", "decisions": {}}
+            )
+            self.assertTrue(r["ok"])
+            self.assertTrue(r["cover_prompt"])
+            row = conn.execute("SELECT cover_prompt FROM novels WHERE id=1").fetchone()
+            self.assertEqual(row["cover_prompt"], "热血玄幻封面")
+
+            # empty cover_prompt must not wipe the stored one
+            r2 = apply_architect.apply_report(conn, 1, {"decisions": {}})
+            self.assertTrue(r2["ok"])
+            row = conn.execute("SELECT cover_prompt FROM novels WHERE id=1").fetchone()
+            self.assertEqual(row["cover_prompt"], "热血玄幻封面")
+
+            # next-book creation carries the cover prompt
+            conn.execute("UPDATE novels SET status='finished' WHERE id=1")
+            conn.commit()
+            r3 = apply_architect.apply_report(
+                conn,
+                1,
+                {
+                    "cover_prompt": "新书封面：星际少女",
+                    "decisions": {
+                        "next_book": {
+                            "book_name": "下一本",
+                            "genre": "科幻",
+                            "abstract": "星际冒险",
+                            "selling_point": "爽",
+                            "protagonist": "星",
+                        }
+                    },
+                },
+            )
+            self.assertTrue(r3["ok"])
+            self.assertTrue(r3["next_book_created"])
+            row = conn.execute(
+                "SELECT cover_prompt, status FROM novels WHERE title='下一本'"
+            ).fetchone()
+            self.assertEqual(row["cover_prompt"], "新书封面：星际少女")
+            self.assertEqual(row["status"], "planning")
+        finally:
+            conn.close()
+
 
 class EndingBindTests(unittest.TestCase):
     def test_bind_book_updates_env(self):

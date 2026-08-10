@@ -362,6 +362,8 @@ def chair_summary(conn, novel_id, attendees, topics, transcript, dry_run):
         + "；议题：" + json.dumps(topics, ensure_ascii=False)
         + "；全部发言：" + json.dumps(transcript, ensure_ascii=False)
         + "。报告格式：{meeting_id, date, attendees, topics, discussion_summary, "
+        "cover_prompt(字符串，封面AI绘画提示词，讨论到新书选题或视觉/封面方向时输出，"
+        "需包含画面主体、风格流派、色调氛围、构图、文字排版要求，可直接用于豆包等文生图，否则为空字符串), "
         "decisions{blueprint_updates(数组,每项含seq/title/outline/hook_type/hook/emotion), "
         "volume_goal_adjust(字符串,可空), reader_persona({age_range,preference,avoid},可空), "
         "finish_decision({should_finish(bool), remaining_chapters(5-30,不收尾则为0), reasons(数组)},可空), "
@@ -375,6 +377,7 @@ def chair_summary(conn, novel_id, attendees, topics, transcript, dry_run):
             {"meeting_id": "dry-run", "date": datetime.now().strftime("%Y-%m-%d"),
              "attendees": attendees, "topics": topics,
              "discussion_summary": "dry-run 会议", "decisions": {"blueprint_updates": [], "volume_goal_adjust": ""},
+             "cover_prompt": "",
              "disagreements": [], "action_items": []}
         ),
         max_tokens=2400,

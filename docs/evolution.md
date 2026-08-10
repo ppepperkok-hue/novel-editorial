@@ -246,3 +246,21 @@ Toast 带图标、执行失败可查看原因弹窗、作品库搜索与批量�
 
 后续待办（完成后提醒）：完结机制（ending_judge 接入点将）、统一留痕
 （`audit_logs`）、人物卡进化（`character_evolution`）。
+
+## 13. 自动建书与封面提示词（2026-08-10）
+
+- **一键自动建书** `tools/create_book.py`：新书确认后作品库页「一键自动建书」，
+  复用发布链路同款 Cookie + CSRF 鉴权，自动拉分类/标签列表匹配（genre+tags 字符匹配，
+  fallback 前两条），简介单行化并补齐 50 字，主角名清洗去括号/别名并截 5 字，
+  调 `book/create/v0/` 建书 → `volume_list/v1/` 取卷 → 复用 `ending.bind_book`
+  落库并写 `~/.n8n/.env`，状态 ready → publishing；audit 记 create_book 详情。
+- **平台限制**：番茄每天最多创建 1 本新书；失败当天无法重试，错误信息已带提示。
+- **封面提示词**：会议主席总结报告新增 `cover_prompt` 字段（画面主体/风格/色调/构图/
+  文字排版），`apply_architect` 落盘到 `novels.cover_prompt`（新书创建时随书携带），
+  专题会议结束后也统一调 `apply_report` 落盘；作品库新书卡片与会议结论均可复制提示词，
+  用户用豆包出图后自行上传番茄封面。
+- **前端**：作品库 ready 卡片主按钮「一键自动建书」+ 状态文案，「手动绑定」收进折叠备用；
+  会议中心结论区展示封面提示词（带复制按钮）。
+- **验证**：新增 `tests/test_create_book.py`（10 例：gender/清洗/补齐/匹配/全链路绑定/
+  状态拒绝/已绑定拒绝/缺 Cookie/平台拒绝）；apply_report 封面落盘与不清空、随新书携带
+  测试；全量 104 后端测试 + 6 前端测试 + 构建通过。
