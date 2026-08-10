@@ -182,7 +182,7 @@ def chat_deepseek(model, system, user, temperature=0.5, max_tokens=1600,
         body["response_format"] = {"type": "json_object"}
     last_err = None
     data = None
-    for attempt in range(3):
+    for attempt in range(5):
         try:
             req = urllib.request.Request(
                 base_url + "/chat/completions",
@@ -204,7 +204,7 @@ def chat_deepseek(model, system, user, temperature=0.5, max_tokens=1600,
             last_err = RuntimeError("DeepSeek 返回空 content")
         except (urllib.error.URLError, ValueError, KeyError) as exc:
             last_err = exc
-            if attempt < 2:
+            if attempt < 4:
                 time.sleep(1.0 * (attempt + 1))
     if data is None:
         raise RuntimeError(f"DeepSeek 调用失败：{last_err}")

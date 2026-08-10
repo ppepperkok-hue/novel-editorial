@@ -160,6 +160,27 @@ def _run_locked(conn, session_id):
                         instruction=instruction if round_no > 1 else "",
                         topic=topic,
                     )
+                except Exception as exc:  # noqa: BLE001
+                    # One attendee failing must not kill the whole meeting:
+                    # record a visible placeholder + audit trace and continue.
+                    speech = {
+                        "speech": f"（{agent} 本轮发言生成失败：{exc.__class__.__name__}）",
+                        "weekly_summary": "",
+                        "feelings": "",
+                        "opinion": "",
+                        "concerns": [],
+                        "proposals": [],
+                        "priority": "低",
+                        "_error": str(exc)[:200],
+                    }
+                    audit.log(
+                        conn,
+                        "meeting",
+                        "round_speech_failed",
+                        target_type="session",
+                        target_id=session_id,
+                        detail={"agent": agent, "round": round_no, "error": str(exc)[:300]},
+                    )
                 finally:
                     conn.execute(
                         "UPDATE meeting_sessions SET current_agent='', heartbeat_at=? WHERE id=?",
@@ -261,6 +282,10 @@ def _run_locked(conn, session_id):
     except Exception as exc:  # noqa: BLE001
         if conn is not None:
             try:
+                agent_at_fail = conn.execute(
+                    "SELECT current_agent FROM meeting_sessions WHERE id=?",
+                    (session_id,),
+                ).fetchone()
                 conn.execute("UPDATE meeting_sessions SET status='failed' WHERE id=?", (session_id,))
                 audit.log(
                     conn,
@@ -268,7 +293,10 @@ def _run_locked(conn, session_id):
                     "session_failed",
                     target_type="session",
                     target_id=session_id,
-                    detail={"error": f"{exc.__class__.__name__}: {exc}"},
+                    detail={
+                        "error": f"{exc.__class__.__name__}: {exc}",
+                        "agent": (agent_at_fail["current_agent"] if agent_at_fail else "") or "",
+                    },
                 )
                 conn.commit()
             except Exception:  # noqa: BLE001
