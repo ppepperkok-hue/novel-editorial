@@ -117,6 +117,9 @@ for (const file of files) {
     if (!/qa\.passed === false/.test(sumCode)) {
       issues.push(`${file}: 汇总运行结果 must record quality-gate failures explicitly`);
     }
+    if (!/qb\.passed === false/.test(sumCode)) {
+      issues.push(`${file}: 汇总运行结果 must record B-track quality-gate failures explicitly`);
+    }
   }
 
   // 5. executeCommand nodes: parameterized command + args + relative cwd.

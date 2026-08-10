@@ -164,6 +164,40 @@ def publish_chapter(conn, chapter, env):
     )
     if res.get("code") != 0:
         return False, None, f"publish_article: {res.get('message') or res}"
+    # 4. verify (best-effort): the item should now appear in chapter_list/v1.
+    try:
+        verify_url = (
+            "https://fanqienovel.com/api/author/chapter/chapter_list/v1?"
+            + urllib.parse.urlencode(
+                {
+                    "aid": "2503",
+                    "app_name": "muye_novel",
+                    "book_id": book_id,
+                    "page_index": "0",
+                    "page_count": "50",
+                }
+            )
+        )
+        vreq = urllib.request.Request(
+            verify_url,
+            headers={
+                "Cookie": env.get("FANQIE_COOKIE", ""),
+                "X-Secsdk-Csrf-Token": env.get("FANQIE_CSRF_TOKEN", ""),
+                "User-Agent": UA,
+                "Origin": "https://fanqienovel.com",
+                "Referer": "https://fanqienovel.com/main/writer/",
+                "Accept": "application/json, text/plain, */*",
+            },
+        )
+        with urllib.request.urlopen(vreq, timeout=20) as r:
+            vbody = json.loads(r.read().decode("utf-8", "ignore"))
+        if vbody.get("code") == 0:
+            items = ((vbody.get("data") or {}).get("item_list")) or []
+            found = any(str(x.get("item_id")) == str(item_id) for x in items)
+            if not found:
+                return True, item_id, "发布成功但复核未在章节列表找到（可能审核延迟）"
+    except Exception:  # noqa: BLE001 - verification is best-effort
+        pass
     return True, item_id, ""
 
 

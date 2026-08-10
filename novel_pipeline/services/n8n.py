@@ -2,6 +2,7 @@
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime
@@ -10,6 +11,7 @@ from novel_pipeline import config
 
 _N8N_KEY = None
 _EXEC_ERROR_CACHE = {}
+_LAST_API_LOG = {"ts": 0.0}
 
 
 def n8n_api(method, path, body=None, timeout=6):
@@ -30,7 +32,19 @@ def n8n_api(method, path, body=None, timeout=6):
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read().decode("utf-8", "ignore"))
-    except (urllib.error.URLError, OSError, ValueError):
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        now = time.time()
+        if now - _LAST_API_LOG["ts"] > 60:
+            _LAST_API_LOG["ts"] = now
+            try:
+                config.ALERTS_LOG.parent.mkdir(parents=True, exist_ok=True)
+                with config.ALERTS_LOG.open("a", encoding="utf-8") as f:
+                    f.write(
+                        f"[{datetime.now():%Y-%m-%d %H:%M:%S}] n8n API {method} "
+                        f"{path} 失败：{exc.__class__.__name__}: {exc}\n"
+                    )
+            except Exception:  # noqa: BLE001
+                pass
         return None
 
 

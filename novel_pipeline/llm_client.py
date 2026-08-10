@@ -114,7 +114,7 @@ class LLMClient:
                     body = json.loads(resp.read().decode("utf-8"))
                 return body["choices"][0]["message"]["content"]
             except urllib.error.HTTPError as exc:
-                if exc.code < 500:
+                if exc.code not in (429, 500, 502, 503, 504):
                     raise LLMError(f"LLM 调用被拒：HTTP {exc.code}") from exc
                 last_err = exc
                 if attempt < self.max_retries:

@@ -58,7 +58,7 @@ def clean_title(raw):
     return re.sub(r"<[^>]+>", "", raw).strip()
 
 
-def parse_rank_html(html, source="qidian"):
+def parse_rank_html(html):
     """从榜单 HTML 提取书名列表（best-effort，规则随页面结构演进）。"""
     titles = [clean_title(m) for m in TITLE_RE.findall(html)]
     titles += [clean_title(t) for t in TITLE_ATTR_RE.findall(html)]
@@ -252,7 +252,7 @@ def refresh(out_path="hot_topics.json", sources=None, fetcher=None, browser_fall
         error = ""
         try:
             html = fetcher(source)
-            titles = parse_rank_html(html, source=source["name"])
+            titles = parse_rank_html(html)
         except Exception as exc:  # noqa: BLE001
             titles = []
             error = str(exc)

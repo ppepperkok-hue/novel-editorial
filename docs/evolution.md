@@ -364,3 +364,31 @@ Toast 带图标、执行失败可查看原因弹窗、作品库搜索与批量�
   明确提示无需导出。
 - **验证**：后端 128 + 前端 6 全绿；validate 全工作流通过；新增质量门失败落库、
   成本告警、agents_save 穿越、导出短路、scheduler 正文、会议库隔离等回归测试。
+
+## 18. 第三轮复查修复（2026-08-10）
+
+按复查报告（A/B/C/D 段）修复：
+
+- **A1 面板回归**：PANEL_TOKEN 的 Bearer 检查恢复为只要求「POST 且无 Origin」，
+  GET 与浏览器请求不再被挡（面板可正常打开），文档明确本机信任模型。
+- **A2 迁移破坏性**：chapters 去重改为保留「已发布」行优先，删除前先清理
+  publish_logs/quality_reports/chapter_content/chapter_summaries 子表引用，
+  不再静默删已发布章节、不再留孤儿。
+- **A3 锁阈值**：日更锁陈旧回收从 30 分钟放宽到 2 小时（一次日更 15+ 次
+  LLM 调用可能超过半小时），防误删活锁导致双发。
+- **B1 质量门B**：质量门B 不再 throw（改为返回 passed:false 失败对象），并补齐
+  与 A 轨一致的读者/主编仲裁逻辑；validator 增加 `qb.passed === false` 断言。
+- **B2 发布日志**：FanqieHttpAdapter 成功/失败都写 publish_logs；
+  Scheduler.tick 加 try/except，失败进 report.failures 并走告警，不再裸崩。
+- **B3 无正文短路**：scheduler 去掉 COALESCE(cc.content, outline) 兜底，
+  reviewed 章节缺正文直接跳过并告警，禁止把章纲发到线上。
+- **B4 周记简报**：write_diaries weekly 模式注入每位 Agent 的本周简报
+  （materials.agent_briefs），周记上下文恢复完整。
+- **B5/B6/B7**：README 测试数 128、代理字段补 max_tokens；质量门词表改
+  fs.readFileSync（不再吃 require 进程缓存），fallback 为完整内置词表；
+  LLMClient 对 429/5xx 重试、其余 4xx 直接失败。
+- **D 段轻量项**：publish_stock 三步发布后 best-effort 复核 chapter_list/v1；
+  hot_topics.parse_rank_html 删除死参数；quality_gate 衔接不匹配从 6 分降到
+  4 分（低于通过线，真实拦截）；n8n_api 失败限频写 alerts.log。
+- **验证**：后端 134 + 前端 6 全绿；validate 全工作流通过；三份工作流重新部署
+  激活；服务重启后 dashboard 200 / 跨站 POST 403。

@@ -57,6 +57,12 @@ class FanqieHttpAdapter(PublisherAdapter):
         env = publish_stock.load_env()
         ok, item_id, error = publish_stock.publish_chapter(self.conn, dict(row), env)
         if not ok:
+            self.conn.execute(
+                "INSERT INTO publish_logs(chapter_id,platform,action,result,error,ai_declared,created_at) "
+                "VALUES(?,?,?,?,?,?,datetime('now','localtime'))",
+                (chapter_id, "fanqie", "publish", "failed", str(error or "unknown")[:300], 1),
+            )
+            self.conn.commit()
             raise RuntimeError(error or "publish failed")
         self.conn.execute(
             "UPDATE chapters SET status='published', fanqie_item_id=?, published_at=? "
@@ -66,6 +72,11 @@ class FanqieHttpAdapter(PublisherAdapter):
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 chapter_id,
             ),
+        )
+        self.conn.execute(
+            "INSERT INTO publish_logs(chapter_id,platform,action,result,error,ai_declared,created_at) "
+            "VALUES(?,?,?,?,?,?,datetime('now','localtime'))",
+            (chapter_id, "fanqie", "publish", "success", "", 1),
         )
         self.conn.commit()
         return {"result": "published", "item_id": item_id}

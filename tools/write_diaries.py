@@ -127,7 +127,7 @@ def clean_old(conn):
     conn.commit()
 
 
-def write(conn, novel_id, mode, dry_run=False):
+def write(conn, novel_id, mode, dry_run=False, materials=None):
     results = []
     for agent in AGENTS:
         md = AGENTS_DIR / f"{agent}.md"
@@ -142,10 +142,12 @@ def write(conn, novel_id, mode, dry_run=False):
             )
         else:
             payload = weekly_payload(conn, novel_id, agent)
+            brief = ((materials or {}).get("agent_briefs") or {}).get(agent, {})
             user = (
                 "写本周日记，回顾这周我干了什么、关键事件、学到的东西、看法变化、心情变化，"
                 "并额外输出 mood 字段 {satisfaction(0-1), concern(0-1), excitement(0-1), fatigue(0-1), note}。"
-                "本周我的日记与上周周记：\n"
+                "我的本周简报：" + json.dumps(brief, ensure_ascii=False)
+                + "；本周我的日记与上周周记：\n"
                 + json.dumps(payload, ensure_ascii=False)
             )
         if dry_run:

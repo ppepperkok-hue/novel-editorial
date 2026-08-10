@@ -392,7 +392,9 @@ def main():
             return
         materials = build_materials_dict(conn, novel_id)
         if args.kind == "weekly":
-            write_diaries.write(conn, novel_id, "weekly", dry_run=args.dry_run)
+            write_diaries.write(
+                conn, novel_id, "weekly", dry_run=args.dry_run, materials=materials
+            )
         attendees, topics, pick = chair_pick(
             conn, novel_id, args.dry_run, materials, topic
         )

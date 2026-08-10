@@ -37,7 +37,7 @@ class Scheduler:
 
     def tick(self, conn):
         """执行一次发布计划：检查存稿池、发布当日章节、更新状态、返回报告。"""
-        report = {"published": [], "warnings": [], "date": str(self.now)}
+        report = {"published": [], "failures": [], "warnings": [], "date": str(self.now)}
         for novel in conn.execute("SELECT id, title FROM novels").fetchall():
             level = backlog_level(conn, novel["id"])
             if level < self.safe_backlog:
@@ -50,15 +50,36 @@ class Scheduler:
                     self.alert_sink.send(warning)
 
             rows = conn.execute(
-                "SELECT c.id, c.seq, c.outline, COALESCE(cc.content, c.outline) AS body "
+                "SELECT c.id, c.seq, c.outline, cc.content AS body "
                 "FROM chapters c LEFT JOIN chapter_content cc ON cc.chapter_id=c.id "
                 "WHERE c.novel_id=? AND c.status IN ('reviewed','queued') "
                 "ORDER BY c.seq LIMIT ?",
                 (novel["id"], self.chapters_per_day),
             ).fetchall()
             for row in rows:
-                result = self.adapter.publish(row["id"], text=row["body"])
-                conn.execute("UPDATE chapters SET status='published' WHERE id=?", (row["id"],))
+                body = str(row["body"] or "").strip()
+                if not body:
+                    message = (
+                        f"章节 {row['seq']} 处于待发布状态但缺少正文（chapter_content），"
+                        "已跳过，禁止把章纲当正文发布"
+                    )
+                    report["warnings"].append(message)
+                    report["failures"].append({"chapter_id": row["id"], "error": message})
+                    if self.alert_sink:
+                        self.alert_sink.send(message)
+                    continue
+                try:
+                    result = self.adapter.publish(row["id"], text=body)
+                    conn.execute(
+                        "UPDATE chapters SET status='published' WHERE id=?", (row["id"],)
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    result = {"result": "failed", "error": str(exc)[:200]}
+                    report["failures"].append(
+                        {"chapter_id": row["id"], "error": str(exc)[:200]}
+                    )
+                    if self.alert_sink:
+                        self.alert_sink.send(f"章节 {row['seq']} 发布失败：{exc}")
                 report["published"].append({"chapter_id": row["id"], "result": result})
         conn.commit()
         return report

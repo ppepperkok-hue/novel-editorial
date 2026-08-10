@@ -317,10 +317,29 @@ def _migrate(conn):
         CREATE INDEX IF NOT EXISTS idx_knowledge_lookup ON novel_knowledge(novel_id, category, entity);
         """
     )
-    conn.execute(
-        "DELETE FROM chapters WHERE id NOT IN "
-        "(SELECT MIN(id) FROM chapters GROUP BY novel_id, seq)"
-    )
+    # Deduplicate (novel_id, seq) keeping the published row when possible;
+    # clean child tables first so no orphan rows are left behind.
+    dup_rows = conn.execute(
+        "SELECT id FROM chapters WHERE id NOT IN ("
+        "  SELECT id FROM ("
+        "    SELECT id, ROW_NUMBER() OVER ("
+        "      PARTITION BY novel_id, seq "
+        "      ORDER BY CASE WHEN status='published' THEN 0 ELSE 1 END, id"
+        "    ) AS rn FROM chapters"
+        "  ) WHERE rn=1"
+        ")"
+    ).fetchall()
+    dup_ids = [r["id"] for r in dup_rows]
+    if dup_ids:
+        marks = ",".join("?" * len(dup_ids))
+        for table, col in (
+            ("publish_logs", "chapter_id"),
+            ("quality_reports", "chapter_id"),
+            ("chapter_content", "chapter_id"),
+            ("chapter_summaries", "chapter_id"),
+        ):
+            conn.execute(f"DELETE FROM {table} WHERE {col} IN ({marks})", dup_ids)
+        conn.execute(f"DELETE FROM chapters WHERE id IN ({marks})", dup_ids)
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_chapters_novel_seq_unique "
         "ON chapters(novel_id, seq)"

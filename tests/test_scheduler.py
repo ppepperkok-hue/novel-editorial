@@ -36,6 +36,12 @@ class SchedulerTests(unittest.TestCase):
         chapters = [db.add_chapter(self.conn, nid, vid, seq, f"第{seq}章") for seq in (1, 2, 3)]
         for cid in chapters:
             db.update_chapter_after_review(self.conn, cid, 1000, 8.0, True)
+            self.conn.execute(
+                "INSERT INTO chapter_content(chapter_id,content,updated_at) "
+                "VALUES(?,?,datetime('now','localtime'))",
+                (cid, f"第{cid}章正文"),
+            )
+            self.conn.commit()
 
         sched = Scheduler(adapter=self.adapter, chapters_per_day=2, alert_sink=self.sink)
         report = sched.tick(self.conn)

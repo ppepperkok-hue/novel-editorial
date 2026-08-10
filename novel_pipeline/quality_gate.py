@@ -96,7 +96,9 @@ def score_chapter(text, outline_keywords=None, min_chars=2000, max_chars=2300,
         coher_score = 10.0
     else:
         tail = (prev_tail or "")[-40:]
-        coher_score = 10.0 if (tail and tail in text) else 6.0
+        # A missing tail match is a real coherence failure, not a mild ding:
+        # 4.0 sits below the per-dimension pass bar (5.0).
+        coher_score = 10.0 if (tail and tail in text) else 4.0
 
     scores = {
         "words": _clamp_score(word_score),

@@ -114,9 +114,10 @@ def acquire_lock():
                 pass
         else:
             age = time.time() - LOCK_FILE.stat().st_mtime
-            if age > 1800:
-                # A healthy daily run finishes well under 30 minutes; a live
-                # PID here is likely reused, so treat the lock as stale.
+            if age > 7200:
+                # A full daily run can take well over 30 minutes (15+ LLM
+                # calls with large max_tokens); only reclaim after 2h when a
+                # live PID is almost certainly reused.
                 try:
                     LOCK_FILE.unlink()
                     return acquire_lock()

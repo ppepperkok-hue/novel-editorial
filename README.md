@@ -212,7 +212,7 @@ A/B 双轨互相隔离：质量门失败只在排版处短路，另一章照常�
   代理模式下提示词资产直接维护在 `prompts/agents/*.md`，脚本会明确提示无需导出；
 - `tools/render_workflow.py`（`PROXY_MODE=True`）：反向把 Agent 资产渲染回工作流——
   日更 15 个 LLM 节点全部改为请求本地 `POST /api/agent/run`，n8n 只携带
-  `agent / model / temperature / target_words / task`，系统提示词由
+  `agent / model / temperature / max_tokens / target_words / task`，系统提示词由
   `tools/agent_tool_loop.py` 在运行时组装；
 - `node tools/validate_workflow_deep.mjs`：深度校验渲染结果；
 - 前端「Agent 管理」页：编辑提示词/模型/温度 → 保存（自动 render + validate）→ 一键部署到 n8n。
@@ -441,7 +441,7 @@ novel-pipeline/
 ├── n8n/                      # 三个工作流 JSON（日更 61 节点 / 周会 7 节点 / 知识管家 4 节点）
 ├── docs/                     # evolution / planning / research
 ├── ai_words.json             # 共享 AI 味词表（Python 质量门与 n8n 质量门同源）
-├── tests/                    # 120 个后端 unittest + 前端 Vitest
+├── tests/                    # 128 个后端 unittest + 前端 Vitest
 ├── scripts/install_daily_task.ps1   # Windows 计划任务备选注册脚本
 ├── launch_desktop.vbs        # 开发态桌面一键启动
 └── demo.db / exports / n8n_tmp / backups / hot_topics.json / alerts.log
@@ -465,7 +465,7 @@ node tools/validate_workflow_deep.mjs
 ### 15.2 测试
 
 ```bash
-python run_tests.py          # 120 个后端测试（标准库 unittest）
+python run_tests.py          # 128 个后端测试（标准库 unittest）
 cd webapp && npm test        # 6 个前端 Vitest 测试
 cd webapp && npm run build   # 构建 dist 供 web_api 托管
 ```

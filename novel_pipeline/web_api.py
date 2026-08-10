@@ -139,7 +139,10 @@ def make_handler(db_path):
                 if length > 5 * 1024 * 1024:
                     return False, "request body too large"
             token = _panel_token()
-            if not origin and token:
+            # Token is a write-path guard only: browsers (Origin present) and
+            # read-only GETs stay usable without it. A forged local Origin
+            # header is out of scope for a localhost trust model.
+            if self.command == "POST" and not origin and token:
                 auth = self.headers.get("Authorization") or ""
                 if auth != "Bearer " + token:
                     return False, "missing panel token"
