@@ -67,6 +67,7 @@ def generate_chapter(client, chapter_outline, prev_summary="", character_states=
         load_prompt("reviewer"),
         f"章纲：{chapter_outline}\n正文：\n{edited}",
         tier="reviewing",
+        max_tokens=2000,
     )
     review = parse_review(review_raw)
 
@@ -82,6 +83,7 @@ def generate_chapter(client, chapter_outline, prev_summary="", character_states=
             load_prompt("reviewer"),
             f"章纲：{chapter_outline}\n正文：\n{edited}",
             tier="reviewing",
+            max_tokens=2000,
         )
         review = parse_review(review_raw)
 
@@ -89,6 +91,7 @@ def generate_chapter(client, chapter_outline, prev_summary="", character_states=
         load_prompt("memory"),
         f"正文：\n{edited}",
         tier="memory",
+        max_tokens=2400,
     )
     memory = parse_review(memory_raw)
 

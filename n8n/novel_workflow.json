@@ -151,7 +151,8 @@
       "position": [
         880,
         -200
-      ]
+      ],
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -183,7 +184,8 @@
       "position": [
         1100,
         -200
-      ]
+      ],
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -215,7 +217,8 @@
       "position": [
         1320,
         -200
-      ]
+      ],
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -273,7 +276,8 @@
       "position": [
         880,
         220
-      ]
+      ],
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -305,7 +309,8 @@
       "position": [
         1100,
         220
-      ]
+      ],
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -337,7 +342,8 @@
       "position": [
         1320,
         220
-      ]
+      ],
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {

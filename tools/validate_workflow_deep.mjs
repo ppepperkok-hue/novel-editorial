@@ -206,6 +206,12 @@ for (const file of files) {
         issues.push(`${file}: ${name} must tolerate errors (B-track isolation)`);
       }
     }
+    for (const name of ["写手A", "写手B", "润色A", "润色B", "审稿A", "审稿B"]) {
+      const node = nodes.find((n) => n.name === name);
+      if (node && node.onError !== "continueRegularOutput") {
+        issues.push(`${file}: ${name} must tolerate errors (track isolation)`);
+      }
+    }
     const fallback = nodes.find((n) => n.name === "合并兜底");
     if (fallback && !/质量门A/.test(fallback.parameters.jsCode || "")) {
       issues.push(`${file}: 合并兜底 must read quality gates, not 校验发布`);
