@@ -302,7 +302,14 @@ def upsert_chapters(conn, novel_id, chapters):
                 "SELECT id FROM quality_reports WHERE chapter_id=? ORDER BY id DESC LIMIT 1",
                 (chapter_id,),
             ).fetchone()
-            scores = json.dumps({"gate": qp}, ensure_ascii=False)
+            old_scores = {}
+            if qrow:
+                try:
+                    old_scores = json.loads(qrow["scores"] or "{}")
+                except (TypeError, json.JSONDecodeError):
+                    old_scores = {}
+            old_scores["gate"] = qp
+            scores = json.dumps(old_scores, ensure_ascii=False)
             if qrow:
                 conn.execute(
                     "UPDATE quality_reports SET scores=?, passed=?, "

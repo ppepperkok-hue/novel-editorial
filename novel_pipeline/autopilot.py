@@ -17,7 +17,7 @@ from tools import preflight
 
 
 def daily_run(conn, client, premise, chapters=3, chapters_per_day=2,
-              platform="fanqie", min_chars=800, max_chars=1300,
+              platform="fanqie", min_chars=2000, max_chars=2200,
               monthly_budget=100.0, spent=0.0, env=None, adapter=None):
     env = env if env is not None else os.environ
     # Same lock as the n8n preflight: the scheduled task and the n8n daily
@@ -68,6 +68,8 @@ def main():
     ap.add_argument("--db", default="demo.db")
     ap.add_argument("--budget", type=float, default=100.0, help="月度预算（元）")
     ap.add_argument("--spent", type=float, default=0.0, help="本月已用成本（元）")
+    ap.add_argument("--min-chars", type=int, default=2000, help="单章最少字数（默认 2000）")
+    ap.add_argument("--max-chars", type=int, default=2200, help="单章最多字数（默认 2200）")
     args = ap.parse_args()
     client = LLMClient()
     if not client.configured:
@@ -79,6 +81,7 @@ def main():
         chapters=args.chapters, chapters_per_day=args.daily,
         platform=args.platform,
         monthly_budget=args.budget, spent=args.spent,
+        min_chars=args.min_chars, max_chars=args.max_chars,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["ok"] else 1

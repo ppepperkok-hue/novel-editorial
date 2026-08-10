@@ -45,7 +45,7 @@
         "options": {
           "cwd": "={{ $env.PIPELINE_ROOT }}"
         },
-        "commandArguments": "={{ ['tools/architect_weekly.py', '--book-id', $env.FANQIE_BOOK_ID, '--db', 'demo.db'] }}"
+        "commandArguments": "={{ ['tools/architect_weekly.py', '--book-id', JSON.parse($('读当前书').first().json.stdout || '{}').book_id, '--db', 'demo.db'] }}"
       },
       "onError": "continueRegularOutput",
       "id": "n-arch-read",
@@ -80,7 +80,7 @@
         "options": {
           "cwd": "={{ $env.PIPELINE_ROOT }}"
         },
-        "commandArguments": "={{ ['tools/agent_meeting.py', '--book-id', $env.FANQIE_BOOK_ID, '--db', 'demo.db'] }}"
+        "commandArguments": "={{ ['tools/agent_meeting.py', '--book-id', JSON.parse($('读当前书').first().json.stdout || '{}').book_id, '--db', 'demo.db'] }}"
       },
       "id": "n-meeting",
       "name": "开会",
@@ -121,6 +121,23 @@
         720,
         0
       ]
+    },
+    {
+      "id": "n-weekly-current-book",
+      "name": "读当前书",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        80,
+        260
+      ],
+      "parameters": {
+        "command": "={{ $env.PYTHON_EXE }}",
+        "commandArguments": "={{ ['tools/current_book.py', '--db', 'demo.db'] }}",
+        "options": {
+          "cwd": "={{ $env.PIPELINE_ROOT }}"
+        }
+      }
     }
   ],
   "connections": {
@@ -180,6 +197,17 @@
       ]
     },
     "采集热点": {
+      "main": [
+        [
+          {
+            "node": "读当前书",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "读当前书": {
       "main": [
         [
           {

@@ -234,6 +234,18 @@ for (const file of files) {
     if (url.includes("/api/agent/run") && !/novel_id:\(/.test(n.parameters.jsonBody || "")) {
       issues.push(`${file}: agent node ${n.name} does not carry novel_id (book isolation)`);
     }
+    // expression syntax of agent proxy bodies (protects against broken
+    // task string concatenations that render/validate used to miss).
+    const body = n.parameters.jsonBody || "";
+    const m = body.match(/^=\{\{ JSON\.stringify\((.*)\) \}\}$/s);
+    if (url.includes("/api/agent/run") && m) {
+      try {
+        // eslint-disable-next-line no-new-func
+        new Function("return " + m[1]);
+      } catch (e) {
+        issues.push(`${file}: ${n.name} jsonBody expression syntax error: ${e.message}`);
+      }
+    }
   }
 
   // 7. book isolation: daily diaries and weekly meetings bind to a novel/book.
@@ -242,12 +254,18 @@ for (const file of files) {
     if (diary && !/--novel-id/.test(JSON.stringify(diary.parameters.commandArguments || ""))) {
       issues.push(`${file}: 全员写日记 does not bind --novel-id`);
     }
+    if (diary && /解析本地资料/.test(JSON.stringify(diary.parameters.commandArguments || ""))) {
+      issues.push(`${file}: 全员写日记 must read 读当前书, not 解析本地资料 (stock branch)`);
+    }
   }
   if (file === "architect_weekly.json") {
+    if (!nodes.some((n) => n.name === "读当前书")) {
+      issues.push(`${file}: missing 读当前书 node`);
+    }
     for (const name of ["读上下文", "开会"]) {
       const node = nodes.find((n) => n.name === name);
-      if (node && !/--book-id/.test(JSON.stringify(node.parameters.commandArguments || ""))) {
-        issues.push(`${file}: ${name} does not bind --book-id`);
+      if (node && !/JSON\.parse\(\$\('读当前书'\)/.test(JSON.stringify(node.parameters.commandArguments || ""))) {
+        issues.push(`${file}: ${name} must read book from 读当前书, not n8n env`);
       }
     }
   }

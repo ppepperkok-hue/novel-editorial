@@ -232,6 +232,8 @@ def sync_from_bible(conn, novel_id, bible, source_chapter=None):
     human enters them manually (the chapter sync only covers character/plot/
     timeline). Idempotent: unchanged content is not re-versioned.
     """
+    if not novel_id:
+        return {"updated": [], "count": 0}
     bible = bible or {}
     updated = []
 

@@ -16,6 +16,8 @@ param(
     [Parameter(Mandatory = $true)][string]$Premise,
     [int]$Chapters = 3,
     [int]$Daily = 2,
+    [int]$MinChars = 2000,
+    [int]$MaxChars = 2200,
     [string]$Time = "08:00",
     [string]$TaskName = "NovelPipelineDaily",
     [string]$DbPath = "demo.db",
@@ -25,7 +27,7 @@ param(
 $projectDir = Split-Path -Parent $PSScriptRoot
 $python = (Get-Command python).Source
 $dbPath = Join-Path $projectDir $DbPath
-$argList = "-m novel_pipeline.autopilot --premise `"$Premise`" --chapters $Chapters --daily $Daily --db `"$dbPath`""
+$argList = "-m novel_pipeline.autopilot --premise `"$Premise`" --chapters $Chapters --daily $Daily --min-chars $MinChars --max-chars $MaxChars --db `"$dbPath`""
 $command = "$python $argList"
 
 Write-Host "计划任务命令：$command"

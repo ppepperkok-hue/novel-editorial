@@ -31,13 +31,14 @@ def main():
     conn = db.connect(db_path)
     try:
         row = conn.execute(
-            "SELECT book_id, volume_id FROM novels "
+            "SELECT id, book_id, volume_id FROM novels "
             "WHERE status IN ('publishing','finishing') "
             "ORDER BY id DESC LIMIT 1"
         ).fetchone()
         print(
             json.dumps(
                 {
+                    "novel_id": row["id"] if row else 0,
                     "book_id": row["book_id"] if row else "",
                     "volume_id": row["volume_id"] if row else "",
                 },

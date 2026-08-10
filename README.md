@@ -38,7 +38,7 @@ Python 记忆/知识层（SQLite）+ 番茄 HTTP 发布 + Electron 桌面控制�
 | 平台 | 番茄小说（Cookie + CSRF 鉴权） | `~/.n8n/.env` 的 `FANQIE_COOKIE` / `FANQIE_CSRF_TOKEN` |
 | 发布方式 | 存稿池优先：有存货发存货，没存货现造 | `tools/check_stock.py` + `tools/publish_stock.py` |
 | 健康线 | 存稿池 < 3 章触发断更预警 | `novel_pipeline/scheduler.py` 的 `SAFE_BACKLOG` |
-| 测试基线 | 136 个后端 unittest + 6 个前端 Vitest | `python run_tests.py` / `cd webapp && npm test` |
+| 测试基线 | 144 个后端 unittest + 6 个前端 Vitest | `python run_tests.py` / `cd webapp && npm test` |
 
 ## 二、架构总览
 
@@ -507,7 +507,7 @@ novel-pipeline/
 ├── n8n/                      # 三个工作流 JSON（日更 64 节点 / 周会 7 节点 / 知识管家 4 节点）
 ├── docs/                     # evolution / planning / research
 ├── ai_words.json             # 共享 AI 味词表（Python 质量门与 n8n 质量门同源）
-├── tests/                    # 136 个后端 unittest + 前端 Vitest
+├── tests/                    # 144 个后端 unittest + 前端 Vitest
 ├── scripts/install_daily_task.ps1   # Windows 计划任务备选注册脚本
 ├── launch_desktop.vbs        # 开发态桌面一键启动
 └── demo.db / exports / n8n_tmp / backups / hot_topics.json / alerts.log
@@ -531,7 +531,7 @@ node tools/validate_workflow_deep.mjs
 ### 15.2 测试
 
 ```bash
-python run_tests.py          # 136 个后端测试（标准库 unittest）
+python run_tests.py          # 144 个后端测试（标准库 unittest）
 cd webapp && npm test        # 6 个前端 Vitest 测试
 cd webapp && npm run build   # 构建 dist 供 web_api 托管
 ```
