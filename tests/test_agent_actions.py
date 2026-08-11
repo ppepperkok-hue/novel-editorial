@@ -13,6 +13,23 @@ from tools import auto_fill_actions
 
 
 class AgentActionsTests(unittest.TestCase):
+    def test_claim_rejects_inconsistent_state_atomically(self):
+        self.conn.execute(
+            "UPDATE agent_actions SET status='claimed', claimed_by='' "
+            "WHERE id=?",
+            (self.action_id,),
+        )
+        self.conn.commit()
+        result = activity.claim_action(
+            self.conn, self.action_id, "reviewer", novel_id=1
+        )
+        self.assertFalse(result["ok"])
+        row = self.conn.execute(
+            "SELECT claimed_by, status FROM agent_actions WHERE id=?",
+            (self.action_id,),
+        ).fetchone()
+        self.assertEqual(row["claimed_by"], "")
+
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
         self.db_path = os.path.join(self.tmpdir, "t.db")

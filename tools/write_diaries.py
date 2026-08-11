@@ -114,10 +114,20 @@ def weekly_payload(conn, novel_id, agent):
         "AND diary_type='weekly' ORDER BY id DESC LIMIT 1",
         (agent, novel_id),
     ).fetchone()
+    def _safe_load(raw):
+        try:
+            return json.loads(raw)
+        except (TypeError, ValueError):
+            return None
+
     return {
-        "this_week_daily_diaries": [json.loads(d["content"]) for d in diaries if d["content"]],
+        "this_week_daily_diaries": [
+            _safe_load(d["content"]) for d in diaries if d["content"]
+        ],
         "last_weekly_diary": (
-            json.loads(last_weekly["content"]) if last_weekly and last_weekly["content"] else None
+            _safe_load(last_weekly["content"])
+            if last_weekly and last_weekly["content"]
+            else None
         ),
     }
 

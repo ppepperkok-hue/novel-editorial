@@ -81,14 +81,21 @@ def broadcast(conn, from_agent, to_agents, body, subject="", kind="note", novel_
     return {"ok": True, "ids": ids, "sent": len(ids)}
 
 
-def list_messages(conn, agent=None, novel_id=0, status=None, limit=50):
+def list_messages(conn, agent=None, novel_id=0, status=None, limit=50, direction="any"):
     """List messages touching `agent` (sent or received), scoped by novel."""
     limit = max(1, min(int(limit or 50), 500))
     sql = "SELECT * FROM agent_messages WHERE 1=1"
     params = []
     if agent:
-        sql += " AND (to_agent=? OR from_agent=?)"
-        params += [str(agent), str(agent)]
+        if direction == "to":
+            sql += " AND to_agent=?"
+            params += [str(agent)]
+        elif direction == "from":
+            sql += " AND from_agent=?"
+            params += [str(agent)]
+        else:
+            sql += " AND (to_agent=? OR from_agent=?)"
+            params += [str(agent), str(agent)]
     if novel_id:
         sql += " AND ref_novel_id=?"
         params.append(int(novel_id))

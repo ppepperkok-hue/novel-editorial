@@ -42,6 +42,18 @@ class MailroomTests(unittest.TestCase):
         self.assertIn(self.r2["id"], ids)
         self.assertNotIn(self.r3["id"], ids)
 
+    def test_list_direction_to_only_received(self):
+        sent = mailroom.send(
+            self.conn, "writer", "eic", "我发给主编的", novel_id=1
+        )
+        self.assertTrue(sent["ok"])
+        result = mailroom.list_messages(
+            self.conn, agent="writer", direction="to"
+        )
+        ids = [m["id"] for m in result["messages"]]
+        self.assertIn(self.r1["id"], ids)
+        self.assertNotIn(sent["id"], ids)
+
     def test_list_filters_by_novel_and_status(self):
         result = mailroom.list_messages(self.conn, agent="writer", novel_id=1, status="unread")
         self.assertEqual(len(result["messages"]), 2)

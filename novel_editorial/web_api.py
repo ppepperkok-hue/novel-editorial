@@ -1025,7 +1025,7 @@ def make_handler(db_path):
             rel = path.lstrip("/") or "index.html"
             root = dist
             target = (root / rel).resolve()
-            if not str(target).startswith(str(root)):
+            if not target.is_relative_to(root):
                 return False
             if target.is_dir():
                 target = target / "index.html"

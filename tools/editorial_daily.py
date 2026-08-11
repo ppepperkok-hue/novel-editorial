@@ -186,6 +186,7 @@ def _mark_injected_read(ctx, node):
             novel_id=ctx.novel_id,
             status="unread",
             limit=config.AGENT_CTX_MESSAGES,
+            direction="to",
         )
         if result.get("ok"):
             ids = [m["id"] for m in result["messages"]]

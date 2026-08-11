@@ -133,16 +133,17 @@ def claim_action(conn, action_id, agent, novel_id=0):
     ).fetchone()
     if row is None:
         return {"ok": False, "error": "action not found"}
-    if row["claimed_by"]:
-        return {"ok": False, "error": f"already claimed by {row['claimed_by']}"}
-    if row["status"] != "pending":
-        return {"ok": False, "error": f"only pending actions can be claimed (status={row['status']})"}
     if int(novel_id or 0) and int(row["novel_id"] or 0) not in (0, int(novel_id)):
         return {"ok": False, "error": "action belongs to another novel"}
-    conn.execute(
-        "UPDATE agent_actions SET claimed_by=?, status='claimed' WHERE id=?",
+    cur = conn.execute(
+        "UPDATE agent_actions SET claimed_by=?, status='claimed' "
+        "WHERE id=? AND status='pending' "
+        "AND (claimed_by IS NULL OR claimed_by='')",
         (agent, int(action_id)),
     )
+    if cur.rowcount == 0:
+        conn.commit()
+        return {"ok": False, "error": "action already claimed or not pending"}
     conn.commit()
     audit.log(
         conn,

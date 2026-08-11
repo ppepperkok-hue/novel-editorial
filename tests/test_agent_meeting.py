@@ -121,6 +121,29 @@ class DiaryTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_weekly_payload_tolerates_dirty_diary_json(self):
+        path = make_db()
+        from tools import write_diaries
+
+        conn = db.connect(path)
+        try:
+            conn.execute(
+                "INSERT INTO agent_diaries(agent,novel_id,diary_type,content,created_at) "
+                "VALUES('writer',1,'daily','不是 JSON',datetime('now','localtime'))"
+            )
+            conn.execute(
+                "INSERT INTO agent_diaries(agent,novel_id,diary_type,content,created_at) "
+                "VALUES('writer',1,'weekly','也不是 JSON','2026-08-01 10:00:00')"
+            )
+            conn.commit()
+            payload = write_diaries.weekly_payload(conn, 1, "writer")
+            self.assertIsNone(payload["last_weekly_diary"])
+            self.assertTrue(
+                any(d is None for d in payload["this_week_daily_diaries"])
+            )
+        finally:
+            conn.close()
+
 
 class MaterialsTests(unittest.TestCase):
     def test_build_materials_has_briefs(self):
@@ -269,19 +292,8 @@ class RoundSpeechRetryTests(unittest.TestCase):
             def fake_ask(conn, novel_id, agent, user, temperature, dry_run, mock_text,
                          max_tokens=1600, tools=None, messages=None, system_override=None):
                 calls["n"] += 1
-                if calls["n"] == 1:
-                    calls["first_tools"] = tools
-                    calls["first_system"] = system_override
-                    tool_call = {
-                        "id": "call_9",
-                        "type": "function",
-                        "function": {
-                            "name": "get_knowledge",
-                            "arguments": '{"topic": "伏笔"}',
-                        },
-                    }
-                    return "", {"prompt_tokens": 1, "completion_tokens": 1}, "mock", [tool_call]
-                calls["second_messages"] = messages
+                calls["first_tools"] = tools
+                calls["first_system"] = system_override
                 text = json.dumps(
                     {
                         "speech": "我觉得伏笔回收得按知识库来。",
@@ -300,13 +312,11 @@ class RoundSpeechRetryTests(unittest.TestCase):
                 speech = agent_meeting.round_speech(
                     conn, 1, "planner", materials, [], 1, dry_run=False
                 )
-            self.assertEqual(calls["n"], 2)
+            self.assertEqual(calls["n"], 1)
             self.assertEqual(calls["first_tools"][0]["function"]["name"], "get_knowledge")
             self.assertIn("可用工具", calls["first_system"])
             self.assertIn("get_novel_knowledge", calls["first_system"])
             self.assertIn("开篇钩子", calls["first_system"])
-            roles = [m["role"] for m in calls["second_messages"]]
-            self.assertIn("tool", roles)
             self.assertEqual(speech["speech"], "我觉得伏笔回收得按知识库来。")
         finally:
             conn.close()

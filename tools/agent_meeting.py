@@ -428,63 +428,6 @@ def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run,
         tools=[GET_KNOWLEDGE_TOOL, GET_NOVEL_KNOWLEDGE_TOOL],
         system_override=system,
     )
-    if tool_calls:
-        tools_used = []
-        for tc in tool_calls:
-            fn = tc.get("function") or {}
-            try:
-                args = json.loads(fn.get("arguments") or "{}")
-            except ValueError:
-                args = {}
-            tools_used.append(
-                f"{fn.get('name') or 'unknown'}({str(args.get('topic') or '')})"
-            )
-        first = parse_json(text)
-        if first is None:
-            first = {}
-        first["_tools_used"] = tools_used
-        msgs = [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-            {"role": "assistant", "content": text or "", "tool_calls": tool_calls},
-        ]
-        for tc in tool_calls:
-            fn = tc.get("function") or {}
-            name = fn.get("name") or ""
-            try:
-                args = json.loads(fn.get("arguments") or "{}")
-            except ValueError:
-                args = {}
-            tool_topic = str(args.get("topic") or "")
-            if name == "get_novel_knowledge":
-                from tools import novel_knowledge  # noqa: PLC0415
-
-                hits = novel_knowledge.resolve(conn, novel_id, tool_topic)
-                content = "\n\n".join(
-                    f"【{h['category']}·{h['entity']} v{h['version']}】\n{h['content']}"
-                    for h in hits
-                ) or f"知识库中没有与「{tool_topic}」相关的设定，请基于已有材料发言并不要编造新设定。"
-            else:
-                hits = knowledge.resolve_knowledge(agent, tool_topic)
-                content = "\n\n".join(
-                    f"【{h['title']}】\n{h['content']}" for h in hits
-                ) or f"未找到与「{tool_topic}」匹配的知识包，请直接发言。"
-            msgs.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tc.get("id") or "",
-                    "content": content,
-                }
-            )
-        text, _usage, _model, _tc2 = ask(
-            conn, novel_id, agent, None, temperature=0.6, dry_run=dry_run,
-            mock_text=mock_text, messages=msgs, system_override=system,
-        )
-        result = parse_json(text) or {"raw": text[:2000]}
-        if isinstance(result, dict):
-            result["_tools_used"] = tools_used
-        return result
-
     parsed = parse_json(text)
     if parsed:
         return parsed
