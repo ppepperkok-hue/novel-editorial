@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { getMeetings, getSession } from "../api.js";
 import { fmtTime } from "./ui.jsx";
-import MeetingLive from "./MeetingLive.jsx";
+import MeetingLive, { KIND_LABELS } from "./MeetingLive.jsx";
 
 export default function MeetingsPage() {
   const [meetings, setMeetings] = useState([]);
@@ -9,6 +9,7 @@ export default function MeetingsPage() {
   const [detail, setDetail] = useState(null);
   const [log, setLog] = useState(null); // {meeting, transcript, loading}
   const [refreshTick, setRefreshTick] = useState(0);
+  const [kindFilter, setKindFilter] = useState("all");
 
   useEffect(() => {
     let alive = true;
@@ -43,7 +44,19 @@ export default function MeetingsPage() {
       ) : null}
 
       <section className="panel p-4">
-        <div className="section-title !mb-3">会议中心</div>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <div className="section-title !mb-0">会议中心</div>
+          <select
+            className="input ml-auto !w-auto !py-1 text-xs"
+            value={kindFilter}
+            onChange={(e) => setKindFilter(e.target.value)}
+          >
+            <option value="all">全部类型</option>
+            {Object.entries(KIND_LABELS).map(([k, label]) => (
+              <option key={k} value={k}>{label}</option>
+            ))}
+          </select>
+        </div>
         <MeetingLive onArchived={() => setRefreshTick((t) => t + 1)} />
       </section>
 
@@ -53,13 +66,15 @@ export default function MeetingsPage() {
         </div>
       ) : null}
 
-      {meetings.map((m) => (
+      {meetings
+        .filter((m) => kindFilter === "all" || m.kind === kindFilter)
+        .map((m) => (
         <section key={m.id} className="panel p-4">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-bold">会议 #{m.id}</span>
             <span className="chip">{fmtTime(m.held_at)}</span>
             <span className={`chip ${m.kind === "topic" ? "chip-warn" : "chip-info"}`}>
-              {m.kind === "topic" ? "专题会议" : "周会"}
+              {KIND_LABELS[m.kind] || (m.kind === "topic" ? "专题会议" : "周会")}
             </span>
             <span className={`chip ${m.status === "completed" ? "chip-ok" : "chip-warn"}`}>{m.status}</span>
             <button className="btn ml-auto !px-3 !py-1 text-xs" onClick={() => setDetail(detail === m.id ? null : m.id)}>
@@ -77,6 +92,9 @@ export default function MeetingsPage() {
             {m.blueprint_count ? <span className="chip chip-info">蓝图 {m.blueprint_count} 条</span> : null}
             {m.volume_goal_adjust ? <span className="chip chip-warn">卷目标：{m.volume_goal_adjust.slice(0, 30)}</span> : null}
             {m.action_items?.length ? <span className="chip">行动项 {m.action_items.length}</span> : null}
+            {m.report?.writing_directives?.length ? (
+              <span className="chip chip-info">写作指令 {m.report.writing_directives.length} 条</span>
+            ) : null}
           </div>
 
           {detail === m.id ? (

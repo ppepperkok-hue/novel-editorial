@@ -106,6 +106,20 @@ def open(conn, chapters=None, trigger="manual", mode="write", boss_instruction="
     if db_path is None:
         db_path = conn.execute("PRAGMA database_list").fetchone()[2]
     db_path = str(Path(db_path).resolve())
+    active = conn.execute(
+        "SELECT run_id, phase, status FROM daily_runs "
+        "WHERE source='workday' AND status='running' "
+        "ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    if active is not None:
+        return {
+            "ok": False,
+            "error": (
+                f"上一个工作日尚未收工（#{active['run_id']}，"
+                f"阶段 {active['phase']}），请先收工或继续"
+            ),
+            "locked": False,
+        }
     lock_path = ROOT / "n8n_tmp" / (Path(db_path).stem + ".lock")
     locked, reason = preflight.acquire_lock(lock_path)
     if not locked:
@@ -191,13 +205,20 @@ def resume(conn, run_id, chapters=None, dry_run=False, db_path=None):
     if db_path is None:
         db_path = conn.execute("PRAGMA database_list").fetchone()[2]
     db_path = str(Path(db_path).resolve())
-    _update(conn, run_id, phase="producing", status="running")
-    result = editorial_daily.daily(
-        conn, chapters=chapters, trigger="manual", dry_run=dry_run,
-        db_path=db_path, workday_run_id=run_id, lock_held=True,
-    )
-    _update(conn, run_id, phase="awaiting_close")
-    return {"ok": True, "run_id": run_id, "status": "awaiting_close", "produce": result}
+    lock_path = ROOT / "n8n_tmp" / (Path(db_path).stem + ".lock")
+    locked, reason = preflight.acquire_lock(lock_path)
+    if not locked:
+        return {"ok": False, "error": str(reason), "locked": False}
+    try:
+        _update(conn, run_id, phase="producing", status="running")
+        result = editorial_daily.daily(
+            conn, chapters=chapters, trigger="manual", dry_run=dry_run,
+            db_path=db_path, workday_run_id=run_id, lock_held=True,
+        )
+        _update(conn, run_id, phase="awaiting_close")
+        return {"ok": True, "run_id": run_id, "status": "awaiting_close", "produce": result}
+    finally:
+        preflight.release_lock(lock_path)
 
 
 def close(conn, run_id, dry_run=False, db_path=None):
@@ -210,6 +231,20 @@ def close(conn, run_id, dry_run=False, db_path=None):
         return {"ok": False, "error": "already finished"}
     if row["phase"] not in ("awaiting_close", "producing"):
         return {"ok": False, "error": f"cannot close from phase {row['phase']}"}
+    if db_path is None:
+        db_path = conn.execute("PRAGMA database_list").fetchone()[2]
+    db_path = str(Path(db_path).resolve())
+    lock_path = ROOT / "n8n_tmp" / (Path(db_path).stem + ".lock")
+    locked, reason = preflight.acquire_lock(lock_path)
+    if not locked:
+        return {"ok": False, "error": str(reason), "locked": False}
+    try:
+        return _close_locked(conn, run_id, dry_run, row)
+    finally:
+        preflight.release_lock(lock_path)
+
+
+def _close_locked(conn, run_id, dry_run, row):
     _update(conn, run_id, phase="closing")
     unread = conn.execute(
         "SELECT COUNT(*) c FROM agent_messages WHERE status='unread'"

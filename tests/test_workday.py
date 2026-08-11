@@ -209,3 +209,38 @@ class WorkdayTests(unittest.TestCase):
             "SELECT subject FROM agent_messages WHERE subject='里程碑'"
         ).fetchall()
         self.assertEqual(len(second), len(first))
+
+    def test_open_rejects_unclosed_workday(self):
+        self.conn.execute(
+            "INSERT INTO daily_runs(run_id,novel_id,trigger,source,status,phase,mode,started_at,created_at) "
+            "VALUES('wd-open-1',1,'manual','workday','running','awaiting_close','write',datetime('now','localtime'),datetime('now','localtime'))"
+        )
+        self.conn.commit()
+        result = workday.open(
+            self.conn, trigger="manual", mode="org",
+            dry_run=True, db_path=self.db_path,
+        )
+        self.assertFalse(result["ok"])
+        self.assertIn("尚未收工", result["error"])
+
+    def test_resume_blocked_by_existing_lock(self):
+        from tools import preflight  # noqa: E402
+
+        run_id = "wd-resume-lock"
+        self.conn.execute(
+            "INSERT INTO daily_runs(run_id,novel_id,trigger,source,status,phase,mode,started_at,created_at) "
+            "VALUES(?,1,'manual','workday','running','awaiting_close','write',datetime('now','localtime'),datetime('now','localtime'))",
+            (run_id,),
+        )
+        self.conn.commit()
+        lock_path = ROOT / "n8n_tmp" / (Path(self.db_path).stem + ".lock")
+        locked, _ = preflight.acquire_lock(lock_path)
+        self.assertTrue(locked)
+        try:
+            result = workday.resume(
+                self.conn, run_id, dry_run=True, db_path=self.db_path
+            )
+        finally:
+            preflight.release_lock(lock_path)
+        self.assertFalse(result["ok"])
+        self.assertFalse(result.get("locked"))
