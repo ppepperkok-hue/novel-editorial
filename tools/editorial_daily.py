@@ -825,12 +825,13 @@ def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, en
     ctx = _Ctx(book["novel_id"], db_path, dry_run, book["book_id"], "")
     run_id = "scheduler-" + datetime.now().strftime("%Y%m%d%H%M%S") + "-" + uuid.uuid4().hex[:6]
     started = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    conn.execute(
-        "INSERT INTO daily_runs(run_id, novel_id, trigger, source, status, started_at, created_at) "
-        "VALUES(?,?,?,?,?,?,?)",
-        (run_id, ctx.novel_id, trigger, "scheduler", "running", started, started),
-    )
-    conn.commit()
+    if not dry_run:
+        conn.execute(
+            "INSERT INTO daily_runs(run_id, novel_id, trigger, source, status, started_at, created_at) "
+            "VALUES(?,?,?,?,?,?,?)",
+            (run_id, ctx.novel_id, trigger, "scheduler", "running", started, started),
+        )
+        conn.commit()
     try:
         if not dry_run:
             _run_tool(
@@ -840,12 +841,14 @@ def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, en
             )
         pre = _preflight(ctx, conn, env, trigger)
         if pre.get("skipped"):
-            # A skipped scheduled run must not leave a forever-running row.
-            conn.execute("DELETE FROM daily_runs WHERE run_id=?", (run_id,))
-            conn.commit()
+            if not dry_run:
+                # A skipped scheduled run must not leave a forever-running row.
+                conn.execute("DELETE FROM daily_runs WHERE run_id=?", (run_id,))
+                conn.commit()
             return {"ok": False, "skipped": True, "run_id": run_id, "reasons": pre["reasons"]}
         if not pre["ok"]:
-            _finish_run(conn, ctx, run_id, "failed", error="；".join(pre["reasons"]))
+            if not dry_run:
+                _finish_run(conn, ctx, run_id, "failed", error="；".join(pre["reasons"]))
             return {
                 "ok": False,
                 "skipped": False,
@@ -892,7 +895,8 @@ def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, en
             "tools": ctx.tool_attempts,
             "reasons": pre.get("reasons") or [],
         }
-        _finish_run(conn, ctx, run_id, status, published, error, detail)
+        if not dry_run:
+            _finish_run(conn, ctx, run_id, status, published, error, detail)
         return {
             "ok": status == "completed",
             "skipped": False,
@@ -909,15 +913,16 @@ def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, en
     except Exception as exc:  # noqa: BLE001
         ctx.errors.append(f"调度器异常: {str(exc)[:400]}")
         error = "；".join(ctx.errors)
-        _finish_run(
-            conn,
-            ctx,
-            run_id,
-            "failed",
-            ctx.published,
-            error,
-            {"warnings": ctx.warnings},
-        )
+        if not dry_run:
+            _finish_run(
+                conn,
+                ctx,
+                run_id,
+                "failed",
+                ctx.published,
+                error,
+                {"warnings": ctx.warnings},
+            )
         return {
             "ok": False,
             "skipped": False,

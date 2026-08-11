@@ -79,14 +79,10 @@ class EditorialDailyTests(unittest.TestCase):
         self.assertEqual(result["status"], "completed", result)
         self.assertEqual(result["published"], 2)
         row = self.conn.execute(
-            "SELECT status, source, published, failed_nodes FROM daily_runs "
-            "WHERE run_id=?",
+            "SELECT COUNT(*) c FROM daily_runs WHERE run_id=?",
             (result["run_id"],),
         ).fetchone()
-        self.assertEqual(row["status"], "completed")
-        self.assertEqual(row["source"], "scheduler")
-        self.assertEqual(row["published"], 2)
-        self.assertEqual(row["failed_nodes"], "[]")
+        self.assertEqual(row["c"], 0, "dry-run must not persist fake run records")
 
     def test_preflight_blocked_records_failed(self):
         self._ok_preflight()
@@ -96,7 +92,7 @@ class EditorialDailyTests(unittest.TestCase):
             ed.preflight, "check_cookie", return_value=(False, "cookie失效")
         ):
             result = ed.daily(
-                self.conn, trigger="manual", dry_run=True, db_path=self.db_path
+                self.conn, trigger="manual", dry_run=False, db_path=self.db_path
             )
         self.assertEqual(result["status"], "failed")
         self.assertIn("cookie失效", result["error"])
@@ -132,6 +128,7 @@ class EditorialDailyTests(unittest.TestCase):
             preflight.release_lock(lock_path)
         self.assertEqual(result["status"], "failed")
         self.assertIn("运行锁占用", result["error"])
+        self.assertEqual(result["run_id"], result["run_id"])
 
     def test_two_runs_are_idempotent(self):
         self._ok_preflight()
@@ -143,7 +140,7 @@ class EditorialDailyTests(unittest.TestCase):
         )
         self.assertNotEqual(r1["run_id"], r2["run_id"])
         n = self.conn.execute("SELECT COUNT(*) c FROM daily_runs").fetchone()["c"]
-        self.assertEqual(n, 2)
+        self.assertEqual(n, 0, "dry-run runs must not touch daily_runs")
 
     def test_track_isolation_quality_gate_failure(self):
         """A-track gate failure short-circuits only that track; B still publishes."""

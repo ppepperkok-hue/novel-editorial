@@ -36,7 +36,6 @@
           "novel_pipeline/**",
           "tools/**",
           "prompts/**",
-          "n8n/**",
           "webapp/dist/**",
           "web/**",
           "demo.db",
