@@ -16,7 +16,7 @@ export const NAV = [
 ];
 
 export const PAGE_META = {
-  dashboard: ["仪表盘", "流水线实时总览：作品、质量、成本、健康与热点"],
+  dashboard: ["仪表盘", "编辑部实时总览：作品、质量、成本、健康与热点"],
   works: ["作品库", "每部作品的完整设定：大纲、主角、角色卡与世界规则"],
   chapters: ["章节管理", "全部章节的写作状态、评分与发布进度"],
   agents: ["Agent 管理", "编辑每个写作智能体的提示词、模型与温度，保存后一键部署"],
@@ -27,7 +27,7 @@ export const PAGE_META = {
   reader: ["阅读数据", "完读率、追读率趋势与读者反馈报告"],
   settings: ["系统设置", "运行开关、预算、目标字数、更新时间与风格微调"],
   meetings: ["会议中心", "发起专题会议、围观 Agent 讨论、历次会议记录与决策"],
-  audit: ["留痕档案", "流水线全量事件审计：设置、操作、Agent、发布、预检"],
+  audit: ["留痕档案", "编辑部全量事件审计：设置、操作、Agent、发布、预检"],
 };
 
 const TOAST_ICON = { ok: "✓", bad: "✕", warn: "!" };
@@ -43,7 +43,7 @@ export function TitleBar() {
     <header className="titlebar">
       <div className="titlebar-brand">
         <span className="titlebar-logo">笔</span>
-        <span className="titlebar-name">小说流水线</span>
+        <span className="titlebar-name">文学编辑部</span>
         <span className="titlebar-sub">Novel Pipeline Console</span>
       </div>
       <div className="titlebar-controls">
@@ -71,7 +71,7 @@ export function Sidebar({ page, go, mini, toggleMini, online, liveSnapshot, data
         <div className="brand-logo">笔</div>
         {!mini && (
           <div>
-            <div className="brand-name">小说流水线</div>
+            <div className="brand-name">文学编辑部</div>
             <div className="brand-sub">Novel Pipeline</div>
           </div>
         )}

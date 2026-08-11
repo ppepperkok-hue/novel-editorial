@@ -3,9 +3,9 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "novel-pipeline"
+name = "novel-editorial"
 version = "0.1.0"
-description = "自动生成小说并发布到指定平台的全自动工作流（MVP 脚手架）"
+description = "文学编辑部：AI 网文多 Agent 协作创作与发布平台"
 requires-python = ">=3.9"
 dependencies = []
 
