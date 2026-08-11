@@ -238,6 +238,7 @@ def publish_batch(conn, novel_id, target, env):
     failures = []
     warnings = []
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    remaining = int(novel["finish_remaining"] or 0)
     for ch in rows:
         try:
             ok, item_id, error = publish_chapter(conn, ch, env)
@@ -265,15 +266,16 @@ def publish_batch(conn, novel_id, target, env):
                 (ch["id"], "fanqie", "publish", "success", "", 1),
             )
             published += 1
-            if novel["finish_remaining"] and novel["finish_remaining"] > 0:
-                remaining = novel["finish_remaining"] - 1
+            if remaining > 0:
+                remaining -= 1
                 if remaining <= 0:
                     conn.execute(
                         "UPDATE novels SET status='finished', finish_remaining=0 WHERE id=?",
                         (novel["id"],),
                     )
                     conn.execute(
-                        "UPDATE settings SET value='false' WHERE key='daily_enabled'"
+                        "INSERT OR REPLACE INTO settings(key,value) "
+                        "VALUES('daily_enabled','false')"
                     )
                     alerts = ROOT / "alerts.log"
                     with alerts.open("a", encoding="utf-8") as f:
