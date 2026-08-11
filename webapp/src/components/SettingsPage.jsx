@@ -85,7 +85,8 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
       if (sched.ok) {
         pushToast(`设置已保存，日更时间已改为每天 ${sched.time}`, "ok");
       } else {
-        pushToast("设置已保存，但更新时间应用失败：" + (sched.error || "未知"), "warn");
+        const detail = sched.deploy?.output || sched.error || "计划任务注册失败";
+        pushToast(`设置已保存，但计划任务注册失败：${detail}`, "bad");
       }
       refresh();
       onRefresh();

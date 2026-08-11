@@ -28,7 +28,8 @@ def backup_db(db_path, backup_dir, keep=DEFAULT_KEEP):
         dst.close()
         src.close()
     backups = sorted(backup_dir.glob(f"{db_path.stem}_*.db"))
-    for old in backups[:-keep]:
+    stale = backups[:-keep] if keep > 0 else backups
+    for old in stale:
         old.unlink()
     return str(target)
 

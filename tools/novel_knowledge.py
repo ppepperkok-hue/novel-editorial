@@ -414,7 +414,7 @@ def sync_from_chapters(conn, novel_id, limit=3):
             name = normalize_entity("character", name)
             if not name:
                 continue
-            kid = upsert(
+            kid = _upsert_if_changed(
                 conn, novel_id, "character", name, str(content),
                 source_chapter=cid, change_note=f"第{seq}章",
             )
@@ -437,7 +437,7 @@ def sync_from_chapters(conn, novel_id, limit=3):
             entity = normalize_entity("plot", desc)
             if not entity:
                 continue
-            kid = upsert(
+            kid = _upsert_if_changed(
                 conn, novel_id, "plot", entity, content,
                 source_chapter=cid, change_note=f"第{seq}章·{etype}",
             )
@@ -445,7 +445,7 @@ def sync_from_chapters(conn, novel_id, limit=3):
                 updated.append(f"plot:{entity}")
         summary = str(row["summary"] or "").strip()
         if summary:
-            kid = upsert(
+            kid = _upsert_if_changed(
                 conn, novel_id, "timeline", f"第{seq}章", summary[:200],
                 source_chapter=cid, change_note=f"第{seq}章摘要",
             )
@@ -462,7 +462,9 @@ def _as_list(value):
     return [value]
 
 
-def _upsert_if_changed(conn, novel_id, category, entity, content, source_chapter=None):
+def _upsert_if_changed(
+    conn, novel_id, category, entity, content, source_chapter=None, change_note="故事圣经初始化"
+):
     """Upsert only when the stored content differs (keeps versions stable)."""
     content = str(content or "").strip()
     entity = normalize_entity(category, entity)
@@ -478,7 +480,7 @@ def _upsert_if_changed(conn, novel_id, category, entity, content, source_chapter
     return upsert(
         conn, novel_id, category, entity, content,
         source_chapter=source_chapter,
-        change_note="故事圣经初始化",
+        change_note=change_note,
     )
 
 

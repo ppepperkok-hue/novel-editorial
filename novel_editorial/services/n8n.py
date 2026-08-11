@@ -50,12 +50,9 @@ def n8n_api(method, path, body=None, timeout=6):
 
 def _load_n8n_env():
     global _N8N_KEY
-    if _N8N_KEY is None:
-        value = config.env_value("N8N_API_KEY", "") or os.environ.get("N8N_API_KEY", "")
-        if value:
-            _N8N_KEY = value
-        return value
-    return _N8N_KEY
+    value = config.env_value("N8N_API_KEY", "") or os.environ.get("N8N_API_KEY", "")
+    _N8N_KEY = value or None
+    return value
 
 
 def workflow_status(wf_id):

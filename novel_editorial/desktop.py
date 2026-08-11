@@ -34,14 +34,17 @@ def log(*args):
 
 
 def pick_port(preferred):
-    for port in (preferred, preferred + 10, preferred + 20):
-        with socket.socket() as s:
-            try:
+    candidates = (preferred, preferred + 10, preferred + 20, preferred + 100)
+    for port in candidates:
+        try:
+            with socket.socket() as s:
                 s.bind(("127.0.0.1", port))
-                return port
-            except OSError:
-                continue
-    return preferred + 100
+            return port
+        except OSError:
+            continue
+    raise RuntimeError(
+        f"no free port available on 127.0.0.1; tried {list(candidates)}"
+    )
 
 
 def _dark_titlebar(handle):

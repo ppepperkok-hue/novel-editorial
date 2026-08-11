@@ -304,6 +304,8 @@ def publish_batch(conn, novel_id, target, env):
                             f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
                             "小说已完结：收尾完成，日更已自动停止，请到番茄后台标记完结\n"
                         )
+                    conn.commit()
+                    break
                 else:
                     conn.execute(
                         "UPDATE novels SET finish_remaining=? WHERE id=?",

@@ -29,6 +29,10 @@ function gh(args) {
 
 console.log(`Releasing v${version} (${owner}/${repo})`);
 
+// 0. build webapp first so the installer bundles fresh frontend; a failed
+// build throws here and aborts the release before any artifact is packaged.
+run("npm run build", { cwd: path.join(root, "webapp") });
+
 // 1. build installer
 run("npm run dist", { cwd: __dirname });
 

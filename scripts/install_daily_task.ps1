@@ -35,6 +35,10 @@ if ($Remove) {
         exit 0
     }
     schtasks /Delete /TN $TaskName /F | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to delete scheduled task $TaskName (schtasks exit code $LASTEXITCODE)."
+        exit 1
+    }
     Write-Host "已删除计划任务 $TaskName。"
     exit 0
 }

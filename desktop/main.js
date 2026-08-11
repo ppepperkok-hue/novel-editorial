@@ -2,6 +2,7 @@ const { app, BrowserWindow, dialog, ipcMain, Menu, Notification, Tray, nativeIma
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const http = require("node:http");
+const os = require("node:os");
 const path = require("node:path");
 
 const { autoUpdater } = require("electron-updater");
@@ -48,13 +49,10 @@ function apiReady(port) {
 
 async function ensureApi() {
   if (await apiReady(API_PORT)) return;
-  const dbPath = isPackaged
-    ? path.join(app.getPath("userData"), "demo.db")
-    : path.join(ROOT, "demo.db");
-  const srcDb = path.join(ROOT, "demo.db");
-  if (isPackaged && fs.existsSync(srcDb) && !fs.existsSync(dbPath)) {
-    fs.copyFileSync(srcDb, dbPath);
-  }
+  // Keep the DB beside ROOT (config.DB_PATH): control.py calls
+  // os.path.relpath(_db_path(), ROOT), which throws across drives when the
+  // installer is on another disk (e.g. userData on C:, app on E:).
+  const dbPath = path.join(ROOT, "demo.db");
   apiProc = spawn(
     PYTHONW,
     ["-m", "novel_editorial.web_api", "--db", dbPath, "--port", String(API_PORT)],
@@ -119,11 +117,32 @@ function showWindow() {
   win.focus();
 }
 
+function panelToken() {
+  // Mirror web_api._panel_token(): process env wins, then ~/.n8n/.env.
+  if (process.env.PANEL_TOKEN) return process.env.PANEL_TOKEN.trim();
+  try {
+    const envPath = path.join(os.homedir(), ".n8n", ".env");
+    for (const line of fs.readFileSync(envPath, "utf8").split(/\r?\n/)) {
+      if (!line.includes("=")) continue;
+      const eq = line.indexOf("=");
+      if (line.slice(0, eq).trim() === "PANEL_TOKEN") {
+        return line.slice(eq + 1).trim();
+      }
+    }
+  } catch {
+    // env file missing: token auth is off
+  }
+  return "";
+}
+
 async function triggerWorkflow(workflow) {
   try {
+    const headers = { "Content-Type": "application/json" };
+    const token = panelToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
     const r = await fetch(`http://127.0.0.1:${API_PORT}/api/control`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ action: "run_now", workflow }),
     });
     const data = await r.json();
@@ -176,11 +195,14 @@ function watchExecutions() {
       if (!list.length) return;
       const first = list[0];
       const key = `${first.workflow}-${first.id}-${first.status}`;
-      if (lastExecKey && lastExecKey !== key && ["success", "error", "failed", "crashed"].includes(first.status)) {
+      const terminalStates = ["success", "error", "failed", "crashed", "partial"];
+      if (lastExecKey && lastExecKey !== key && terminalStates.includes(first.status)) {
         if (Notification.isSupported()) {
+          const outcome =
+            first.status === "success" ? "成功" : first.status === "partial" ? "部分成功" : "失败";
           new Notification({
             title: "小说流水线",
-            body: `${first.workflow}执行${first.status === "success" ? "成功" : "失败"}（#${first.id}）`,
+            body: `${first.workflow}执行${outcome}（#${first.id}）`,
           }).show();
         }
       }

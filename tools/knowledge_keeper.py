@@ -163,6 +163,10 @@ def run(conn, dry_run=False):
         full = knowledge.read_knowledge(file)
         if full is None:
             continue
+        if body == (full.get("body") or "").strip():
+            # No actual content change: skip the rewrite so updated_at and
+            # the audit timeline stay stable.
+            continue
         old_len = len((full.get("body") or "").strip())
         if old_len and len(body) < old_len * 0.5:
             # model shrank the package too much: route to human review

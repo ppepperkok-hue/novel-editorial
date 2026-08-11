@@ -1,21 +1,38 @@
 import http.cookiejar
 import json
-import os
 import sys
 import urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from novel_editorial import config  # noqa: E402
 
 BASE = "http://localhost:5678"
-EMAIL = os.environ.get("N8N_EMAIL", "")
-PASSWORD = os.environ["N8N_TMP_PW"]
 
 cj = http.cookiejar.CookieJar()
 opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
 
 
+def _credentials():
+    env = config.load_env()
+    email = env.get("N8N_EMAIL", "")
+    password = env.get("N8N_TMP_PW", "")
+    missing = [k for k, v in (("N8N_EMAIL", email), ("N8N_TMP_PW", password)) if not v]
+    if missing:
+        raise RuntimeError(
+            "n8n credentials missing (" + ", ".join(missing) + "): set them in "
+            "~/.n8n/.env or the process environment"
+        )
+    return email, password
+
+
 def auth_token():
+    email, password = _credentials()
     req = urllib.request.Request(
         BASE + "/rest/login",
-        data=json.dumps({"emailOrLdapLoginId": EMAIL, "password": PASSWORD}).encode(),
+        data=json.dumps({"emailOrLdapLoginId": email, "password": password}).encode(),
         headers={"Content-Type": "application/json"},
         method="POST",
     )

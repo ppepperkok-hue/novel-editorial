@@ -260,6 +260,19 @@ def _due_date(text):
     return ""
 
 
+def _normalize_action_items(value):
+    """Accept action_items as a list or a string; never raise on bad input."""
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, (str, dict))]
+    if isinstance(value, str):
+        return [
+            part.strip()
+            for part in re.split(r"[\n,;；、]+", value)
+            if part.strip()
+        ]
+    return []
+
+
 def generate_post_meeting_actions(conn, session_id, meeting_id, novel_id,
                                   attendees, report, transcript, dry_run=False):
     """Let each attendee turn meeting conclusions into their own task list.
@@ -268,7 +281,7 @@ def generate_post_meeting_actions(conn, session_id, meeting_id, novel_id,
     items) fall back to rule-based assignment so the meeting never finishes
     without a traceable task backlog.
     """
-    action_items = report.get("action_items") or []
+    action_items = _normalize_action_items(report.get("action_items"))
     created = 0
     for agent in attendees:
         speech = next((s.get("speech") for s in transcript if s.get("agent") == agent), {})
@@ -323,19 +336,26 @@ def generate_post_meeting_actions(conn, session_id, meeting_id, novel_id,
             # Fallback: rule-based assignment from report action items.
             mine = [
                 item for item in action_items
-                if str(agent) in str(item).lower() or str(agent) in str(item.get("owner", ""))
+                if str(agent) in str(item).lower()
+                or (isinstance(item, dict)
+                    and str(agent) in str(item.get("owner", "")).lower())
             ]
             tasks = []
             for item in (mine or action_items)[:2]:
                 if isinstance(item, dict):
-                    tasks.append(
-                        {
-                            "task": str(item.get("task") or item.get("title") or str(item)),
-                            "reason": "会议结论分配",
-                            "expected_output": "落实并回填结果",
-                            "due": "下周会前",
-                        }
-                    )
+                    task = str(item.get("task") or item.get("title") or str(item))
+                elif isinstance(item, str):
+                    task = item
+                else:
+                    continue
+                tasks.append(
+                    {
+                        "task": task,
+                        "reason": "会议结论分配",
+                        "expected_output": "落实并回填结果",
+                        "due": "下周会前",
+                    }
+                )
             if not tasks:
                 tasks = [
                     {

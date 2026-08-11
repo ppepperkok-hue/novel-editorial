@@ -18,7 +18,7 @@ def snapshot():
             "SELECT run_id, status, started_at, finished_at FROM daily_runs "
             "ORDER BY id DESC LIMIT 1"
         ).fetchone()
-        latest = dict(row) if row else {}
+        latest = dict(row) if row else {"id": None, "status": "none"}
         latest["id"] = latest.get("run_id")
     finally:
         pconn.close()

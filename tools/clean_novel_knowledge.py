@@ -32,6 +32,10 @@ from tools.novel_knowledge import (  # noqa: E402
 )
 
 
+def _now():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
 def _plan_renames(conn):
     """Rows whose entity differs from its normalised form."""
     out = []
@@ -182,8 +186,10 @@ def plan_clean(conn):
 
 
 def _merge_history(conn, keep_id, drop_id):
+    if keep_id == drop_id:
+        return
     keep = conn.execute(
-        "SELECT id FROM novel_knowledge WHERE id=?", (keep_id,)
+        "SELECT id, content, version FROM novel_knowledge WHERE id=?", (keep_id,)
     ).fetchone()
     if keep is None:
         # Chained plan referenced a keep row already removed: drop safely.
@@ -193,6 +199,27 @@ def _merge_history(conn, keep_id, drop_id):
         )
         conn.execute("DELETE FROM novel_knowledge WHERE id=?", (drop_id,))
         return
+    drop = conn.execute(
+        "SELECT id, content, entity FROM novel_knowledge WHERE id=?", (drop_id,)
+    ).fetchone()
+    if drop is None:
+        return
+    keep_content = str(keep["content"] or "").strip()
+    drop_content = str(drop["content"] or "").strip()
+    if drop_content and drop_content != keep_content:
+        # Preserve the dropped row's content instead of silently losing it:
+        # append it to the keep row and version the merge for traceability.
+        merged = drop_content if not keep_content else f"{keep_content}\n\n{drop_content}"
+        if keep_content:
+            conn.execute(
+                "INSERT INTO novel_knowledge_history(knowledge_id,content,version,change_note,created_at) "
+                "VALUES(?,?,?,?,?)",
+                (keep_id, keep_content, keep["version"], f"merged:{drop['entity']}", _now()),
+            )
+        conn.execute(
+            "UPDATE novel_knowledge SET content=?, version=version+1, updated_at=? WHERE id=?",
+            (merged, _now(), keep_id),
+        )
     conn.execute(
         "UPDATE novel_knowledge_history SET knowledge_id=? WHERE knowledge_id=?",
         (keep_id, drop_id),
@@ -205,6 +232,17 @@ def apply_clean(conn, plan):
         if item["merge_into"]:
             _merge_history(conn, item["merge_into"], item["id"])
         else:
+            conflict = conn.execute(
+                "SELECT id FROM novel_knowledge WHERE novel_id=? AND category=? "
+                "AND entity=? AND id<>?",
+                (item["novel_id"], item["category"], item["to"], item["id"]),
+            ).fetchone()
+            if conflict:
+                # Several entities converged to the same canonical name and an
+                # earlier rename already created it: merge instead of crashing
+                # on the UNIQUE constraint.
+                _merge_history(conn, conflict["id"], item["id"])
+                continue
             conn.execute(
                 "UPDATE novel_knowledge SET entity=? WHERE id=?",
                 (item["to"], item["id"]),
@@ -213,6 +251,14 @@ def apply_clean(conn, plan):
         if item["merge_into"]:
             _merge_history(conn, item["merge_into"], item["id"])
         else:
+            conflict = conn.execute(
+                "SELECT id FROM novel_knowledge WHERE novel_id=? AND category=? "
+                "AND entity=? AND id<>?",
+                (item["novel_id"], "character", item["to"], item["id"]),
+            ).fetchone()
+            if conflict:
+                _merge_history(conn, conflict["id"], item["id"])
+                continue
             conn.execute(
                 "UPDATE novel_knowledge SET entity=? WHERE id=?",
                 (item["to"], item["id"]),

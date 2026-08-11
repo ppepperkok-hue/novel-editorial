@@ -169,8 +169,14 @@ export default function AgentsPage({ pushToast }) {
         prompt: selected.prompt,
       });
       if (!r.ok) {
-        addLog(`保存失败：${r.error}`, "bad");
-        pushToast("保存失败：" + r.error, "bad");
+        addLog(`保存失败：${r.error || "未知"}`, "bad");
+        if (r.render) {
+          addLog(`渲染输出：${r.render}`, "bad");
+        }
+        if (r.validation === false) {
+          addLog(`校验未通过：${r.validation_output || "（无输出）"}`, "bad");
+        }
+        pushToast("保存失败：" + (r.error || "未知"), "bad");
         return;
       }
       addLog(`渲染完成：${r.render || "（无输出）"}`);

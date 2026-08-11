@@ -353,7 +353,6 @@ def handle_control(conn, payload):
                 "mode": mode,
                 "note": "编辑部已开工，可在首页查看进度",
             }
-        set_many(conn, {"manual_run_requested": "1"})
         chapters = payload.get("chapters")
         n = 0
         if chapters:
@@ -361,9 +360,11 @@ def handle_control(conn, payload):
                 n = max(1, min(int(chapters), 5))
             except (TypeError, ValueError):
                 n = 0
-        if n:
-            set_many(conn, {"pending_publish": str(n)})
         wf = payload.get("workflow") or "daily"
+        if wf == "daily":
+            set_many(conn, {"manual_run_requested": "1"})
+            if n:
+                set_many(conn, {"pending_publish": str(n)})
         result = run_workflow_now(wf)
         audit.log(
             conn,

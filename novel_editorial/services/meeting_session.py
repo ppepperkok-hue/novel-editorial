@@ -15,6 +15,7 @@ _MEETING_LOCK = threading.Lock()
 FINISH_TOKEN = "__FINISH__"
 MAX_ROUNDS = 20
 MEETING_TIMEOUT_SECONDS = 60 * 60
+MEETING_HEARTBEAT_TIMEOUT_MINUTES = 60
 
 
 def _now():
@@ -81,11 +82,22 @@ def get_session(conn, session_id):
     return d
 
 
+def _heartbeat_timeout_minutes():
+    """Heartbeat stale threshold; MEETING_HEARTBEAT_TIMEOUT_MINUTES overrides."""
+    raw = config.env_value("MEETING_HEARTBEAT_TIMEOUT_MINUTES", "")
+    try:
+        minutes = int(raw)
+    except (TypeError, ValueError):
+        minutes = MEETING_HEARTBEAT_TIMEOUT_MINUTES
+    return minutes if minutes > 0 else MEETING_HEARTBEAT_TIMEOUT_MINUTES
+
+
 def get_active_session(conn):
     """Latest in-progress topic session (running or awaiting input).
 
-    Stale ``running`` sessions whose heartbeat is older than 10 minutes are
-    considered dead (their background thread died, e.g. after a web_api
+    Stale ``running`` sessions whose heartbeat is older than the heartbeat
+    timeout (default 60 minutes, override via MEETING_HEARTBEAT_TIMEOUT_MINUTES)
+    are considered dead (their background thread died, e.g. after a web_api
     restart) and are marked failed so they cannot block new meetings.
     ``awaiting_input`` sessions are left alone: the thread is parked waiting
     for the user, which is a legitimate state.
@@ -95,7 +107,9 @@ def get_active_session(conn):
     ).fetchone()
     if row is not None:
         session = get_session(conn, row["id"])
-        cutoff = (datetime.now() - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+        cutoff = (datetime.now() - timedelta(minutes=_heartbeat_timeout_minutes())).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
         if session.get("heartbeat_at", "") < cutoff:
             conn.execute(
                 "UPDATE meeting_sessions SET status='failed', updated_at=? WHERE id=?",

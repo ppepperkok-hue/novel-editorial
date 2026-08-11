@@ -313,7 +313,7 @@ def upsert_chapters(conn, novel_id, chapters):
         if ch.get("quality_passed") is not None:
             qp = 1 if ch.get("quality_passed") else 0
             qrow = conn.execute(
-                "SELECT id FROM quality_reports WHERE chapter_id=? ORDER BY id DESC LIMIT 1",
+                "SELECT id, scores FROM quality_reports WHERE chapter_id=? ORDER BY id DESC LIMIT 1",
                 (chapter_id,),
             ).fetchone()
             old_scores = {}

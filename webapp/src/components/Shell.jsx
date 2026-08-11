@@ -169,7 +169,7 @@ export function HelpModal({ open, onClose }) {
         <div className="modal-body">
           <div className="flex flex-col gap-2 text-sm">
             {[
-              ["1 – 8", "切换页面"],
+              [`1 – ${NAV.length}`, "切换页面"],
               ["Ctrl+K", "打开命令面板"],
               ["Ctrl+R", "刷新数据"],
               ["?", "显示/隐藏本帮助"],

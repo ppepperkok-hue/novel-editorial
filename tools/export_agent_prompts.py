@@ -58,13 +58,30 @@ def main():
             continue
         body = node["parameters"]["jsonBody"]
         sm = body.find("model:'")
-        model = body[sm + len("model:'") : body.find("'", sm + len("model:'"))]
+        if sm < 0:
+            print("skip (no model field):", node_name)
+            continue
+        model_end = body.find("'", sm + len("model:'"))
+        if model_end < 0:
+            print("skip (unterminated model field):", node_name)
+            continue
+        model = body[sm + len("model:'") : model_end]
         tm = body.find("temperature:", sm)
-        temperature = body[tm + len("temperature:") : body.find(",", tm)]
+        if tm < 0:
+            print("skip (no temperature field):", node_name)
+            continue
+        temp_end = body.find(",", tm)
+        if temp_end < 0:
+            temp_end = len(body)
+        temperature = body[tm + len("temperature:") : temp_end]
         mt = body.find("max_tokens:", sm)
-        max_tokens = (
-            body[mt + len("max_tokens:") : body.find(",", mt)] if mt >= 0 else ""
-        )
+        if mt >= 0:
+            mt_end = body.find(",", mt)
+            if mt_end < 0:
+                mt_end = len(body)
+            max_tokens = body[mt + len("max_tokens:") : mt_end]
+        else:
+            max_tokens = ""
         s0 = body.find(START_MARK)
         s1 = body.find(END_MARK, s0)
         if s0 < 0 or s1 < 0:

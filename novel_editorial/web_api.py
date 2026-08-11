@@ -1135,8 +1135,12 @@ def _fail_orphan_sessions(db_path):
     from datetime import datetime, timedelta
 
     from novel_editorial import db  # noqa: PLC0415
+    from novel_editorial.services.meeting_session import (  # noqa: PLC0415
+        _heartbeat_timeout_minutes,
+    )
 
-    cutoff = (datetime.now() - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+    minutes = _heartbeat_timeout_minutes()
+    cutoff = (datetime.now() - timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
     try:
         conn = db.connect(db_path)
         try:
