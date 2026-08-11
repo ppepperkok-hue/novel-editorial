@@ -25,3 +25,26 @@
 | P1-6 | ✅ | 待提交 | release.js 对 `gh release view` 不存在容错；顺带清理 desktop 产物名与发版文案残留的 pipeline 命名；`node --check` 验证 |
 
 全量回归：453 后端 + 16 前端全绿（P1-1 后 449 → P1-2 后 450 → P1-3/P1-4 后 452 → P1-5 后 453）。
+
+## P2 修复登记表（2026-08-12 追加）
+
+| # | 分片 | 问题 | 位置 | 状态 |
+| --- | --- | --- | --- | --- |
+| P2-1 | core | `run_workflow_now("daily")` 假启动（返回成功未启动任务） | control.py:216-223 | ✅ 54a5d0e |
+| P2-2 | core | `_run_cli` 吞掉非零退出码，周会链路静默失败 | control.py:85-97 | ✅ 54a5d0e |
+| P2-3 | core | 畸形 agency/outbox 字段使会议崩溃 | meeting_session.py:294-295 | ✅ 54a5d0e |
+| P2-4 | editorial | `_unwrap_text` 剥离 outbox/agency 字段致协作静默丢失 | agent_tool_loop.py:140-153 | ✅ 54a5d0e |
+| P2-5 | editorial | `auto_fill_actions --days` 参数无效 | auto_fill_actions.py:46-48 | ✅ 54a5d0e |
+| P2-6 | platform | delete_book 未处理 URLError/HTTPError 崩溃 | delete_book.py:83-87 | ✅ 71da4b4 |
+| P2-7 | platform | preflight 锁记录退出中进程的 PID，锁可被偷 | preflight.py:122-126 | ✅ 71da4b4 |
+| P2-8 | platform | record_work 摘要为纯字符串时崩溃 | record_work.py:222 | ✅ 71da4b4 |
+| P2-9 | platform | pending_publish 发布前被清，失败时请求静默丢失 | publish_stock.py:363-367 | ✅ 71da4b4 |
+| P2-10 | platform | websocket-client 未声明依赖 | pyproject.toml:10 | ✅ 71da4b4 |
+| P2-11 | knowledge | clean 删除带 history 的行触发外键崩溃 | clean_novel_knowledge.py:209-214 | ✅ 99609a7 |
+| P2-12 | knowledge | 链式合并引用已删除行，`--apply` 崩溃 | clean_novel_knowledge.py:127-141 | ✅ 99609a7 |
+| P2-13 | knowledge | 模型非 JSON 输出时知识管家静默成功（假绿） | knowledge_keeper.py:135-160 | ✅ 99609a7 |
+| P2-14 | knowledge | 知识包更新后 frontmatter updated_at 不刷新 | knowledge_keeper.py:176 | ✅ 99609a7 |
+| P2-15 | frontend | AgentsPage 传 `.md` 后缀 key 致日记/心情接口失效 | AgentsPage.jsx | ✅ b55f690 |
+| P2-16 | frontend | WorksPage 新书创意面板读不存在的接口字段 | WorksPage.jsx | ✅ b55f690 |
+
+全量回归：465 后端 + 16 前端全绿（新增 12 个 P2 失败测试转绿）。六个分片报告（docs/reviews/20260812-0045-slice-*.md）与汇总索引（*-slices-index.md）为归档来源。
