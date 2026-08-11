@@ -142,6 +142,19 @@ class ControlTests(unittest.TestCase):
         alert.assert_called_once()
         self.assertIn("boom", alert.call_args.args[0])
 
+    def test_ending_status_includes_creative_fields(self):
+        from novel_editorial.services import ending
+
+        path = make_db()
+        conn = db.connect(path)
+        try:
+            payload = ending.ending_status(conn)
+            row = payload["novels"][0]
+            for key in ("premise", "abstract", "selling_point", "tags"):
+                self.assertIn(key, row)
+        finally:
+            conn.close()
+
     def test_run_now_chapters_capped_at_five(self):
         path = make_db()
         from novel_editorial.services import control

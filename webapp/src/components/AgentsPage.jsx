@@ -72,7 +72,7 @@ export default function AgentsPage({ pushToast }) {
 
   useEffect(() => {
     if (!selected) return;
-    getDiaries(selected.file)
+    getDiaries(selected.file.replace(/\.md$/, ""))
       .then((r) => setDiaries(r.diaries || []))
       .catch(() => {});
     getMemories(selected.file.replace(/\.md$/, ""))
@@ -134,7 +134,7 @@ export default function AgentsPage({ pushToast }) {
   };
 
   const saveMood = async () => {
-    const r = await updateAgentState(selected.file, 0, currentMood);
+    const r = await updateAgentState(selected.file.replace(/\.md$/, ""), 0, currentMood);
     pushToast(r.ok ? "心情已更新" : "更新失败：" + (r.error || "未知"), r.ok ? "ok" : "bad");
     setMoodDraft(null);
     getAgentStates().then((x) => setStates(x.states || []));
@@ -152,7 +152,7 @@ export default function AgentsPage({ pushToast }) {
     const r = await updateDiary(editDiary.id, content);
     pushToast(r.ok ? "日记已更新" : "更新失败：" + (r.error || "未知"), r.ok ? "ok" : "bad");
     setEditDiary(null);
-    getDiaries(selected.file).then((x) => setDiaries(x.diaries || []));
+    getDiaries(selected.file.replace(/\.md$/, "")).then((x) => setDiaries(x.diaries || []));
   };
 
   const save = async () => {

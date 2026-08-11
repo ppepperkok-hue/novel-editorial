@@ -10,7 +10,8 @@ from novel_editorial.services import audit
 def ending_status(conn):
     novels = conn.execute(
         "SELECT id, title, status, book_id, cover_prompt, target_chapters, "
-        "finish_remaining, finish_note, updated_at "
+        "finish_remaining, finish_note, updated_at, "
+        "premise, abstract, selling_point, tags "
         "FROM novels ORDER BY id"
     ).fetchall()
     out = []
