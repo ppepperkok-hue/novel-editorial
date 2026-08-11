@@ -3,6 +3,7 @@ import {
   bindBook,
   confirmNextBook,
   createBookOnFanqie,
+  deleteBookOnFanqie,
   exportNovels,
   getCharacterEvolution,
   getEndingStatus,
@@ -161,6 +162,7 @@ export default function WorksPage({ data, pushToast }) {
   const [ending, setEnding] = useState([]);
   const [binding, setBinding] = useState(null);
   const [creating, setCreating] = useState(null);
+  const [deleting, setDeleting] = useState(null);
   const [bindBookId, setBindBookId] = useState("");
   const [bindVolumeId, setBindVolumeId] = useState("");
   const [showManualBind, setShowManualBind] = useState(false);
@@ -478,6 +480,30 @@ export default function WorksPage({ data, pushToast }) {
 
 <NovelKnowledgeBlock novelId={n.id} pushToast={pushToast} />
                 <div className="muted text-xs">书 ID：{n.book_id || "未关联"} · 番茄章节 ID 见章节管理</div>
+                {n.book_id ? (
+                  <div className="flex items-center gap-2 border-t border-[var(--line-soft)] pt-3">
+                    <button
+                      className="btn !border-red-900/60 !text-red-400"
+                      disabled={deleting === n.id}
+                      onClick={async () => {
+                        if (!window.confirm(`确定删除番茄上的《${n.title}》？删除后不可恢复，本地会重置为待建书。`)) return;
+                        setDeleting(n.id);
+                        try {
+                          const r = await deleteBookOnFanqie(n.id);
+                          pushToast(r.ok ? r.note : "删除失败：" + (r.error || "未知"), r.ok ? "ok" : "bad");
+                        } catch (e) {
+                          pushToast("删除请求失败：" + e, "bad");
+                        } finally {
+                          setDeleting(null);
+                          getEndingStatus().then((x) => setEnding(x.novels || []));
+                        }
+                      }}
+                    >
+                      {deleting === n.id ? "删除中…" : "删除番茄书籍"}
+                    </button>
+                    <span className="muted text-xs">平台侧删除，本地自动重置为待建书</span>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </section>

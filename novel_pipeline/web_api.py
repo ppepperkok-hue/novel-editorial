@@ -383,6 +383,7 @@ def make_handler(db_path):
                 "/api/ending/confirm",
                 "/api/ending/bind",
                 "/api/ending/create_book",
+                "/api/ending/delete_book",
                 "/api/diaries/update",
                 "/api/agent_states/update",
                 "/api/agent_actions/update",
@@ -438,6 +439,17 @@ def make_handler(db_path):
                     try:
                         result = create_book.create_book_on_fanqie(
                             conn, payload.get("novel_id")
+                        )
+                    finally:
+                        conn.close()
+                elif parsed.path == "/api/ending/delete_book":
+                    from tools import delete_book  # noqa: PLC0415
+
+                    try:
+                        result = delete_book.delete_book_on_fanqie(
+                            conn,
+                            payload.get("novel_id"),
+                            confirm=bool(payload.get("confirm")),
                         )
                     finally:
                         conn.close()

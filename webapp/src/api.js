@@ -55,6 +55,8 @@ export const bindBook = (novelId, bookId, volumeId) =>
   postJSON("/api/ending/bind", { novel_id: novelId, book_id: bookId, volume_id: volumeId });
 export const createBookOnFanqie = (novelId) =>
   postJSON("/api/ending/create_book", { novel_id: novelId });
+export const deleteBookOnFanqie = (novelId) =>
+  postJSON("/api/ending/delete_book", { novel_id: novelId, confirm: true });
 export const getAudit = (category) =>
   getJSON("/api/audit" + (category ? "?category=" + encodeURIComponent(category) : ""));
 export const refreshHotTopics = () =>
