@@ -175,6 +175,8 @@ class _Ctx:
         self.tool_attempts = []
         self.dispatch = None
         self.claimed_notes = ""
+        self.mood_notes = ""
+        self.reviewer_mood = ""
         self.lock_path = None
         self.dry_item_counter = 0
 
@@ -520,6 +522,20 @@ def _dispatch(ctx, conn, stock):
             ).fetchall()
             if str(r["task"] or "").strip()
         ]
+    relations_snapshot = {}
+    if config.RELATION_WEIGHT and not ctx.dry_run:
+        for r in conn.execute(
+            "SELECT agent, other, trust, friction, familiarity FROM agent_relations "
+            "WHERE novel_id=? AND agent IN "
+            "('writer','reviewer','eic','reader','planner','editor','memory') "
+            "ORDER BY agent, other",
+            (ctx.novel_id,),
+        ).fetchall():
+            relations_snapshot.setdefault(r["agent"], {})[r["other"]] = {
+                "trust": r["trust"],
+                "friction": r["friction"],
+                "familiarity": r["familiarity"],
+            }
     task = (
         "你是主编。今天开工，请根据当前信息分派今日工作。"
         "只输出 JSON：{chapters(今日计划章数), focus(今日重点一句话), "
@@ -530,6 +546,7 @@ def _dispatch(ctx, conn, stock):
                 "stock": stock,
                 "novel_id": ctx.novel_id,
                 "claimed_writer_tasks": claimed,
+                "relations_snapshot": relations_snapshot,
                 "writing_context_tail": ctx.writing_context[-600:],
             }
         )
@@ -607,6 +624,16 @@ def _apply_writer_responses(ctx, conn, dispatch):
                 conn, "dispatch", "writer_response",
                 target_type="novel", target_id=ctx.novel_id, detail=detail,
             )
+            if decision == "reject":
+                relations.apply_event(
+                    conn, "writer", "eic", "feedback_rejected",
+                    novel_id=ctx.novel_id,
+                )
+            elif decision == "counter" and alternative:
+                relations.apply_event(
+                    conn, "writer", "eic", "proposal_accepted",
+                    novel_id=ctx.novel_id,
+                )
         if decision == "counter" and alternative:
             a = {
                 **a,
@@ -650,6 +677,8 @@ def _writer_task(ctx, idx, meta, outline, guard, target_words, prev_track=None):
         parts.append(dispatch_note)
     if ctx.claimed_notes:
         parts.append(ctx.claimed_notes)
+    if ctx.mood_notes:
+        parts.append("今日心情：" + ctx.mood_notes)
     return "；".join(parts)
 
 
@@ -708,6 +737,43 @@ def _load_claimed_writer_notes(ctx, conn):
     ctx.claimed_notes = "你认领的任务：" + "；".join(tasks) + "。今天是兑现日，动笔时记得兑现。"
 
 
+def _load_mood(ctx, conn, agent, key):
+    """R2-2: load the agent's latest mood note onto the ctx (no LLM call)."""
+    if not config.RELATION_WEIGHT:
+        setattr(ctx, key, "")
+        return
+    row = conn.execute(
+        "SELECT mood FROM agent_states "
+        "WHERE agent=? AND novel_id=? ORDER BY id DESC LIMIT 1",
+        (agent, ctx.novel_id),
+    ).fetchone()
+    note = ""
+    if row and row["mood"]:
+        try:
+            m = json.loads(row["mood"])
+            note = str(m.get("note") or m.get("satisfaction") or "")[:200]
+        except (TypeError, ValueError):
+            note = str(row["mood"])[:200]
+    setattr(ctx, key, note)
+
+
+def _review_tone(conn, writer_agent, reviewer_agent, novel_id):
+    """R2-1-3: soften or sharpen rejection wording with relationship friction."""
+    if not config.RELATION_WEIGHT:
+        return ""
+    row = conn.execute(
+        "SELECT friction FROM agent_relations "
+        "WHERE agent=? AND other=? AND novel_id=?",
+        (writer_agent, reviewer_agent, novel_id),
+    ).fetchone()
+    friction = float(row["friction"] or 0) if row else 0.0
+    if friction >= 0.3:
+        return "你们最近摩擦不少，这次把话说明白，不留情面："
+    if friction >= 0.1:
+        return "你们最近有些摩擦，措辞直接一点："
+    return "你们关系不错，语气平和些："
+
+
 def _reviewer_task(idx, outline, editor_text, prev_track=None, ctx=None, include_relations=False):
     ch = outline["chapter1"] if idx == 0 else outline["chapter2"]
     parts = [
@@ -727,6 +793,8 @@ def _reviewer_task(idx, outline, editor_text, prev_track=None, ctx=None, include
             "上一章（A章）结尾：" + (gate.get("editedText") or "")[-300:]
             + "；核对本章开头是否自然承接A章结尾"
         )
+    if ctx and getattr(ctx, "reviewer_mood", ""):
+        parts.append("今日心情：" + ctx.reviewer_mood)
     return "；".join(parts)
 
 
@@ -798,12 +866,13 @@ def _review_retry(ctx, conn, idx, outline, guard, meta, target_words, prev_track
     current_review = review_text
     for attempt in range(max_retries):
         if not ctx.dry_run:
+            tone = _review_tone(conn, writer_c, reviewer_c, ctx.novel_id)
             mailroom.send(
                 conn,
                 reviewer_c,
                 writer_c,
                 subject="审稿打回",
-                body=f"第 {attempt + 1} 轮打回：" + reason[:400],
+                body=f"第 {attempt + 1} 轮打回：" + tone + reason[:400],
                 kind="review_feedback",
                 novel_id=ctx.novel_id,
             )
@@ -871,6 +940,8 @@ def _run_track(ctx, conn, idx, outline, guard, meta, target_words, env, prev_tra
     -> quality gate -> memory summary. Publishing happens afterwards."""
     suffix = "A" if idx == 0 else "B"
     chapter = outline["chapter1"] if idx == 0 else outline["chapter2"]
+    _load_mood(ctx, conn, "writer", "mood_notes")
+    _load_mood(ctx, conn, "reviewer", "reviewer_mood")
 
     writer_text = _agent(ctx, "写手" + suffix, _writer_task(ctx, idx, meta, outline, guard, target_words, prev_track), target_words)
     if writer_text is None:

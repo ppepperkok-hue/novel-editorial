@@ -55,6 +55,17 @@ class AgentContextTests(unittest.TestCase):
         snap = agent_context.build_context_snapshot(self.conn, "writer", novel_id=1)
         self.assertIn("待响应留言", snap)
         self.assertIn("重写第三章", snap)
+
+    def test_mood_note_injected(self):
+        self.conn.execute(
+            "INSERT INTO agent_states(agent,novel_id,mood,updated_at) "
+            "VALUES('writer',1,?,datetime('now','localtime'))",
+            ('{"note": "手感正好"}',),
+        )
+        self.conn.commit()
+        snap = agent_context.build_context_snapshot(self.conn, "writer", novel_id=1)
+        self.assertIn("今日心情", snap)
+        self.assertIn("手感正好", snap)
         self.assertIn("我与同事的关系", snap)
         self.assertIn("熟悉0.2 信任0.3 摩擦0.4", snap)
         self.assertIn("我未兑现的承诺", snap)

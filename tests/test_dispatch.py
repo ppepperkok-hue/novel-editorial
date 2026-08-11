@@ -202,5 +202,72 @@ class DispatchTests(unittest.TestCase):
                 )
         self.assertEqual(result["assignments"][0]["task"], "写今天两章")
 
+    def test_response_reject_raises_friction(self):
+        ctx = editorial_daily._Ctx(1, self.db_path, dry_run=False)
+        with mock.patch("tools.editorial_daily.config.TASK_RESPONSE_MODE", "on"):
+            with mock.patch(
+                "tools.editorial_daily._agent",
+                return_value='{"decision": "reject", "reason": "手感不对"}',
+            ):
+                editorial_daily._apply_writer_responses(
+                    ctx, self.conn, self._dispatch_for_response()
+                )
+        rel = self.conn.execute(
+            "SELECT friction FROM agent_relations "
+            "WHERE agent='writer' AND other='eic' AND novel_id=1"
+        ).fetchone()
+        self.assertIsNotNone(rel)
+        self.assertGreater(rel["friction"], 0)
+
+    def test_response_counter_raises_trust(self):
+        ctx = editorial_daily._Ctx(1, self.db_path, dry_run=False)
+        with mock.patch("tools.editorial_daily.config.TASK_RESPONSE_MODE", "on"):
+            with mock.patch(
+                "tools.editorial_daily._agent",
+                return_value=(
+                    '{"decision": "counter", "reason": "换方案", '
+                    '"alternative": "B章改写伏笔回收"}'
+                ),
+            ):
+                editorial_daily._apply_writer_responses(
+                    ctx, self.conn, self._dispatch_for_response()
+                )
+        rel = self.conn.execute(
+            "SELECT trust FROM agent_relations "
+            "WHERE agent='writer' AND other='eic' AND novel_id=1"
+        ).fetchone()
+        self.assertIsNotNone(rel)
+        self.assertGreater(rel["trust"], 0)
+
+    def test_dispatch_input_includes_relations_snapshot(self):
+        self.conn.execute(
+            "INSERT INTO agent_relations(agent,other,novel_id,familiarity,trust,friction,updated_at) "
+            "VALUES('writer','eic',1,0.2,0.9,0.1,datetime('now','localtime'))"
+        )
+        self.conn.commit()
+        ctx = editorial_daily._Ctx(1, self.db_path, dry_run=False)
+        captured = {}
+
+        def fake_agent(ctx_arg, node, task, target_words=None):
+            captured["task"] = task
+            return json.dumps(
+                {
+                    "chapters": 2,
+                    "focus": "f",
+                    "assignments": [
+                        {"agent": "writer", "task": "写今天两章", "note": ""}
+                    ],
+                },
+                ensure_ascii=False,
+            )
+
+        with mock.patch("tools.editorial_daily.config.DISPATCH_MODE", "editorial"):
+            with mock.patch("tools.editorial_daily._agent", side_effect=fake_agent):
+                editorial_daily._dispatch(
+                    ctx, self.conn, {"stock": 0, "target": 2, "need": 2}
+                )
+        self.assertIn("relations_snapshot", captured["task"])
+        self.assertIn('"writer"', captured["task"])
+
 if __name__ == "__main__":
     unittest.main()

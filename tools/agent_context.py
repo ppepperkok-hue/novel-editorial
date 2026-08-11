@@ -8,6 +8,8 @@ snapshot degrades gracefully to empty sections.
 
 from __future__ import annotations
 
+import json
+
 from novel_pipeline import config
 from tools import editorial_state
 
@@ -69,6 +71,21 @@ def build_context_snapshot(conn, agent, novel_id=0):
                 for r in pending
             )
         )
+
+    mood_row = conn.execute(
+        "SELECT mood FROM agent_states "
+        "WHERE agent=? AND novel_id IN (" + marks + ") "
+        "ORDER BY id DESC LIMIT 1",
+        (agent, *scopes),
+    ).fetchone()
+    if mood_row and mood_row["mood"]:
+        try:
+            mood = json.loads(mood_row["mood"])
+            note = str(mood.get("note") or mood.get("satisfaction") or "")[:limit]
+        except (TypeError, ValueError):
+            note = str(mood_row["mood"])[:limit]
+        if note:
+            sections.append("今日心情：" + note)
 
     memories = editorial_state.list_memories(
         conn, agent=agent, novel_id=novel_id, limit=config.AGENT_CTX_MEMORIES

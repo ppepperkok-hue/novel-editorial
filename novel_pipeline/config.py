@@ -61,6 +61,7 @@ MEETING_MODE = os.environ.get("MEETING_MODE", "rounds")
 CLAIM_INJECT = os.environ.get("CLAIM_INJECT", "on") != "off"
 TOPIC_REQUEST_ACTIONS = os.environ.get("TOPIC_REQUEST_ACTIONS", "on") != "off"
 TASK_RESPONSE_MODE = os.environ.get("TASK_RESPONSE_MODE", "off")
+RELATION_WEIGHT = os.environ.get("RELATION_WEIGHT", "on") != "off"
 
 
 def load_env():

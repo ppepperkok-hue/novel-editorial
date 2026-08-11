@@ -234,6 +234,40 @@ class EditorialDailyTests(unittest.TestCase):
                 )
         self.assertIn("修完第三章伏笔", captured["task"])
 
+    def test_mood_note_injected_into_writer_task(self):
+        self.conn.execute(
+            "INSERT INTO agent_states(agent,novel_id,mood,updated_at) "
+            "VALUES('writer',?,?,datetime('now','localtime'))",
+            (
+                self.novel_id,
+                json.dumps({"note": "手感正好，想写点狠的", "satisfaction": 0.8}),
+            ),
+        )
+        self.conn.commit()
+        ctx = editorial_daily._Ctx(self.novel_id, self.db_path, dry_run=True)
+        ctx.writing_context = "前情提要"
+        editorial_daily._load_mood(ctx, self.conn, "writer", "mood_notes")
+        self.assertIn("手感正好", ctx.mood_notes)
+        meta, outline, guard = self._writer_fixture()
+        task = editorial_daily._writer_task(ctx, 0, meta, outline, guard, 2000)
+        self.assertIn("今日心情", task)
+
+    def test_review_tone_follows_friction(self):
+        self.conn.execute(
+            "INSERT INTO agent_relations(agent,other,novel_id,familiarity,trust,friction,updated_at) "
+            "VALUES('writer','reviewer',?,0,0,0.4,datetime('now','localtime'))",
+            (self.novel_id,),
+        )
+        self.conn.commit()
+        tone = editorial_daily._review_tone(
+            self.conn, "writer", "reviewer", self.novel_id
+        )
+        self.assertIn("不留情面", tone)
+        tone_low = editorial_daily._review_tone(
+            self.conn, "writer", "planner", self.novel_id
+        )
+        self.assertIn("语气平和", tone_low)
+
     def test_two_runs_are_idempotent(self):
         self._ok_preflight()
         r1 = editorial_daily.daily(
