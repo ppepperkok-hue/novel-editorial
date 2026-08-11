@@ -30,6 +30,11 @@ def _err(message):
     return {"ok": False, "error": message}
 
 
+def _relation_columns(conn):
+    """Column names of agent_relations; supports pre-migration schemas."""
+    return {str(r["name"]) for r in conn.execute("PRAGMA table_info(agent_relations)")}
+
+
 def ensure(conn, agent, other, novel_id=0):
     """Create the relationship row when missing; always returns the row."""
     agent = str(agent or "").strip()
@@ -37,23 +42,38 @@ def ensure(conn, agent, other, novel_id=0):
     novel_id = int(novel_id or 0)
     if not agent or not other:
         return _err("agent and other are required")
-    row = conn.execute(
-        "SELECT * FROM agent_relations WHERE agent=? AND other=? AND novel_id=?",
-        (agent, other, novel_id),
-    ).fetchone()
-    if row:
+    try:
+        cols = _relation_columns(conn)
+    except Exception as exc:  # noqa: BLE001
+        return _err(f"agent_relations schema 读取失败：{exc.__class__.__name__}")
+    other_col = "other_agent" if "other_agent" in cols else ("other" if "other" in cols else None)
+    if other_col is None:
+        return _err("agent_relations 缺少 other/other_agent 列，无法写入关系")
+    try:
+        row = conn.execute(
+            f"SELECT * FROM agent_relations WHERE agent=? AND {other_col}=? AND novel_id=?",
+            (agent, other, novel_id),
+        ).fetchone()
+        if row:
+            return {"ok": True, "relation": dict(row)}
+        columns = ["agent", other_col, "novel_id", "familiarity", "trust", "friction", "updated_at"]
+        values = [agent, other, novel_id, 0, 0, 0, _now()]
+        if other_col != "other" and "other" in cols:
+            columns.append("other")
+            values.append(other)
+        conn.execute(
+            "INSERT INTO agent_relations(" + ",".join(columns) + ") VALUES("
+            + ",".join("?" * len(columns)) + ")",
+            values,
+        )
+        conn.commit()
+        row = conn.execute(
+            f"SELECT * FROM agent_relations WHERE agent=? AND {other_col}=? AND novel_id=?",
+            (agent, other, novel_id),
+        ).fetchone()
         return {"ok": True, "relation": dict(row)}
-    conn.execute(
-        "INSERT INTO agent_relations(agent,other,novel_id,familiarity,trust,friction,updated_at) "
-        "VALUES(?,?,?,0,0,0,?)",
-        (agent, other, novel_id, _now()),
-    )
-    conn.commit()
-    row = conn.execute(
-        "SELECT * FROM agent_relations WHERE agent=? AND other=? AND novel_id=?",
-        (agent, other, novel_id),
-    ).fetchone()
-    return {"ok": True, "relation": dict(row)}
+    except Exception as exc:  # noqa: BLE001
+        return _err(f"ensure 写入关系失败：{exc.__class__.__name__}: {str(exc)[:200]}")
 
 
 def apply_event(conn, agent, other, event_type, novel_id=0):

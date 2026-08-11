@@ -749,8 +749,21 @@ def main():
             from tools.apply_architect import apply_report  # noqa: PLC0415
 
             apply_report(conn, novel_id, report)
-        except (ImportError, AttributeError):
+        except ImportError:
             print("note: apply_report not available yet", file=sys.stderr)
+        except Exception as exc:  # noqa: BLE001
+            print(f"note: apply_report skipped（outline/report 损坏）: {exc}", file=sys.stderr)
+            try:
+                activity.log_activity(
+                    conn,
+                    "eic",
+                    novel_id,
+                    "meeting_apply_skipped",
+                    "会议结论落盘失败",
+                    {"kind": args.kind, "error": str(exc)[:300]},
+                )
+            except Exception:  # noqa: BLE001
+                pass
 
         out = Path(args.out) if args.out else ROOT / "n8n_tmp"
         if out.is_dir():

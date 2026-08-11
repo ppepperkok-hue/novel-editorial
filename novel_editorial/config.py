@@ -28,9 +28,9 @@ READER_CSV = DATA_DIR / "reader_stats.csv"
 DB_PATH = ROOT / "demo.db"
 
 N8N_BASE = os.environ.get("N8N_BASE", "http://127.0.0.1:5678")
-N8N_WORKFLOW_DAILY = os.environ.get("N8N_WORKFLOW_DAILY", "SkLUnm3uRyBSY84F")
-N8N_WORKFLOW_WEEKLY = os.environ.get("N8N_WORKFLOW_WEEKLY", "TAScPjj0Oqtz1uy7")
-N8N_WORKFLOW_KEEPER = os.environ.get("N8N_WORKFLOW_KEEPER", "CXz06QvOKNASreBl")
+N8N_WORKFLOW_DAILY = os.environ.get("N8N_WORKFLOW_DAILY", "your-daily-workflow-id")
+N8N_WORKFLOW_WEEKLY = os.environ.get("N8N_WORKFLOW_WEEKLY", "your-weekly-workflow-id")
+N8N_WORKFLOW_KEEPER = os.environ.get("N8N_WORKFLOW_KEEPER", "your-keeper-workflow-id")
 N8N_ENV_FILE = Path.home() / ".n8n" / ".env"
 
 AGENT_NAMES = [

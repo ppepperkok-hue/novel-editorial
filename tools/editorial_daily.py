@@ -76,6 +76,20 @@ def _canonical_agent(node):
     return stem.stem if stem is not None else node
 
 
+def _outbox_int(ctx, node, item, key):
+    """Best-effort int() for LLM outbox fields; bad values fall back to 0."""
+    raw = item.get(key)
+    if raw in (None, ""):
+        return 0
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        ctx.warnings.append(
+            f"outbox {node}: {key} 不是数字，按 0 处理 - {str(raw)[:80]}"
+        )
+        return 0
+
+
 def _handle_outbox(ctx, node, text):
     """Extract an optional `outbox` array from structured agent output (S4).
 
@@ -95,7 +109,7 @@ def _handle_outbox(ctx, node, text):
             if not isinstance(item, dict):
                 continue
             decision = str(item.get("decision") or "").strip().lower()
-            reply_to = int(item.get("reply_to") or 0)
+            reply_to = _outbox_int(ctx, node, item, "reply_to")
             result = mailroom.send(
                 conn,
                 from_agent,
@@ -104,7 +118,7 @@ def _handle_outbox(ctx, node, text):
                 subject=str(item.get("subject") or ""),
                 kind=str(item.get("kind") or "note"),
                 novel_id=ctx.novel_id,
-                chapter_id=int(item.get("chapter_id") or 0),
+                chapter_id=_outbox_int(ctx, node, item, "chapter_id"),
                 reply_to=reply_to,
             )
             if not result.get("ok"):
@@ -451,6 +465,9 @@ def _run_tool(ctx, name, fn):
         return {"ok": True, "dry_run": True}
     try:
         result = fn()
+        if isinstance(result, dict) and result.get("ok") is False:
+            ctx.warnings.append(f"{name}: {str(result.get('error') or 'failed')[:200]}")
+            return result
         return result if isinstance(result, dict) else {"ok": True}
     except Exception as exc:  # noqa: BLE001
         ctx.warnings.append(f"{name}: {str(exc)[:200]}")
@@ -905,7 +922,12 @@ def _rel(ctx, conn, *args, **kwargs):
     """Relationship events are side effects: skip them in dry-run."""
     if ctx.dry_run:
         return
-    relations.apply_event(conn, *args, **kwargs)
+    result = relations.apply_event(conn, *args, **kwargs)
+    if not result.get("ok"):
+        who = ", ".join(str(a) for a in args[:3]) if len(args) >= 3 else "?"
+        ctx.warnings.append(
+            f"relations.apply_event({who}) 失败：{result.get('error', 'unknown')}"
+        )
 
 
 def _record_memory_used(conn, agent, novel_id, used):
@@ -1655,8 +1677,19 @@ def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, en
         pre = _preflight(ctx, conn, env, trigger, skip_lock=lock_held)
         if pre.get("skipped"):
             if not dry_run:
-                # A skipped scheduled run must not leave a forever-running row.
-                conn.execute("DELETE FROM daily_runs WHERE run_id=?", (run_id,))
+                if workday_run_id:
+                    # workday 自建的记录保留并标记 skipped，供面板查看。
+                    _finish_run(
+                        conn, ctx, run_id, "skipped",
+                        error="；".join(pre["reasons"]),
+                        detail={"reasons": pre["reasons"]},
+                    )
+                else:
+                    # 本批次自建的调度记录不留下孤儿 running 行。
+                    conn.execute(
+                        "DELETE FROM daily_runs WHERE run_id=? AND source='scheduler'",
+                        (run_id,),
+                    )
                 conn.commit()
             return {"ok": False, "skipped": True, "run_id": run_id, "reasons": pre["reasons"]}
         if not pre["ok"]:

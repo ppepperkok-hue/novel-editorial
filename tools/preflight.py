@@ -127,8 +127,9 @@ def check_active_book(conn):
 def acquire_lock(lock_path=None):
     """Atomically claim the daily run lock (O_EXCL) to prevent concurrent
     scheduled + manual runs from both passing preflight and double-publishing.
-    The lock is time-based: a full run can take well over 30 minutes, so a
-    lock younger than 2h is considered held regardless of PID."""
+    A lock whose PID parses and is still alive is considered held regardless
+    of age; it is reclaimed immediately when that PID is dead. Only when the
+    PID cannot be parsed does the 2h age rule apply (older locks are stale)."""
     lock = Path(lock_path) if lock_path else LOCK_FILE
     lock.parent.mkdir(parents=True, exist_ok=True)
     try:

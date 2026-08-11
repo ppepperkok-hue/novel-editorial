@@ -1,0 +1,18 @@
+基线通过：分片 13 个 Python 文件 compileall/ast 全过、6 个 PowerShell 脚本经 PS 5.1 解析器零错误、37 个分片内测试（test_record_work/test_preflight_guard/test_create_book/test_publish_stock/test_delete_book）全绿、check_stock/current_book/get_meta/preflight/release_lock/collect_reader_stats 离线冒烟符合预期、uv.lock 与 pyproject 同步、.venv 含 websocket-client 1.9.0、_gender 性别判定已修复。但 record_work.py:166 存在可复现的 P1 数据丢失缺陷（非 dict character_updates 触发 AttributeError，日更归档部分丢失且仅记 warning 假绿），与 round4 同类记录环节 P1 一致，修复前不应视为可交付；另有 get_meta 形状守卫、collect_reader_stats 空结果覆盖两个可复现 P2 及两个 P3。
+
+Full review comments:
+
+- [P1] record_work 对非 dict 的 character_updates 抛 AttributeError，当日归档静默丢失 — E:\code\novel-editorial\tools\record_work.py:166-166
+  tools/record_work.py:166 `for name, state in (character_states or {}).items()` 对 character_states 无类型保护：`character_states` 来自 `summary.get("character_updates") or {}`（131-133 行），而 `parse_summary`（tools/editorial_steps.py:303-318）把 LLM 原始 JSON 原样透传、不做形状校验，LLM 一旦把 character_updates 输出成数组（非空 list 为真值、`or {}` 不生效）即崩溃。已复现：`record_payload` 传 `"character_updates": [{"name":"a"}]` 抛 `AttributeError: 'list' object has no attribute 'items'`。日更调度路径（editorial_daily.py:1591 经 `_run_tool`）只把异常吞成 warning，随后 `_finish_run` 的 commit 把崩溃前的章节语句一并落库，而 character_evolution/world_events/plot_threads/cost_logs/activity 等崩溃点之后的归档全部丢失，运行仍以 partial 收尾——典型的假绿 + 静默数据丢失；CLI 模式则直接 traceback。同类形状问题在 R5 已给 knowledge 侧加了 character_states 类型守卫，此处缺失。修复：迭代前 `if not isinstance(character_states, dict): character_states = {}`（167-169 行对非 str/dict 的 state 同样会崩）。
+
+- [P2] get_meta 对合法 JSON 但形状错误的 outline/tags 崩溃，违反自身 _safe_json 契约 — E:\code\novel-editorial\tools\get_meta.py:72-72
+  tools/get_meta.py:72 `bible = outline.get("bible") or {}` 在 novels.outline 存有 JSON 数组（如 `[1,2,3]`）时抛 `AttributeError: 'list' object has no attribute 'get'`；186 行 `"keywords": ",".join(tags)` 在 tags 含非字符串元素（如 `[123,"abc"]`）时抛 `TypeError`。两个路径均已用临时库复现。这与文件头部 `_safe_json` 的承诺（44-47 行："dirty JSON (including valid JSON of the wrong shape) is replaced and logged instead of crashing the CLI"）直接矛盾——outline 只有解析 try/except、没有形状守卫，tags 走了 _safe_json 但 join 未做类型归一。get_meta 作为子进程被 editorial_daily.py:465 和 n8n 每日调用，脏数据一旦出现整次元数据读取失败。同类脏值也会让 record_work.upsert_novel 的 `{**old_outline, **new_outline}` 抛 TypeError。建议对 outline 沿用 _safe_json 形状校验，tags 元素统一 `str()`。
+
+- [P3] collect_reader_stats 无匹配章节时用空表覆盖 reader_stats.csv，静默清空既有反馈数据 — E:\code\novel-editorial\tools\collect_reader_stats.py:147-152
+  tools/collect_reader_stats.py:147-152 无条件以 `"w"` 打开 `ROOT/demo_data/reader_stats.csv`（OUT_CSV 硬编码仓库路径，与 `--db` 无关）写头+rows；当平台返回的 item_id 在本地 chapters.fanqie_item_id 中无匹配（item_to_seq 为空，例如换库、章节未回填 item_id 或平台字段格式变化）时 rows=[]，工具返回 `{"ok": true, "chapters": 0}` 并把上一份完读/追读率数据清成只有表头的空文件，get_meta/data_feedback 随后读到空反馈。已实测：对临时库运行 CLI 返回 ok=true、chapters=0，仓库内 reader_stats.csv 被截断为仅表头。建议 rows 为空且旧文件有数据时保留旧文件并告警，避免一次 API 形态波动毁掉历史快照。
+
+- [P3] preflight acquire_lock 文档与实现的 2 小时陈旧规则互相矛盾 — E:\code\novel-editorial\tools\preflight.py:151-155
+  tools/preflight.py:130-131 文档声称 "a lock younger than 2h is considered held regardless of PID"，但 151-155 行的实现是：PID 可解析时 `stale = not _pid_alive(pid)`（死亡 PID 立即回收，与年龄无关），2h 规则只在 PID 无法解析时才生效。现役调用方（editorial_daily/autopilot/workday 进程内持锁）PID 存活故行为正确，但该 docstring 正是此前 0045 审查 P1（n8n CLI 路径锁被偷）的根源描述，如今实现已改、注释未同步，误导后续维护者以为存在 2h 保护窗口。建议把注释改成与实现一致：死 PID 立即回收、无法解析 PID 且超过 2h 才回收。
+
+- [P3] n8n_api.py 硬编码 localhost:5678 与触发器名，忽略 N8N_BASE 配置 — E:\code\novel-editorial\tools\n8n_api.py:12-12
+  tools/n8n_api.py:12 `BASE = "http://localhost:5678"` 硬编码，既不读 config.N8N_BASE（默认 127.0.0.1:5678）也不读 .env.example 已文档化的 N8N_BASE 环境变量；n8n 部署在非默认地址/端口时该 CLI 全部动作静默连错目标。100 行 `triggerToStartFrom: {"name": "每日触发"}` 与工作流触发器节点名强耦合，节点改名后 run 动作无提示失败。此前多轮审查已两次报告，仍未修复；建议 BASE 改为 `config.N8N_BASE`（去掉尾部斜杠）并将触发器名提取为参数。

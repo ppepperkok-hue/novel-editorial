@@ -145,6 +145,20 @@ def run(db_path, env_file=None, out_csv=None):
         )
 
     target = Path(out_csv) if out_csv else OUT_CSV
+    if not rows:
+        if target.exists():
+            return {
+                "ok": True,
+                "chapters": 0,
+                "file": str(target),
+                "warning": "无匹配章节，保留原 reader_stats.csv 未覆盖",
+            }
+        return {
+            "ok": False,
+            "error": "无匹配章节，未创建空表",
+            "chapters": 0,
+            "file": str(target),
+        }
     target.parent.mkdir(exist_ok=True)
     with target.open("w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=["chapter", "finish_rate", "follow_rate"])

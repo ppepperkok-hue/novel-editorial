@@ -65,10 +65,7 @@ def main():
             print("{}")
             return
 
-        try:
-            outline = json.loads(row["outline"] or "{}")
-        except (TypeError, ValueError):
-            outline = {}
+        outline = _safe_json(row["outline"] or "{}", {}, "outline")
         bible = outline.get("bible") or {}
         blueprints = outline.get("blueprints") or []
 
@@ -176,6 +173,16 @@ def main():
                 reader_feedback = {}
 
         tags = _safe_json(row["tags"] or "[]", [], "tags")
+        if any(not isinstance(t, str) for t in tags):
+            tags = []
+            try:
+                with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+                    f.write(
+                        f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
+                        f"get_meta: tags 含非字符串元素，已回退默认值\n"
+                    )
+            except OSError:
+                pass
         meta = {
             "novel_id": row["id"],
             "book_id": row["book_id"],

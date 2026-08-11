@@ -36,12 +36,17 @@ def _to_local(value):
 
 
 def _n8n_executions(limit=20):
-    """Recent executions of the daily workflow from the n8n local DB."""
+    """Recent executions of the daily workflow from the n8n local DB.
+
+    An unreadable/corrupt local DB raises; sync_from_n8n turns that into
+    an explicit error marker instead of propagating a 500.
+    """
     if not N8N_DB.exists():
         return []
-    conn = sqlite3.connect(str(N8N_DB), timeout=15)
-    conn.row_factory = sqlite3.Row
+    conn = None
     try:
+        conn = sqlite3.connect(str(N8N_DB), timeout=15)
+        conn.row_factory = sqlite3.Row
         rows = conn.execute(
             "SELECT id, workflowId, mode, status, startedAt, stoppedAt "
             "FROM execution_entity WHERE workflowId=? AND deletedAt IS NULL "
@@ -50,7 +55,8 @@ def _n8n_executions(limit=20):
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
 
 
 def _execution_failure(run_id):
@@ -90,45 +96,60 @@ def published_of(conn, started_at, finished_at):
 
 
 def sync_from_n8n(conn, limit=20):
-    """Idempotently persist recent n8n executions into daily_runs."""
+    """Idempotently persist recent n8n executions into daily_runs.
+
+    Never raises: n8n local DB read errors return an explicit `error`
+    marker alongside the (possibly partial) written count.
+    """
+    try:
+        executions = _n8n_executions(limit)
+    except Exception as exc:  # noqa: BLE001
+        return {"written": 0, "error": f"n8n 本地库读取失败：{exc.__class__.__name__}"}
     written = 0
-    for ex in _n8n_executions(limit):
-        run_id = str(ex["id"])
-        exists = conn.execute(
-            "SELECT id FROM daily_runs WHERE run_id=?", (run_id,)
-        ).fetchone()
-        if exists:
-            continue
-        status = str(ex.get("status") or "running")
-        failed_nodes = []
-        error = ""
-        if status in ("failed", "crashed", "error"):
-            failed_nodes, error = _execution_failure(run_id)
-        started = _to_local(ex.get("startedAt"))
-        finished = _to_local(ex.get("stoppedAt"))
-        novel = conn.execute(
-            "SELECT id FROM novels WHERE status='publishing' AND book_id!='' "
-            "ORDER BY id LIMIT 1"
-        ).fetchone()
-        conn.execute(
-            "INSERT INTO daily_runs(run_id,novel_id,trigger,source,status,started_at,"
-            "finished_at,failed_nodes,error,published,detail,created_at) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))",
-            (
-                run_id,
-                novel["id"] if novel else 0,
-                str(ex.get("mode") or "scheduled"),
-                "n8n-legacy",
-                status,
-                started,
-                finished,
-                json.dumps(failed_nodes, ensure_ascii=False),
-                error,
-                published_of(conn, started, finished),
-                json.dumps({"execution_id": run_id}, ensure_ascii=False),
-            ),
-        )
-        written += 1
+    try:
+        for ex in executions:
+            run_id = str(ex["id"])
+            exists = conn.execute(
+                "SELECT id FROM daily_runs WHERE run_id=?", (run_id,)
+            ).fetchone()
+            if exists:
+                continue
+            status = str(ex.get("status") or "running")
+            failed_nodes = []
+            run_error = ""
+            if status in ("failed", "crashed", "error"):
+                failed_nodes, run_error = _execution_failure(run_id)
+            started = _to_local(ex.get("startedAt"))
+            finished = _to_local(ex.get("stoppedAt"))
+            novel = conn.execute(
+                "SELECT id FROM novels WHERE status='publishing' AND book_id!='' "
+                "ORDER BY id LIMIT 1"
+            ).fetchone()
+            conn.execute(
+                "INSERT INTO daily_runs(run_id,novel_id,trigger,source,status,started_at,"
+                "finished_at,failed_nodes,error,published,detail,created_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))",
+                (
+                    run_id,
+                    novel["id"] if novel else 0,
+                    str(ex.get("mode") or "scheduled"),
+                    "n8n-legacy",
+                    status,
+                    started,
+                    finished,
+                    json.dumps(failed_nodes, ensure_ascii=False),
+                    run_error,
+                    published_of(conn, started, finished),
+                    json.dumps({"execution_id": run_id}, ensure_ascii=False),
+                ),
+            )
+            written += 1
+    except Exception as exc:  # noqa: BLE001
+        conn.commit()
+        return {
+            "written": written,
+            "error": f"同步失败：{exc.__class__.__name__}: {str(exc)[:200]}",
+        }
     conn.commit()
     return {"written": written}
 

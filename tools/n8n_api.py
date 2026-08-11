@@ -9,7 +9,9 @@ sys.path.insert(0, str(ROOT))
 
 from novel_editorial import config  # noqa: E402
 
-BASE = "http://localhost:5678"
+BASE = (
+    config.env_value("N8N_BASE", "http://127.0.0.1:5678") or "http://127.0.0.1:5678"
+).rstrip("/")
 
 cj = http.cookiejar.CookieJar()
 opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
@@ -94,10 +96,20 @@ if __name__ == "__main__":
         else:
             print("body:", body)
     elif action == "run":
-        wf_id = sys.argv[2]
+        wf_id = (
+            sys.argv[2]
+            if len(sys.argv) > 2
+            else config.env_value("N8N_WORKFLOW_DAILY", "")
+        )
+        if not wf_id:
+            print("run requires a workflow id or N8N_WORKFLOW_DAILY in env")
+            sys.exit(1)
         status, body = request("GET", "/rest/workflows/" + wf_id)
         wf = body["data"]
-        run_payload = {"workflowData": wf, "triggerToStartFrom": {"name": "每日触发"}}
+        trigger = (
+            config.env_value("N8N_WORKFLOW_TRIGGER", "每日触发") or "每日触发"
+        )
+        run_payload = {"workflowData": wf, "triggerToStartFrom": {"name": trigger}}
         status, body = request("POST", "/rest/workflows/" + wf_id + "/run", run_payload)
         print("run status:", status, body)
     elif action == "exec":

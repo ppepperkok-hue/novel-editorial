@@ -7,7 +7,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-suite = unittest.TestLoader().discover(str(ROOT / "tests"))
+loader = unittest.TestLoader()
+suite = unittest.TestSuite([
+    loader.discover(str(ROOT / "tests"), pattern="test_*.py"),
+    loader.discover(str(ROOT / "tests"), pattern="*_test.py"),
+])
 if suite.countTestCases() == 0:
     print("ERROR: no tests discovered under tests/ (fake green guard)", file=sys.stderr)
     sys.exit(1)

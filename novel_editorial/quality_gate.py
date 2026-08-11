@@ -13,25 +13,44 @@ from pathlib import Path
 CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 
 # 常见 AI 味模板词（去 AI 味专项治理用；与 ai_words.json、tools/editorial_steps.py 同源）
-AI_FLAVOR_WORDS = [
+_DEFAULT_AI_FLAVOR_WORDS = [
     "突然", "顿时", "仿佛", "缓缓", "不由得", "微微一", "嘴角", "眼神一凝", "低沉",
     "冷哼一声", "心中一动", "不禁", "瞬间", "面无表情", "淡淡", "不由自主", "情不自禁",
     "微微一愣", "缓缓说道", "与此同时", "一股强大的气息",
 ]
 _WORDS_FILE = Path(__file__).resolve().parent.parent / "ai_words.json"
-try:
-    _AI_DATA = json.loads(_WORDS_FILE.read_text(encoding="utf-8"))
-    _ai_flavor = _AI_DATA.get("ai_flavor", AI_FLAVOR_WORDS)
-    if not isinstance(_ai_flavor, list):
+
+
+def _load_ai_flavor_words():
+    """读取 ai_words.json 的 ai_flavor；缺失/损坏时告警并回退内置词表。"""
+    try:
+        data = json.loads(_WORDS_FILE.read_text(encoding="utf-8"))
+    except OSError as exc:
+        warnings.warn(
+            f"ai_words.json 读取失败（{exc}），回退内置 AI 味词表",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return _DEFAULT_AI_FLAVOR_WORDS
+    except ValueError:
+        warnings.warn(
+            "ai_words.json 解析失败（JSON 损坏或编码异常），回退内置 AI 味词表",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return _DEFAULT_AI_FLAVOR_WORDS
+    words = data.get("ai_flavor", _DEFAULT_AI_FLAVOR_WORDS)
+    if not isinstance(words, list):
         warnings.warn(
             "ai_words.json 的 ai_flavor 不是列表，回退内置 AI 味词表",
             RuntimeWarning,
             stacklevel=2,
         )
-    else:
-        AI_FLAVOR_WORDS = _ai_flavor
-except (OSError, ValueError):
-    pass
+        return _DEFAULT_AI_FLAVOR_WORDS
+    return words
+
+
+AI_FLAVOR_WORDS = _load_ai_flavor_words()
 
 
 def count_chinese_chars(text):

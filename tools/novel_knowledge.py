@@ -114,8 +114,8 @@ def _add_conflict_draft(conn, novel_id, category, entity, content):
     title = f"[小说{novel_id}] {entity}"
     existing = conn.execute(
         "SELECT id FROM knowledge_drafts WHERE kind='knowledge' "
-        "AND source='auto_conflict' AND title=? AND status='draft'",
-        (title,),
+        "AND source='auto_conflict' AND title IN (?, ?) AND status='draft'",
+        (title, entity),
     ).fetchone()
     if existing:
         return None
@@ -413,6 +413,15 @@ def sync_from_chapters(conn, novel_id, limit=3):
             events = json.loads(row["world_events"] or "[]")
         except ValueError:
             events = []
+        if not isinstance(events, list):
+            skipped.append(
+                {
+                    "chapter_id": cid,
+                    "field": "world_events",
+                    "reason": f"expected list, got {type(events).__name__}",
+                }
+            )
+            events = []
         for name, state in states.items():
             if isinstance(state, str):
                 state = {"current_state": state}
@@ -584,12 +593,14 @@ def sync_latest(conn):
             "SELECT id, outline FROM novels ORDER BY id DESC LIMIT 1"
         ).fetchone()
         if novel is None:
-            return {"ok": True, "novel_id": None, "updated": []}
+            return {"ok": True, "novel_id": None, "updated": [], "skipped": []}
         bible = (json.loads(novel["outline"] or "{}") or {}).get("bible") or {}
+        result = sync_from_bible(conn, novel["id"], bible)
         return {
             "ok": True,
             "novel_id": novel["id"],
-            **sync_from_bible(conn, novel["id"], bible),
+            **result,
+            "skipped": [],
         }
     novel = conn.execute(
         "SELECT outline FROM novels WHERE id=?", (row["novel_id"],)

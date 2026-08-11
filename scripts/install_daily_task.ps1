@@ -1,4 +1,4 @@
-<#
+﻿<#
 注册 Windows 计划任务，每天定时运行 Python 日更调度器（de-n8n）。
 
 用法（-DryRun 只打印命令，不注册）：
@@ -25,7 +25,11 @@ $python = $env:PYTHON_EXE
 if (-not $python) {
     $python = (Get-Command python).Source
 }
-$dbPath = Join-Path $projectDir $DbPath
+if ([System.IO.Path]::IsPathRooted($DbPath)) {
+    $dbPath = $DbPath
+} else {
+    $dbPath = Join-Path $projectDir $DbPath
+}
 $argList = "tools/editorial_daily.py --db `"$dbPath`" --trigger scheduled"
 $command = "$python $argList"
 

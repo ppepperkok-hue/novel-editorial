@@ -46,6 +46,8 @@ def upsert_novel(conn, payload):
 
     old_outline = _j(row["outline"], {}) if row else {}
     new_outline = payload.get("outline") or {}
+    if not isinstance(new_outline, dict):
+        new_outline = {}
     merged_outline = {**old_outline, **new_outline}
     for key in ("bible", "blueprints"):
         if key in new_outline and new_outline[key] is None:
@@ -128,9 +130,22 @@ def _upsert_summary(conn, novel_id, chapter_id, seq, ch):
     summary_text = (
         summary.get("summary") if isinstance(summary, dict) else str(summary)
     ) or ""
-    character_states = (
+    raw_character_states = (
         summary.get("character_updates") if isinstance(summary, dict) else None
-    ) or {}
+    )
+    character_states = {}
+    if isinstance(raw_character_states, dict):
+        character_states = raw_character_states
+    elif raw_character_states is not None:
+        try:
+            with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+                f.write(
+                    f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
+                    f"record_work: chapter {seq} character_updates "
+                    f"({type(raw_character_states).__name__}) 非 dict，已跳过该字段\n"
+                )
+        except OSError:
+            pass
     world_events = (
         summary.get("plot_events") if isinstance(summary, dict) else None
     ) or []
@@ -166,6 +181,17 @@ def _upsert_summary(conn, novel_id, chapter_id, seq, ch):
     for name, state in (character_states or {}).items():
         if isinstance(state, str):
             state = {"changes": state}
+        if not isinstance(state, dict):
+            try:
+                with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+                    f.write(
+                        f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
+                        f"record_work: chapter {seq} character {name!r} 的 state "
+                        f"({type(state).__name__}) 非 dict，已跳过\n"
+                    )
+            except OSError:
+                pass
+            continue
         change_log = state.get("changes") or state.get("current_state") or ""
         if change_log:
             conn.execute(

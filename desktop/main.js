@@ -198,11 +198,35 @@ function createTray() {
 
 function watchExecutions() {
   const terminalStates = ["success", "error", "failed", "crashed", "partial"];
+  let historySeeded = false;
+  const markHistory = (list) => {
+    for (const exec of list) {
+      if (!terminalStates.includes(exec.status)) continue;
+      notifiedExecKeys.add(`${exec.workflow}-${exec.id}-${exec.status}`);
+    }
+  };
+  const fetchList = async () => {
+    const r = await fetch(`http://127.0.0.1:${API_PORT}/api/executions`);
+    const data = await r.json();
+    return data.executions || [];
+  };
+  // Executions already terminal at startup count as known, so only
+  // transitions observed during this run produce notifications.
+  fetchList()
+    .then((list) => {
+      markHistory(list);
+      historySeeded = true;
+    })
+    .catch(() => {});
   notifTimer = setInterval(async () => {
     try {
-      const r = await fetch(`http://127.0.0.1:${API_PORT}/api/executions`);
-      const data = await r.json();
-      const list = data.executions || [];
+      const list = await fetchList();
+      if (!historySeeded) {
+        // Startup snapshot failed; suppress history on the first successful poll.
+        markHistory(list);
+        historySeeded = true;
+        return;
+      }
       for (const exec of list) {
         if (!terminalStates.includes(exec.status)) continue;
         const key = `${exec.workflow}-${exec.id}-${exec.status}`;

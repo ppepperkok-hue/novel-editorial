@@ -9,7 +9,7 @@ from __future__ import annotations
 
 def _scoped_ids(novel_id):
     novel_id = int(novel_id or 0)
-    return (0,) if novel_id == 0 else (0, novel_id)
+    return (0, novel_id)
 
 
 def _err(message):

@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
-from novel_editorial import db
+from novel_editorial import config, db
 from tools import daily_runs
 
 
@@ -41,9 +41,9 @@ class DailyRunsTests(unittest.TestCase):
         )
         n.execute(
             "INSERT INTO execution_entity VALUES "
-            "(1001,'SkLUnm3uRyBSY84F','manual','success',"
+            f"(1001,'{config.N8N_WORKFLOW_DAILY}','manual','success',"
             "'2026-08-11 04:31:19.793','2026-08-11 05:32:12.837',NULL),"
-            "(1000,'SkLUnm3uRyBSY84F','scheduled','crashed',"
+            f"(1000,'{config.N8N_WORKFLOW_DAILY}','scheduled','crashed',"
             "'2026-08-10 18:06:23.107','2026-08-10 18:06:23.112',NULL)"
         )
         n.commit()
@@ -148,7 +148,7 @@ class DailyRunsTests(unittest.TestCase):
         )
         n.execute(
             "INSERT INTO execution_entity VALUES "
-            "(2001,'SkLUnm3uRyBSY84F','manual','failed',"
+            f"(2001,'{config.N8N_WORKFLOW_DAILY}','manual','failed',"
             "'2026-08-11 04:00:00.000','2026-08-11 04:01:00.000',NULL)"
         )
         n.commit()

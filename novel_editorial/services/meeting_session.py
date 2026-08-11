@@ -328,12 +328,18 @@ def run_session(session_id, db_path=""):
         # Use the database stored on the session row; never silently fall
         # back to a hardcoded demo.db lookup that misses sessions in other DBs.
         requested = str(db_path or "").strip()
-        conn = novel_editorial.db.connect(requested or config.DB_PATH)
+        default_path = requested or str(config.DB_PATH)
+        conn = novel_editorial.db.connect(default_path)
         if not requested:
             row = conn.execute(
                 "SELECT db_path FROM meeting_sessions WHERE id=?", (session_id,)
             ).fetchone()
-            row_db = str(row["db_path"] or "").strip() if row is not None else ""
+            if row is None:
+                raise RuntimeError(
+                    f"meeting session {session_id} not found in database "
+                    f"{default_path!r}; cannot resolve its db_path"
+                )
+            row_db = str(row["db_path"] or "").strip()
             if row_db:
                 conn.close()
                 conn = novel_editorial.db.connect(row_db)
