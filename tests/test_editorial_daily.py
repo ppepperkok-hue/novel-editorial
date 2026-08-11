@@ -327,6 +327,117 @@ class EditorialDailyTests(unittest.TestCase):
         ).fetchone()
         self.assertEqual(row["published"], 2)
 
+    def test_pending_publish_is_consumed_after_generate(self):
+        """A manual run with a chapter override must not permanently raise the
+        daily target (the n8n path left pending_publish set forever)."""
+        self._ok_preflight()
+        long_text = "他推开门走进院子，风从巷口吹来，远处传来吆喝声。" * 100
+
+        def fake_agent(node, task, temperature=None, max_tokens=None, target_words=None, novel_id=None, db_path=None, model=None):
+            if node.startswith("写手") or node.startswith("润色"):
+                return {"ok": True, "text": long_text, "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node.startswith("提炼"):
+                return {"ok": True, "text": json.dumps({"summary": "s"}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node.startswith("审稿") or node.startswith("读者"):
+                return {"ok": True, "text": json.dumps({"passed": True, "score": 9, "hook_rating": 9, "would_read_next": True}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node.startswith("主编"):
+                return {"ok": True, "text": json.dumps({"verdict": "pass"}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node == "生成作品资料":
+                return {"ok": True, "text": json.dumps({"book_name": "旧书店", "abstract": "x" * 60, "protagonist": {"name": "林舟"}}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node == "Planner出大纲":
+                return {"ok": True, "text": json.dumps({"chapter_outlines": [{"title": "第一章", "outline": "o"}, {"title": "第二章", "outline": "o"}], "bible": {}}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node == "守护细纲":
+                return {"ok": True, "text": json.dumps({"passed": True, "constraints": [], "character_beats": {}}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            return {"ok": True, "text": "{}", "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+
+        def fake_fanqie_post(ctx, url, fields, env):
+            if url.endswith("/article/new_article/v0/"):
+                return {"code": 0, "data": {"item_id": "i", "volume_id": "v1", "volume_data": [{"volume_id": "v1", "volume_name": "正文"}]}}
+            return {"code": 0}
+
+        def fake_fanqie_get(ctx, url, params, env):
+            if url.endswith("/book/book_list/v0"):
+                return {"code": 0, "data": {"book_list": [{"book_id": "b1", "chapter_number": 0, "book_name": "旧书店", "abstract": "x" * 60}]}}
+            return {"code": 0, "data": {"item_list": []}}
+
+        with mock.patch("tools.editorial_daily.agent_tool_loop.run", side_effect=fake_agent):
+            with mock.patch("tools.editorial_daily._fanqie_post", side_effect=fake_fanqie_post):
+                with mock.patch("tools.editorial_daily._fanqie_get", side_effect=fake_fanqie_get):
+                    with mock.patch("tools.editorial_daily._wrapup"):
+                        result = editorial_daily.daily(
+                            self.conn, trigger="manual", dry_run=False,
+                            chapters=3, db_path=self.db_path,
+                        )
+        self.assertEqual(result["status"], "partial", result)
+        self.assertEqual(result["published"], 2)
+        row = self.conn.execute(
+            "SELECT value FROM settings WHERE key='pending_publish'"
+        ).fetchone()
+        self.assertEqual(row["value"], "0")
+
+    def test_reviewer_failure_blocks_track_publish(self):
+        """If the logic reviewer agent fails, that track must not publish
+        (n8n semantics: the quality gate never runs for that track)."""
+        self._ok_preflight()
+        long_text = "他推开门走进院子，风从巷口吹来，远处传来吆喝声。" * 100
+        calls = []
+
+        def fake_agent(node, task, temperature=None, max_tokens=None, target_words=None, novel_id=None, db_path=None, model=None):
+            calls.append(node)
+            if node == "审稿A":
+                return {"ok": False, "error": "reviewer crashed", "degraded": True}
+            if node.startswith("写手") or node.startswith("润色"):
+                return {"ok": True, "text": long_text, "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node.startswith("提炼"):
+                return {"ok": True, "text": json.dumps({"summary": "s"}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node.startswith("审稿") or node.startswith("读者"):
+                return {"ok": True, "text": json.dumps({"passed": True, "score": 9, "hook_rating": 9, "would_read_next": True}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node.startswith("主编"):
+                return {"ok": True, "text": json.dumps({"verdict": "pass"}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node == "生成作品资料":
+                return {"ok": True, "text": json.dumps({"book_name": "旧书店", "abstract": "x" * 60, "protagonist": {"name": "林舟"}}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node == "Planner出大纲":
+                return {"ok": True, "text": json.dumps({"chapter_outlines": [{"title": "第一章", "outline": "o"}, {"title": "第二章", "outline": "o"}], "bible": {}}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node == "守护细纲":
+                return {"ok": True, "text": json.dumps({"passed": True, "constraints": [], "character_beats": {}}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            return {"ok": True, "text": "{}", "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+
+        def fake_fanqie_post(ctx, url, fields, env):
+            if url.endswith("/article/new_article/v0/"):
+                return {"code": 0, "data": {"item_id": "i", "volume_id": "v1", "volume_data": [{"volume_id": "v1", "volume_name": "正文"}]}}
+            return {"code": 0}
+
+        def fake_fanqie_get(ctx, url, params, env):
+            if url.endswith("/book/book_list/v0"):
+                return {"code": 0, "data": {"book_list": [{"book_id": "b1", "chapter_number": 0, "book_name": "旧书店", "abstract": "x" * 60}]}}
+            return {"code": 0, "data": {"item_list": []}}
+
+        with mock.patch("tools.editorial_daily.agent_tool_loop.run", side_effect=fake_agent):
+            with mock.patch("tools.editorial_daily._fanqie_post", side_effect=fake_fanqie_post):
+                with mock.patch("tools.editorial_daily._fanqie_get", side_effect=fake_fanqie_get):
+                    with mock.patch("tools.editorial_daily._wrapup"):
+                        result = editorial_daily.daily(
+                            self.conn, trigger="manual", dry_run=False, db_path=self.db_path
+                        )
+        self.assertEqual(result["status"], "partial", result)
+        self.assertEqual(result["published"], 1)
+        rows = self.conn.execute(
+            "SELECT seq, status FROM chapters ORDER BY seq"
+        ).fetchall()
+        by_seq = {r["seq"]: r for r in rows}
+        self.assertEqual(by_seq[1]["status"], "draft")
+        failed = self.conn.execute(
+            "SELECT error FROM publish_logs WHERE result='failed' "
+            "ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        self.assertIsNotNone(failed)
+        self.assertIn("审稿链路失败", failed["error"])
+        self.assertEqual(by_seq[2]["status"], "published")
+        # The A track must stop after the failed reviewer: no reader/eic/memory.
+        self.assertNotIn("读者审稿A", calls)
+        self.assertNotIn("主编终审A", calls)
+        self.assertNotIn("提炼剧情A", calls)
+
 
 if __name__ == "__main__":
     unittest.main()

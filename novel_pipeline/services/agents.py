@@ -6,7 +6,6 @@ import sys
 
 from novel_pipeline import config
 from novel_pipeline.services import audit
-from novel_pipeline.services import n8n
 from tools import render_workflow
 
 AGENT_DISPLAY = {

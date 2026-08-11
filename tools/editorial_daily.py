@@ -318,7 +318,7 @@ def _get_meta(ctx, book_id):
             timeout=180,
         )
         return json.loads(out.stdout.strip() or "{}")
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
         ctx.failed_nodes.append("读本地资料")
         ctx.errors.append(f"读本地资料: {str(exc)[:200]}")
         return None
@@ -499,6 +499,20 @@ def _run_track(ctx, conn, idx, outline, guard, meta, target_words, env, prev_tra
         return {"gate": None, "summary": {}, "failed": True}
 
     review_text = _agent(ctx, "审稿" + suffix, _reviewer_task(idx, outline, editor_text, prev_track, ctx))
+    if review_text is None:
+        # n8n semantics: a failed logic-reviewer node never reaches the
+        # quality gate, so this track must not publish.
+        return {
+            "gate": {
+                "passed": False,
+                "errors": ["审稿链路失败：审稿" + suffix],
+                "review": None,
+                "reader": None,
+                "editor": None,
+            },
+            "summary": {},
+            "failed": True,
+        }
     reader_text = _agent(
         ctx,
         "读者审稿" + suffix,
@@ -844,6 +858,9 @@ def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, en
             }
 
         stock = check_stock.check_stock(conn)
+        # A manual chapter override is a one-shot target: consume it so the
+        # next scheduled run falls back to daily_chapters.
+        set_many(conn, {"pending_publish": "0"})
         payload = None
         published = 0
         if stock["need"] <= 0:

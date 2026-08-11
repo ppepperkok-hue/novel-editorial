@@ -4,42 +4,6 @@ import { ConfirmDialog } from "./ui.jsx";
 
 const desktopApi = typeof window !== "undefined" ? window.desktopApi || null : null;
 
-function WorkflowCard({ label, wf, onAction, onPause }) {
-  const state = !wf?.online
-    ? { text: "n8n 离线", cls: "chip-bad" }
-    : wf.active
-      ? { text: "运行中", cls: "chip-ok" }
-      : { text: "已暂停", cls: "chip-bad" };
-  const statusText = {
-    success: "成功",
-    running: "运行中",
-    waiting: "等待中",
-    failed: "失败",
-    crashed: "崩溃",
-    canceled: "已取消",
-  }[wf?.last?.status] || wf?.last?.status;
-  const last = wf?.last
-    ? `${statusText} · ${(wf.last.stopped_at || wf.last.started_at || "").replace("T", " ").slice(5, 19)}`
-    : "暂无";
-  return (
-    <div className="card flex flex-col gap-2">
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold">{label}</span>
-        <span className={`chip ${state.cls}`}>{state.text}</span>
-      </div>
-      <div className="muted text-xs">上次执行：{last}</div>
-      <div className="mt-1 flex gap-2">
-        {wf?.online &&
-          (wf.active ? (
-            <button className="btn btn-danger !px-3 !py-1 text-xs" onClick={onPause}>暂停</button>
-          ) : (
-            <button className="btn btn-ok !px-3 !py-1 text-xs" onClick={() => onAction("resume")}>恢复</button>
-          ))}
-      </div>
-    </div>
-  );
-}
-
 export default function SettingsPage({ data, onRefresh, pushToast, theme, onThemeChange }) {
   const [control, setControl] = useState(null);
   const [form, setForm] = useState(null);
@@ -164,17 +128,40 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
     targetNum <= 5000 &&
     /^\d{2}:\d{2}$/.test(form.daily_run_time || "");
 
-  const wfs = control?.workflows || {};
+  const sch = control?.scheduler || null;
   const s = control?.settings || {};
+  const lastRun = sch?.last_run || null;
+  const lastRunText = lastRun
+    ? `${lastRun.status === "completed" ? "成功" : lastRun.status === "partial" ? "部分成功" : lastRun.status === "failed" ? "失败" : lastRun.status} · 发布 ${lastRun.published ?? 0} 章`
+    : "暂无执行记录";
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
       <section className="panel p-4">
-        <div className="section-title !mb-3">工作流控制</div>
+        <div className="section-title !mb-3">流程控制</div>
         <div className="flex flex-col gap-3">
-          <WorkflowCard label={`日更工作流（${wfs.daily?.nodes ?? "?"} 节点）`} wf={wfs.daily} onAction={(a) => action({ action: a, workflow: "daily" }, "日更已恢复")} onPause={() => setConfirm("pause-daily")} />
-          <WorkflowCard label={`架构师周会（${wfs.weekly?.nodes ?? "?"} 节点）`} wf={wfs.weekly} onAction={(a) => action({ action: a, workflow: "weekly" }, "周会已恢复")} onPause={() => setConfirm("pause-weekly")} />
-          <WorkflowCard label={`知识管家（${wfs.keeper?.nodes ?? "?"} 节点）`} wf={wfs.keeper} onAction={(a) => action({ action: a, workflow: "keeper" }, "知识管家已恢复")} onPause={() => setConfirm("pause-keeper")} />
+          <div className="card flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold">日更调度</span>
+              <span className={`chip ${sch?.enabled ? "chip-ok" : "chip-bad"}`}>
+                {sch?.enabled ? "● 已开启" : "● 已暂停"}
+              </span>
+            </div>
+            <div className="muted text-xs">
+              定时 {sch?.scheduled_time || "08:00"} · 上次 {lastRunText}
+            </div>
+            <div className="mt-1 flex gap-2">
+              {sch?.enabled ? (
+                <button className="btn btn-danger !px-3 !py-1 text-xs" onClick={() => setConfirm("pause-daily")}>
+                  暂停
+                </button>
+              ) : (
+                <button className="btn btn-ok !px-3 !py-1 text-xs" onClick={() => action({ action: "resume", workflow: "daily" }, "日更已恢复")}>
+                  恢复
+                </button>
+              )}
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <button
               className="btn btn-ok"
@@ -191,12 +178,19 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
               {running === "weekly" ? "启动中…" : "▶ 立即跑周会"}
             </button>
           </div>
+          <button
+            className="btn"
+            disabled={running !== ""}
+            onClick={() => action({ action: "run_knowledge_keeper" }, "知识管家已运行")}
+          >
+            ▶ 立即维护知识库
+          </button>
           <div className="rounded-lg border border-amber-900/50 bg-amber-950/20 px-3 py-2 text-xs leading-relaxed text-amber-300/90">
             「立即更新一章」会真实执行完整写作流水线并发布到番茄（消耗 API 额度）。
             机器关机错过定时时，开机后点这里即可补更。
           </div>
           <div className="muted text-xs leading-relaxed">
-            当前 {wfs.daily?.active ? "日更运行中" : "日更暂停"} · 周会{wfs.weekly?.active ? "运行中" : "已暂停"}
+            当前 {sch?.enabled ? "日更已开启" : "日更已暂停"} · 定时 {sch?.scheduled_time || "08:00"} · 上次 {lastRunText}
           </div>
         </div>
       </section>
@@ -409,21 +403,20 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
           </div>
           <div>
             <div className="mb-1.5 font-semibold text-amber-400">Agent 资产</div>
-            每个写作智能体的提示词、模型与温度存放在 prompts/agents/*.md，修改后经渲染与校验再部署到 n8n，保证线上与仓库一致。
+            每个写作智能体的提示词、模型与温度存放在 prompts/agents/*.md，可在 Agent 管理页编辑校验，保存后调度器运行时即时生效。
           </div>
         </div>
       </section>
 
       <ConfirmDialog
-        open={confirm === "pause-daily" || confirm === "pause-weekly" || confirm === "pause-keeper"}
-        title="暂停工作流？"
-        body="暂停后定时触发将停止，需要手动恢复。"
+        open={confirm === "pause-daily"}
+        title="暂停日更调度？"
+        body="暂停后定时与手动补更都会停止，需要手动恢复。"
         confirmText="暂停"
         onCancel={() => setConfirm(null)}
         onConfirm={() => {
-          const workflow = confirm === "pause-daily" ? "daily" : confirm === "pause-weekly" ? "weekly" : "keeper";
           setConfirm(null);
-          action({ action: "pause", workflow }, "已暂停");
+          action({ action: "pause", workflow: "daily" }, "日更已暂停");
         }}
       />
 

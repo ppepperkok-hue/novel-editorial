@@ -573,7 +573,6 @@ export default function AgentsPage({ pushToast }) {
   const [busy, setBusy] = useState("");
   const [log, setLog] = useState([]);
   const [pendingPick, setPendingPick] = useState(null);
-  const [confirmDeploy, setConfirmDeploy] = useState(false);
   const [diaries, setDiaries] = useState([]);
   const [states, setStates] = useState([]);
   const [editDiary, setEditDiary] = useState(null);
@@ -700,7 +699,7 @@ export default function AgentsPage({ pushToast }) {
       }
       addLog(`渲染完成：${r.render || "（无输出）"}`);
       if (r.validation) {
-        addLog("工作流校验通过（56 节点 JS/引用/连接全部有效）", "ok");
+        addLog("工作流校验通过（JS/引用/连接全部有效）", "ok");
         pushToast(`${selected.name} 已保存并通过校验`, "ok");
       } else {
         addLog(`校验未通过：${r.validation_output}`, "bad");
@@ -710,27 +709,6 @@ export default function AgentsPage({ pushToast }) {
     } catch (e) {
       addLog(`请求失败：${e}`, "bad");
       pushToast("保存请求失败：" + e, "bad");
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const deploy = async () => {
-    if (!selected) return;
-    setBusy("deploy");
-    addLog("部署到 n8n（PUT 日更工作流，会覆盖线上节点配置）...");
-    try {
-      const r = await postAgents({ action: "deploy" });
-      if (!r.ok) {
-        addLog(`部署失败：${r.error}`, "bad");
-        pushToast("部署失败：" + r.error, "bad");
-      } else {
-        addLog(`部署成功：${r.nodes} 个节点，active=${r.active}`, "ok");
-        pushToast(`已部署到 n8n（${r.nodes} 节点，${r.active ? "运行中" : "未激活"}）`, "ok");
-      }
-    } catch (e) {
-      addLog(`部署请求失败：${e}`, "bad");
-      pushToast("部署请求失败：" + e, "bad");
     } finally {
       setBusy("");
     }
@@ -795,9 +773,6 @@ export default function AgentsPage({ pushToast }) {
                 {dirty ? <span className="chip chip-warn">有未保存修改</span> : null}
                 <button className="btn btn-ok" disabled={busy !== "" || !tempValid} onClick={save}>
                   {busy === "save" ? "渲染校验中…" : "💾 保存并校验"}
-                </button>
-                <button className="btn btn-primary" disabled={busy !== "" || dirty} onClick={() => setConfirmDeploy(true)}>
-                  {busy === "deploy" ? "部署中…" : "▲ 部署到 n8n"}
                 </button>
               </div>
             </div>
@@ -972,19 +947,6 @@ export default function AgentsPage({ pushToast }) {
         }}
       />
 
-      <ConfirmDialog
-        open={confirmDeploy}
-        title="部署到 n8n？"
-        body="会用当前工作流 JSON 覆盖 n8n 线上的日更工作流节点配置。提示词资产与线上将保持一致。"
-        confirmText="部署"
-        tone="primary"
-        busy={busy === "deploy"}
-        onCancel={() => setConfirmDeploy(false)}
-        onConfirm={() => {
-          setConfirmDeploy(false);
-          deploy();
-        }}
-      />
       </div>
       <ActionsPanel pushToast={pushToast} />
       <ActivityPanel pushToast={pushToast} />
