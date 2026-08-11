@@ -8,6 +8,24 @@ const STATUS_META = {
   published: ["已发布", "chip-ok"],
 };
 
+function parseQualityNotes(raw) {
+  if (!raw) return null;
+  let obj = raw;
+  if (typeof raw === "string") {
+    try {
+      obj = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (!obj || typeof obj !== "object") return null;
+  const labels = { review: "审稿", reader: "读者审", editor: "主编终审" };
+  const items = Object.entries(obj)
+    .map(([k, v]) => (v ? { role: labels[k] || k, text: v } : null))
+    .filter(Boolean);
+  return items.length ? items : null;
+}
+
 export default function ChaptersPage({ data }) {
   const [filter, setFilter] = useState("all");
   const [novelFilter, setNovelFilter] = useState("all");
@@ -70,6 +88,8 @@ export default function ChaptersPage({ data }) {
       setTasteLoading(false);
     }
   };
+
+  const qualityNotes = reader ? parseQualityNotes(reader.quality_notes) : null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -232,6 +252,16 @@ export default function ChaptersPage({ data }) {
                       ))}
                     </div>
                   ) : null}
+                </div>
+              ) : null}
+              {qualityNotes ? (
+                <div className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--code-bg)] p-3">
+                  <div className="mb-2 text-sm font-bold">编辑部评语</div>
+                  <ul className="flex flex-col gap-1 text-xs text-slate-400">
+                    {qualityNotes.map((n, i) => (
+                      <li key={i}>[{n.role}] {n.text}</li>
+                    ))}
+                  </ul>
                 </div>
               ) : null}
             </div>

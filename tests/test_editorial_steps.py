@@ -23,6 +23,40 @@ class RobustJsonTests(unittest.TestCase):
         self.assertIsNone(steps.robust_json("not json at all"))
 
 
+class BuildPayloadNotesTests(unittest.TestCase):
+    def test_gate_notes_flow_into_payload(self):
+        gate = {
+            "passed": True,
+            "chars": 2000,
+            "editedText": "正文",
+            "review": {"verdict": "pass", "notes": "逻辑没问题，就是结尾有点平"},
+            "reader": {"score": 8, "notes": "开头会追，中段想跳"},
+            "editor": {"notes": ""},
+        }
+        outline = {
+            "chapter1": {"title": "一", "outline": "o"},
+            "chapter2": {"title": "二", "outline": "o"},
+        }
+        meta = {"start_num": 1, "book_id": "b1"}
+        track_a = {
+            "gate": gate,
+            "draft": {"item_id": "x"},
+            "pub": {"published": True},
+            "summary": {},
+        }
+        track_b = {
+            "gate": gate,
+            "draft": {"item_id": "y"},
+            "pub": {"published": True},
+            "summary": {},
+        }
+        payload = steps.build_payload("r1", meta, outline, track_a, track_b, [], [])
+        ch = payload["chapters"][0]
+        self.assertEqual(ch["notes"]["review"], "逻辑没问题，就是结尾有点平")
+        self.assertEqual(ch["notes"]["reader"], "开头会追，中段想跳")
+        self.assertNotIn("editor", ch["notes"])
+
+
 class WritingContextTests(unittest.TestCase):
     def test_assembles_fields(self):
         ctx = steps.build_writing_context(

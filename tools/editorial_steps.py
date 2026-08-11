@@ -587,6 +587,19 @@ def build_payload(run_id, meta, outline, track_a, track_b, costs, failed_nodes):
     ch1 = (outline or {}).get("chapter1") or {}
     ch2 = (outline or {}).get("chapter2") or {}
 
+    def gate_notes(gate):
+        """F3: collect optional free-text notes from reviewer/reader/editor JSON."""
+        if not isinstance(gate, dict):
+            return {}
+        out = {}
+        for role in ("review", "reader", "editor"):
+            obj = gate.get(role)
+            if isinstance(obj, dict):
+                note = str(obj.get("notes") or "").strip()
+                if note:
+                    out[role] = note[:500]
+        return out
+
     def append_track(idx, ch_obj, gate, draft, pub, summary):
         seq = int(meta.get("start_num") or 1) + idx
         if gate and gate.get("passed") is False:
@@ -604,6 +617,7 @@ def build_payload(run_id, meta, outline, track_a, track_b, costs, failed_nodes):
                     "ending_excerpt": "",
                     "quality_passed": False,
                     "content": gate.get("editedText") or "",
+                    "notes": gate_notes(gate),
                 }
             )
             return True
@@ -623,6 +637,7 @@ def build_payload(run_id, meta, outline, track_a, track_b, costs, failed_nodes):
                     "ending_excerpt": (gate.get("editedText") or "")[-220:] if gate else "",
                     "quality_passed": True,
                     "content": (gate.get("editedText") or "") if gate else "",
+                    "notes": gate_notes(gate),
                 }
             )
             return True
@@ -647,6 +662,7 @@ def build_payload(run_id, meta, outline, track_a, track_b, costs, failed_nodes):
                 "ending_excerpt": "",
                 "quality_passed": True,
                 "content": track_a["gate"].get("editedText") or "",
+                "notes": gate_notes(track_a["gate"]),
             }
         )
     if track_b.get("gate") and track_b["gate"].get("passed") is True and not track_b.get("draft") and not b_covered:
@@ -664,6 +680,7 @@ def build_payload(run_id, meta, outline, track_a, track_b, costs, failed_nodes):
                 "ending_excerpt": "",
                 "quality_passed": True,
                 "content": track_b["gate"].get("editedText") or "",
+                "notes": gate_notes(track_b["gate"]),
             }
         )
 

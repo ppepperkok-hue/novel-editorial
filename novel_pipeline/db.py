@@ -87,7 +87,8 @@ CREATE TABLE IF NOT EXISTS quality_reports (
     chapter_id INTEGER NOT NULL REFERENCES chapters(id),
     scores TEXT NOT NULL,
     passed INTEGER NOT NULL,
-    revision_count INTEGER DEFAULT 0
+    revision_count INTEGER DEFAULT 0,
+    notes TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS publish_logs (
@@ -417,6 +418,9 @@ def _migrate(conn):
     run_cols = {r["name"] for r in conn.execute("PRAGMA table_info(daily_runs)")}
     if "source" not in run_cols:
         conn.execute("ALTER TABLE daily_runs ADD COLUMN source TEXT DEFAULT 'scheduler'")
+    qr_cols = {r["name"] for r in conn.execute("PRAGMA table_info(quality_reports)")}
+    if "notes" not in qr_cols:
+        conn.execute("ALTER TABLE quality_reports ADD COLUMN notes TEXT DEFAULT ''")
     action_cols = {r["name"] for r in conn.execute("PRAGMA table_info(agent_actions)")}
     for col, ddl in {
         "assignee": "TEXT DEFAULT ''",

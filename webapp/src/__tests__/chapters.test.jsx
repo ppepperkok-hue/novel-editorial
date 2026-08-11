@@ -53,4 +53,24 @@ describe("ChaptersPage reader", () => {
     fireEvent.click(screen.getByText("阅读"));
     expect(await screen.findByText(/正文未落库/)).toBeInTheDocument();
   });
+
+  it("shows editorial quality notes when present", async () => {
+    const withNotes = {
+      ...data,
+      chapters: [
+        {
+          ...data.chapters[0],
+          quality_notes: JSON.stringify({
+            review: "逻辑没问题，结尾略平",
+            reader: "开头会追，中段想跳",
+          }),
+        },
+      ],
+    };
+    render(<ChaptersPage data={withNotes} />);
+    fireEvent.click(screen.getByText("阅读"));
+    expect(await screen.findByText("编辑部评语")).toBeInTheDocument();
+    expect(screen.getByText(/逻辑没问题，结尾略平/)).toBeInTheDocument();
+    expect(screen.getByText(/开头会追，中段想跳/)).toBeInTheDocument();
+  });
 });

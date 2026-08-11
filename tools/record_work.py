@@ -310,17 +310,18 @@ def upsert_chapters(conn, novel_id, chapters):
                     old_scores = {}
             old_scores["gate"] = qp
             scores = json.dumps(old_scores, ensure_ascii=False)
+            notes = json.dumps(ch.get("notes") or {}, ensure_ascii=False)
             if qrow:
                 conn.execute(
                     "UPDATE quality_reports SET scores=?, passed=?, "
-                    "revision_count=COALESCE(revision_count,0) WHERE id=?",
-                    (scores, qp, qrow["id"]),
+                    "revision_count=COALESCE(revision_count,0), notes=? WHERE id=?",
+                    (scores, qp, notes, qrow["id"]),
                 )
             else:
                 conn.execute(
-                    "INSERT INTO quality_reports(chapter_id,scores,passed,revision_count) "
-                    "VALUES(?,?,?,0)",
-                    (chapter_id, scores, qp),
+                    "INSERT INTO quality_reports(chapter_id,scores,passed,revision_count,notes) "
+                    "VALUES(?,?,?,0,?)",
+                    (chapter_id, scores, qp, notes),
                 )
         if status == "published":
             dup = conn.execute(

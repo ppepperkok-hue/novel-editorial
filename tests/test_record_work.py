@@ -55,6 +55,44 @@ class RecordWorkTests(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_record_payload_persists_quality_notes(self):
+        path = make_db()
+        conn = db.connect(path)
+        try:
+            payload = {
+                "book_id": "b1",
+                "book_name": "书",
+                "genre": "都市",
+                "premise": "设定",
+                "protagonists": [],
+                "run_id": "r1",
+                "chapters": [
+                    {
+                        "seq": 2,
+                        "title": "第 2 章",
+                        "outline": "章纲",
+                        "status": "published",
+                        "words": 200,
+                        "quality_passed": True,
+                        "notes": {"review": "逻辑没问题", "reader": "开头会追"},
+                        "summary": {},
+                        "ending_excerpt": "",
+                        "content": "正文",
+                    }
+                ],
+            }
+            result = record_work.record_payload(conn, payload)
+            self.assertTrue(result["ok"])
+            row = conn.execute(
+                "SELECT notes FROM quality_reports ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            self.assertIsNotNone(row)
+            notes = json.loads(row["notes"])
+            self.assertEqual(notes["review"], "逻辑没问题")
+            self.assertEqual(notes["reader"], "开头会追")
+        finally:
+            conn.close()
+
     def test_foreshadow_recover_closes_exact_thread(self):
         path = make_db()
         conn = db.connect(path)

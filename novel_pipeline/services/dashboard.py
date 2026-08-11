@@ -60,7 +60,9 @@ def load_chapters(conn, novel_id=None):
         "SELECT c.id, c.novel_id, c.seq, c.outline, c.title, c.status, c.words, c.score, "
         "c.published_at, c.fanqie_item_id, "
         "(SELECT r.revision_count FROM quality_reports r "
-        " WHERE r.chapter_id=c.id ORDER BY r.id DESC LIMIT 1) AS revisions "
+        " WHERE r.chapter_id=c.id ORDER BY r.id DESC LIMIT 1) AS revisions, "
+        "(SELECT r.notes FROM quality_reports r "
+        " WHERE r.chapter_id=c.id ORDER BY r.id DESC LIMIT 1) AS quality_notes "
         "FROM chapters c"
     )
     params = []
