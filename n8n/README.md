@@ -50,7 +50,8 @@ B 章串行承接 A 章：写手B/审稿B 输入 A 章结尾原文与 A 章提�
 ## 成本单价调整
 
 `~/.n8n/.env` 中 `COST_PRO_PER_1K` / `COST_FLASH_PER_1K` 控制 cost_logs 的成本
-折算（默认 0.01 / 0.002 元每千 token）；`MONTHLY_BUDGET` 为预检熔断预算。
+折算（默认 0.01 / 0.002 元每千 token）；月度预算熔断由数据库设置
+`settings.monthly_budget` 控制（`MONTHLY_BUDGET` 已弃用）。
 
 2026-08-10 起，质量门与排版之间新增「提炼剧情A/B → 整理剧情A/B」：逐章提取摘要、
 角色状态变化、事件与伏笔台账，随「记录作品资料」写回数据库，供次日记忆包使用。

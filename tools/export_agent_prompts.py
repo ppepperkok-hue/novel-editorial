@@ -37,6 +37,22 @@ START_MARK = "{role:'system',content:'"
 END_MARK = "'},{role:'user'"
 
 
+def _find_system_end(body, s0):
+    """Locate the system/user boundary without truncating inside the prompt.
+
+    END_MARK appearing inside the system text must not count; only accept a
+    marker directly followed by the user-message content field.
+    """
+    pos = s0
+    while True:
+        s1 = body.find(END_MARK, pos)
+        if s1 < 0:
+            return -1
+        if body[s1 + len(END_MARK) :].startswith(",content:"):
+            return s1
+        pos = s1 + 1
+
+
 def main():
     wf = json.loads(WF.read_text(encoding="utf-8"))
     nodes = {n["name"]: n for n in wf["nodes"]}
@@ -83,7 +99,7 @@ def main():
         else:
             max_tokens = ""
         s0 = body.find(START_MARK)
-        s1 = body.find(END_MARK, s0)
+        s1 = _find_system_end(body, s0)
         if s0 < 0 or s1 < 0:
             print("skip (no system match):", node_name)
             continue

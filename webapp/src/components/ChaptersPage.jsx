@@ -35,6 +35,7 @@ export default function ChaptersPage({ data }) {
   const [fontSize, setFontSize] = useState(15);
   const [taste, setTaste] = useState(null);
   const [tasteLoading, setTasteLoading] = useState(false);
+  const [tasteError, setTasteError] = useState(null);
 
   const novels = data?.novels || [];
   const chapters = (data?.chapters || []).filter((c) => {
@@ -69,6 +70,7 @@ export default function ChaptersPage({ data }) {
     setReaderBody(null);
     setFontSize(15);
     setTaste(null);
+    setTasteError(null);
     try {
       const r = await getChapterContent(c.id);
       setReaderBody(r.content || "");
@@ -80,10 +82,11 @@ export default function ChaptersPage({ data }) {
   const checkTaste = async () => {
     if (!reader || taste) return;
     setTasteLoading(true);
+    setTasteError(null);
     try {
       setTaste(await getAiTaste(reader.id));
-    } catch {
-      setTaste({ score: -1, notes: ["检测失败"] });
+    } catch (e) {
+      setTasteError(e?.message || "检测失败");
     } finally {
       setTasteLoading(false);
     }
@@ -225,6 +228,11 @@ export default function ChaptersPage({ data }) {
                   本章正文未落库（历史章节）。正文从下次日更开始自动保存，之后这里就能阅读。
                 </div>
               )}
+              {tasteError ? (
+                <div className="mt-4 rounded-lg border border-red-900 bg-red-950/40 px-4 py-2.5 text-sm text-red-400">
+                  AI 味检测失败：{tasteError}，可点击上方按钮重试。
+                </div>
+              ) : null}
               {taste ? (
                 <div className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--code-bg)] p-3">
                   <div className="mb-2 flex items-center gap-2">

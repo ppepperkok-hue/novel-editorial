@@ -19,8 +19,19 @@ let win = null;
 let tray = null;
 const notifiedExecKeys = new Set();
 let notifTimer = null;
+let apiStopping = false;
+let apiRestartCount = 0;
+const API_RESTART_MAX = 3;
+const API_RESTART_DELAY_MS = 3000;
+let startupReady = false;
+let showRequested = false;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function notifyIssue(body) {
+  if (!Notification.isSupported()) return;
+  new Notification({ title: "小说流水线", body }).show();
+}
 
 function apiReady(port) {
   return new Promise((resolve) => {
@@ -60,19 +71,55 @@ function userDbPath() {
   return dbPath;
 }
 
-async function ensureApi() {
-  if (await apiReady(API_PORT)) return;
+function spawnApiProcess() {
   const dbPath = userDbPath();
-  apiProc = spawn(
+  const child = spawn(
     PYTHONW,
     ["-m", "novel_editorial.web_api", "--db", dbPath, "--port", String(API_PORT)],
     { cwd: ROOT, stdio: "ignore" },
   );
-  apiProc.on("error", (err) => {
+  apiProc = child;
+  let spawnFailed = false;
+  child.on("error", (err) => {
+    spawnFailed = true;
+    apiProc = null;
+    const msg = `无法启动后端服务（${PYTHONW}）：${(err && err.message) || err}`;
     console.error("pythonw spawn failed:", err);
     if (win) {
-      win.webContents.send("api-error", String((err && err.message) || err));
+      win.webContents.send("api-error", msg);
     }
+    notifyIssue(msg);
+  });
+  child.on("exit", (code, signal) => {
+    if (spawnFailed || apiStopping) return;
+    apiProc = null;
+    const reason = `后端服务异常退出（code=${code}${signal ? `, signal=${signal}` : ""}）`;
+    console.error(reason);
+    if (win) {
+      win.webContents.send("api-error", reason);
+    }
+    if (apiRestartCount >= API_RESTART_MAX) {
+      notifyIssue(`后端服务异常退出，自动重启已达上限（${API_RESTART_MAX} 次），请重启应用。`);
+      return;
+    }
+    apiRestartCount += 1;
+    notifyIssue(`${reason}，正在自动重启（${apiRestartCount}/${API_RESTART_MAX}）`);
+    setTimeout(() => {
+      if (apiStopping) return;
+      spawnApiProcess();
+    }, API_RESTART_DELAY_MS);
+  });
+  return child;
+}
+
+async function ensureApi() {
+  if (await apiReady(API_PORT)) return;
+  const child = spawnApiProcess();
+  await new Promise((resolve, reject) => {
+    child.once("spawn", () => resolve());
+    child.once("error", (err) => {
+      reject(new Error(`pythonw spawn failed: ${(err && err.message) || err}`));
+    });
   });
   for (let i = 0; i < 40; i += 1) {
     if (await apiReady(API_PORT)) return;
@@ -82,6 +129,12 @@ async function ensureApi() {
 }
 
 function createWindow() {
+  if (win) {
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    return;
+  }
   win = new BrowserWindow({
     width: 1320,
     height: 880,
@@ -110,6 +163,7 @@ function createWindow() {
   });
   win.on("closed", () => {
     win = null;
+    apiStopping = true;
     if (apiProc) {
       apiProc.kill();
       apiProc = null;
@@ -119,6 +173,10 @@ function createWindow() {
 
 function showWindow() {
   if (!win) {
+    if (!startupReady) {
+      showRequested = true;
+      return;
+    }
     createWindow();
     return;
   }
@@ -146,6 +204,7 @@ function panelToken() {
 }
 
 async function triggerWorkflow(workflow) {
+  const label = workflow === "daily" ? "日更" : "周会";
   try {
     const headers = { "Content-Type": "application/json" };
     const token = panelToken();
@@ -156,7 +215,6 @@ async function triggerWorkflow(workflow) {
       body: JSON.stringify({ action: "run_now", workflow }),
     });
     const data = await r.json();
-    const label = workflow === "daily" ? "日更" : "周会";
     if (data.ok) {
       if (Notification.isSupported()) {
         new Notification({
@@ -174,6 +232,7 @@ async function triggerWorkflow(workflow) {
     }
   } catch (e) {
     console.error("trigger failed", e);
+    notifyIssue(`${label}启动失败：${(e && e.message) || e}`);
   }
 }
 
@@ -206,9 +265,17 @@ function watchExecutions() {
     }
   };
   const fetchList = async () => {
-    const r = await fetch(`http://127.0.0.1:${API_PORT}/api/executions`);
-    const data = await r.json();
-    return data.executions || [];
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    try {
+      const r = await fetch(`http://127.0.0.1:${API_PORT}/api/executions`, {
+        signal: controller.signal,
+      });
+      const data = await r.json();
+      return data.executions || [];
+    } finally {
+      clearTimeout(timer);
+    }
   };
   // Executions already terminal at startup count as known, so only
   // transitions observed during this run produce notifications.
@@ -218,7 +285,10 @@ function watchExecutions() {
       historySeeded = true;
     })
     .catch(() => {});
+  let pollingInFlight = false;
   notifTimer = setInterval(async () => {
+    if (pollingInFlight) return;
+    pollingInFlight = true;
     try {
       const list = await fetchList();
       if (!historySeeded) {
@@ -242,6 +312,8 @@ function watchExecutions() {
       }
     } catch (e) {
       // API temporarily unavailable; keep polling
+    } finally {
+      pollingInFlight = false;
     }
   }, 30000);
 }
@@ -273,6 +345,7 @@ app.whenReady().then(async () => {
     await ensureApi();
   } catch (e) {
     console.error(e);
+    apiStopping = true;
     dialog.showErrorBox(
       "文学编辑部启动失败",
       String((e && e.message) || e) +
@@ -283,6 +356,11 @@ app.whenReady().then(async () => {
     return;
   }
   createWindow();
+  startupReady = true;
+  if (showRequested) {
+    showRequested = false;
+    showWindow();
+  }
   createTray();
   watchExecutions();
   setupAutoUpdater();

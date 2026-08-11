@@ -229,8 +229,6 @@ def ask(conn, novel_id, agent, user, temperature, dry_run, mock_text, max_tokens
         {"role": "user", "content": user},
         {"role": "assistant", "content": first.get("text") or "", "tool_calls": tool_calls},
     ]
-    from novel_editorial.services import knowledge  # noqa: PLC0415
-
     for tc in tool_calls:
         fn = tc.get("function") or {}
         name = fn.get("name") or ""
@@ -579,7 +577,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--topic", default="")
-    ap.add_argument("--kind", choices=["weekly", "topic"], default="weekly")
+    ap.add_argument("--kind", choices=["weekly", "topic", "planning"], default="weekly")
     ap.add_argument("--out", default="", help="override archive dir for the meeting JSON")
     args = ap.parse_args()
 
@@ -588,25 +586,33 @@ def main():
     if not db_path.is_absolute():
         db_path = ROOT / db_path
     conn = db.connect(db_path)
+    session_id = None
     try:
+        planning = args.kind == "planning"
         novel_id = args.novel_id
-        if not novel_id and args.book_id:
-            r = conn.execute(
-                "SELECT id FROM novels WHERE book_id=? ORDER BY id DESC LIMIT 1",
-                (args.book_id,),
-            ).fetchone()
-            novel_id = r["id"] if r else 0
-        if not novel_id:
-            r = conn.execute("SELECT id FROM novels ORDER BY id DESC LIMIT 1").fetchone()
-            novel_id = r["id"] if r else 0
-        if not novel_id:
-            print(json.dumps({"ok": False, "error": "no novel"}, ensure_ascii=False))
-            return
-        materials = build_materials_dict(conn, novel_id)
+        if planning:
+            materials = architect_weekly.build_planning_materials(conn)
+        else:
+            if not novel_id and args.book_id:
+                r = conn.execute(
+                    "SELECT id FROM novels WHERE book_id=? ORDER BY id DESC LIMIT 1",
+                    (args.book_id,),
+                ).fetchone()
+                novel_id = r["id"] if r else 0
+            if not novel_id:
+                r = conn.execute("SELECT id FROM novels ORDER BY id DESC LIMIT 1").fetchone()
+                novel_id = r["id"] if r else 0
+            if not novel_id:
+                print(json.dumps({"ok": False, "error": "no novel"}, ensure_ascii=False))
+                return
+            materials = build_materials_dict(conn, novel_id)
         if args.kind == "weekly":
-            write_diaries.write(
-                conn, novel_id, "weekly", dry_run=args.dry_run, materials=materials
-            )
+            try:
+                write_diaries.write(
+                    conn, novel_id, "weekly", dry_run=args.dry_run, materials=materials
+                )
+            except Exception as exc:  # noqa: BLE001
+                print(f"note: weekly diaries skipped: {exc}", file=sys.stderr)
         attendees, topics, pick = chair_pick(
             conn, novel_id, args.dry_run, materials, topic
         )
@@ -633,10 +639,33 @@ def main():
         transcript = []
         for round_no in range(1, args.rounds + 1):
             for agent in attendees:
-                speech = round_speech(
-                    conn, novel_id, agent, materials, transcript, round_no,
-                    args.dry_run, topic=topic,
-                )
+                try:
+                    speech = round_speech(
+                        conn, novel_id, agent, materials, transcript, round_no,
+                        args.dry_run, topic=topic,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    speech = {
+                        "speech": f"（{agent} 第 {round_no} 轮发言失败，已跳过）",
+                        "weekly_summary": "",
+                        "feelings": "",
+                        "opinion": "",
+                        "concerns": [],
+                        "proposals": [],
+                        "priority": "低",
+                        "_error": str(exc)[:200],
+                    }
+                    try:
+                        activity.log_activity(
+                            conn,
+                            agent,
+                            novel_id,
+                            "meeting_speech_failed",
+                            f"会议第 {round_no} 轮发言失败",
+                            {"round": round_no, "error": str(exc)[:300]},
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
                 transcript.append({"round": round_no, "agent": agent, "speech": speech})
                 activity.log_activity(
                     conn,
@@ -747,12 +776,23 @@ def main():
         # persist decisions
         try:
             from tools.apply_architect import apply_report  # noqa: PLC0415
+            from tools.apply_architect import create_planning_from_next_book  # noqa: PLC0415
 
-            apply_report(conn, novel_id, report)
+            if planning:
+                book_result = create_planning_from_next_book(
+                    conn, report, cover_prompt=report.get("cover_prompt", "")
+                )
+                if not book_result.get("ok"):
+                    print(
+                        f"note: planning book not created: {book_result.get('reason')}",
+                        file=sys.stderr,
+                    )
+            else:
+                apply_report(conn, novel_id, report)
         except ImportError:
             print("note: apply_report not available yet", file=sys.stderr)
         except Exception as exc:  # noqa: BLE001
-            print(f"note: apply_report skipped（outline/report 损坏）: {exc}", file=sys.stderr)
+            print(f"note: 会议结论落盘失败: {exc}", file=sys.stderr)
             try:
                 activity.log_activity(
                     conn,
@@ -791,6 +831,26 @@ def main():
                 ensure_ascii=False,
             )
         )
+    except Exception as exc:  # noqa: BLE001
+        if session_id is not None:
+            try:
+                conn.execute(
+                    "UPDATE meeting_sessions SET status='failed', updated_at=? "
+                    "WHERE id=? AND status='running'",
+                    (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), session_id),
+                )
+                conn.commit()
+                activity.log_activity(
+                    conn,
+                    "system",
+                    novel_id,
+                    "meeting_failed",
+                    "会议异常终止",
+                    {"session_id": session_id, "error": str(exc)[:300]},
+                )
+            except Exception:  # noqa: BLE001
+                pass
+        raise
     finally:
         conn.close()
 

@@ -46,7 +46,7 @@ def snapshot():
         ]
         costs = conn.execute(
             "SELECT ROUND(SUM(cost),4) c FROM cost_logs WHERE created_at>=date('now','localtime','-1 day')"
-        ).fetchone()["c"]
+        ).fetchone()["c"] or 0.0
     finally:
         conn.close()
     return {

@@ -50,8 +50,12 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
   }, []);
 
   const action = async (payload, okMsg) => {
-    const r = await postControl(payload);
-    pushToast(r.ok ? okMsg : `失败：${r.error || "未知"}`, r.ok ? "ok" : "bad");
+    try {
+      const r = await postControl(payload);
+      pushToast(r.ok ? okMsg : `失败：${r.error || "未知"}`, r.ok ? "ok" : "bad");
+    } catch (e) {
+      pushToast("操作失败：" + e, "bad");
+    }
     refresh();
     onRefresh();
   };
@@ -90,6 +94,8 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
       }
       refresh();
       onRefresh();
+    } catch (e) {
+      pushToast("保存失败：" + e, "bad");
     } finally {
       setSaving(false);
     }

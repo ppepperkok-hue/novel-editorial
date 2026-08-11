@@ -157,7 +157,6 @@ cd ../desktop && npm install
 | `FANQIE_COOKIE` / `FANQIE_CSRF_TOKEN` | 番茄作者后台登录态（约 1–2 个月失效） |
 | `FANQIE_BOOK_ID` / `FANQIE_VOLUME_ID` | 番茄作品/分卷 ID（面板绑定可自动写入） |
 | `COST_PRO_PER_1K` / `COST_FLASH_PER_1K` | LLM 成本单价（元/千 token） |
-| `MONTHLY_BUDGET` | 月度预算熔断值 |
 | `PYTHON_EXE` | 脚本运行环境（换机器只改这里） |
 | `PANEL_TOKEN` | 可选；配置后非浏览器调用必须带 Bearer 头 |
 
@@ -218,7 +217,7 @@ novel-editorial/
 ├── webapp/                  # React + Vite + Tailwind 前端（Vitest）
 ├── desktop/                 # Electron 壳
 ├── n8n/                     # 遗留工作流 JSON（回退备份）
-├── scripts/                 # install_autostart.ps1 / install_daily_task.ps1 / finish_rename.ps1 ...
+├── scripts/                 # install_autostart.ps1 / install_daily_task.ps1 / inject_fanqie_cookie.py / watch_daily.py ...
 ├── docs/                    # evolution / planning / research / engineering / reviews
 ├── tests/                   # 448 个后端测试（unittest）
 └── demo.db                  # 运行数据库（gitignore）

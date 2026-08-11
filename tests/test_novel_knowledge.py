@@ -113,7 +113,9 @@ class NovelKnowledgeTests(unittest.TestCase):
         self.assertEqual(merged["merged_into"], "阴阳守恒")
         rows = novel_knowledge.get(self.conn, self.nid, category="world_rule")
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["version"], 3)
+        # Merged content is identical to the existing row, so version stays
+        # stable (no history churn for unchanged content).
+        self.assertEqual(rows[0]["version"], 2)
         # Conflicting content for a similar-but-distinct entity queues a draft.
         conflicted = novel_knowledge.upsert_ex(
             self.conn, self.nid, "world_rule", "阴阳守恒之律",

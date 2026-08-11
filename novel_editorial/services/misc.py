@@ -134,7 +134,7 @@ def load_meetings(conn, limit=20):
     return out
 
 
-def start_topic_meeting(topic, db_path="demo.db"):
+def start_topic_meeting(topic, db_path=str(config.DB_PATH)):
     """Launch a topic meeting in a background thread."""
     if not topic or not str(topic).strip():
         return {"ok": False, "error": "topic 不能为空"}
@@ -255,6 +255,8 @@ def update_diary(conn, diary_id, content):
 
 
 def update_state(conn, agent, novel_id, mood):
+    if not agent or not str(agent).strip():
+        return {"ok": False, "error": "agent required"}
     if not isinstance(mood, dict):
         return {"ok": False, "error": "mood must be an object"}
     conn.execute("DELETE FROM agent_states WHERE agent=? AND novel_id=?", (agent, novel_id))

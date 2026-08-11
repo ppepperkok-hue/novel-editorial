@@ -37,11 +37,14 @@ EXCLAMATION_PATTERN = re.compile(
 
 
 def count_occurrences(text, words):
+    """Per-word non-overlapping hits (same regex pass as `count_non_overlap`,
+    so the returned detail map and the density count share one basis)."""
     hits = {}
-    for w in words:
-        c = text.count(w)
-        if c:
-            hits[w] = c
+    if not words:
+        return hits
+    pattern = re.compile("|".join(re.escape(w) for w in words))
+    for m in pattern.finditer(text):
+        hits[m.group()] = hits.get(m.group(), 0) + 1
     return hits
 
 

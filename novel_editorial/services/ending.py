@@ -1,7 +1,6 @@
 """Ending lifecycle: status, next-book confirmation, book binding."""
 
 import json
-from pathlib import Path
 
 from novel_editorial import config
 from novel_editorial.services import audit

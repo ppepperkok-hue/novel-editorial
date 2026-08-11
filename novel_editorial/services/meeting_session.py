@@ -355,7 +355,9 @@ def _run_locked(conn, session_id):
     try:
         row = conn.execute("SELECT * FROM meeting_sessions WHERE id=?", (session_id,)).fetchone()
         if row is None:
-            return
+            raise RuntimeError(
+                f"meeting session {session_id} not found in the connected database"
+            )
         novel_id = row["novel_id"]
         topic = row["topic"]
         kind = str(row["kind"] or "topic").strip()

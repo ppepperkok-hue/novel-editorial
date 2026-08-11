@@ -79,6 +79,20 @@ MEMORY_CATEGORY_MAP = {
 }
 
 
+def _strip_inline_comment(value):
+    """Cut a trailing ``#`` comment that follows whitespace.
+
+    A ``#`` glued to the value (token/URL) is kept, so ``a=b#c`` stays
+    ``b#c`` while ``a=b # c`` becomes ``b``.
+    """
+    cut = len(value)
+    for sep in (" #", "\t#"):
+        idx = value.find(sep)
+        if idx != -1:
+            cut = min(cut, idx)
+    return value[:cut].strip() if cut < len(value) else value.strip()
+
+
 def load_env():
     """Load ~/.n8n/.env into a dict (without mutating os.environ), merged
     with already-set process environment variables."""
@@ -89,7 +103,7 @@ def load_env():
         for line in N8N_ENV_FILE.read_text(encoding="utf-8").splitlines():
             if "=" in line:
                 k, v = line.split("=", 1)
-                env.setdefault(k.strip(), v.strip())
+                env.setdefault(k.strip(), _strip_inline_comment(v))
     return env
 
 

@@ -536,12 +536,14 @@ def _preflight(ctx, conn, env, trigger, skip_lock=False):
         reasons.append("日更已暂停（可在面板恢复）")
     if not cookie_ok:
         reasons.append(cookie_reason)
-        preflight.alert("预检失败：" + cookie_reason)
+        if not ctx.dry_run:
+            preflight.alert("预检失败：" + cookie_reason)
     if already_ran:
         reasons.append("今日已发布过章节，跳过防重复")
     if not budget_ok:
         reasons.append(f"本月成本 {spent:.2f} 元已达预算 {budget:.2f} 元")
-        preflight.alert(reasons[-1])
+        if not ctx.dry_run:
+            preflight.alert(reasons[-1])
     if not book_ok:
         reasons.append(book_reason)
     if manual_requested:
@@ -557,21 +559,22 @@ def _preflight(ctx, conn, env, trigger, skip_lock=False):
             ctx.lock_path = lock_path
     if ok and manual_requested and not ctx.dry_run:
         set_many(conn, {"manual_run_requested": "0"})
-    audit.log(
-        conn,
-        "preflight",
-        "passed" if ok else "blocked",
-        target_type="novel",
-        detail={
-            "ok": ok,
-            "reasons": reasons,
-            "cookie_valid": cookie_ok,
-            "already_ran": already_ran,
-            "budget_ok": budget_ok,
-            "book_ok": book_ok,
-        },
-        source="preflight",
-    )
+    if not ctx.dry_run:
+        audit.log(
+            conn,
+            "preflight",
+            "passed" if ok else "blocked",
+            target_type="novel",
+            detail={
+                "ok": ok,
+                "reasons": reasons,
+                "cookie_valid": cookie_ok,
+                "already_ran": already_ran,
+                "budget_ok": budget_ok,
+                "book_ok": book_ok,
+            },
+            source="preflight",
+        )
     return {
         "ok": ok,
         "skipped": False,
@@ -672,10 +675,11 @@ def _sort_assignments_by_trust(conn, assignments, novel_id):
     Missing relationships sort as zero trust and keep their original order.
     """
     trust_map = {}
+    other_match, n = _relation_other_match(conn)
     for r in conn.execute(
         "SELECT agent, trust FROM agent_relations "
-        "WHERE other='eic' AND novel_id=?",
-        (novel_id,),
+        f"WHERE novel_id=? AND {other_match}",
+        [novel_id] + ["eic"] * n,
     ).fetchall():
         try:
             trust_map[r["agent"]] = float(r["trust"] or 0)
@@ -901,14 +905,30 @@ def _meeting_directives(conn, novel_id):
     return [str(d)[:300] for d in directives if str(d).strip()]
 
 
+def _relation_other_match(conn):
+    """SQL fragment matching the 'other' side of agent_relations.
+
+    Supports both pre-migration (other only) and post-migration
+    (other + other_agent) schemas, mirroring relations.ensure.
+    """
+    cols = {
+        str(r["name"])
+        for r in conn.execute("PRAGMA table_info(agent_relations)")
+    }
+    if "other_agent" in cols:
+        return "(other=? OR other_agent=?)", 2
+    return "other=?", 1
+
+
 def _review_tone(conn, writer_agent, reviewer_agent, novel_id):
     """R2-1-3: soften or sharpen rejection wording with relationship friction."""
     if not config.RELATION_WEIGHT:
         return ""
+    other_match, n = _relation_other_match(conn)
     row = conn.execute(
         "SELECT friction FROM agent_relations "
-        "WHERE agent=? AND other=? AND novel_id=?",
-        (writer_agent, reviewer_agent, novel_id),
+        f"WHERE agent=? AND novel_id=? AND {other_match}",
+        [writer_agent, novel_id] + [reviewer_agent] * n,
     ).fetchone()
     friction = float(row["friction"] or 0) if row else 0.0
     if friction >= 0.3:

@@ -170,6 +170,12 @@ export default function WorksPage({ data, pushToast }) {
   const [evoMap, setEvoMap] = useState({});
   const novels = data?.novels || [];
 
+  const loadEnding = () => {
+    getEndingStatus()
+      .then((r) => setEnding(r.novels || []))
+      .catch((e) => pushToast("刷新结束状态失败：" + e, "bad"));
+  };
+
   useEffect(() => {
     getEndingStatus()
       .then((r) => setEnding(r.novels || []))
@@ -299,7 +305,7 @@ export default function WorksPage({ data, pushToast }) {
               onClick={async () => {
                 const r = await confirmNextBook(nextBook.id);
                 pushToast(r.ok ? r.note : "失败：" + (r.error || "未知"), r.ok ? "ok" : "bad");
-                getEndingStatus().then((x) => setEnding(x.novels || []));
+                loadEnding();
               }}
             >
               确认创意，准备绑定番茄新书
@@ -322,7 +328,7 @@ export default function WorksPage({ data, pushToast }) {
                       pushToast("自动建书请求失败：" + e, "bad");
                     } finally {
                       setCreating(null);
-                      getEndingStatus().then((x) => setEnding(x.novels || []));
+                      loadEnding();
                     }
                   }}
                 >
@@ -357,7 +363,7 @@ export default function WorksPage({ data, pushToast }) {
                         pushToast("绑定请求失败：" + e, "bad");
                       } finally {
                         setBinding(null);
-                        getEndingStatus().then((x) => setEnding(x.novels || []));
+                        loadEnding();
                       }
                     }}
                   >
@@ -515,7 +521,7 @@ export default function WorksPage({ data, pushToast }) {
                           pushToast("删除请求失败：" + e, "bad");
                         } finally {
                           setDeleting(null);
-                          getEndingStatus().then((x) => setEnding(x.novels || []));
+                          loadEnding();
                         }
                       }}
                     >

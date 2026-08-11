@@ -94,6 +94,36 @@ def _spawn(target):
     threading.Thread(target=target, daemon=True).start()
 
 
+def _refresh_hot_topics(timeout=90):
+    """Run hot-topics collection off the HTTP thread, bounded by a timeout.
+
+    Returns the refresh payload when it finishes; on exception or timeout it
+    returns ``{"ok": False, "error": ...}``. A timed-out worker keeps running
+    and still writes hot_topics.json when it eventually completes.
+    """
+    from novel_editorial import hot_topics  # noqa: PLC0415
+
+    box = {}
+
+    def worker():
+        try:
+            box["payload"] = hot_topics.refresh(
+                out_path=str(config.HOT_TOPICS_JSON), browser_fallback=True
+            )
+        except Exception as exc:  # noqa: BLE001
+            box["error"] = f"{exc.__class__.__name__}: {exc}"
+            _alert(f"热点采集失败: {str(exc)[:300]}")
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    thread.join(timeout)
+    if "payload" in box:
+        return box["payload"]
+    if "error" in box:
+        return {"ok": False, "error": f"热点采集失败：{box['error']}"}
+    return {"ok": False, "error": "热点采集超时（已转入后台继续）"}
+
+
 def _run_cli(script_rel, args):
     cmd = [sys.executable, str(ROOT / script_rel), *args]
     try:
@@ -436,11 +466,18 @@ def handle_control(conn, payload):
         )
         return {"ok": True, "enabled": enabled, "workflow": wf}
     if action == "refresh_hot_topics":
-        from novel_editorial import hot_topics  # noqa: PLC0415
-
-        payload = hot_topics.refresh(
-            out_path=str(config.HOT_TOPICS_JSON), browser_fallback=True
-        )
+        payload = _refresh_hot_topics(timeout=90)
+        if payload.get("ok") is False:
+            audit.log(
+                conn,
+                "operation",
+                "refresh_hot_topics",
+                detail={"ok": False, "error": payload.get("error", "")},
+            )
+            return payload
+        sources = payload.get("sources", [])
+        errors = [src.get("error", "") for src in sources if src.get("error")]
+        ok = bool(sources) and len(errors) < len(sources)
         audit.log(
             conn, "operation", "refresh_hot_topics",
             detail={
@@ -449,11 +486,11 @@ def handle_control(conn, payload):
                     "count": src.get("count", 0),
                     "error": src.get("error", ""),
                 }
-                for src in payload.get("sources", [])
+                for src in sources
             },
         )
-        return {
-            "ok": True,
+        result = {
+            "ok": ok,
             "updated_at": payload.get("updated_at"),
             "sources": [
                 {
@@ -462,9 +499,16 @@ def handle_control(conn, payload):
                     "count": src.get("count", 0),
                     "error": src.get("error", ""),
                 }
-                for src in payload.get("sources", [])
+                for src in sources
             ],
         }
+        if not ok:
+            result["error"] = (
+                "全部热点源采集失败：" + "；".join(errors)
+                if errors
+                else "未获取到任何热点源结果"
+            )
+        return result
     if action == "run_knowledge_keeper":
         from tools import knowledge_keeper  # noqa: PLC0415
 

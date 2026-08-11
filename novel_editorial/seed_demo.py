@@ -18,6 +18,8 @@ DEMO_NOVEL = {
 
 
 def seed(conn, chapters=5, published=2, reviewed=2):
+    if min(chapters, published, reviewed) < 0:
+        raise ValueError("chapters/published/reviewed must be non-negative")
     published = min(published, chapters)
     reviewed = min(reviewed, chapters - published)
     draft = chapters - published - reviewed
@@ -65,6 +67,9 @@ def main():
     ap.add_argument("--published", type=int, default=2)
     ap.add_argument("--reviewed", type=int, default=2)
     args = ap.parse_args()
+    if min(args.chapters, args.published, args.reviewed) < 0:
+        print("seed 失败：chapters/published/reviewed must be non-negative", file=sys.stderr)
+        sys.exit(1)
     conn = db.connect(args.db)
     nid = seed(conn, chapters=args.chapters, published=args.published,
                reviewed=args.reviewed)

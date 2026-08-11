@@ -51,6 +51,31 @@ def load_hot_topics():
         return {}
 
 
+def _safe_json(value, default):
+    try:
+        data = json.loads(value or "")
+    except (TypeError, ValueError) as exc:
+        print(
+            f"note: 无效 JSON 数据，使用默认值: {str(value)[:120]} "
+            f"({str(exc)[:80]})",
+            file=sys.stderr,
+        )
+        return default
+    return data if data is not None else default
+
+
+def _safe_int(value, default):
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        print(
+            f"note: 非整数配置，使用默认值 {default}: {str(value)[:120]} "
+            f"({str(exc)[:80]})",
+            file=sys.stderr,
+        )
+        return default
+
+
 def _pending_actions(conn, agent):
     """Pending post-meeting action items for one agent (empty when no conn)."""
     if conn is None:
@@ -301,8 +326,8 @@ def build_materials(conn, novel_id, allow_empty=False):
         "published_chapters": len(published),
         "stock_chapters": stock,
         "monthly_cost_tokens": {"prompt": cost_row["pt"], "completion": cost_row["ct"]},
-        "daily_chapters": int(settings.get("daily_chapters") or 2),
-        "target_chapters": int(settings.get("target_chapters") or 0),
+        "daily_chapters": _safe_int(settings.get("daily_chapters"), 2),
+        "target_chapters": _safe_int(settings.get("target_chapters"), 0),
         "character_states": char_states,
         "quality_summary": {
             "total": quality["total"] or 0,
@@ -370,7 +395,7 @@ def build_materials(conn, novel_id, allow_empty=False):
             "my_pending_actions": _pending_actions(conn, "memory"),
         },
         "work_meta": {
-            "tags": json.loads(row["tags"] or "[]"),
+            "tags": _safe_json(row["tags"], []),
             "abstract": row["abstract"],
             "volume_goal": row["volume_goal"],
             "my_pending_actions": _pending_actions(conn, "work_meta"),
@@ -382,7 +407,7 @@ def build_materials(conn, novel_id, allow_empty=False):
         },
         "ending_judge": {
             "published": len(published),
-            "target": int(settings.get("target_chapters") or 0),
+            "target": _safe_int(settings.get("target_chapters"), 0),
             "open_plot_threads": len(threads),
             "last_chapter_seq": context["last_chapter_seq"],
             "my_pending_actions": _pending_actions(conn, "ending_judge"),

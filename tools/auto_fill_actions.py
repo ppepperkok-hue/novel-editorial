@@ -51,9 +51,10 @@ def collect_evidence(conn, novel_id, days=1):
     evidence = {"date": since, "novel_id": novel_id}
 
     rows = conn.execute(
-        "SELECT action, result, chapter_id, error, created_at FROM publish_logs "
-        "WHERE created_at >= ? ORDER BY id",
-        (since,),
+        "SELECT pl.action, pl.result, pl.chapter_id, pl.error, pl.created_at "
+        "FROM publish_logs pl JOIN chapters c ON c.id=pl.chapter_id "
+        "WHERE pl.created_at >= ? AND c.novel_id=? ORDER BY pl.id",
+        (since, novel_id),
     ).fetchall()
     evidence["publish_logs"] = [dict(r) for r in rows]
 

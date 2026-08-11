@@ -21,9 +21,40 @@ param(
 )
 
 $projectDir = Split-Path -Parent $PSScriptRoot
-$python = $env:PYTHON_EXE
+
+function Resolve-PythonExe {
+    # 1) Explicit overrides, same keys the desktop shell honors.
+    foreach ($envKey in @("PYTHONW_EXE", "PYTHON_EXE")) {
+        $candidate = [Environment]::GetEnvironmentVariable($envKey)
+        if (-not $candidate) { continue }
+        if (-not [System.IO.Path]::IsPathRooted($candidate)) {
+            $candidate = Join-Path $projectDir $candidate
+        }
+        if (Test-Path -LiteralPath $candidate) { return $candidate }
+        Write-Error "`$$envKey 指向不存在的文件：$candidate"
+        return $null
+    }
+    # 2) Bundled interpreters next to the pipeline (packaged layout).
+    $bundled = @(
+        (Join-Path $projectDir ".venv\Scripts\pythonw.exe"),
+        (Join-Path $projectDir ".venv\Scripts\python.exe"),
+        (Join-Path $projectDir "python\pythonw.exe"),
+        (Join-Path $projectDir "pythonw.exe")
+    )
+    foreach ($candidate in $bundled) {
+        if (Test-Path -LiteralPath $candidate) { return $candidate }
+    }
+    # 3) PATH lookup.
+    $cmd = Get-Command pythonw -ErrorAction SilentlyContinue
+    if (-not $cmd) { $cmd = Get-Command python -ErrorAction SilentlyContinue }
+    if ($cmd) { return $cmd.Source }
+    return $null
+}
+
+$python = Resolve-PythonExe
 if (-not $python) {
-    $python = (Get-Command python).Source
+    Write-Error "未找到 Python 解释器：请设置 PYTHONW_EXE/PYTHON_EXE（绝对路径），或在 PATH 中提供 pythonw/python，然后重试。计划任务未注册。"
+    exit 1
 }
 if ([System.IO.Path]::IsPathRooted($DbPath)) {
     $dbPath = $DbPath

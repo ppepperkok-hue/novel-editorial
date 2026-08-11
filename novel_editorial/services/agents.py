@@ -79,6 +79,15 @@ def agents_list():
     return agents
 
 
+def _restore_agent_file(path, original):
+    """Best-effort restore; returns an error suffix when rollback fails."""
+    try:
+        path.write_text(original, encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        return f"; rollback failed: {exc}"
+    return ""
+
+
 def agent_save(payload, conn=None):
     f = str(payload.get("file") or "")
     path = (config.AGENTS_DIR / f).resolve()
@@ -97,17 +106,24 @@ def agent_save(payload, conn=None):
     prompt = str(payload.get("prompt") or "").strip()
     if len(prompt) < 20:
         return {"ok": False, "error": "prompt too short"}
-    original = path.read_text(encoding="utf-8")
+    try:
+        original = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        return {"ok": False, "error": f"read failed: {exc}"}
     old_head = original.split("---", 2)
     extra = ""
     if len(old_head) >= 3:
         for line in old_head[1].strip().splitlines():
             if ":" in line and not line.strip().startswith(("model:", "temperature:")):
                 extra += line.strip() + "\n"
-    path.write_text(
-        f"---\nmodel: {model}\ntemperature: {temperature}\n{extra}---\n\n{prompt}\n",
-        encoding="utf-8",
-    )
+    try:
+        path.write_text(
+            f"---\nmodel: {model}\ntemperature: {temperature}\n{extra}---\n\n{prompt}\n",
+            encoding="utf-8",
+        )
+    except (OSError, UnicodeError) as exc:
+        rollback = _restore_agent_file(path, original)
+        return {"ok": False, "error": f"write failed: {exc}{rollback}"}
     try:
         rendered = subprocess.run(
             [sys.executable, str(config.ROOT / "tools" / "render_workflow.py")],
@@ -127,16 +143,14 @@ def agent_save(payload, conn=None):
             errors="replace",
             timeout=60,
         )
-    except (OSError, subprocess.SubprocessError) as e:
-        return {"ok": False, "error": f"render/validate failed: {e}"}
+    except (OSError, subprocess.SubprocessError) as exc:
+        rollback = _restore_agent_file(path, original)
+        return {"ok": False, "error": f"render/validate failed: {exc}{rollback}"}
     if rendered.returncode != 0 or validated.returncode != 0:
-        try:
-            path.write_text(original, encoding="utf-8")
-        except OSError:
-            pass
+        rollback = _restore_agent_file(path, original)
         return {
             "ok": False,
-            "error": "render/validate failed",
+            "error": f"render/validate failed{rollback}",
             "render": (rendered.stdout or rendered.stderr).strip()[-300:],
             "validation": validated.returncode == 0,
             "validation_output": (validated.stdout or validated.stderr).strip()[-300:],

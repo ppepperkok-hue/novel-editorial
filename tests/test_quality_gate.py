@@ -1,10 +1,11 @@
+import json
 import tempfile
 import unittest
 import warnings
 from pathlib import Path
 from unittest import mock
 
-from novel_editorial import quality_gate
+from novel_editorial import compliance, quality_gate
 
 
 class QualityGateTests(unittest.TestCase):
@@ -50,6 +51,20 @@ class QualityGateTests(unittest.TestCase):
                 words = quality_gate._load_ai_flavor_words()
         self.assertEqual(words, quality_gate._DEFAULT_AI_FLAVOR_WORDS)
         self.assertTrue(any(w.category is RuntimeWarning for w in caught))
+
+    def test_real_ai_words_file_is_valid(self):
+        self.assertTrue(quality_gate._WORDS_FILE.exists())
+        data = json.loads(quality_gate._WORDS_FILE.read_text(encoding="utf-8"))
+        words = data["ai_flavor"]
+        self.assertIsInstance(words, list)
+        self.assertTrue(words)
+        self.assertTrue(all(isinstance(w, str) and w for w in words))
+
+    def test_real_compliance_words_file_has_at_least_one_word(self):
+        self.assertTrue(compliance.WORDS_FILE.exists())
+        words = compliance._read_custom_words()
+        self.assertIsInstance(words, list)
+        self.assertTrue(words)
 
     def test_score_passes_clean_chapter(self):
         text = "重生之后的第一个清晨，林舟坐在高三教室里。" * 60

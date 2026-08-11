@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT))
 from novel_editorial import db  # noqa: E402
 from novel_editorial.llm_client import chat_deepseek, estimate_cost  # noqa: E402
 from novel_editorial.services import activity  # noqa: E402
+from novel_editorial.services import audit  # noqa: E402
 from tools import promises  # noqa: E402
 
 AGENTS_DIR = ROOT / "prompts" / "agents"
@@ -142,101 +143,119 @@ def clean_old(conn):
 def write(conn, novel_id, mode, dry_run=False, materials=None):
     results = []
     for agent in AGENTS:
-        md = AGENTS_DIR / f"{agent}.md"
-        if not md.exists():
-            continue
-        system = md.read_text(encoding="utf-8")
-        if mode == "daily":
-            payload = daily_payload(conn, novel_id)
-            user = (
-                "写今日日记。今天的工作数据：\n"
-                + json.dumps(payload, ensure_ascii=False)
-            )
-        else:
-            payload = weekly_payload(conn, novel_id, agent)
-            brief = ((materials or {}).get("agent_briefs") or {}).get(agent, {})
-            user = (
-                "写本周日记，回顾这周我干了什么、关键事件、学到的东西、看法变化、心情变化，"
-                "并额外输出 mood 字段 {satisfaction(0-1), concern(0-1), excitement(0-1), fatigue(0-1), note}。"
-                "我的本周简报：" + json.dumps(brief, ensure_ascii=False)
-                + "；本周我的日记与上周周记：\n"
-                + json.dumps(payload, ensure_ascii=False)
-            )
-        if dry_run:
-            content = {
-                "what_done": f"[dry-run] {agent} 本周工作占位",
-                "observations": [],
-                "feelings": "平静",
-                "concerns": [],
-                "thoughts": "dry-run",
-            }
-            usage = {"prompt_tokens": 0, "completion_tokens": 0}
-            model = "dry-run"
-        else:
-            resp = chat_deepseek("deepseek-v4-flash", system, user, temperature=0.6, max_tokens=1200)
-            content = parse_json(resp["text"]) or {"raw": resp["text"][:2000]}
-            usage = resp["usage"]
-            model = resp["model"]
-        if not dry_run:
-            conn.execute(
-                "INSERT INTO agent_diaries(agent,novel_id,diary_type,content,created_at) "
-                "VALUES(?,?,?,?,datetime('now','localtime'))",
-                (agent, novel_id, mode, json.dumps(content, ensure_ascii=False)),
-            )
-            if mode == "weekly":
-                mood = content.get("mood") if isinstance(content, dict) else None
-                if isinstance(mood, dict):
-                    mood.setdefault("note", "")
-                else:
-                    mood = {"satisfaction": 0.5, "concern": 0.5, "excitement": 0.5, "fatigue": 0.3, "note": ""}
-                conn.execute("DELETE FROM agent_states WHERE agent=? AND novel_id=?", (agent, novel_id))
-                conn.execute(
-                    "INSERT INTO agent_states(agent,novel_id,mood,updated_at) "
-                    "VALUES(?,?,?,datetime('now','localtime'))",
-                    (agent, novel_id, json.dumps(mood, ensure_ascii=False)),
+        try:
+            md = AGENTS_DIR / f"{agent}.md"
+            if not md.exists():
+                continue
+            system = md.read_text(encoding="utf-8")
+            if mode == "daily":
+                payload = daily_payload(conn, novel_id)
+                user = (
+                    "写今日日记。今天的工作数据：\n"
+                    + json.dumps(payload, ensure_ascii=False)
                 )
-        if mode == "weekly" and not dry_run and isinstance(content, dict):
-            opinions = content.get("opinions_changed")
-            if isinstance(opinions, list):
-                for op in opinions:
-                    text = str(op).strip()
-                    if text:
-                        conn.execute(
-                            "INSERT INTO agent_memories("
-                            "agent,novel_id,category,importance,content,source,created_at) "
-                            "VALUES(?,?,'opinion',0.7,?,'weekly',datetime('now','localtime'))",
-                            (agent, novel_id, text[:500]),
-                        )
-        if (
-            mode == "weekly"
-            and not dry_run
-            and isinstance(content, dict)
-            and isinstance(content.get("promises"), list)
-            and content["promises"]
-        ):
-            promises.record_promises(
-                conn, agent, novel_id, content["promises"], source="weekly"
+            else:
+                payload = weekly_payload(conn, novel_id, agent)
+                brief = ((materials or {}).get("agent_briefs") or {}).get(agent, {})
+                user = (
+                    "写本周日记，回顾这周我干了什么、关键事件、学到的东西、看法变化、心情变化，"
+                    "并额外输出 mood 字段 {satisfaction(0-1), concern(0-1), excitement(0-1), fatigue(0-1), note}。"
+                    "我的本周简报：" + json.dumps(brief, ensure_ascii=False)
+                    + "；本周我的日记与上周周记：\n"
+                    + json.dumps(payload, ensure_ascii=False)
+                )
+            if dry_run:
+                content = {
+                    "what_done": f"[dry-run] {agent} 本周工作占位",
+                    "observations": [],
+                    "feelings": "平静",
+                    "concerns": [],
+                    "thoughts": "dry-run",
+                }
+                usage = {"prompt_tokens": 0, "completion_tokens": 0}
+                model = "dry-run"
+            else:
+                resp = chat_deepseek("deepseek-v4-flash", system, user, temperature=0.6, max_tokens=1200)
+                content = parse_json(resp["text"]) or {"raw": resp["text"][:2000]}
+                usage = resp["usage"]
+                model = resp["model"]
+            if not dry_run:
+                conn.execute(
+                    "INSERT INTO agent_diaries(agent,novel_id,diary_type,content,created_at) "
+                    "VALUES(?,?,?,?,datetime('now','localtime'))",
+                    (agent, novel_id, mode, json.dumps(content, ensure_ascii=False)),
+                )
+                if mode == "weekly":
+                    mood = content.get("mood") if isinstance(content, dict) else None
+                    if isinstance(mood, dict):
+                        mood.setdefault("note", "")
+                    else:
+                        mood = {"satisfaction": 0.5, "concern": 0.5, "excitement": 0.5, "fatigue": 0.3, "note": ""}
+                    conn.execute("DELETE FROM agent_states WHERE agent=? AND novel_id=?", (agent, novel_id))
+                    conn.execute(
+                        "INSERT INTO agent_states(agent,novel_id,mood,updated_at) "
+                        "VALUES(?,?,?,datetime('now','localtime'))",
+                        (agent, novel_id, json.dumps(mood, ensure_ascii=False)),
+                    )
+            if mode == "weekly" and not dry_run and isinstance(content, dict):
+                opinions = content.get("opinions_changed")
+                if isinstance(opinions, list):
+                    for op in opinions:
+                        text = str(op).strip()
+                        if text:
+                            conn.execute(
+                                "INSERT INTO agent_memories("
+                                "agent,novel_id,category,importance,content,source,created_at) "
+                                "VALUES(?,?,'opinion',0.7,?,'weekly',datetime('now','localtime'))",
+                                (agent, novel_id, text[:500]),
+                            )
+            if (
+                mode == "weekly"
+                and not dry_run
+                and isinstance(content, dict)
+                and isinstance(content.get("promises"), list)
+                and content["promises"]
+            ):
+                promises.record_promises(
+                    conn, agent, novel_id, content["promises"], source="weekly"
+                )
+            if not dry_run:
+                record_cost(conn, novel_id, agent, usage, model)
+            if not dry_run:
+                activity.log_activity(
+                    conn,
+                    agent,
+                    novel_id,
+                    "diary",
+                    f"写了{('周记' if mode == 'weekly' else '今日日记')}",
+                    {
+                        "diary_type": mode,
+                        "what_done": str((content.get("what_done") or content.get("week_summary") or "")[:200])
+                        if isinstance(content, dict)
+                        else "",
+                        "feelings": str((content.get("feelings") or "")[:100])
+                        if isinstance(content, dict)
+                        else "",
+                    },
+                )
+            results.append({"agent": agent, "type": mode, "ok": True})
+        except Exception as exc:  # noqa: BLE001 - per-agent isolation
+            error = str(exc)[:300]
+            results.append(
+                {"agent": agent, "type": mode, "ok": False, "error": error}
             )
-        if not dry_run:
-            record_cost(conn, novel_id, agent, usage, model)
-        if not dry_run:
-            activity.log_activity(
+            print(
+                f"[write_diaries] {mode} {agent} 日记写入失败，已跳过: {error}",
+                file=sys.stderr,
+            )
+            audit.log(
                 conn,
-                agent,
-                novel_id,
                 "diary",
-                f"写了{('周记' if mode == 'weekly' else '今日日记')}",
-                {
-                    "diary_type": mode,
-                    "what_done": str((content.get("what_done") or content.get("week_summary") or "")[:200])
-                    if isinstance(content, dict)
-                    else "",
-                    "feelings": str((content.get("feelings") or "")[:100])
-                    if isinstance(content, dict)
-                    else "",
-                },
+                "diary_failed",
+                target_type="agent",
+                target_id=agent,
+                detail={"mode": mode, "error": error},
             )
-        results.append({"agent": agent, "type": mode, "ok": True})
     if mode == "weekly" and not dry_run:
         settle = promises.settle_promises(conn, novel_id)
         activity.log_activity(
@@ -261,11 +280,22 @@ def write(conn, novel_id, mode, dry_run=False, materials=None):
         ).fetchone()["c"]
     else:
         clean_old(conn)
-    out = {"ok": True, "mode": mode, "written": len(results)}
+    failed = [r for r in results if not r.get("ok")]
+    out = {
+        "ok": not failed,
+        "mode": mode,
+        "written": len(results) - len(failed),
+    }
+    if failed:
+        out["failed"] = failed
+        out["error"] = "; ".join(
+            f"{r['agent']}: {r.get('error') or 'unknown'}" for r in failed
+        )[:300]
     if dry_run:
         out["dry_run"] = True
         out["would_clean_old"] = stale
     print(json.dumps(out, ensure_ascii=False))
+    return out
 
 
 def main():

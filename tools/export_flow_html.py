@@ -51,6 +51,7 @@ EDGE_COLOR = {
     "warn": "#f59e0b",
     "bad": "#ef4444",
     "run": "#3b82f6",
+    "skip": "#a78bfa",
     "idle": "#64748b",
 }
 
@@ -70,6 +71,7 @@ def render_html(conn):
         "failed": "上次失败",
         "error": "上次失败",
         "running": "运行中",
+        "skipped": "已跳过",
     }.get(status, "待命（暂无运行）")
     status_class = {
         "completed": "ok",
@@ -78,6 +80,7 @@ def render_html(conn):
         "failed": "bad",
         "error": "bad",
         "running": "run",
+        "skipped": "skip",
         "idle": "idle",
     }.get(status, "idle")
     summary = (
@@ -106,7 +109,7 @@ def render_html(conn):
   .status {{ font-weight: 600; }}
   .status.ok {{ color: #22c55e; }} .status.warn {{ color: #f59e0b; }}
   .status.bad {{ color: #ef4444; }} .status.run {{ color: #3b82f6; }}
-  .status.idle {{ color: #9ca3af; }}
+  .status.idle {{ color: #9ca3af; }} .status.skip {{ color: #a78bfa; }}
   .muted {{ color: #9ca3af; font-size: 12px; }}
   .err {{ color: #f87171; font-size: 12px; max-width: 520px; overflow: hidden;
          text-overflow: ellipsis; white-space: nowrap; }}
@@ -119,6 +122,7 @@ def render_html(conn):
   .node.warn {{ border-color: rgba(245,158,11,.7); }}
   .node.bad {{ border-color: rgba(239,68,68,.75); }}
   .node.run {{ border-color: rgba(59,130,246,.9); animation: pulse 1.6s infinite; }}
+  .node.skip {{ border-color: rgba(167,139,250,.65); }}
   .node.failed {{ border-width: 2px; border-color: #ef4444;
                  background: rgba(239,68,68,.14); }}
   @keyframes pulse {{ 0%,100% {{ box-shadow: 0 0 0 0 rgba(59,130,246,.45); }}
@@ -140,7 +144,8 @@ const FLOW = JSON.parse(document.getElementById("flow-data").textContent);
 const GROUP_X = {json.dumps(GROUP_X)};
 const GROUP_LABEL = {json.dumps(GROUP_LABEL)};
 const EDGE = {json.dumps(EDGE_COLOR)};
-const STATUS = FLOW.last_run && FLOW.last_run.status || "idle";
+const STATUS_MAP = {{completed:"ok", success:"ok", partial:"warn", failed:"bad", error:"bad", running:"run", skipped:"skip", idle:"idle"}};
+const STATUS = STATUS_MAP[FLOW.last_run && FLOW.last_run.status || "idle"] || "idle";
 const FAILED = new Set(FLOW.failed_ids || []);
 function layout() {{
   const byGroup = {{}};
@@ -187,7 +192,7 @@ function render() {{
   }});
   const legend = document.createElement("div");
   legend.style.cssText = "position:absolute;left:0;bottom:-28px;font-size:12px;color:#9ca3af;";
-  legend.textContent = "图例：" + Object.values(GROUP_LABEL).join(" · ") + " ｜ 绿=成功 橙=部分 红=失败 蓝=运行中 灰=待命";
+  legend.textContent = "图例：" + Object.values(GROUP_LABEL).join(" · ") + " ｜ 绿=成功 橙=部分 红=失败 蓝=运行中 紫=已跳过 灰=待命";
   canvas.appendChild(legend);
 }}
 render();

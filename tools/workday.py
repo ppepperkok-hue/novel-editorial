@@ -395,9 +395,10 @@ def main():
                 dry_run=args.dry_run, db_path=str(db_path),
             )
         print(json.dumps(result, ensure_ascii=False))
+        return 0 if result.get("ok") else 1
     finally:
         conn.close()
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

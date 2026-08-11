@@ -105,24 +105,43 @@ def find_similar(conn, novel_id, category, entity, limit=5):
     return scored[:limit]
 
 
+def _ensure_drafts_schema(conn):
+    """Idempotently add per-novel/category columns to knowledge_drafts.
+
+    SQLite ALTER TABLE ADD COLUMN upgrades existing databases in place;
+    legacy rows keep NULL novel_id and are still matched via the title prefix.
+    """
+    cols = {
+        r["name"]
+        for r in conn.execute("PRAGMA table_info(knowledge_drafts)").fetchall()
+    }
+    if "novel_id" not in cols:
+        conn.execute("ALTER TABLE knowledge_drafts ADD COLUMN novel_id INTEGER")
+    if "category" not in cols:
+        conn.execute("ALTER TABLE knowledge_drafts ADD COLUMN category TEXT DEFAULT ''")
+    conn.commit()
+
+
 def _add_conflict_draft(conn, novel_id, category, entity, content):
     """Write a knowledge-draft row when an entity conflicts with a similar one.
 
-    knowledge_drafts has no novel_id column, so the draft title is namespaced
-    per novel: the same entity in different books keeps its own draft.
+    Drafts are isolated per novel via knowledge_drafts.novel_id; legacy rows
+    without a novel_id fall back to the title-prefix match.
     """
+    _ensure_drafts_schema(conn)
     title = f"[小说{novel_id}] {entity}"
     existing = conn.execute(
         "SELECT id FROM knowledge_drafts WHERE kind='knowledge' "
-        "AND source='auto_conflict' AND title IN (?, ?) AND status='draft'",
-        (title, entity),
+        "AND source='auto_conflict' AND status='draft' "
+        "AND (novel_id=? OR (novel_id IS NULL AND title IN (?, ?)))",
+        (novel_id, title, entity),
     ).fetchone()
     if existing:
         return None
     cur = conn.execute(
-        "INSERT INTO knowledge_drafts(kind,agent,source,title,content,status,created_at) "
-        "VALUES('knowledge','knowledge_sync','auto_conflict',?,?, 'draft', ?)",
-        (title, content, _now()),
+        "INSERT INTO knowledge_drafts(kind,agent,source,title,content,category,novel_id,status,created_at) "
+        "VALUES('knowledge','knowledge_sync','auto_conflict',?,?,?,?, 'draft', ?)",
+        (title, content, category, novel_id, _now()),
     )
     return cur.lastrowid
 
@@ -198,10 +217,9 @@ def upsert_ex(
     else:
         kid = row["id"]
         similar = []
-        if row["content"] == content and not change_note:
-            # Same content and no explicit note (e.g. repeated chapter sync):
-            # idempotent upsert, no version/history churn. Merge events carry
-            # a change_note and still get versioned for auditability.
+        if row["content"] == content:
+            # Same content: idempotent upsert, no version/history churn.
+            # change_note is only persisted when content actually changes.
             conn.commit()
             return {
                 "id": kid,
@@ -615,6 +633,7 @@ def sync_latest(conn):
         "ok": True,
         "novel_id": row["novel_id"],
         "updated": updated,
+        "count": len(updated),
         "skipped": chapter_result.get("skipped", []),
     }
 

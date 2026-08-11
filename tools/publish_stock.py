@@ -240,6 +240,24 @@ def publish_batch(conn, novel_id, target, env):
             "failures": [],
             "warnings": ["作品已完结或无此作品，停止发布"],
         }
+    remaining = int(novel["finish_remaining"] or 0)
+    # R7-E-01: finishing with no remaining chapters means the ending quota is
+    # exhausted; finalize the book instead of publishing more chapters.
+    if novel["status"] == "finishing" and remaining <= 0:
+        conn.execute(
+            "UPDATE novels SET status='finished', finish_remaining=0 WHERE id=?",
+            (novel["id"],),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO settings(key,value) VALUES('daily_enabled','false')"
+        )
+        conn.commit()
+        return {
+            "target": target,
+            "published": 0,
+            "failures": [],
+            "warnings": ["收尾余量已用完，作品按已完结处理，停止发布"],
+        }
     rows = conn.execute(
         "SELECT c.id, c.novel_id, c.seq, c.title, c.status, "
         "COALESCE(cc.content, '') AS content "
@@ -259,7 +277,6 @@ def publish_batch(conn, novel_id, target, env):
     failures = []
     warnings = []
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    remaining = int(novel["finish_remaining"] or 0)
     for ch in rows:
         try:
             ok, item_id, error = publish_chapter(conn, ch, env)

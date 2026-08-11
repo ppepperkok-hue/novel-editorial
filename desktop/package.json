@@ -35,6 +35,8 @@
         "filter": [
           "novel_editorial/**",
           "tools/**",
+          "!tools/chrome-profile",
+          "!tools/chrome-profile/**",
           "scripts/**",
           "prompts/**",
           "webapp/dist/**",

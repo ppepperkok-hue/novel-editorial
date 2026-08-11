@@ -11,8 +11,6 @@ from __future__ import annotations
 
 import json
 
-from novel_editorial import config
-from novel_editorial.services import audit
 from tools import meeting_kinds
 
 
@@ -28,8 +26,9 @@ def run_post_actions(conn, session_id, meeting_id, novel_id, kind, report,
                      transcript=None, attendees=None):
     """Apply kind-specific post-meeting side effects, exactly once per session.
 
-    The idempotency marker is only committed after the side effects succeed;
-    on failure the marker is cleaned up again so the same session can retry.
+    Side effects and the idempotency marker are written in one transaction; a
+    failed run rolls back cleanly so the same session can retry without
+    duplicating drafts or audit rows.
     """
     spec = meeting_kinds.MEETING_KINDS.get(
         str(kind or "topic"), meeting_kinds.MEETING_KINDS["topic"]
@@ -76,23 +75,37 @@ def run_post_actions(conn, session_id, meeting_id, novel_id, kind, report,
                     created += 1
             results["knowledge_drafts"] = created
         if "review" in actions:
-            audit.log(
-                conn, "meeting", "ending_review_recorded",
-                target_type="session", target_id=str(session_id),
-                detail={
-                    "recommendation": str(report.get("recommendation") or "")[:200],
-                    "kind": kind,
-                },
+            conn.execute(
+                "INSERT INTO audit_logs(created_at,category,action,target_type,target_id,detail,source) "
+                "VALUES(datetime('now','localtime'),'meeting','ending_review_recorded','session',?,?,?)",
+                (
+                    str(session_id),
+                    json.dumps(
+                        {
+                            "recommendation": str(report.get("recommendation") or "")[:200],
+                            "kind": kind,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    "web",
+                ),
             )
             results["review"] = True
         if "critique" in actions:
-            audit.log(
-                conn, "meeting", "critique_recorded",
-                target_type="session", target_id=str(session_id),
-                detail={
-                    "verdict": str(report.get("verdict") or "")[:200],
-                    "kind": kind,
-                },
+            conn.execute(
+                "INSERT INTO audit_logs(created_at,category,action,target_type,target_id,detail,source) "
+                "VALUES(datetime('now','localtime'),'meeting','critique_recorded','session',?,?,?)",
+                (
+                    str(session_id),
+                    json.dumps(
+                        {
+                            "verdict": str(report.get("verdict") or "")[:200],
+                            "kind": kind,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    "web",
+                ),
             )
             results["critique"] = True
         conn.execute(
@@ -107,12 +120,5 @@ def run_post_actions(conn, session_id, meeting_id, novel_id, kind, report,
         conn.commit()
     except Exception:
         conn.rollback()
-        conn.execute(
-            "DELETE FROM audit_logs WHERE category='meeting' "
-            "AND action='post_actions_applied' AND target_type='session' "
-            "AND target_id=?",
-            (str(session_id),),
-        )
-        conn.commit()
         raise
     return {"ok": True, "results": results}

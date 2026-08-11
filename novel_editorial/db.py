@@ -343,13 +343,31 @@ CREATE TABLE IF NOT EXISTS daily_runs (
 """
 
 
+def _is_memory_db(db_path):
+    path = str(db_path)
+    return path == ":memory:" or path.startswith("file::memory:")
+
+
 def connect(db_path):
     """Connect to the SQLite database.
 
     Schema creation/migration runs exactly once per database path (process
     lifetime); subsequent connects are lightweight and set per-connection
     pragmas. WAL mode is enabled once and persists in the database file.
+    In-memory databases run the schema on every fresh connection, because each
+    ``:memory:`` connection owns a distinct database.
     """
+    if _is_memory_db(db_path):
+        conn = sqlite3.connect(
+            str(db_path), timeout=15, uri=str(db_path).startswith("file:")
+        )
+        conn.row_factory = sqlite3.Row
+        with _INIT_LOCK:
+            conn.executescript(SCHEMA)
+            _migrate(conn)
+        conn.execute("PRAGMA foreign_keys=ON")
+        return conn
+
     key = str(Path(db_path).resolve())
     with _INIT_LOCK:
         if key not in _INITIALIZED:

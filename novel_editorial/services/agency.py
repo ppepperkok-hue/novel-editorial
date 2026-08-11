@@ -20,7 +20,7 @@ def _err(message):
 
 
 def _dispatch(conn, agent, novel_id, name, item):
-    """Execute one whitelisted action; returns True on success."""
+    """Execute one whitelisted action; returns (ok, reason)."""
     from novel_editorial.services import activity  # noqa: PLC0415
     from tools import mailroom  # noqa: PLC0415
 
@@ -29,15 +29,15 @@ def _dispatch(conn, agent, novel_id, name, item):
     ).strip()
     if name == "write_report":
         if not body:
-            return False
+            return False, "empty body"
         activity.log_activity(
             conn, agent, novel_id, "agency_report", body[:500],
             {"source": "agency"},
         )
-        return True
+        return True, ""
     if name == "update_draft":
         if not body:
-            return False
+            return False, "empty body"
         conn.execute(
             "INSERT INTO knowledge_drafts(kind,agent,source,title,content,status,created_at) "
             "VALUES('lesson',?,'agency',?,?,'draft',datetime('now','localtime'))",
@@ -47,36 +47,42 @@ def _dispatch(conn, agent, novel_id, name, item):
                 body[:4000],
             ),
         )
-        return True
+        return True, ""
     if name == "post_issue":
         if not body:
-            return False
+            return False, "empty body"
         r = mailroom.send(
             conn, agent, "eic", body[:400],
             subject="议题提议", kind="topic_request", novel_id=novel_id,
         )
-        return bool(r.get("ok"))
+        if r.get("ok"):
+            return True, ""
+        return False, str(r.get("error") or "post_issue rejected")
     if name == "claim_task":
         raw_id = item.get("action_id")
         if isinstance(raw_id, bool) or not isinstance(raw_id, (int, str)):
-            return False
+            return False, "action_id must be an integer"
         if isinstance(raw_id, str) and not raw_id.strip().isdigit():
-            return False
+            return False, "action_id must be an integer"
         action_id = int(raw_id)
         if action_id <= 0:
-            return False
+            return False, "action_id must be positive"
         r = activity.claim_action(conn, action_id, agent, novel_id=novel_id)
-        return bool(r.get("ok"))
+        if r.get("ok"):
+            return True, ""
+        return False, str(r.get("error") or "claim_action rejected")
     if name == "propose":
         if not body:
-            return False
+            return False, "empty body"
         r = activity.create_action(
             conn, agent, body[:300], novel_id=novel_id,
             detail={"source": "agency"},
             priority=str(item.get("priority") or "medium"),
         )
-        return bool(r.get("ok"))
-    return False
+        if r.get("ok"):
+            return True, ""
+        return False, str(r.get("error") or "create_action rejected")
+    return False, "unknown action"
 
 
 def apply(conn, agent, novel_id, actions):
@@ -96,12 +102,12 @@ def apply(conn, agent, novel_id, actions):
             audit.log(
                 conn, "agency", "rejected",
                 target_type="agent", target_id=agent,
-                detail={"action": name, "novel_id": novel_id},
+                detail={"action": name, "novel_id": novel_id, "reason": "unknown action"},
             )
             rejected += 1
             continue
         try:
-            ok = _dispatch(conn, agent, novel_id, name, item)
+            ok, reason = _dispatch(conn, agent, novel_id, name, item)
         except Exception as exc:  # noqa: BLE001
             audit.log(
                 conn, "agency", name,
@@ -110,6 +116,7 @@ def apply(conn, agent, novel_id, actions):
                     "novel_id": novel_id,
                     "error": f"{exc.__class__.__name__}: {exc}",
                     **item,
+                    "reason": "dispatch exception",
                 },
             )
             rejected += 1
@@ -117,7 +124,7 @@ def apply(conn, agent, novel_id, actions):
         audit.log(
             conn, "agency", name,
             target_type="agent", target_id=agent,
-            detail={"novel_id": novel_id, **item, "ok": ok},
+            detail={"novel_id": novel_id, **item, "ok": ok, "reason": reason},
         )
         if ok:
             applied += 1

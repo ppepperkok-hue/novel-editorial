@@ -147,8 +147,11 @@ def make_handler(db_path):
         try:
             qs = parse_qs(parsed.query)
             limit = _parse_int(qs.get("limit", ["30"])[0], 30)
-            daily_runs.sync_from_n8n(conn, limit=limit)
-            self._json({"runs": daily_runs.list_runs(conn, limit=limit)})
+            sync_result = daily_runs.sync_from_n8n(conn, limit=limit)
+            payload = {"runs": daily_runs.list_runs(conn, limit=limit)}
+            if sync_result.get("error"):
+                payload["sync_error"] = sync_result["error"]
+            self._json(payload)
         finally:
             conn.close()
 
@@ -657,7 +660,14 @@ def make_handler(db_path):
                     )
                     return
                 raw = self.rfile.read(length) if length else b"{}"
-                payload = json.loads(raw.decode("utf-8") or "{}")
+                try:
+                    payload = json.loads(raw.decode("utf-8") or "{}")
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    self._json(
+                        {"ok": False, "error": "invalid JSON body"},
+                        status=400,
+                    )
+                    return
                 handler = POST_ROUTES.get(parsed.path)
                 if handler is not None:
                     handler(self, parsed, payload)
@@ -724,6 +734,9 @@ def make_handler(db_path):
                         )
                     finally:
                         conn.close()
+                    if not result.get("ok"):
+                        self._json(result, status=400)
+                        return
                 elif parsed.path == "/api/agent_actions/update":
                     from novel_editorial.services import activity as activity_service  # noqa: PLC0415
 
@@ -743,10 +756,14 @@ def make_handler(db_path):
                     try:
                         session_id = int(payload.get("session_id") or 0)
                         meeting_id = int(payload.get("meeting_id") or 0)
+                        novel_id = int(payload.get("novel_id") or 0)
                     except (TypeError, ValueError):
                         conn.close()
                         self._json(
-                            {"ok": False, "error": "session_id and meeting_id must be integers"},
+                            {
+                                "ok": False,
+                                "error": "session_id, meeting_id and novel_id must be integers",
+                            },
                             status=400,
                         )
                         return
@@ -755,7 +772,7 @@ def make_handler(db_path):
                             conn,
                             payload.get("agent"),
                             payload.get("task"),
-                            novel_id=payload.get("novel_id") or 0,
+                            novel_id=novel_id,
                             session_id=session_id,
                             meeting_id=meeting_id,
                             detail=payload.get("detail") or {},
@@ -1164,7 +1181,7 @@ def main():
     except (AttributeError, ValueError):
         pass
     ap = argparse.ArgumentParser(description="novel-editorial 实时监控面板")
-    ap.add_argument("--db", default="demo.db")
+    ap.add_argument("--db", default=str(config.DB_PATH))
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8000)
     args = ap.parse_args()
