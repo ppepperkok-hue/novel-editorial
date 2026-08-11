@@ -39,6 +39,8 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(len(data["novels"]), 1)
         self.assertEqual(len(data["chapters"]), 1)
         self.assertEqual(len(data["publish_logs"]), 1)
+        self.assertIn("executions", data, "dashboard must carry executions fallback")
+        self.assertIn("updated_at", data)
 
     def test_index_served(self):
         with urlopen(self.base + "/", timeout=10) as resp:

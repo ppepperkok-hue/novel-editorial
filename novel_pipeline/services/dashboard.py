@@ -102,11 +102,13 @@ def cost_summary(conn):
 
 def build_payload(conn):
     from novel_pipeline.services import misc  # noqa: PLC0415
+    from novel_pipeline.services import n8n  # noqa: PLC0415
     from tools.app_settings import get_float  # noqa: PLC0415
 
     payload = {
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "summary": load_summary(conn),
+        "executions": n8n.executions()[:5],
         "cost_budget": get_float(conn, "monthly_budget", 100.0),
         "novels": load_novels(conn),
         "chapters": load_chapters(conn),

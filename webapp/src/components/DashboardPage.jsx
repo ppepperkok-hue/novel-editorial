@@ -27,8 +27,16 @@ function WorkflowCard({ label, wf, onAction, onPause }) {
     : wf.active
       ? { text: "● 运行中", cls: "chip-ok" }
       : { text: "● 已暂停", cls: "chip-bad" };
+  const statusText = {
+    success: "成功",
+    running: "运行中",
+    waiting: "等待中",
+    failed: "失败",
+    crashed: "崩溃",
+    canceled: "已取消",
+  }[wf?.last?.status] || wf?.last?.status;
   const last = wf?.last
-    ? `${wf.last.status} · ${fmtRelative(wf.last.stopped_at || wf.last.started_at)}`
+    ? `${statusText} · ${fmtRelative(wf.last.stopped_at || wf.last.started_at)}`
     : "暂无执行记录";
   return (
     <div className="panel panel-hover p-4">
@@ -78,9 +86,14 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
   }, []);
 
   useEffect(() => {
-    getMeetings()
-      .then((r) => setLatestMeeting(r.meetings?.[0] || null))
-      .catch(() => {});
+    const load = () => {
+      getMeetings()
+        .then((r) => setLatestMeeting(r.meetings?.[0] || null))
+        .catch(() => {});
+    };
+    load();
+    const t = setInterval(load, 60000);
+    return () => clearInterval(t);
   }, []);
 
   const action = async (payload, okMsg) => {
@@ -134,7 +147,7 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
   const issues = data?.health?.issues || [];
   const liveIssueCount = snapshot?.issues ?? issues.length;
   const daily = wfs.daily || {};
-  const liveExecs = snapshot?.executions || [];
+  const liveExecs = snapshot?.executions || data?.executions || [];
   const runningNow = liveExecs.some((e) => e.status === "running" || e.status === "waiting");
   const lastExec = liveExecs[0];
 

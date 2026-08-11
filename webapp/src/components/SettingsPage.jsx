@@ -10,8 +10,16 @@ function WorkflowCard({ label, wf, onAction, onPause }) {
     : wf.active
       ? { text: "运行中", cls: "chip-ok" }
       : { text: "已暂停", cls: "chip-bad" };
+  const statusText = {
+    success: "成功",
+    running: "运行中",
+    waiting: "等待中",
+    failed: "失败",
+    crashed: "崩溃",
+    canceled: "已取消",
+  }[wf?.last?.status] || wf?.last?.status;
   const last = wf?.last
-    ? `${wf.last.status} · ${(wf.last.stopped_at || wf.last.started_at || "").replace("T", " ").slice(5, 19)}`
+    ? `${statusText} · ${(wf.last.stopped_at || wf.last.started_at || "").replace("T", " ").slice(5, 19)}`
     : "暂无";
   return (
     <div className="card flex flex-col gap-2">

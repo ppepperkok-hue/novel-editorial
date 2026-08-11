@@ -379,8 +379,9 @@ function ActionsPanel({ pushToast }) {
           className="btn !px-3 !py-1 text-xs"
           onClick={() => setCreating({ agent: "planner", task: "" })}
         >
-          ＋ 手动添加
+         ＋ 手动添加
         </button>
+        <button className="btn !px-3 !py-1 text-xs" onClick={load}>刷新</button>
       </div>
 
       {creating ? (

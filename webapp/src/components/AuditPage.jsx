@@ -21,6 +21,7 @@ export default function AuditPage() {
   const [logs, setLogs] = useState([]);
   const [category, setCategory] = useState("");
   const [error, setError] = useState("");
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -30,7 +31,7 @@ export default function AuditPage() {
     return () => {
       alive = false;
     };
-  }, [category]);
+  }, [category, tick]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -50,7 +51,10 @@ export default function AuditPage() {
             {label}
           </span>
         ))}
-        <span className="muted ml-auto text-xs">共 {logs.length} 条</span>
+        <button className="btn ml-auto !px-3 !py-1 text-xs" onClick={() => setTick((t) => t + 1)}>
+         刷新
+        </button>
+        <span className="muted text-xs">共 {logs.length} 条</span>
       </div>
 
       <div className="panel overflow-hidden">
