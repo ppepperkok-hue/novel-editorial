@@ -208,7 +208,10 @@ def run(db_path, novel_id=0, days=1, dry_run=False, use_llm=True):
         novel_id = resolve_novel_id(conn, novel_id)
         evidence = collect_evidence(conn, novel_id, days)
         pending = [
-            a for a in activity.list_actions(conn, status="pending", limit=500)
+            a
+            for a in activity.list_actions(
+                conn, status=("pending", "claimed", "in_progress"), limit=500
+            )
             if int(a["novel_id"] or 0) in (0, novel_id)
         ]
         if not pending:

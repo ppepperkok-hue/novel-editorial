@@ -9,7 +9,7 @@ their weekly briefs so the tasks actually get executed.
 
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from novel_pipeline.llm_client import chat_deepseek
@@ -162,8 +162,9 @@ def list_actions(conn, agent=None, status=None, limit=200):
         conds.append("agent=?")
         params.append(agent)
     if status:
-        conds.append("status=?")
-        params.append(status)
+        statuses = status if isinstance(status, (tuple, list)) else (status,)
+        conds.append("status IN (" + ",".join("?" * len(statuses)) + ")")
+        params += list(statuses)
     if conds:
         sql += " WHERE " + " AND ".join(conds)
     sql += " ORDER BY id DESC LIMIT ?"
@@ -224,6 +225,17 @@ def _parse_task_list(text):
     if not isinstance(value, list):
         return None
     return [v for v in value if isinstance(v, dict) and str(v.get("task") or "").strip()]
+
+
+def _due_date(text):
+    """Heuristic due date from a task's `due` description; empty when unknown."""
+    s = str(text or "")
+    m = re.search(r"(\d+)\s*天", s)
+    if m:
+        return (datetime.now() + timedelta(days=int(m.group(1)))).strftime("%Y-%m-%d")
+    if "下周" in s or "会前" in s:
+        return (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+    return ""
 
 
 def generate_post_meeting_actions(conn, session_id, meeting_id, novel_id,
@@ -325,6 +337,8 @@ def generate_post_meeting_actions(conn, session_id, meeting_id, novel_id,
                 session_id=session_id,
                 meeting_id=meeting_id,
                 detail=detail,
+                assignee=agent,
+                due_at=_due_date(t.get("due")),
             )
             created += 1
     return {"ok": True, "created": created}

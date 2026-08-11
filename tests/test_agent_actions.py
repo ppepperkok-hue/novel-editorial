@@ -3,16 +3,20 @@
 import os
 import tempfile
 import unittest
+from datetime import datetime, timedelta
+from unittest import mock
 
 from novel_pipeline import db
 from novel_pipeline.services import activity
 from tools import agent_context
+from tools import auto_fill_actions
 
 
 class AgentActionsTests(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
-        self.conn = db.connect(os.path.join(self.tmpdir, "t.db"))
+        self.db_path = os.path.join(self.tmpdir, "t.db")
+        self.conn = db.connect(self.db_path)
         self.action_id = activity.create_action(
             self.conn, "writer", "把规则台账模板定死", novel_id=1,
             assignee="writer", priority="high", due_at="2026-08-20",
@@ -93,6 +97,72 @@ class AgentActionsTests(unittest.TestCase):
         self.assertIn("我的待办行动项", snap)
         self.assertIn("规则台账模板", snap)
         self.assertIn("in_progress", snap)
+
+    def test_list_actions_accepts_status_tuple(self):
+        rows = activity.list_actions(
+            self.conn, status=("pending", "claimed"), limit=10
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["id"], self.action_id)
+
+    def test_due_date_helper(self):
+        self.assertEqual(
+            activity._due_date("3天内"),
+            (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d"),
+        )
+        self.assertEqual(
+            activity._due_date("下周会前"),
+            (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d"),
+        )
+        self.assertEqual(activity._due_date("尽快"), "")
+
+    def test_post_meeting_actions_carry_assignee_and_due(self):
+        def fake_chat(model, system, user, temperature=0.3, max_tokens=900, **kwargs):
+            return {
+                "text": '[{"task": "整理规则台账 v2", "due": "3天内"}]',
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+                "model": "mock",
+            }
+
+        report = {"action_items": [], "discussion_summary": "会议结论"}
+        with mock.patch(
+            "novel_pipeline.services.activity.chat_deepseek", side_effect=fake_chat
+        ):
+            result = activity.generate_post_meeting_actions(
+                self.conn, session_id=1, meeting_id=1, novel_id=1,
+                attendees=["writer"], report=report, transcript=[],
+            )
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["created"], 1)
+        row = self.conn.execute(
+            "SELECT assignee, due_at, status FROM agent_actions "
+            "WHERE task='整理规则台账 v2'"
+        ).fetchone()
+        self.assertEqual(row["assignee"], "writer")
+        self.assertEqual(row["due_at"], (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d"))
+        self.assertEqual(row["status"], "pending")
+
+    def test_auto_fill_settles_claimed_and_in_progress(self):
+        activity.claim_action(self.conn, self.action_id, "writer", novel_id=1)
+        activity.update_action(self.conn, self.action_id, "in_progress", agent="writer")
+        self.conn.execute(
+            "INSERT INTO agent_activity(agent,novel_id,activity_type,title,detail,created_at) "
+            "VALUES('writer',1,'chapter','写稿','{}',datetime('now','localtime'))"
+        )
+        self.conn.commit()
+        with mock.patch(
+            "tools.auto_fill_actions.rules_decide",
+            return_value=("done", "证据：本周完成"),
+        ):
+            result = auto_fill_actions.run(
+                self.db_path, novel_id=1, days=1, use_llm=False
+            )
+        self.assertEqual(result["checked"], 1)
+        self.assertEqual(len(result["done"]), 1)
+        row = self.conn.execute(
+            "SELECT status FROM agent_actions WHERE id=?", (self.action_id,)
+        ).fetchone()
+        self.assertEqual(row["status"], "done")
 
 
 if __name__ == "__main__":
