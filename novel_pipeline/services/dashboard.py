@@ -1,6 +1,7 @@
 """Dashboard data aggregation: summary, novels, chapters, costs."""
 
 import json
+from datetime import datetime
 
 
 def load_summary(conn):
@@ -104,6 +105,7 @@ def build_payload(conn):
     from tools.app_settings import get_float  # noqa: PLC0415
 
     payload = {
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "summary": load_summary(conn),
         "cost_budget": get_float(conn, "monthly_budget", 100.0),
         "novels": load_novels(conn),

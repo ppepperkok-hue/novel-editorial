@@ -19,6 +19,7 @@ const AGENT_NAMES = {
   work_meta: "书案",
   eic: "掌印",
   ending_judge: "终局",
+  knowledge_keeper: "博闻",
 };
 
 const COLORS = [

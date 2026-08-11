@@ -23,6 +23,7 @@ def load_control(conn):
         "workflows": {
             "daily": n8n.workflow_status(config.N8N_WORKFLOW_DAILY),
             "weekly": n8n.workflow_status(config.N8N_WORKFLOW_WEEKLY),
+            "keeper": n8n.workflow_status(config.N8N_WORKFLOW_KEEPER),
         },
     }
 
@@ -116,7 +117,7 @@ def handle_control(conn, payload):
             chapters = payload.get("chapters")
             if chapters:
                 try:
-                    n = max(1, min(int(chapters), 10))
+                    n = max(1, min(int(chapters), 5))
                 except (TypeError, ValueError):
                     n = 0
                 if n:
@@ -147,9 +148,10 @@ def handle_control(conn, payload):
         wf_id = {
             "daily": config.N8N_WORKFLOW_DAILY,
             "weekly": config.N8N_WORKFLOW_WEEKLY,
+            "keeper": config.N8N_WORKFLOW_KEEPER,
         }.get(payload.get("workflow"))
         if not wf_id:
-            return {"ok": False, "error": "workflow must be daily|weekly"}
+            return {"ok": False, "error": "workflow must be daily|weekly|keeper"}
         endpoint = "deactivate" if action == "pause" else "activate"
         res = n8n.n8n_api(
             "POST",

@@ -395,7 +395,6 @@ export default function WorksPage({ data, pushToast }) {
             {c.conflict ? <div className="mt-0.5 text-xs text-red-400/90">冲突：{c.conflict}</div> : null}
           </div>
         ));
-        const arc = o.arc || {};
         const isOpen = open[n.id];
         return (
           <section key={n.id} className="panel overflow-hidden">
@@ -449,15 +448,7 @@ export default function WorksPage({ data, pushToast }) {
                   </Field>
                 </div>
 
-                {arc && (arc.start || arc.mid || arc.end) ? (
-                  <Field label="当前剧情弧">
-                    <div className="flex flex-col gap-1 text-xs">
-                      {arc.start ? <div><span className="text-sky-400">开端：</span>{arc.start}</div> : null}
-                      {arc.mid ? <div><span className="text-amber-400">发展：</span>{arc.mid}</div> : null}
-                      {arc.end ? <div><span className="text-emerald-400">去向：</span>{arc.end}</div> : null}
-                    </div>
-                  </Field>
-                ) : null}
+                
 
                 {chs.length ? (
                   <Field label="本章细纲（两章）">
@@ -465,20 +456,27 @@ export default function WorksPage({ data, pushToast }) {
                   </Field>
                 ) : null}
 
-                {o.foreshadowing || o.payoffs ? (
-                  <Field label="伏笔台账">
+                {o.blueprints?.some((b) => b.plant_foreshadow || b.recover_foreshadow) ? (
+                  <Field label="伏笔台账（按蓝图聚合）">
                     <div className="flex flex-col gap-1 text-xs">
-                      {(o.foreshadowing || []).map((f, i) => (
-                        <div key={i}><span className="text-amber-400">埋：</span>{typeof f === "string" ? f : JSON.stringify(f)}</div>
-                      ))}
-                      {(o.payoffs || []).map((p, i) => (
-                        <div key={i}><span className="text-emerald-400">收：</span>{typeof p === "string" ? p : JSON.stringify(p)}</div>
-                      ))}
+                      {o.blueprints.map((b) => {
+                        const plants = b.plant_foreshadow || [];
+                        const recovers = b.recover_foreshadow || [];
+                        if (!plants.length && !recovers.length) return null;
+                        const label = b.seq ? `第 ${b.seq} 章 ${b.title || ''}：` : (b.title || '');
+                        return (
+                          <div key={b.seq ?? b.title}>
+                            <span className="text-sky-400">{label}</span>
+                            {plants.length ? <span className="text-amber-400">埋：{typeof plants === "string" ? plants : plants.join("；")} </span> : null}
+                            {recovers.length ? <span className="text-emerald-400">收：{typeof recovers === "string" ? recovers : recovers.join("；")}</span> : null}
+                          </div>
+                        );
+                      })}
                     </div>
                   </Field>
                 ) : null}
 
-                <NovelKnowledgeBlock novelId={n.id} pushToast={pushToast} />
+<NovelKnowledgeBlock novelId={n.id} pushToast={pushToast} />
                 <div className="muted text-xs">书 ID：{n.book_id || "未关联"} · 番茄章节 ID 见章节管理</div>
               </div>
             ) : null}

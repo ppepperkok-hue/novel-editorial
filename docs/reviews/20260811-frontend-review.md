@@ -24,6 +24,8 @@
 
 ## 问题清单
 
+> 状态：2026-08-11 已按本报告全部修复（见文末「修复记录」）。
+
 ### P1
 
 1. **执行记录列表被 SSE 快照截断成 5 条**
@@ -129,3 +131,28 @@ API keys:
 4. 将本报告作为 `docs/engineering/review-process.md` 的首个案例，
    后续审查按流程执行并归档到 `docs/reviews/`。
 
+## 修复记录（2026-08-11）
+
+- **P1-1 执行列表被 SSE 截断**：`ExecutionsPage` 删除快照覆盖逻辑，
+  只保留轮询；新增回归测试 `__tests__/executions.test.jsx`
+  （30 条快照传入仍显示 30 条）。
+- **P1-2 今日任务 UTC 日期**：`DashboardPage` 新增 `localToday()`
+  （本地 YYYY-MM-DD），新增 `__tests__/dashboard.test.jsx`。
+- **P2-3 节点数写死**：`n8n.workflow_status` 返回 `nodes` 长度，
+  Dashboard/Settings 卡片显示动态节点数（实测日更 65、管家 4）。
+- **P2-4 手动补更上限**：`control.run_now` 章节数上限 10 → 5，
+  与前端 1-5 一致；新增上限测试。
+- **P2-5 文案**：Settings「立即更新一章」→「立即补更（按每日章数）」。
+- **P2-6 每批章数**：Settings 上限 4 → 10，表单校验同步。
+- **P2-7 伏笔台账**：WorksPage 改为从 `outline.blueprints` 聚合
+  `plant_foreshadow/recover_foreshadow` 渲染；无数据源的「当前剧情弧」
+  区块删除。
+- **P2-8 测试覆盖**：新增前端执行记录 + 本地日期测试、后端上限/keeper/
+  nodes 测试；前端 8 个、后端 170 个全绿。
+- **P3 补修**：Audit 加 knowledge 分类；命令面板加留痕页；MeetingLive
+  加知识管家「博闻」；dashboard 返回 `updated_at`；App 轮询 5s→15s；
+  连载作品 KPI 去掉错误副标题；Dashboard/Settings 增加知识管家卡片
+  （`control.workflows.keeper` + pause/resume 支持 keeper）。
+- **验证**：`npm test` 8 passed、`npm run build` ok、
+  `python run_tests.py` 170 passed、`validate_workflow_deep.mjs` OK；
+  线上 API 实测 `updated_at`/`keeper`/节点数正确。

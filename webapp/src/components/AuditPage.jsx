@@ -11,6 +11,7 @@ const CATEGORIES = [
   ["ending", "完结"],
   ["meeting", "周会"],
   ["publish", "发布"],
+  ["knowledge", "知识"],
   ["preflight", "预检"],
 ];
 

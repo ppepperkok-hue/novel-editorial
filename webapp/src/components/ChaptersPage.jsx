@@ -5,10 +5,7 @@ import { fmtNum } from "./ui.jsx";
 const STATUS_META = {
   draft: ["草稿", "chip-warn"],
   reviewed: ["已审稿", "chip-ok"],
-  queued: ["待发布", "chip-info"],
-  publishing: ["发布中", "chip-warn"],
   published: ["已发布", "chip-ok"],
-  failed: ["失败", "chip-bad"],
 };
 
 export default function ChaptersPage({ data }) {

@@ -4,6 +4,11 @@ import ReaderChart from "./ReaderChart.jsx";
 import { ConfirmDialog, fmtRelative, fmtTime } from "./ui.jsx";
 import { getMeetings } from "../api.js";
 
+export function localToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function Kpi({ label, value, sub, tone }) {
   return (
     <div className="card kpi">
@@ -133,7 +138,7 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
   const runningNow = liveExecs.some((e) => e.status === "running" || e.status === "waiting");
   const lastExec = liveExecs[0];
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localToday();
   const todayPublished = (data?.chapters || []).filter(
     (c) => c.status === "published" && (c.published_at || "").slice(0, 10) === today,
   ).length;
@@ -220,8 +225,9 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
       <section>
         <div className="section-title">工作流状态与补更</div>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <WorkflowCard label="日更工作流（60 节点）" wf={wfs.daily} onAction={(a) => action({ action: a, workflow: "daily" }, "日更已恢复")} onPause={() => setConfirm("pause-daily")} />
-          <WorkflowCard label="架构师周会（5 节点）" wf={wfs.weekly} onAction={(a) => action({ action: a, workflow: "weekly" }, "周会已恢复")} onPause={() => setConfirm("pause-weekly")} />
+          <WorkflowCard label={`日更工作流（${wfs.daily?.nodes ?? "?"} 节点）`} wf={wfs.daily} onAction={(a) => action({ action: a, workflow: "daily" }, "日更已恢复")} onPause={() => setConfirm("pause-daily")} />
+          <WorkflowCard label={`架构师周会（${wfs.weekly?.nodes ?? "?"} 节点）`} wf={wfs.weekly} onAction={(a) => action({ action: a, workflow: "weekly" }, "周会已恢复")} onPause={() => setConfirm("pause-weekly")} />
+          <WorkflowCard label={`知识管家（${wfs.keeper?.nodes ?? "?"} 节点）`} wf={wfs.keeper} onAction={(a) => action({ action: a, workflow: "keeper" }, "知识管家已恢复")} onPause={() => setConfirm("pause-keeper")} />
           <div className="panel panel-hover p-4">
             <div className="text-sm font-semibold">手动补更</div>
             <div className="muted mt-1 text-xs">存稿优先：有存货直接发，不够自动补造并发布</div>
@@ -233,7 +239,7 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
       </section>
 
       <div className="kpi-grid">
-        <Kpi label="连载作品" value={s.novels ?? "—"} sub="全部连载中" />
+        <Kpi label="连载作品" value={s.novels ?? "—"} />
         <Kpi label="章节总数" value={s.chapters_total ?? "—"} />
         <Kpi label="已发布" value={s.chapters_published ?? "—"} tone="ok" />
         <Kpi label="待发布" value={s.chapters_ready ?? "—"} tone="warn" />
@@ -408,13 +414,13 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
       ) : null}
 
       <ConfirmDialog
-        open={confirm === "pause-daily" || confirm === "pause-weekly"}
+        open={confirm === "pause-daily" || confirm === "pause-weekly" || confirm === "pause-keeper"}
         title="暂停工作流？"
         body="暂停后定时触发将停止，需要手动恢复。"
         confirmText="暂停"
         onCancel={() => setConfirm(null)}
         onConfirm={() => {
-          const workflow = confirm === "pause-daily" ? "daily" : "weekly";
+          const workflow = confirm === "pause-daily" ? "daily" : confirm === "pause-weekly" ? "weekly" : "keeper";
           setConfirm(null);
           action({ action: "pause", workflow }, "已暂停");
         }}

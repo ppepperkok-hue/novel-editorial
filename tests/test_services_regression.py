@@ -93,6 +93,44 @@ class ControlTests(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_run_now_chapters_capped_at_five(self):
+        path = make_db()
+        from novel_pipeline.services import control
+
+        conn = db.connect(path)
+        try:
+            with mock.patch("novel_pipeline.services.control.run_workflow_now") as run:
+                run.return_value = {"ok": True, "workflow": "daily"}
+                result = control.handle_control(
+                    conn, {"action": "run_now", "workflow": "daily", "chapters": 9}
+                )
+            self.assertTrue(result["ok"])
+            row = conn.execute(
+                "SELECT value FROM settings WHERE key='pending_publish'"
+            ).fetchone()
+            self.assertEqual(row["value"], "5")
+        finally:
+            conn.close()
+
+    def test_pause_resume_keeper_workflow(self):
+        path = make_db()
+        from novel_pipeline.services import control
+
+        conn = db.connect(path)
+        try:
+            with mock.patch("novel_pipeline.services.n8n.n8n_api") as api:
+                api.return_value = {"active": False}
+                result = control.handle_control(
+                    conn, {"action": "pause", "workflow": "keeper"}
+                )
+            self.assertTrue(result["ok"])
+            call = api.call_args
+            self.assertEqual(call.args[0], "POST")
+            self.assertIn("CXz06QvOKNASreBl", call.args[1])
+            self.assertIn("deactivate", call.args[1])
+        finally:
+            conn.close()
+
 
 class MiscTests(unittest.TestCase):
     def test_diary_list_and_update(self):
@@ -131,6 +169,20 @@ class N8nServiceTests(unittest.TestCase):
             self.assertEqual(n8n_service._load_n8n_env(), "key123")
             self.assertEqual(n8n_service._N8N_KEY, "key123")
         n8n_service._N8N_KEY = None
+
+    def test_workflow_status_includes_node_count(self):
+        from novel_pipeline.services import n8n as n8n_service
+
+        with mock.patch(
+            "novel_pipeline.services.n8n.n8n_api",
+            return_value={
+                "active": True,
+                "nodes": [{"name": "a"}, {"name": "b"}, {"name": "c"}],
+            },
+        ):
+            info = n8n_service.workflow_status("wf-1")
+        self.assertEqual(info["nodes"], 3)
+        self.assertTrue(info["online"])
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ const PAGE_CMDS = [
   { id: "reader", label: "打开阅读数据", group: "页面", icon: "◔" },
   { id: "settings", label: "打开系统设置", group: "页面", icon: "⚙" },
   { id: "meetings", label: "打开周会档案", group: "页面", icon: "▦" },
+  { id: "audit", label: "打开留痕档案", group: "页面", icon: "≡" },
 ];
 
 export default function CommandPalette({ onRefresh, pushToast, go, changeTheme, theme }) {

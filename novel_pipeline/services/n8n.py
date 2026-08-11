@@ -72,7 +72,12 @@ def workflow_status(wf_id):
             "started_at": e.get("startedAt"),
             "stopped_at": e.get("stoppedAt"),
         }
-    return {"online": True, "active": bool(info.get("active")), "last": last}
+    return {
+        "online": True,
+        "active": bool(info.get("active")),
+        "last": last,
+        "nodes": len(info.get("nodes") or []),
+    }
 
 
 def executions():

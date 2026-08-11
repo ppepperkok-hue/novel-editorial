@@ -151,7 +151,7 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
     wordsNum >= 500 &&
     wordsNum <= 10000 &&
     chaptersNum >= 1 &&
-    chaptersNum <= 4 &&
+    chaptersNum <= 10 &&
     targetNum >= 0 &&
     targetNum <= 5000 &&
     /^\d{2}:\d{2}$/.test(form.daily_run_time || "");
@@ -164,15 +164,16 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
       <section className="panel p-4">
         <div className="section-title !mb-3">工作流控制</div>
         <div className="flex flex-col gap-3">
-          <WorkflowCard label="日更工作流（61 节点）" wf={wfs.daily} onAction={(a) => action({ action: a, workflow: "daily" }, "日更已恢复")} onPause={() => setConfirm("pause-daily")} />
-          <WorkflowCard label="架构师周会（7 节点）" wf={wfs.weekly} onAction={(a) => action({ action: a, workflow: "weekly" }, "周会已恢复")} onPause={() => setConfirm("pause-weekly")} />
+          <WorkflowCard label={`日更工作流（${wfs.daily?.nodes ?? "?"} 节点）`} wf={wfs.daily} onAction={(a) => action({ action: a, workflow: "daily" }, "日更已恢复")} onPause={() => setConfirm("pause-daily")} />
+          <WorkflowCard label={`架构师周会（${wfs.weekly?.nodes ?? "?"} 节点）`} wf={wfs.weekly} onAction={(a) => action({ action: a, workflow: "weekly" }, "周会已恢复")} onPause={() => setConfirm("pause-weekly")} />
+          <WorkflowCard label={`知识管家（${wfs.keeper?.nodes ?? "?"} 节点）`} wf={wfs.keeper} onAction={(a) => action({ action: a, workflow: "keeper" }, "知识管家已恢复")} onPause={() => setConfirm("pause-keeper")} />
           <div className="grid grid-cols-2 gap-2">
             <button
               className="btn btn-ok"
               disabled={running !== ""}
               onClick={() => setConfirmRun("daily")}
             >
-              {running === "daily" ? "启动中…" : "▶ 立即更新一章"}
+              {running === "daily" ? "启动中…" : "▶ 立即补更（按每日章数）"}
             </button>
             <button
               className="btn"
@@ -292,11 +293,11 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
               </div>
             </div>
             <div>
-              <label className="label">每批发布章数（1–4，存稿优先）</label>
+              <label className="label">每批发布章数（1–10，存稿优先）</label>
               <input
                 type="number"
                 min="1"
-                max="4"
+                max="10"
                 className="input !w-32"
                 value={form.daily_chapters}
                 onChange={(e) => setForm({ ...form, daily_chapters: e.target.value })}
@@ -406,13 +407,13 @@ export default function SettingsPage({ data, onRefresh, pushToast, theme, onThem
       </section>
 
       <ConfirmDialog
-        open={confirm === "pause-daily" || confirm === "pause-weekly"}
+        open={confirm === "pause-daily" || confirm === "pause-weekly" || confirm === "pause-keeper"}
         title="暂停工作流？"
         body="暂停后定时触发将停止，需要手动恢复。"
         confirmText="暂停"
         onCancel={() => setConfirm(null)}
         onConfirm={() => {
-          const workflow = confirm === "pause-daily" ? "daily" : "weekly";
+          const workflow = confirm === "pause-daily" ? "daily" : confirm === "pause-weekly" ? "weekly" : "keeper";
           setConfirm(null);
           action({ action: "pause", workflow }, "已暂停");
         }}

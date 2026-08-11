@@ -38,14 +38,7 @@ export default function ExecutionsPage({ snapshot }) {
     };
   }, []);
 
-  useEffect(() => {
-    if (snapshot?.executions?.length) {
-      setRows(snapshot.executions);
-      setError("");
-    }
-  }, [snapshot]);
-
-  const fmt = (t) => (t ? String(t).replace("T", " ").slice(5, 19) : "—");
+  const fmt = (t) => (t ? String(t).replace("T", " ").slice(5, 19) : "-");
   const duration = (start, stop) => {
     if (!start || !stop) return "—";
     return ((new Date(stop) - new Date(start)) / 1000).toFixed(1) + "s";
