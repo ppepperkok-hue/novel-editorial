@@ -120,6 +120,8 @@ def upsert_volume(conn, novel_id, payload):
 
 def _upsert_summary(conn, novel_id, chapter_id, seq, ch):
     summary = ch.get("summary") or {}
+    if not isinstance(summary, dict):
+        summary = {}
     if not summary:
         return
     summary_text = (

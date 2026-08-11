@@ -239,12 +239,9 @@ def main():
         if manual_requested:
             reasons.append("手动请求运行已生效")
         ok = enabled and cookie_ok and not already_ran and budget_ok and book_ok
-        if ok and not args.no_lock:
-            lock_path = ROOT / "n8n_tmp" / f"{db_path.stem}.lock"
-            locked, lock_reason = acquire_lock(lock_path)
-            if not locked:
-                reasons.append(lock_reason)
-                ok = False
+        # The preflight CLI is a check-only process; it must never hold the
+        # run lock (a short-lived process writing the lock and exiting lets a
+        # later run steal it). The lock is acquired by the real scheduler.
         # Consume the manual-run request only when this run will actually
         # proceed; failed preflights keep the request so the user can retry.
         if ok and manual_requested:

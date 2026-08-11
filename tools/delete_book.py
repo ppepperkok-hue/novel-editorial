@@ -105,7 +105,7 @@ def delete_book_on_fanqie(conn, novel_id, confirm=False):
         res = http_json(
             "POST", "/api/author/book/delete/v0", {"book_id": book_id}, env
         )
-    except (RuntimeError, ValueError) as exc:
+    except (RuntimeError, ValueError, OSError) as exc:
         return {"ok": False, "error": f"删除请求失败：{exc}"}
 
     if res.get("code") != 0:

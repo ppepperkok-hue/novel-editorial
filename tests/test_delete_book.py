@@ -37,6 +37,23 @@ def env_ctx():
 
 
 class DeleteBookTests(unittest.TestCase):
+    def test_delete_network_error_returns_failure(self):
+        import urllib.error  # noqa: E402
+
+        path = make_db()
+        conn = db.connect(path)
+        try:
+            with env_ctx():
+                with mock.patch(
+                    "tools.delete_book.http_json",
+                    side_effect=urllib.error.URLError("network down"),
+                ):
+                    result = delete_book.delete_book_on_fanqie(conn, 1, confirm=True)
+            self.assertFalse(result["ok"])
+            self.assertIn("删除请求失败", result["error"])
+        finally:
+            conn.close()
+
     def test_purge_novel_is_fk_safe(self):
         path = make_db()
         conn = db.connect(path)

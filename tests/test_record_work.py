@@ -93,6 +93,20 @@ class RecordWorkTests(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_upsert_summary_handles_plain_string(self):
+        path = make_db()
+        conn = db.connect(path)
+        try:
+            record_work._upsert_summary(
+                conn, 1, 1, 1, {"summary": "纯字符串摘要"}
+            )
+            row = conn.execute(
+                "SELECT summary FROM chapter_summaries WHERE chapter_id=1"
+            ).fetchone()
+            self.assertIsNone(row, "non-dict summary must be skipped safely")
+        finally:
+            conn.close()
+
     def test_foreshadow_recover_closes_exact_thread(self):
         path = make_db()
         conn = db.connect(path)

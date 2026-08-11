@@ -360,13 +360,12 @@ def main():
             settings.get("daily_chapters") or 2
         )
         target = max(1, min(target, 10))
-        if settings.get("pending_publish"):
+        summary = publish_batch(conn, novel_id, target, env)
+        if settings.get("pending_publish") and summary.get("published"):
             conn.execute(
                 "UPDATE settings SET value='0' WHERE key='pending_publish'"
             )
             conn.commit()
-
-        summary = publish_batch(conn, novel_id, target, env)
         print(json.dumps({"ok": True, **summary}, ensure_ascii=False))
     finally:
         conn.close()

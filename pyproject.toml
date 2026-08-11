@@ -7,7 +7,7 @@ name = "novel-editorial"
 version = "0.1.0"
 description = "文学编辑部：AI 网文多 Agent 协作创作与发布平台"
 requires-python = ">=3.9"
-dependencies = []
+dependencies = ["websocket-client>=1.0"]
 
 [project.optional-dependencies]
 desktop = ["pywebview>=5.0"]
