@@ -194,6 +194,7 @@ def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None,
     used_knowledge = []
     degraded = False
     activity_type = _ACTIVITY_TYPES.get(canonical, "agent")
+    prose_agent = activity_type == "chapter"  # writer/editor output prose, not JSON
 
     def _final(text, usage=None):
         text = _unwrap_text(text)
@@ -241,7 +242,8 @@ def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None,
         for _attempt in range(3):
             try:
                 cand = chat_deepseek(
-                    model, system, task_text, temperature=temp, max_tokens=max_tokens
+                    model, system, task_text, temperature=temp, max_tokens=max_tokens,
+                    json_mode=False if prose_agent else None,
                 )
                 if (cand.get("text") or "").strip():
                     plain = cand
@@ -331,7 +333,8 @@ def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None,
     for _attempt in range(3):
         try:
             cand = chat_deepseek(
-                model, None, None, temperature=temp, max_tokens=max_tokens, messages=msgs
+                model, None, None, temperature=temp, max_tokens=max_tokens,
+                messages=msgs, json_mode=False if prose_agent else None,
             )
             if (cand.get("text") or "").strip():
                 final = cand
@@ -340,15 +343,30 @@ def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None,
             final_err = exc
     if final is None:
         degraded = True
+        _log_activity(
+            canonical,
+            novel_id,
+            "agent",
+            "智能体调用失败",
+            {
+                "agent_key": canonical,
+                "task": str(task_text or "")[:400],
+                "used_knowledge": used_knowledge,
+                "error": f"final round empty/error: {str(final_err)[:120]}",
+            },
+            db_path,
+        )
         return {
-            "ok": True,
-            "text": _unwrap_text(first.get("text") or ""),
+            "ok": False,
+            "error": (
+                "final round empty/error: "
+                f"{str(final_err)[:120]}"
+            ),
             "model": model,
             "usage": first.get("usage") or {"prompt_tokens": 0, "completion_tokens": 0},
             "used_knowledge": used_knowledge,
-            "attempts": 1,
+            "attempts": 2,
             "degraded": True,
-            "error": f"final round empty/error: {str(final_err)[:120]}",
         }
 
     first_usage = first.get("usage") or {}

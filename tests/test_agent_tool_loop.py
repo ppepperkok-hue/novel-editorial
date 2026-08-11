@@ -50,7 +50,7 @@ class AgentToolLoopTests(unittest.TestCase):
     def test_tool_calls_resolved_and_second_round(self):
         calls = {"n": 0}
 
-        def fake(model, system, user, temperature=0.5, max_tokens=1600, messages=None, tools=None):
+        def fake(model, system, user, temperature=0.5, max_tokens=1600, messages=None, tools=None, json_mode=None):
             calls["n"] += 1
             if calls["n"] <= 3:
                 return _resp("", [_tool_call()])
@@ -73,7 +73,7 @@ class AgentToolLoopTests(unittest.TestCase):
     def test_tools_failure_degrades_to_plain_call(self):
         calls = {"n": 0}
 
-        def fake(model, system, user, temperature=0.5, max_tokens=1600, messages=None, tools=None):
+        def fake(model, system, user, temperature=0.5, max_tokens=1600, messages=None, tools=None, json_mode=None):
             calls["n"] += 1
             if calls["n"] <= 3:
                 raise RuntimeError("tools unsupported")
@@ -120,6 +120,30 @@ class AgentToolLoopTests(unittest.TestCase):
             )
         self.assertTrue(r["ok"])
         self.assertEqual(chat.call_args.args[0], "deepseek-v4-pro")
+
+    def test_empty_final_round_returns_failure_and_traces(self):
+        calls = {"n": 0}
+
+        def fake(model, system, user, temperature=0.5, max_tokens=1600, messages=None, tools=None, json_mode=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return _resp("", [_tool_call()])
+            return _resp("")
+
+        with mock.patch("tools.agent_tool_loop.chat_deepseek", side_effect=fake):
+            r = agent_tool_loop.run("writer", "task", db_path=self.db_path)
+        self.assertFalse(r["ok"])
+        self.assertTrue(r["degraded"])
+        self.assertIn("final round empty", r["error"])
+        conn = db.connect(self.db_path)
+        try:
+            rows = conn.execute(
+                "SELECT activity_type, title FROM agent_activity"
+            ).fetchall()
+        finally:
+            conn.close()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["activity_type"], "agent")
 
 
 if __name__ == "__main__":

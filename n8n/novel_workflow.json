@@ -250,7 +250,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const item = $input.first().json;\nif (!item || !item.editedText) return [];\nconst esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nlet paras = item.editedText.split(/\\n+/).map(s => s.trim()).filter(Boolean);\nif (paras.length <= 1) {\n  const t = (paras[0] || '').trim();\n  paras = [];\n  let buf = '';\n  for (const ch of t) {\n    buf += ch;\n    if (buf.length >= 80 && '。！？；'.includes(ch)) {\n      paras.push(buf.trim());\n      buf = '';\n    }\n  }\n  if (buf.trim()) paras.push(buf.trim());\n}\nconst contentHtml = paras.map(p => '<p>' + esc(p) + '</p>').join('');\nconst cfg = $('设定题材').first().json;\nreturn [{ json: { content_html: contentHtml, title: item.title, book_id: String(cfg.book_id || '') } }];"
+        "jsCode": "const item = $input.first().json;\nconst draft = (() => { try { return $('润色A').first().json; } catch { return null; } })();\nconst msg = draft && draft.choices && draft.choices[0] && draft.choices[0].message;\nconst editedText = (msg && typeof msg.content === 'string') ? msg.content : '';\nif (!editedText) return [];\nconst esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nlet paras = editedText.split(/\\n+/).map(s => s.trim()).filter(Boolean);\nif (paras.length <= 1) {\n  const t = (paras[0] || '').trim();\n  paras = [];\n  let buf = '';\n  for (const ch of t) {\n    buf += ch;\n    if (buf.length >= 80 && '。！？；'.includes(ch)) {\n      paras.push(buf.trim());\n      buf = '';\n    }\n  }\n  if (buf.trim()) paras.push(buf.trim());\n}\nconst contentHtml = paras.map(p => '<p>' + esc(p) + '</p>').join('');\nconst cfg = $('设定题材').first().json;\nreturn [{ json: { content_html: contentHtml, title: item.title, book_id: String(cfg.book_id || '') } }];"
       },
       "id": "n-format-a",
       "name": "排版A",
@@ -382,7 +382,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const item = $input.first().json;\nif (!item || !item.editedText) return [];\nconst esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nlet paras = item.editedText.split(/\\n+/).map(s => s.trim()).filter(Boolean);\nif (paras.length <= 1) {\n  const t = (paras[0] || '').trim();\n  paras = [];\n  let buf = '';\n  for (const ch of t) {\n    buf += ch;\n    if (buf.length >= 80 && '。！？；'.includes(ch)) {\n      paras.push(buf.trim());\n      buf = '';\n    }\n  }\n  if (buf.trim()) paras.push(buf.trim());\n}\nconst contentHtml = paras.map(p => '<p>' + esc(p) + '</p>').join('');\nconst cfg = $('设定题材').first().json;\nreturn [{ json: { content_html: contentHtml, title: item.title, book_id: String(cfg.book_id || '') } }];"
+        "jsCode": "const item = $input.first().json;\nconst draft = (() => { try { return $('润色B').first().json; } catch { return null; } })();\nconst msg = draft && draft.choices && draft.choices[0] && draft.choices[0].message;\nconst editedText = (msg && typeof msg.content === 'string') ? msg.content : '';\nif (!editedText) return [];\nconst esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nlet paras = editedText.split(/\\n+/).map(s => s.trim()).filter(Boolean);\nif (paras.length <= 1) {\n  const t = (paras[0] || '').trim();\n  paras = [];\n  let buf = '';\n  for (const ch of t) {\n    buf += ch;\n    if (buf.length >= 80 && '。！？；'.includes(ch)) {\n      paras.push(buf.trim());\n      buf = '';\n    }\n  }\n  if (buf.trim()) paras.push(buf.trim());\n}\nconst contentHtml = paras.map(p => '<p>' + esc(p) + '</p>').join('');\nconst cfg = $('设定题材').first().json;\nreturn [{ json: { content_html: contentHtml, title: item.title, book_id: String(cfg.book_id || '') } }];"
       },
       "id": "n-format-b",
       "name": "排版B",
@@ -1337,21 +1337,6 @@
     },
     {
       "parameters": {
-        "mode": "append",
-        "options": {},
-        "numberInputs": 4
-      },
-      "id": "n-merge-pub",
-      "name": "合并发布结果",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 2.1,
-      "position": [
-        1540,
-        480
-      ]
-    },
-    {
-      "parameters": {
         "method": "POST",
         "url": "http://127.0.0.1:8000/api/agent/run",
         "authentication": "none",
@@ -1984,7 +1969,7 @@
         940
       ],
       "parameters": {
-        "jsCode": "const qa = (() => { try { return $('质量门A').first().json; } catch { return null; } })();\nconst qb = (() => { try { return $('质量门B').first().json; } catch { return null; } })();\nconst aFail = qa && qa.passed === false;\nconst bFail = qb && qb.passed === false;\nif (aFail && bFail) return [{ json: { failed_both: true } }];\nreturn [];"
+        "jsCode": "const grab = (name) => { try { return $('' + name).first().json; } catch { return null; } };\nconst qa = grab('质量门A');\nconst qb = grab('质量门B');\nconst draftA = grab('解析草稿A');\nconst draftB = grab('解析草稿B');\nconst pubA = grab('校验发布A');\nconst pubB = grab('校验发布B');\nconst failed = grab('失败留痕');\nreturn [{ json: {\n  ok: true,\n  a_passed: !!(qa && qa.passed !== false),\n  b_passed: !!(qb && qb.passed !== false),\n  draftA, draftB, pubA, pubB, failed,\n} }];"
       }
     },
     {
@@ -2515,17 +2500,6 @@
         ]
       ]
     },
-    "合并发布结果": {
-      "main": [
-        [
-          {
-            "node": "非空兜底",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "提炼剧情A": {
       "main": [
         [
@@ -2738,17 +2712,6 @@
         ]
       ]
     },
-    "解析复核A": {
-      "main": [
-        [
-          {
-            "node": "合并发布结果",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "复核发布B": {
       "main": [
         [
@@ -2756,17 +2719,6 @@
             "node": "解析复核B",
             "type": "main",
             "index": 0
-          }
-        ]
-      ]
-    },
-    "解析复核B": {
-      "main": [
-        [
-          {
-            "node": "合并发布结果",
-            "type": "main",
-            "index": 1
           }
         ]
       ]
@@ -2906,17 +2858,6 @@
         ]
       ]
     },
-    "合并兜底": {
-      "main": [
-        [
-          {
-            "node": "合并发布结果",
-            "type": "main",
-            "index": 2
-          }
-        ]
-      ]
-    },
     "初始化设定知识库": {
       "main": [
         [
@@ -2939,22 +2880,22 @@
         ]
       ]
     },
-    "失败留痕": {
-      "main": [
-        [
-          {
-            "node": "合并发布结果",
-            "type": "main",
-            "index": 3
-          }
-        ]
-      ]
-    },
     "非空兜底": {
       "main": [
         [
           {
             "node": "汇总运行结果",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "合并兜底": {
+      "main": [
+        [
+          {
+            "node": "非空兜底",
             "type": "main",
             "index": 0
           }

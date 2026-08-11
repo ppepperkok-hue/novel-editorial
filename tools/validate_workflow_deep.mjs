@@ -77,7 +77,10 @@ for (const file of files) {
     }
   }
   for (const n of nodes) {
-    const terminals = new Set(["记录作品资料", "结束", "采集阅读数据", "发布存稿", "全员写日记"]);
+    const terminals = new Set([
+      "记录作品资料", "结束", "采集阅读数据", "发布存稿", "全员写日记",
+      "解析复核A", "解析复核B", "失败留痕",
+    ]);
     if (!conns[n.name] && n.type !== "n8n-nodes-base.scheduleTrigger" && !terminals.has(n.name)) {
       issues.push(`${file}: Node without outgoing connection: ${n.name}`);
     }
@@ -138,7 +141,7 @@ for (const file of files) {
     // both-tracks-failed runs must still reach the summary via the fallback.
     for (const [src, dst] of [
       ["整理剧情A", "合并兜底"],
-      ["合并兜底", "合并发布结果"],
+      ["合并兜底", "非空兜底"],
     ]) {
       const targets = (conns[src]?.main?.[0] || []).map((x) => x.node);
       if (!targets.includes(dst)) {
@@ -240,29 +243,9 @@ for (const file of files) {
     if (traceNode && !/\$input\.all\(\)/.test(traceNode.parameters.jsCode || "")) {
       issues.push(`${file}: 失败留痕 must collect all error items`);
     }
-    const traceTargets = (conns["失败留痕"]?.main?.[0] || []).map((x) => x.node);
-    if (!traceTargets.includes("合并发布结果")) {
-      issues.push(`${file}: 失败留痕 must feed 合并发布结果`);
-    }
-    // K1: merge input ports must be distinct and match numberInputs.
-    const mergeNode = nodes.find((n) => n.name === "合并发布结果");
-    if (mergeNode) {
-      const upstreams = Object.entries(conns)
-        .filter(([, v]) => (v.main?.[0] || []).some((e) => e.node === "合并发布结果"))
-        .map(([src, v]) => ({ src, idx: v.main[0].find((e) => e.node === "合并发布结果").index }));
-      const ports = upstreams.map((u) => u.idx);
-      if (new Set(ports).size !== upstreams.length) {
-        issues.push(`${file}: 合并发布结果 inputs use duplicate ports`);
-      }
-      for (let k = 0; k < upstreams.length; k += 1) {
-        if (!ports.includes(k)) {
-          issues.push(`${file}: 合并发布结果 input port ${k} not assigned`);
-        }
-      }
-      const declared = Number(mergeNode.parameters.numberInputs || 0);
-      if (declared !== upstreams.length) {
-        issues.push(`${file}: 合并发布结果 numberInputs=${declared} != upstreams=${upstreams.length}`);
-      }
+    const collector = nodes.find((n) => n.name === "合并兜底");
+    if (collector && !/失败留痕/.test(collector.parameters.jsCode || "")) {
+      issues.push(`${file}: 合并兜底 must reference 失败留痕`);
     }
     const fallback = nodes.find((n) => n.name === "合并兜底");
     if (fallback && (!/质量门A/.test(fallback.parameters.jsCode || "") || !/质量门B/.test(fallback.parameters.jsCode || ""))) {

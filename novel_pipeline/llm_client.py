@@ -152,7 +152,7 @@ class MockLLMClient(LLMClient):
 
 
 def chat_deepseek(model, system, user, temperature=0.5, max_tokens=1600,
-                  messages=None, tools=None):
+                  messages=None, tools=None, json_mode=None):
     """Direct DeepSeek chat call used by meeting/diary tools.
 
     Reads DEEPSEEK_API_KEY from ~/.n8n/.env or process env. Returns
@@ -178,7 +178,7 @@ def chat_deepseek(model, system, user, temperature=0.5, max_tokens=1600,
     }
     if tools:
         body["tools"] = tools
-    else:
+    elif json_mode is not False:
         body["response_format"] = {"type": "json_object"}
     last_err = None
     data = None
@@ -192,7 +192,7 @@ def chat_deepseek(model, system, user, temperature=0.5, max_tokens=1600,
                     "Authorization": "Bearer " + key,
                 },
             )
-            with urllib.request.urlopen(req, timeout=120) as r:
+            with urllib.request.urlopen(req, timeout=300) as r:
                 data = json.loads(r.read().decode("utf-8"))
             choice = data["choices"][0]["message"]
             text = choice.get("content") or ""
