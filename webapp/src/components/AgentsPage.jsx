@@ -10,6 +10,7 @@ import {
   getDiaries,
   getKnowledge,
   getKnowledgeDrafts,
+  getMemories,
   postAgents,
   postControl,
   readKnowledge,
@@ -44,6 +45,7 @@ export default function AgentsPage({ pushToast }) {
   const [log, setLog] = useState([]);
   const [pendingPick, setPendingPick] = useState(null);
   const [diaries, setDiaries] = useState([]);
+  const [memories, setMemories] = useState([]);
   const [states, setStates] = useState([]);
   const [editDiary, setEditDiary] = useState(null);
   const [moodDraft, setMoodDraft] = useState(null);
@@ -72,6 +74,9 @@ export default function AgentsPage({ pushToast }) {
     if (!selected) return;
     getDiaries(selected.file)
       .then((r) => setDiaries(r.diaries || []))
+      .catch(() => {});
+    getMemories(selected.file.replace(/\.md$/, ""))
+      .then((r) => setMemories(r.items || []))
       .catch(() => {});
     getAgentStates()
       .then((r) => setStates(r.states || []))
@@ -298,6 +303,25 @@ export default function AgentsPage({ pushToast }) {
 
             <div className="border-t border-[var(--line)] px-5 py-4">
               <div className="label !mb-3">记忆与日记（可修改）</div>
+              <div className="mb-4 rounded-lg border border-[var(--line)] bg-[var(--code-bg)] p-3">
+                <div className="mb-2 text-xs font-semibold">观点演化</div>
+                {memories.filter((m) => m.category === "opinion").length ? (
+                  <ul className="flex flex-col gap-1 text-xs text-slate-400">
+                    {memories
+                      .filter((m) => m.category === "opinion")
+                      .map((m) => (
+                        <li key={m.id}>
+                          <span className="chip chip-info">{m.created_at || "—"}</span>{" "}
+                          {m.content}
+                        </li>
+                      ))}
+                  </ul>
+                ) : (
+                  <div className="text-xs text-slate-500">
+                    还没有观点记录，周会之后会出现在这里
+                  </div>
+                )}
+              </div>
               <div className="mb-4 rounded-lg border border-[var(--line)] bg-[var(--code-bg)] p-3">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-xs font-semibold">当前心情</span>

@@ -87,6 +87,40 @@ class DiaryTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_weekly_diary_persists_opinions_as_memories(self):
+        path = make_db()
+        from tools import write_diaries
+
+        payload = {
+            "week_summary": "本周写了两章",
+            "key_events": [],
+            "learnings": [],
+            "opinions_changed": ["我开始觉得规则怪谈不能只靠爽点撑"],
+            "mood_trend": "平稳",
+            "next_week_focus": "观察",
+            "mood": {"satisfaction": 0.7, "concern": 0.3, "excitement": 0.6, "fatigue": 0.4, "note": ""},
+        }
+        with mock.patch("tools.write_diaries.chat_deepseek") as chat:
+            chat.return_value = {
+                "text": json.dumps(payload, ensure_ascii=False),
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+                "model": "deepseek-v4-flash",
+            }
+            conn = db.connect(path)
+            try:
+                write_diaries.write(conn, 1, "weekly")
+                rows = conn.execute(
+                    "SELECT agent, category, content FROM agent_memories "
+                    "WHERE category='opinion'"
+                ).fetchall()
+                self.assertEqual(len(rows), 11)
+                self.assertTrue(
+                    any("规则怪谈" in r["content"] for r in rows),
+                    [r["content"] for r in rows],
+                )
+            finally:
+                conn.close()
+
 
 class MaterialsTests(unittest.TestCase):
     def test_build_materials_has_briefs(self):
@@ -99,6 +133,10 @@ class MaterialsTests(unittest.TestCase):
             self.assertIn("published_chapters", m["context"])
             self.assertEqual(len(m["agent_briefs"]), 11)
             self.assertEqual(m["context"]["quality_summary"]["total"], 1)
+            self.assertIn("revision_trend", m["context"]["quality_summary"])
+            self.assertEqual(
+                m["context"]["quality_summary"]["revision_trend"]["recent"], 1
+            )
         finally:
             conn.close()
 

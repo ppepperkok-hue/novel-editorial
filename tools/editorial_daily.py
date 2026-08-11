@@ -136,6 +136,37 @@ def _handle_outbox(ctx, node, text):
     return json.dumps(obj, ensure_ascii=False)
 
 
+def _handle_agency(ctx, node, text):
+    """R3-1: execute whitelisted autonomous actions from an `agency` array.
+
+    Mirrors the outbox pattern: the field is stripped from the returned text
+    and each action goes through `agency.apply`, which rejects anything
+    outside the whitelist with an explicit audit trail.
+    """
+    raw = str(text or "")
+    obj = steps.robust_json(raw) if raw.strip().startswith(("{", "[")) else None
+    if not isinstance(obj, dict) or not isinstance(obj.get("agency"), list):
+        return text
+    actions = obj.pop("agency")
+    from_agent = _canonical_agent(node)
+    from novel_pipeline.services import agency as agency_service  # noqa: PLC0415
+
+    conn = db.connect(ctx.db_path)
+    try:
+        result = agency_service.apply(conn, from_agent, ctx.novel_id, actions)
+        if not result.get("ok"):
+            ctx.warnings.append(
+                f"agency {node}: {result.get('error', 'unknown')}"
+            )
+        elif result.get("rejected"):
+            ctx.warnings.append(
+                f"agency {node}: {result['rejected']} 个动作不在白名单，已拒绝"
+            )
+    finally:
+        conn.close()
+    return json.dumps(obj, ensure_ascii=False)
+
+
 def _mark_injected_read(ctx, node):
     """Mark the mailbox entries shown in the injected snapshot as read (S4)."""
     agent = _canonical_agent(node)
@@ -307,6 +338,7 @@ def _agent(ctx, node, task, target_words=None):
         return None
     if not ctx.dry_run:
         text = _handle_outbox(ctx, node, text)
+        text = _handle_agency(ctx, node, text)
         _mark_injected_read(ctx, node)
     ctx.agent_calls.append({"node": node, "chars": len(str(text or ""))})
     return str(text or "")

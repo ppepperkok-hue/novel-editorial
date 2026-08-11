@@ -66,6 +66,22 @@ class AgentContextTests(unittest.TestCase):
         snap = agent_context.build_context_snapshot(self.conn, "writer", novel_id=1)
         self.assertIn("今日心情", snap)
         self.assertIn("手感正好", snap)
+
+    def test_opinion_memories_sort_first(self):
+        self.conn.execute(
+            "INSERT INTO agent_memories(agent,novel_id,category,importance,content,source,created_at) "
+            "VALUES('writer',1,'collaboration',0.9,'普通协作记忆','review',datetime('now','localtime'))"
+        )
+        self.conn.execute(
+            "INSERT INTO agent_memories(agent,novel_id,category,importance,content,source,created_at) "
+            "VALUES('writer',1,'opinion',0.7,'我对题材的看法变了','weekly',datetime('now','localtime'))"
+        )
+        self.conn.commit()
+        snap = agent_context.build_context_snapshot(self.conn, "writer", novel_id=1)
+        self.assertLess(
+            snap.index("我对题材的看法变了"),
+            snap.index("普通协作记忆"),
+        )
         self.assertIn("我与同事的关系", snap)
         self.assertIn("熟悉0.2 信任0.3 摩擦0.4", snap)
         self.assertIn("我未兑现的承诺", snap)

@@ -268,6 +268,38 @@ class EditorialDailyTests(unittest.TestCase):
         )
         self.assertIn("语气平和", tone_low)
 
+    def test_handle_agency_executes_and_strips(self):
+        ctx = editorial_daily._Ctx(self.novel_id, self.db_path, dry_run=False)
+        text = json.dumps(
+            {
+                "passed": True,
+                "agency": [
+                    {"action": "write_report", "body": "守正检查报告：第三章时间线有歧义"}
+                ],
+            },
+            ensure_ascii=False,
+        )
+        result = editorial_daily._handle_agency(ctx, "reviewer", text)
+        parsed = json.loads(result)
+        self.assertTrue(parsed["passed"])
+        self.assertNotIn("agency", parsed)
+        rows = self.conn.execute(
+            "SELECT activity_type FROM agent_activity WHERE agent='reviewer'"
+        ).fetchall()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["activity_type"], "agency_report")
+
+    def test_handle_agency_rejects_unknown_action(self):
+        ctx = editorial_daily._Ctx(self.novel_id, self.db_path, dry_run=False)
+        text = json.dumps(
+            {"agency": [{"action": "publish_book", "body": "x"}]}
+        )
+        editorial_daily._handle_agency(ctx, "写手A", text)
+        self.assertTrue(
+            any("不在白名单" in w for w in ctx.warnings),
+            ctx.warnings,
+        )
+
     def test_two_runs_are_idempotent(self):
         self._ok_preflight()
         r1 = editorial_daily.daily(

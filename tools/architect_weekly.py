@@ -222,6 +222,13 @@ def build_materials(conn, novel_id, allow_empty=False):
         "WHERE c.novel_id=?",
         (row["id"],),
     ).fetchone()
+    recent_quality = conn.execute(
+        "SELECT COUNT(*) total, COALESCE(SUM(revision_count>0),0) revised FROM ("
+        "SELECT q.revision_count FROM quality_reports q "
+        "JOIN chapters c ON c.id=q.chapter_id WHERE c.novel_id=? "
+        "ORDER BY q.id DESC LIMIT 20)",
+        (row["id"],),
+    ).fetchone()
     cost_row = conn.execute(
         "SELECT COALESCE(SUM(prompt_tokens),0) pt, COALESCE(SUM(completion_tokens),0) ct "
         "FROM cost_logs WHERE novel_id=? AND created_at>=date('now','localtime','start of month')",
@@ -293,6 +300,10 @@ def build_materials(conn, novel_id, allow_empty=False):
             "total": quality["total"] or 0,
             "passed": quality["passed"] or 0,
             "avg_score": round(quality["avg_score"] or 0, 1),
+            "revision_trend": {
+                "recent": recent_quality["total"] or 0,
+                "revised": recent_quality["revised"] or 0,
+            },
         },
         "novel_knowledge": novel_knowledge.snapshot(conn, novel_id),
     }

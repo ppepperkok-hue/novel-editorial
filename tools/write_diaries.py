@@ -184,6 +184,18 @@ def write(conn, novel_id, mode, dry_run=False, materials=None):
                 "VALUES(?,?,?,datetime('now','localtime'))",
                 (agent, novel_id, json.dumps(mood, ensure_ascii=False)),
             )
+        if mode == "weekly" and not dry_run and isinstance(content, dict):
+            opinions = content.get("opinions_changed")
+            if isinstance(opinions, list):
+                for op in opinions:
+                    text = str(op).strip()
+                    if text:
+                        conn.execute(
+                            "INSERT INTO agent_memories("
+                            "agent,novel_id,category,importance,content,source,created_at) "
+                            "VALUES(?,?,'opinion',0.7,?,'weekly',datetime('now','localtime'))",
+                            (agent, novel_id, text[:500]),
+                        )
         if (
             mode == "weekly"
             and not dry_run

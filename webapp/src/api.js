@@ -23,6 +23,12 @@ export const getFlow = () => getJSON("/api/flow");
 export const getEditorialOverview = () => getJSON("/api/editorial/overview");
 export const getMailbox = (agent) =>
   getJSON("/api/agents/mailbox" + (agent ? "?agent=" + encodeURIComponent(agent) : "?limit=20"));
+export const getMemories = (agent) =>
+  getJSON(
+    "/api/agents/memories?agent=" +
+      encodeURIComponent(agent) +
+      "&limit=20"
+  );
 export const claimAction = (id, agent) =>
   postJSON("/api/agent_actions/claim", { id, agent });
 export const getAgents = () => getJSON("/api/agents");

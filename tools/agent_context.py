@@ -90,6 +90,9 @@ def build_context_snapshot(conn, agent, novel_id=0):
     memories = editorial_state.list_memories(
         conn, agent=agent, novel_id=novel_id, limit=config.AGENT_CTX_MEMORIES
     ).get("items") or []
+    memories.sort(
+        key=lambda m: 0 if str(m.get("category") or "") == "opinion" else 1
+    )
     if memories:
         sections.append(
             "最近记忆：\n"
