@@ -33,5 +33,5 @@
 - [x] 更新 test_workday 两条旧断言（dry-run 不写库）+ test_publish_stock 默认状态 publishing
 - [x] 清理 `.err`、`slices-run.log`、`docs/tmp_fix`（根目录无 `_repro_*.py`）
 - [x] 修复日志归档 `docs/planning/round3-fix-logs/`（8 份 .md）
-- [ ] 提交并登记（待提交）
-- [ ] 开第四轮审查
+- [x] 提交 `c00198d`（61 files）
+- [x] 开第四轮审查（六片并行）
