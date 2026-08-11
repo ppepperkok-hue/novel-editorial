@@ -202,6 +202,38 @@ class DispatchTests(unittest.TestCase):
                 )
         self.assertEqual(result["assignments"][0]["task"], "写今天两章")
 
+    def test_response_mode_defaults_on(self):
+        ctx = editorial_daily._Ctx(1, self.db_path, dry_run=True)
+        with mock.patch(
+            "tools.editorial_daily._agent",
+            return_value='{"decision": "accept", "reason": "没问题"}',
+        ):
+            result = editorial_daily._apply_writer_responses(
+                ctx, self.conn, self._dispatch_for_response()
+            )
+        writer = [a for a in result["assignments"] if a["agent"] == "writer"][0]
+        self.assertEqual(writer["task"], "写今天两章")
+
+    def test_assignments_sorted_by_trust(self):
+        self.conn.execute(
+            "INSERT INTO agent_relations(agent,other,novel_id,familiarity,trust,friction,updated_at) "
+            "VALUES('writer','eic',1,0,0.2,0,datetime('now','localtime'))"
+        )
+        self.conn.execute(
+            "INSERT INTO agent_relations(agent,other,novel_id,familiarity,trust,friction,updated_at) "
+            "VALUES('planner','eic',1,0,0.9,0,datetime('now','localtime'))"
+        )
+        self.conn.commit()
+        assignments = [
+            {"agent": "writer", "task": "写稿", "note": ""},
+            {"agent": "planner", "task": "出大纲", "note": ""},
+        ]
+        result = editorial_daily._sort_assignments_by_trust(
+            self.conn, assignments, 1
+        )
+        self.assertEqual(result[0]["agent"], "planner")
+        self.assertEqual(result[1]["agent"], "writer")
+
     def test_response_reject_raises_friction(self):
         ctx = editorial_daily._Ctx(1, self.db_path, dry_run=False)
         with mock.patch("tools.editorial_daily.config.TASK_RESPONSE_MODE", "on"):

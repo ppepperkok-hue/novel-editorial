@@ -254,6 +254,49 @@ def _persist_topic_request_actions(conn, session_id, meeting_id, novel_id=0):
     return created
 
 
+def _handle_meeting_actions(conn, agent, novel_id, speech):
+    """Execute whitelisted agency actions and outbox mail from a speech.
+
+    Meeting speeches may carry `agency` (safe autonomous actions) and
+    `outbox` (messages to colleagues), closing the same loop the daily chain
+    has. Anything outside the whitelist is rejected by agency.apply with an
+    audit trail.
+    """
+    if not isinstance(speech, dict):
+        return
+    from novel_editorial.services import agency as agency_service  # noqa: PLC0415
+    from tools import mailroom  # noqa: PLC0415
+
+    actions = speech.get("agency")
+    if isinstance(actions, list) and actions:
+        result = agency_service.apply(conn, agent, novel_id or 0, actions)
+        audit.log(
+            conn, "agency", "meeting_agency",
+            target_type="agent", target_id=agent,
+            detail={
+                "applied": result.get("applied", 0),
+                "rejected": result.get("rejected", 0),
+            },
+        )
+    outbox = speech.get("outbox")
+    if isinstance(outbox, list):
+        for item in outbox:
+            if not isinstance(item, dict):
+                continue
+            mailroom.send(
+                conn,
+                agent,
+                str(item.get("to") or ""),
+                str(item.get("body") or ""),
+                subject=str(item.get("subject") or ""),
+                kind=str(item.get("kind") or "note"),
+                novel_id=novel_id or 0,
+                chapter_id=int(item.get("chapter_id") or 0),
+                reply_to=int(item.get("reply_to") or 0),
+            )
+    conn.commit()
+
+
 def run_session(session_id, db_path=""):
     """Background worker: executes rounds, pauses for user instructions."""
     conn = None
@@ -398,6 +441,7 @@ def _run_locked(conn, session_id):
                         conn, agent, novel_id or 0, speech["promises"], source="meeting"
                     )
                 _record_topic_requests(conn, agent, novel_id or 0, speech)
+                _handle_meeting_actions(conn, agent, novel_id or 0, speech)
                 transcript.append({"round": round_no, "agent": agent, "speech": speech})
                 activity.log_activity(
                     conn,

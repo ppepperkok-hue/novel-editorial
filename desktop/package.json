@@ -33,7 +33,7 @@
         "from": "../",
         "to": "novel-pipeline",
         "filter": [
-          "novel_pipeline/**",
+          "novel_editorial/**",
           "tools/**",
           "prompts/**",
           "webapp/dist/**",

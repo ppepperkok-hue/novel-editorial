@@ -107,6 +107,34 @@ class MeetingSessionTests(unittest.TestCase):
         ).fetchone()["c"]
         self.assertEqual(n, 0)
 
+    def test_meeting_agency_and_outbox_executed(self):
+        speech = {
+            "speech": "我提议把规则台账模板定死",
+            "agency": [
+                {"action": "write_report", "body": "设定冲突检查报告"},
+                {"action": "post_issue", "body": "规则台账模板需要统一"},
+            ],
+            "outbox": [
+                {"to": "eic", "body": "请审阅我的报告", "subject": "报告"}
+            ],
+        }
+        meeting_session._handle_meeting_actions(self.conn, "guard", 1, speech)
+        activity_rows = self.conn.execute(
+            "SELECT COUNT(*) c FROM agent_activity "
+            "WHERE agent='guard' AND activity_type='agency_report'"
+        ).fetchone()["c"]
+        self.assertEqual(activity_rows, 1)
+        issue = self.conn.execute(
+            "SELECT COUNT(*) c FROM agent_messages "
+            "WHERE from_agent='guard' AND kind='topic_request'"
+        ).fetchone()["c"]
+        self.assertEqual(issue, 1)
+        msg = self.conn.execute(
+            "SELECT COUNT(*) c FROM agent_messages "
+            "WHERE from_agent='guard' AND kind='note'"
+        ).fetchone()["c"]
+        self.assertEqual(msg, 1)
+
     def test_planning_meeting_full_chain_without_novel(self):
         import json
 

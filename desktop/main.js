@@ -57,7 +57,7 @@ async function ensureApi() {
   }
   apiProc = spawn(
     PYTHONW,
-    ["-m", "novel_pipeline.web_api", "--db", dbPath, "--port", String(API_PORT)],
+    ["-m", "novel_editorial.web_api", "--db", dbPath, "--port", String(API_PORT)],
     { cwd: ROOT, stdio: "ignore" },
   );
   for (let i = 0; i < 40; i += 1) {

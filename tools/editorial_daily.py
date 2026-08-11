@@ -597,6 +597,9 @@ def _dispatch(ctx, conn, stock):
         for a in (obj.get("assignments") or [])
         if isinstance(a, dict) and str(a.get("agent") or "").strip()
     ]
+    if assignments and config.RELATION_WEIGHT and not ctx.dry_run:
+        assignments = _sort_assignments_by_trust(conn, assignments, ctx.novel_id)
+        obj = {**obj, "assignments": assignments}
     if assignments and not ctx.dry_run:
         mailroom.broadcast(
             conn,
@@ -607,6 +610,29 @@ def _dispatch(ctx, conn, stock):
             novel_id=ctx.novel_id,
         )
     return {"mode": "editorial", "dispatch": obj, "degraded": False}
+
+
+def _sort_assignments_by_trust(conn, assignments, novel_id):
+    """R2 follow-up: deterministic preference for high-trust members.
+
+    Assignments are stably sorted by the member's trust with the chief
+    editor, so a trusted writer's task is broadcast and injected first.
+    Missing relationships sort as zero trust and keep their original order.
+    """
+    trust_map = {}
+    for r in conn.execute(
+        "SELECT agent, trust FROM agent_relations "
+        "WHERE other='eic' AND novel_id=?",
+        (novel_id,),
+    ).fetchall():
+        try:
+            trust_map[r["agent"]] = float(r["trust"] or 0)
+        except (TypeError, ValueError):
+            trust_map[r["agent"]] = 0.0
+    return sorted(
+        assignments,
+        key=lambda a: -trust_map.get(str(a.get("agent") or ""), 0.0),
+    )
 
 
 def _apply_writer_responses(ctx, conn, dispatch):
