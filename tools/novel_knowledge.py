@@ -193,6 +193,17 @@ def upsert_ex(
     else:
         kid = row["id"]
         similar = []
+        if row["content"] == content and not change_note:
+            # Same content and no explicit note (e.g. repeated chapter sync):
+            # idempotent upsert, no version/history churn. Merge events carry
+            # a change_note and still get versioned for auditability.
+            conn.commit()
+            return {
+                "id": kid,
+                "entity": entity,
+                "merged_into": None,
+                "similar": similar,
+            }
         old_version = row["version"]
         conn.execute(
             "INSERT INTO novel_knowledge_history(knowledge_id,content,version,change_note,created_at) "

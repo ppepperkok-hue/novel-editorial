@@ -40,6 +40,21 @@ class NovelKnowledgeTests(unittest.TestCase):
         self.assertEqual(hist[0]["content"], "筑基初期，重伤未愈")
         self.assertEqual(hist[0]["version"], 1)
 
+    def test_upsert_same_content_is_idempotent(self):
+        kid = novel_knowledge.upsert(
+            self.conn, self.nid, "character", "苏晚晴",
+            "筑基初期，重伤未愈", source_chapter=self.cid1,
+        )
+        kid2 = novel_knowledge.upsert(
+            self.conn, self.nid, "character", "苏晚晴",
+            "筑基初期，重伤未愈", source_chapter=self.cid2,
+        )
+        self.assertEqual(kid, kid2)
+        items = novel_knowledge.get(self.conn, self.nid, category="character")
+        self.assertEqual(items[0]["version"], 1, "same content must not bump version")
+        hist = novel_knowledge.history(self.conn, kid)
+        self.assertEqual(len(hist), 0, "same content must not write history")
+
     def test_normalize_entity(self):
         self.assertEqual(
             novel_knowledge.normalize_entity("world_rule", "阴阳守恒：殡仪馆是阴阳交界点"),
