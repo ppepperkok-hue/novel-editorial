@@ -259,6 +259,59 @@ CREATE TABLE IF NOT EXISTS agent_activity (
     created_at TEXT DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS agent_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_agent TEXT NOT NULL,
+    to_agent TEXT NOT NULL,
+    kind TEXT DEFAULT 'note',
+    subject TEXT DEFAULT '',
+    body TEXT NOT NULL,
+    ref_novel_id INTEGER DEFAULT 0,
+    ref_chapter_id INTEGER DEFAULT 0,
+    reply_to INTEGER DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'unread',
+    resolution TEXT DEFAULT '',
+    created_at TEXT DEFAULT '',
+    read_at TEXT DEFAULT '',
+    resolved_at TEXT DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS agent_relations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent TEXT NOT NULL,
+    other TEXT NOT NULL,
+    novel_id INTEGER DEFAULT 0,
+    familiarity REAL DEFAULT 0,
+    trust REAL DEFAULT 0,
+    friction REAL DEFAULT 0,
+    notes TEXT DEFAULT '',
+    updated_at TEXT DEFAULT '',
+    UNIQUE(agent, other, novel_id)
+);
+
+CREATE TABLE IF NOT EXISTS agent_memories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent TEXT NOT NULL,
+    novel_id INTEGER DEFAULT 0,
+    category TEXT DEFAULT 'general',
+    importance REAL DEFAULT 0.5,
+    content TEXT NOT NULL,
+    source TEXT DEFAULT '',
+    created_at TEXT DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS agent_promises (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent TEXT NOT NULL,
+    novel_id INTEGER DEFAULT 0,
+    promise TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    made_at TEXT DEFAULT '',
+    due_at TEXT DEFAULT '',
+    kept_at TEXT DEFAULT '',
+    source TEXT DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS daily_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     run_id TEXT NOT NULL UNIQUE,
@@ -372,6 +425,13 @@ def _migrate(conn):
         CREATE INDEX IF NOT EXISTS idx_activity_agent_created ON agent_activity(agent, created_at);
         CREATE INDEX IF NOT EXISTS idx_activity_created ON agent_activity(created_at);
         CREATE INDEX IF NOT EXISTS idx_daily_runs_status ON daily_runs(status, created_at);
+        CREATE INDEX IF NOT EXISTS idx_messages_to_status ON agent_messages(to_agent, status);
+        CREATE INDEX IF NOT EXISTS idx_messages_from ON agent_messages(from_agent);
+        CREATE INDEX IF NOT EXISTS idx_messages_novel ON agent_messages(ref_novel_id);
+        CREATE INDEX IF NOT EXISTS idx_relations_novel ON agent_relations(novel_id);
+        CREATE INDEX IF NOT EXISTS idx_memories_agent ON agent_memories(agent, novel_id, category);
+        CREATE INDEX IF NOT EXISTS idx_memories_importance ON agent_memories(importance);
+        CREATE INDEX IF NOT EXISTS idx_promises_agent_status ON agent_promises(agent, status);
         """
     )
     # Deduplicate (novel_id, seq) keeping the published row when possible;
