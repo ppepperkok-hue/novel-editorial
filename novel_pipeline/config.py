@@ -58,6 +58,7 @@ AGENT_CTX_TRUNCATE = _env_int("AGENT_CTX_TRUNCATE", 200)
 DISPATCH_MODE = os.environ.get("DISPATCH_MODE", "editorial")
 REVIEW_RETRY_MAX = _env_int("REVIEW_RETRY_MAX", 1)
 MEETING_MODE = os.environ.get("MEETING_MODE", "rounds")
+CLAIM_INJECT = os.environ.get("CLAIM_INJECT", "on") != "off"
 
 
 def load_env():

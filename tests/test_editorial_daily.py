@@ -47,7 +47,7 @@ class EditorialDailyTests(unittest.TestCase):
         self.tmpdir = tempfile.mkdtemp()
         self.db_path = os.path.join(self.tmpdir, "t.db")
         self.conn = db.connect(self.db_path)
-        _seed(self.conn)
+        self.novel_id = _seed(self.conn)
 
     def tearDown(self):
         self.conn.close()
@@ -129,6 +129,58 @@ class EditorialDailyTests(unittest.TestCase):
         self.assertEqual(result["status"], "failed")
         self.assertIn("运行锁占用", result["error"])
         self.assertEqual(result["run_id"], result["run_id"])
+
+    def _seed_claim(self, task="修完第三章伏笔"):
+        self.conn.execute(
+            "INSERT INTO agent_actions(agent, task, novel_id, status, claimed_by, priority, created_at) "
+            "VALUES('writer', ?, ?, 'claimed', 'writer', 'medium', datetime('now','localtime'))",
+            (task, self.novel_id),
+        )
+        self.conn.commit()
+
+    def _writer_fixture(self):
+        meta = {"protagonist": "林舟"}
+        outline = {
+            "genre": "都市",
+            "keywords": "旧书店",
+            "bible": {
+                "characters": [{"name": "林舟", "role": "主角"}],
+                "relationships": [],
+                "world_rules": ["旧书店只在夜间开门"],
+            },
+            "chapter1": {"title": "开篇", "emotion": "好奇", "position": "开篇"},
+            "chapter2": {"title": "试探", "emotion": "紧张", "position": "推进"},
+        }
+        guard = {"constraints": [], "character_beats": {}}
+        return meta, outline, guard
+
+    def test_claimed_writer_notes_injected(self):
+        self._seed_claim()
+        ctx = editorial_daily._Ctx(self.novel_id, self.db_path, dry_run=True)
+        ctx.writing_context = "前情提要"
+        editorial_daily._load_claimed_writer_notes(ctx, self.conn)
+        self.assertIn("你认领的任务", ctx.claimed_notes)
+        self.assertIn("修完第三章伏笔", ctx.claimed_notes)
+        meta, outline, guard = self._writer_fixture()
+        task = editorial_daily._writer_task(ctx, 0, meta, outline, guard, 2000)
+        self.assertIn("你认领的任务", task)
+        self.assertIn("今天是兑现日", task)
+
+    def test_no_claims_leave_prompt_unchanged(self):
+        ctx = editorial_daily._Ctx(self.novel_id, self.db_path, dry_run=True)
+        ctx.writing_context = "前情提要"
+        editorial_daily._load_claimed_writer_notes(ctx, self.conn)
+        self.assertEqual(ctx.claimed_notes, "")
+        meta, outline, guard = self._writer_fixture()
+        task = editorial_daily._writer_task(ctx, 0, meta, outline, guard, 2000)
+        self.assertNotIn("你认领的任务", task)
+
+    def test_claim_inject_off_disables_injection(self):
+        self._seed_claim()
+        with mock.patch("tools.editorial_daily.config.CLAIM_INJECT", False):
+            ctx = editorial_daily._Ctx(self.novel_id, self.db_path, dry_run=True)
+            editorial_daily._load_claimed_writer_notes(ctx, self.conn)
+        self.assertEqual(ctx.claimed_notes, "")
 
     def test_two_runs_are_idempotent(self):
         self._ok_preflight()

@@ -151,6 +151,7 @@ class _Ctx:
         self.agent_calls = []
         self.tool_attempts = []
         self.dispatch = None
+        self.claimed_notes = ""
         self.lock_path = None
         self.dry_item_counter = 0
 
@@ -551,6 +552,8 @@ def _writer_task(ctx, idx, meta, outline, guard, target_words, prev_track=None):
     dispatch_note = _writer_dispatch_notes(ctx, idx)
     if dispatch_note:
         parts.append(dispatch_note)
+    if ctx.claimed_notes:
+        parts.append(ctx.claimed_notes)
     return "；".join(parts)
 
 
@@ -582,6 +585,31 @@ def _writer_dispatch_notes(ctx, idx):
     if not parts:
         return ""
     return "主编今日分派：" + "；".join(parts) + "。这是今日工作的重点之一，融入你的章节内。"
+
+
+def _load_claimed_writer_notes(ctx, conn):
+    """F2: writer tasks claimed on the task board become today's promises.
+
+    Reads claimed/in-progress actions owned by the writer once per run and
+    stores a prompt snippet on the ctx so `_writer_task` can mention it
+    without another LLM call. Disabled via CLAIM_INJECT=off; missing claims
+    keep the writer prompt unchanged.
+    """
+    if not config.CLAIM_INJECT:
+        ctx.claimed_notes = ""
+        return
+    rows = conn.execute(
+        "SELECT task, claimed_by FROM agent_actions "
+        "WHERE status IN ('claimed','in_progress') "
+        "AND (agent=? OR assignee=? OR claimed_by=?) "
+        "ORDER BY id DESC LIMIT 5",
+        ("writer", "writer", "writer"),
+    ).fetchall()
+    tasks = [str(r["task"] or "").strip() for r in rows if str(r["task"] or "").strip()]
+    if not tasks:
+        ctx.claimed_notes = ""
+        return
+    ctx.claimed_notes = "你认领的任务：" + "；".join(tasks) + "。今天是兑现日，动笔时记得兑现。"
 
 
 def _reviewer_task(idx, outline, editor_text, prev_track=None, ctx=None, include_relations=False):
@@ -1094,6 +1122,7 @@ def _generate(ctx, conn, stock, env, run_id, out_file):
             },
         )
 
+    _load_claimed_writer_notes(ctx, conn)
     track_a = _run_track(ctx, conn, 0, outline, guard, meta, target_words, env)
     track_b = _run_track(ctx, conn, 1, outline, guard, meta, target_words, env, track_a)
     pub_a = _publish_track(ctx, 0, track_a, outline, meta, target_words, env)
