@@ -51,6 +51,16 @@ class KnowledgeTests(unittest.TestCase):
             self.assertEqual(item["meta"]["agents"], ["all"])
             self.assertIn("内容。", item["body"])
 
+    def test_write_rejects_newline_in_frontmatter(self):
+        d = make_tmp_knowledge()
+        with mock.patch.object(knowledge, "KNOWLEDGE_DIR", d):
+            with self.assertRaises(ValueError):
+                knowledge.write_knowledge(
+                    "bad.md",
+                    {"title": "标题\n注入", "type": "craft"},
+                    "内容",
+                )
+
     def test_resolve_filters_by_agent_and_topic(self):
         with mock.patch.object(knowledge, "KNOWLEDGE_DIR", make_tmp_knowledge()):
             hits = knowledge.resolve_knowledge("writer", "钩子")

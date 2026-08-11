@@ -72,6 +72,11 @@ class AutopilotTests(unittest.TestCase):
                                     "reviewed", "reviewed", "reviewed"])
 
     def test_daily_run_warns_when_backlog_below_safe_line(self):
+        # Only publishing/finishing books produce stock warnings now; the
+        # auto-generated book stays planning, so seed a real serialized book.
+        nid = db.add_novel(self.conn, "连载书", "都市", "设定")
+        self.conn.execute("UPDATE novels SET status='publishing' WHERE id=?", (nid,))
+        self.conn.commit()
         self.client.responses["planning"] = PLAN_3
         result = daily_run(
             self.conn, self.client, "林舟重生回到高考前三个月。",

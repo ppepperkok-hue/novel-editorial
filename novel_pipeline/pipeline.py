@@ -1,4 +1,8 @@
-"""流水线编排：--demo 无 API 端到端验证骨架；--generate 走真实 LLM 生成链路。"""
+"""DEPRECATED 流水线编排（n8n 时代路径，当前无调用方）。
+
+现役链路请使用 `tools/editorial_daily.py` 与 `tools/editorial_steps.py`；
+本模块保留为回退后备。
+"""
 
 import argparse
 import json

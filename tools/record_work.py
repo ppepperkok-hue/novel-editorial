@@ -334,7 +334,7 @@ def upsert_chapters(conn, novel_id, chapters):
                     "VALUES(?,?,?,?,?,?,datetime('now','localtime'))",
                     (chapter_id, "fanqie", "publish", "success", None, 1),
                 )
-        elif status == "draft" and ch.get("error"):
+        elif status in ("draft", "reviewed") and ch.get("error"):
             dup = conn.execute(
                 "SELECT id FROM publish_logs WHERE chapter_id=? AND action='publish' "
                 "AND result='failed'",

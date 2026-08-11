@@ -42,7 +42,9 @@ def run_checks(conn, env=None, monthly_budget=100.0, spent=0.0):
     ):
         issues.append("番茄 Cookie/CSRF 缺失或失效，请从作者后台重新抓取")
 
-    for novel in conn.execute("SELECT id, title FROM novels").fetchall():
+    for novel in conn.execute(
+        "SELECT id, title FROM novels WHERE status IN ('publishing','finishing')"
+    ).fetchall():
         level = backlog_level(conn, novel["id"])
         if level < SAFE_BACKLOG:
             issues.append(f"断更预警：小说「{novel['title']}」存稿池 {level} 章")

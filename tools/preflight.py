@@ -74,11 +74,19 @@ def check_cookie():
         return False, f"Cookie 检测异常：{str(e)[:120]}"
 
 
-def check_already_ran(conn):
-    row = conn.execute(
+def check_already_ran(conn, novel_id=0):
+    """Whether the given novel (0 = any novel, legacy CLI default) already
+    published a chapter today. Per-book filtering keeps multi-book setups
+    from blocking one novel because another one ran."""
+    sql = (
         "SELECT COUNT(*) c FROM chapters "
         "WHERE status='published' AND published_at >= date('now','localtime')"
-    ).fetchone()
+    )
+    params = ()
+    if novel_id:
+        sql += " AND novel_id=?"
+        params = (int(novel_id),)
+    row = conn.execute(sql, params).fetchone()
     return row["c"] > 0
 
 
@@ -117,11 +125,23 @@ def acquire_lock(lock_path=None):
         os.close(fd)
         return True, ""
     except FileExistsError:
+        pid = None
+        try:
+            content = lock.read_text(encoding="utf-8").split()
+            if content:
+                pid = int(content[0])
+        except (OSError, ValueError):
+            pid = None
         try:
             age = time.time() - lock.stat().st_mtime
         except OSError:
             age = 0
-        if age > 7200:
+        stale = False
+        if pid is not None:
+            stale = not _pid_alive(pid)
+        elif age > 7200:
+            stale = True
+        if stale:
             try:
                 lock.unlink()
                 return acquire_lock(lock_path)

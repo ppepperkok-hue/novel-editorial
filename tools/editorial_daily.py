@@ -180,6 +180,7 @@ def _dry_agent_text(ctx, node, task, target_words):
 def _agent(ctx, node, task, target_words=None):
     """Call one agent; collect usage/cost; record failures explicitly."""
     params = AGENT_PARAMS.get(node, {})
+    failed = False
     if ctx.dry_run:
         text = _dry_agent_text(ctx, node, task, target_words)
         model = "dry-run"
@@ -194,13 +195,13 @@ def _agent(ctx, node, task, target_words=None):
             novel_id=ctx.novel_id,
             db_path=ctx.db_path,
         )
-        if not result.get("ok"):
-            ctx.failed_nodes.append(node)
-            ctx.errors.append(f"{node}: {result.get('error', 'agent failed')}")
-            return None
         text = result.get("text") or ""
         model = result.get("model") or ""
         usage = result.get("usage") or {}
+        failed = not result.get("ok")
+        if failed:
+            ctx.failed_nodes.append(node)
+            ctx.errors.append(f"{node}: {result.get('error', 'agent failed')}")
     ctx.costs.append(
         {
             "node": node,
@@ -209,6 +210,8 @@ def _agent(ctx, node, task, target_words=None):
             "completion_tokens": int(usage.get("completion_tokens") or 0),
         }
     )
+    if failed:
+        return None
     ctx.agent_calls.append({"node": node, "chars": len(str(text or ""))})
     return str(text or "")
 
@@ -342,8 +345,12 @@ def _preflight(ctx, conn, env, trigger):
     if trigger == "scheduled" and not enabled:
         return {"ok": False, "skipped": True, "reasons": ["日更已暂停（可在面板恢复）"]}
 
-    cookie_ok, cookie_reason = preflight.check_cookie()
-    already_ran = preflight.check_already_ran(conn)
+    if ctx.dry_run:
+        # Dry-run stays fully offline: no Fanqie cookie probe, no network.
+        cookie_ok, cookie_reason = True, ""
+    else:
+        cookie_ok, cookie_reason = preflight.check_cookie()
+    already_ran = preflight.check_already_ran(conn, ctx.novel_id)
     if manual_requested:
         already_ran = False
     budget_ok, spent = preflight.check_budget(conn, budget)
@@ -528,6 +535,18 @@ def _run_track(ctx, conn, idx, outline, guard, meta, target_words, env, prev_tra
         target_words,
         ROOT,
     )
+    if gate.get("passed"):
+        from novel_pipeline import compliance  # noqa: PLC0415
+
+        comp = compliance.check(editor_text)
+        if not comp["passed"]:
+            gate = {
+                "passed": False,
+                "errors": ["合规拦截：" + "、".join(comp["sensitive_hits"] or [])],
+                "review": gate.get("review"),
+                "reader": gate.get("reader"),
+                "chars": gate.get("chars"),
+            }
     memory_text = _agent(ctx, "提炼剧情" + suffix, _memory_task(idx, outline, editor_text, ctx))
     summary = steps.parse_summary(memory_text) if memory_text is not None else {}
     return {
@@ -566,6 +585,15 @@ def _publish_track(ctx, idx, track, outline, meta, target_words, env):
             chapter,
         )
         if draft is None:
+            msg = (
+                (new_resp or {}).get("message")
+                if isinstance(new_resp, dict)
+                else "无响应"
+            )
+            ctx.failed_nodes.append("发布" + ("A" if idx == 0 else "B"))
+            ctx.errors.append(
+                "发布链: 草稿创建失败 - " + str(msg or "new_article 未返回 item_id")[:200]
+            )
             return {"draft": None, "pub": None, "verify": None}
         _fanqie_post(
             ctx,
@@ -610,6 +638,11 @@ def _publish_track(ctx, idx, track, outline, meta, target_words, env):
         pub = steps.parse_publish_response(pub_raw)
         if pub.get("published"):
             ctx.published += 1
+        else:
+            ctx.failed_nodes.append("发布" + ("A" if idx == 0 else "B"))
+            ctx.errors.append(
+                "发布链: 提交被拒 - " + str(pub.get("error") or "unknown")[:200]
+            )
         verify = None
         if pub.get("published"):
             verify_resp = _fanqie_get(
@@ -860,7 +893,7 @@ def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, en
                 "reasons": pre["reasons"],
             }
 
-        stock = check_stock.check_stock(conn)
+        stock = check_stock.check_stock(conn, novel_id=ctx.novel_id)
         # A manual chapter override is a one-shot target: consume it so the
         # next scheduled run falls back to daily_chapters.
         set_many(conn, {"pending_publish": "0"})

@@ -33,7 +33,11 @@ class ManualAdapter(PublisherAdapter):
 
 
 class FanqieHttpAdapter(PublisherAdapter):
-    """番茄作者后台 HTTP 适配器。
+    """DEPRECATED 番茄作者后台 HTTP 适配器（n8n 时代实现）。
+
+    现役发布链已收敛到 `tools/publish_stock.py` 与
+    `tools/editorial_daily._publish_track`；本类保留为回退后备，行为可能
+    与现役链路分叉（失败日志/复核语义不同）。
 
     Uses the same three-step chain as tools/publish_stock.py:
     new_article -> cover_article -> publish_article. Cookie/CSRF come from

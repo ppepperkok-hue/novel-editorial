@@ -10,12 +10,12 @@ const owner = pkg.build.publish[0].owner;
 const root = path.resolve(__dirname, "..");
 const releaseDir = path.join(__dirname, "release");
 
+const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || "";
 const env = {
   ...process.env,
   ELECTRON_MIRROR: "https://npmmirror.com/mirrors/electron/",
   ELECTRON_BUILDER_BINARIES_MIRROR: "https://npmmirror.com/mirrors/electron-builder-binaries/",
-  HTTPS_PROXY: "http://127.0.0.1:7897",
-  HTTP_PROXY: "http://127.0.0.1:7897",
+  ...(proxy ? { HTTPS_PROXY: proxy, HTTP_PROXY: proxy } : {}),
 };
 
 function run(cmd, opts = {}) {

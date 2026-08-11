@@ -1,4 +1,6 @@
-"""Desktop control panel (pywebview) for the novel pipeline.
+"""DEPRECATED Desktop control panel (pywebview) for the novel pipeline.
+
+当前无调用方，保留为回退后备；现役桌面壳为 Electron（desktop/）。
 
 Uses a normal system-framed window (stable drag/resize/close) with a
 dark title bar via the Windows DWM immersive-dark-mode attribute, so the

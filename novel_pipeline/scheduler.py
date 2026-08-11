@@ -27,6 +27,12 @@ def backlog_level(conn, novel_id):
 
 
 class Scheduler:
+    """DEPRECATED 发布调度器类（n8n 时代路径，当前无调用方）。
+
+    `SAFE_BACKLOG` 与 `backlog_level` 仍被 monitor 使用；类的发布循环已由
+    `tools/publish_stock.publish_batch` 取代，保留为回退后备。
+    """
+
     def __init__(self, adapter, chapters_per_day=2, safe_backlog=SAFE_BACKLOG,
                  alert_sink=None, now=None):
         self.adapter = adapter

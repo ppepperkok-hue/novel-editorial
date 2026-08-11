@@ -224,6 +224,13 @@ def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None,
 
     first = None
     tool_err = None
+    total_usage = {"prompt_tokens": 0, "completion_tokens": 0}
+
+    def _accum(cand):
+        u = cand.get("usage") or {}
+        total_usage["prompt_tokens"] += int(u.get("prompt_tokens") or 0)
+        total_usage["completion_tokens"] += int(u.get("completion_tokens") or 0)
+
     for _attempt in range(3):
         try:
             cand = chat_deepseek(
@@ -232,6 +239,7 @@ def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None,
             )
             if (cand.get("text") or "").strip() or cand.get("tool_calls"):
                 first = cand
+                _accum(cand)
                 break
         except Exception as exc:  # noqa: BLE001 - retry, then fall back plain
             tool_err = exc
@@ -247,6 +255,7 @@ def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None,
                 )
                 if (cand.get("text") or "").strip():
                     plain = cand
+                    _accum(cand)
                     break
             except Exception as exc2:  # noqa: BLE001
                 plain_err = exc2
@@ -272,6 +281,8 @@ def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None,
                     "tool loop failed "
                     f"(tools={str(tool_err)[:120]}, plain={str(plain_err)[:120]})"
                 ),
+                "model": model,
+                "usage": total_usage,
                 "degraded": True,
             }
         return _final(plain["text"], plain.get("usage") or {})
@@ -364,6 +375,7 @@ def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None,
             )
             if (cand.get("text") or "").strip():
                 final = cand
+                _accum(cand)
                 break
         except Exception as exc:  # noqa: BLE001 - retry, then degrade
             final_err = exc
@@ -389,7 +401,7 @@ def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None,
                 f"{str(final_err)[:120]}"
             ),
             "model": model,
-            "usage": first.get("usage") or {"prompt_tokens": 0, "completion_tokens": 0},
+            "usage": total_usage,
             "used_knowledge": used_knowledge,
             "attempts": 2,
             "degraded": True,

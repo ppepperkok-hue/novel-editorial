@@ -435,6 +435,198 @@ class EditorialDailyTests(unittest.TestCase):
         self.assertNotIn("主编终审A", calls)
         self.assertNotIn("提炼剧情A", calls)
 
+    def test_failed_agent_usage_is_recorded(self):
+        """Cost entries must include failed LLM calls (review P1-2)."""
+        ctx = editorial_daily._Ctx(1, self.db_path, dry_run=False)
+        with mock.patch(
+            "tools.editorial_daily.agent_tool_loop.run",
+            return_value={
+                "ok": False,
+                "error": "boom",
+                "model": "deepseek-v4-flash",
+                "usage": {"prompt_tokens": 7, "completion_tokens": 3},
+            },
+        ):
+            text = editorial_daily._agent(ctx, "写手A", "任务", target_words=2000)
+        self.assertIsNone(text)
+        self.assertIn("写手A", ctx.failed_nodes)
+        self.assertEqual(len(ctx.costs), 1)
+        self.assertEqual(ctx.costs[0]["prompt_tokens"], 7)
+        self.assertEqual(ctx.costs[0]["completion_tokens"], 3)
+
+    def test_publish_draft_rejection_is_visible(self):
+        """new_article rejection must surface in failed_nodes/error instead of
+        silently ending as 'failed with no reason' (review P1-3)."""
+        self._ok_preflight()
+        long_text = "他推开门走进院子，风从巷口吹来，远处传来吆喝声。" * 100
+
+        def fake_agent(node, task, temperature=None, max_tokens=None, target_words=None, novel_id=None, db_path=None, model=None):
+            if node.startswith("写手") or node.startswith("润色"):
+                return {"ok": True, "text": long_text, "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node.startswith("提炼"):
+                return {"ok": True, "text": json.dumps({"summary": "s"}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node.startswith("审稿") or node.startswith("读者"):
+                return {"ok": True, "text": json.dumps({"passed": True, "score": 9, "hook_rating": 9, "would_read_next": True}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node.startswith("主编"):
+                return {"ok": True, "text": json.dumps({"verdict": "pass"}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node == "生成作品资料":
+                return {"ok": True, "text": json.dumps({"book_name": "旧书店", "abstract": "x" * 60, "protagonist": {"name": "林舟"}}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node == "Planner出大纲":
+                return {"ok": True, "text": json.dumps({"chapter_outlines": [{"title": "第一章", "outline": "o"}, {"title": "第二章", "outline": "o"}], "bible": {}}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node == "守护细纲":
+                return {"ok": True, "text": json.dumps({"passed": True, "constraints": [], "character_beats": {}}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            return {"ok": True, "text": "{}", "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+
+        def fake_fanqie_post(ctx, url, fields, env):
+            if url.endswith("/article/new_article/v0/"):
+                return {"code": 1, "message": "草稿创建被拒"}
+            return {"code": 0}
+
+        def fake_fanqie_get(ctx, url, params, env):
+            if url.endswith("/book/book_list/v0"):
+                return {"code": 0, "data": {"book_list": [{"book_id": "b1", "chapter_number": 0, "book_name": "旧书店", "abstract": "x" * 60}]}}
+            return {"code": 0, "data": {"item_list": []}}
+
+        with mock.patch("tools.editorial_daily.agent_tool_loop.run", side_effect=fake_agent):
+            with mock.patch("tools.editorial_daily._fanqie_post", side_effect=fake_fanqie_post):
+                with mock.patch("tools.editorial_daily._fanqie_get", side_effect=fake_fanqie_get):
+                    with mock.patch("tools.editorial_daily._wrapup"):
+                        result = editorial_daily.daily(
+                            self.conn, trigger="manual", dry_run=False, db_path=self.db_path
+                        )
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("草稿创建被拒", result["error"])
+        self.assertIn("发布A", result["failed_nodes"])
+        self.assertIn("发布B", result["failed_nodes"])
+        row = self.conn.execute(
+            "SELECT error FROM daily_runs WHERE run_id=?", (result["run_id"],)
+        ).fetchone()
+        self.assertIn("草稿创建被拒", row["error"])
+
+    def test_publish_rejection_writes_failed_log(self):
+        """publish_article rejection keeps the chapter reviewed and records a
+        failed publish_log entry with the platform reason (review P1-3)."""
+        self._ok_preflight()
+        long_text = "他推开门走进院子，风从巷口吹来，远处传来吆喝声。" * 100
+
+        def fake_agent(node, task, temperature=None, max_tokens=None, target_words=None, novel_id=None, db_path=None, model=None):
+            if node.startswith("写手") or node.startswith("润色"):
+                return {"ok": True, "text": long_text, "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node.startswith("提炼"):
+                return {"ok": True, "text": json.dumps({"summary": "s"}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node.startswith("审稿") or node.startswith("读者"):
+                return {"ok": True, "text": json.dumps({"passed": True, "score": 9, "hook_rating": 9, "would_read_next": True}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node.startswith("主编"):
+                return {"ok": True, "text": json.dumps({"verdict": "pass"}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node == "生成作品资料":
+                return {"ok": True, "text": json.dumps({"book_name": "旧书店", "abstract": "x" * 60, "protagonist": {"name": "林舟"}}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node == "Planner出大纲":
+                return {"ok": True, "text": json.dumps({"chapter_outlines": [{"title": "第一章", "outline": "o"}, {"title": "第二章", "outline": "o"}], "bible": {}}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node == "守护细纲":
+                return {"ok": True, "text": json.dumps({"passed": True, "constraints": [], "character_beats": {}}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            return {"ok": True, "text": "{}", "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+
+        def fake_fanqie_post(ctx, url, fields, env):
+            if url.endswith("/article/new_article/v0/"):
+                return {"code": 0, "data": {"item_id": "i1", "volume_id": "v1", "volume_data": [{"volume_id": "v1", "volume_name": "正文"}]}}
+            if url.endswith("/publish_article/v0/"):
+                return {"code": -2, "message": "章节字数不足"}
+            return {"code": 0}
+
+        def fake_fanqie_get(ctx, url, params, env):
+            if url.endswith("/book/book_list/v0"):
+                return {"code": 0, "data": {"book_list": [{"book_id": "b1", "chapter_number": 0, "book_name": "旧书店", "abstract": "x" * 60}]}}
+            return {"code": 0, "data": {"item_list": []}}
+
+        with mock.patch("tools.editorial_daily.agent_tool_loop.run", side_effect=fake_agent):
+            with mock.patch("tools.editorial_daily._fanqie_post", side_effect=fake_fanqie_post):
+                with mock.patch("tools.editorial_daily._fanqie_get", side_effect=fake_fanqie_get):
+                    with mock.patch("tools.editorial_daily._wrapup"):
+                        result = editorial_daily.daily(
+                            self.conn, trigger="manual", dry_run=False, db_path=self.db_path
+                        )
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("章节字数不足", result["error"])
+        rows = self.conn.execute(
+            "SELECT c.seq, c.status FROM chapters c ORDER BY c.seq"
+        ).fetchall()
+        self.assertTrue(all(r["status"] == "reviewed" for r in rows))
+        failed = self.conn.execute(
+            "SELECT COUNT(*) c FROM publish_logs WHERE result='failed'"
+        ).fetchone()["c"]
+        self.assertGreaterEqual(failed, 2)
+
+    def test_compliance_hit_blocks_publish(self):
+        """Sensitive-word hits must block the track before publishing."""
+        self._ok_preflight()
+        bad_text = "他推开门走进院子，风从巷口吹来，远处传来吆喝声。" * 100 + "违规示例词"
+
+        def fake_agent(node, task, temperature=None, max_tokens=None, target_words=None, novel_id=None, db_path=None, model=None):
+            if node.startswith("写手") or node.startswith("润色"):
+                return {"ok": True, "text": bad_text, "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node.startswith("提炼"):
+                return {"ok": True, "text": json.dumps({"summary": "s"}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node.startswith("审稿") or node.startswith("读者"):
+                return {"ok": True, "text": json.dumps({"passed": True, "score": 9, "hook_rating": 9, "would_read_next": True}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node.startswith("主编"):
+                return {"ok": True, "text": json.dumps({"verdict": "pass"}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node == "生成作品资料":
+                return {"ok": True, "text": json.dumps({"book_name": "旧书店", "abstract": "x" * 60, "protagonist": {"name": "林舟"}}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node == "Planner出大纲":
+                return {"ok": True, "text": json.dumps({"chapter_outlines": [{"title": "第一章", "outline": "o"}, {"title": "第二章", "outline": "o"}], "bible": {}}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            if node == "守护细纲":
+                return {"ok": True, "text": json.dumps({"passed": True, "constraints": [], "character_beats": {}}), "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+            return {"ok": True, "text": "{}", "model": "mock", "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+
+        def fake_fanqie_post(ctx, url, fields, env):
+            raise AssertionError("compliance hit must prevent any publish call")
+
+        def fake_fanqie_get(ctx, url, params, env):
+            if url.endswith("/book/book_list/v0"):
+                return {"code": 0, "data": {"book_list": [{"book_id": "b1", "chapter_number": 0, "book_name": "旧书店", "abstract": "x" * 60}]}}
+            return {"code": 0, "data": {"item_list": []}}
+
+        with mock.patch("tools.editorial_daily.agent_tool_loop.run", side_effect=fake_agent):
+            with mock.patch("tools.editorial_daily._fanqie_post", side_effect=fake_fanqie_post):
+                with mock.patch("tools.editorial_daily._fanqie_get", side_effect=fake_fanqie_get):
+                    with mock.patch("tools.editorial_daily._wrapup"):
+                        result = editorial_daily.daily(
+                            self.conn, trigger="manual", dry_run=False, db_path=self.db_path
+                        )
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["published"], 0)
+        rows = self.conn.execute(
+            "SELECT c.seq, c.status FROM chapters c ORDER BY c.seq"
+        ).fetchall()
+        self.assertTrue(all(r["status"] == "draft" for r in rows))
+        failed = self.conn.execute(
+            "SELECT COUNT(*) c FROM publish_logs WHERE result='failed' AND "
+            "error LIKE '%合规拦截%'"
+        ).fetchone()["c"]
+        self.assertGreaterEqual(failed, 2)
+
+    def test_dry_run_skips_cookie_probe(self):
+        """Dry-run must stay fully offline (review P3-2)."""
+        with mock.patch(
+            "tools.editorial_daily.preflight.check_cookie",
+            side_effect=AssertionError("dry-run must not probe Fanqie"),
+        ):
+            with mock.patch(
+                "tools.editorial_daily.preflight.check_already_ran", return_value=False
+            ):
+                with mock.patch(
+                    "tools.editorial_daily.preflight.check_budget",
+                    return_value=(True, 0.0),
+                ):
+                    with mock.patch(
+                        "tools.editorial_daily.preflight.check_active_book",
+                        return_value=(True, ""),
+                    ):
+                        result = editorial_daily.daily(
+                            self.conn, trigger="manual", dry_run=True, db_path=self.db_path
+                        )
+        self.assertEqual(result["status"], "completed", result)
+
 
 if __name__ == "__main__":
     unittest.main()

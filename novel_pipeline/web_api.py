@@ -30,6 +30,17 @@ from novel_pipeline.services import (  # noqa: E402
 _SNAPSHOT = {}
 _SNAPSHOT_LOCK = threading.Lock()
 _SNAPSHOT_THREAD_STARTED = False
+_SSE_COUNT = 0
+_SSE_COUNT_LOCK = threading.Lock()
+_MAX_SSE = 8
+
+
+def _parse_int(value, default=0):
+    """Coerce a query/payload value to int; never raise on garbage input."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _panel_token():
@@ -118,6 +129,16 @@ def _endpoint(conn, name):
 
 def make_handler(db_path):
     _ensure_snapshot_thread(db_path)
+    try:
+        conn = db.connect(db_path)
+        try:
+            from tools import daily_runs  # noqa: PLC0415
+
+            daily_runs.recover_stale_runs(conn)
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 - startup recovery must never block serving
+        pass
 
     class Handler(BaseHTTPRequestHandler):
         def _guard(self):
@@ -172,7 +193,7 @@ def make_handler(db_path):
                     conn = db.connect(db_path)
                     try:
                         qs = parse_qs(parsed.query)
-                        novel_id = int(qs["novel_id"][0]) if qs.get("novel_id") else None
+                        novel_id = _parse_int(qs["novel_id"][0], None) if qs.get("novel_id") else None
                         self._json({"chapters": dashboard_service.load_chapters(conn, novel_id)})
                     finally:
                         conn.close()
@@ -180,7 +201,7 @@ def make_handler(db_path):
                     conn = db.connect(db_path)
                     try:
                         qs = parse_qs(parsed.query)
-                        chapter_id = int(qs["chapter_id"][0]) if qs.get("chapter_id") else None
+                        chapter_id = _parse_int(qs["chapter_id"][0], None) if qs.get("chapter_id") else None
                         if chapter_id is None:
                             self._json({"error": "chapter_id required"}, status=400)
                         else:
@@ -214,7 +235,7 @@ def make_handler(db_path):
                     conn = db.connect(db_path)
                     try:
                         qs = parse_qs(parsed.query)
-                        session_id = int(qs["id"][0]) if qs.get("id") else None
+                        session_id = _parse_int(qs["id"][0], None) if qs.get("id") else None
                         if session_id is None:
                             self._json({"error": "id required"}, status=400)
                         else:
@@ -234,7 +255,7 @@ def make_handler(db_path):
                     conn = db.connect(db_path)
                     try:
                         qs = parse_qs(parsed.query)
-                        chapter_id = int(qs["chapter_id"][0]) if qs.get("chapter_id") else None
+                        chapter_id = _parse_int(qs["chapter_id"][0], None) if qs.get("chapter_id") else None
                         if chapter_id is None:
                             self._json({"error": "chapter_id required"}, status=400)
                         else:
@@ -252,7 +273,7 @@ def make_handler(db_path):
                     try:
                         qs = parse_qs(parsed.query)
                         category = qs["category"][0] if qs.get("category") else None
-                        limit = int(qs["limit"][0]) if qs.get("limit") else 100
+                        limit = _parse_int(qs["limit"][0], 100) if qs.get("limit") else 100
                         self._json({"logs": audit_service.list_logs(conn, category, limit)})
                     finally:
                         conn.close()
@@ -260,7 +281,7 @@ def make_handler(db_path):
                     conn = db.connect(db_path)
                     try:
                         qs = parse_qs(parsed.query)
-                        novel_id = int(qs["novel_id"][0]) if qs.get("novel_id") else 0
+                        novel_id = _parse_int(qs["novel_id"][0], 0) if qs.get("novel_id") else 0
                         self._json(misc_service.character_evolution(conn, novel_id))
                     finally:
                         conn.close()
@@ -270,7 +291,7 @@ def make_handler(db_path):
                     conn = db.connect(db_path)
                     try:
                         qs = parse_qs(parsed.query)
-                        knowledge_id = int(qs.get("knowledge_id", ["0"])[0] or 0)
+                        knowledge_id = _parse_int(qs.get("knowledge_id", ["0"])[0], 0)
                         if not knowledge_id:
                             self._json({"error": "knowledge_id required"}, status=400)
                         else:
@@ -285,7 +306,7 @@ def make_handler(db_path):
                     conn = db.connect(db_path)
                     try:
                         qs = parse_qs(parsed.query)
-                        novel_id = int(qs.get("novel_id", ["0"])[0] or 0)
+                        novel_id = _parse_int(qs.get("novel_id", ["0"])[0], 0)
                         if not novel_id:
                             self._json({"error": "novel_id required"}, status=400)
                         else:
@@ -298,7 +319,7 @@ def make_handler(db_path):
                     conn = db.connect(db_path)
                     try:
                         qs = parse_qs(parsed.query)
-                        novel_id = int(qs["novel_id"][0]) if qs.get("novel_id") else 0
+                        novel_id = _parse_int(qs["novel_id"][0], 0) if qs.get("novel_id") else 0
                         category = qs.get("category", [""])[0] or None
                         if not novel_id:
                             self._json({"error": "novel_id required"}, status=400)
@@ -314,7 +335,7 @@ def make_handler(db_path):
                         qs = parse_qs(parsed.query)
                         agent = qs["agent"][0] if qs.get("agent") else None
                         dtype = qs["type"][0] if qs.get("type") else None
-                        limit = int(qs["limit"][0]) if qs.get("limit") else 100
+                        limit = _parse_int(qs["limit"][0], 100) if qs.get("limit") else 100
                         self._json({"diaries": misc_service.list_diaries(conn, agent, dtype, limit)})
                     finally:
                         conn.close()
@@ -324,7 +345,7 @@ def make_handler(db_path):
                     conn = db.connect(db_path)
                     try:
                         qs = parse_qs(parsed.query)
-                        limit = int(qs.get("limit", ["30"])[0] or 30)
+                        limit = _parse_int(qs.get("limit", ["30"])[0], 30)
                         daily_runs.sync_from_n8n(conn, limit=limit)
                         self._json({"runs": daily_runs.list_runs(conn, limit=limit)})
                     finally:
@@ -354,7 +375,7 @@ def make_handler(db_path):
                         qs = parse_qs(parsed.query)
                         agent = qs["agent"][0] if qs.get("agent") else None
                         day = qs["day"][0] if qs.get("day") else None
-                        limit = int(qs["limit"][0]) if qs.get("limit") else 300
+                        limit = _parse_int(qs["limit"][0], 300) if qs.get("limit") else 300
                         self._json(
                             {
                                 "items": activity_service.list_activity(
@@ -375,7 +396,7 @@ def make_handler(db_path):
                         qs = parse_qs(parsed.query)
                         agent = qs["agent"][0] if qs.get("agent") else None
                         status = qs["status"][0] if qs.get("status") else None
-                        limit = int(qs["limit"][0]) if qs.get("limit") else 200
+                        limit = _parse_int(qs["limit"][0], 200) if qs.get("limit") else 200
                         self._json(
                             {
                                 "actions": activity_service.list_actions(
@@ -557,7 +578,7 @@ def make_handler(db_path):
                     try:
                         result = activity_service.update_action(
                             conn,
-                            int(payload.get("id") or 0),
+                            _parse_int(payload.get("id"), 0),
                             status=payload.get("status"),
                             result=payload.get("result"),
                             task=payload.get("task"),
@@ -626,7 +647,7 @@ def make_handler(db_path):
 
                             stem_file = agent_tool_loop._resolve_agent_file(agent)
                             stem = stem_file.stem if stem_file is not None else agent
-                            novel_id = int(payload.get("novel_id") or 0)
+                            novel_id = _parse_int(payload.get("novel_id"), 0)
                             pending = []
                             if stem:
                                 for a in activity_service.list_actions(
@@ -653,7 +674,7 @@ def make_handler(db_path):
                             agent,
                             task,
                             temperature=payload.get("temperature"),
-                            max_tokens=int(payload.get("max_tokens") or 1600),
+                            max_tokens=_parse_int(payload.get("max_tokens"), 1600),
                             target_words=payload.get("target_words"),
                             novel_id=payload.get("novel_id"),
                             db_path=str(db_path),
@@ -714,7 +735,7 @@ def make_handler(db_path):
                             ),
                         }
                     elif action in ("accept", "reject", "deprecate"):
-                        draft_id = int(payload.get("id") or 0)
+                        draft_id = _parse_int(payload.get("id"), 0)
                         status = {"accept": "accepted", "reject": "rejected", "deprecate": "deprecated"}[action]
                         if action == "accept":
                             # write into a knowledge package chosen by the draft
@@ -771,7 +792,7 @@ def make_handler(db_path):
                     from tools import novel_knowledge  # noqa: PLC0415
 
                     action = payload.get("action") or "list"
-                    novel_id = int(payload.get("novel_id") or 0)
+                    novel_id = _parse_int(payload.get("novel_id"), 0)
                     if action == "list":
                         result = {
                             "ok": True,
@@ -883,6 +904,12 @@ def make_handler(db_path):
             return True
 
         def _sse(self):
+            global _SSE_COUNT
+            with _SSE_COUNT_LOCK:
+                if _SSE_COUNT >= _MAX_SSE:
+                    self._json({"error": "too many SSE connections"}, status=503)
+                    return
+                _SSE_COUNT += 1
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
@@ -892,20 +919,24 @@ def make_handler(db_path):
                 self.send_header("Access-Control-Allow-Origin", origin)
                 self.send_header("Vary", "Origin")
             self.end_headers()
-            last = None
-            while True:
-                with _SNAPSHOT_LOCK:
-                    data = _SNAPSHOT.get("data")
-                if data is not None and data != last:
-                    last = data
-                    try:
-                        self.wfile.write(
-                            ("data: " + json.dumps(data, ensure_ascii=False) + "\n\n").encode("utf-8")
-                        )
-                        self.wfile.flush()
-                    except (BrokenPipeError, ConnectionResetError, OSError):
-                        return
-                time.sleep(1)
+            try:
+                last = None
+                while True:
+                    with _SNAPSHOT_LOCK:
+                        data = _SNAPSHOT.get("data")
+                    if data is not None and data != last:
+                        last = data
+                        try:
+                            self.wfile.write(
+                                ("data: " + json.dumps(data, ensure_ascii=False) + "\n\n").encode("utf-8")
+                            )
+                            self.wfile.flush()
+                        except (BrokenPipeError, ConnectionResetError, OSError):
+                            return
+                    time.sleep(1)
+            finally:
+                with _SSE_COUNT_LOCK:
+                    _SSE_COUNT -= 1
 
         def _json(self, payload, status=200):
             data = json.dumps(payload, ensure_ascii=False).encode("utf-8")

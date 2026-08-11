@@ -383,6 +383,16 @@ def quality_gate(
     reader = robust_json(reader_text) if reader_text else None
     review = robust_json(review_text) if review_text else None
     editor = robust_json(editor_text) if editor_text else None
+    if not review_text or review is None:
+        # The logic reviewer is the semantic floor: without a parseable
+        # review the track must not publish (external review P2-1).
+        return {
+            "passed": False,
+            "errors": ["逻辑审稿缺失或不可解析"],
+            "review": review,
+            "reader": reader,
+            "chars": chars,
+        }
     reader_passed = True
     reader_note = ""
     if reader:

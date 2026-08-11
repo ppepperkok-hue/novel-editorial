@@ -18,7 +18,7 @@
 | 发布平台 | 番茄小说（Cookie + CSRF 鉴权） | `~/.n8n/.env` 的 `FANQIE_COOKIE` / `FANQIE_CSRF_TOKEN` |
 | 发布方式 | 存稿池优先：有存稿发存稿，没存稿现造 | `tools/check_stock.py` + `tools/publish_stock.py` |
 | 健康线 | 存稿 < 3 章触发断更预警 | `novel_pipeline/scheduler.py` 的 `SAFE_BACKLOG` |
-| 测试基线 | 250 个后端 unittest + 8 个前端 Vitest | `python run_tests.py` / `cd webapp && npm test` |
+| 测试基线 | 259 个后端 unittest + 8 个前端 Vitest | `python run_tests.py` / `cd webapp && npm test` |
 
 ## 功能总览
 
@@ -177,7 +177,7 @@
 - 每轮结束后停在「等待输入」，你可以插话给指示，再继续下一轮；
 - 你随时手动「结束并总结」，不再锁死三轮；
 - 历史过长时由记忆官增量压缩（`compress_history`），只带最近两条的缺陷已修复；
-- 取消会议会真正终止后台线程，不会默默烧钱跑完；
+- 取消会议在轮次边界生效：当前发言会跑完（单次最长 300 秒），之后立即停止，不会进入下一轮；
 - 完整对话写入 `meeting_sessions.transcript`，周会档案页逐轮回放。
 
 ## 知识体系
@@ -373,7 +373,7 @@ python tools/render_workflow.py && node tools/validate_workflow_deep.mjs
 ### 测试
 
 ```bash
-python run_tests.py                # 250 个后端测试
+python run_tests.py                # 259 个后端测试
 cd webapp && npm test              # 8 个前端测试
 node tools/validate_workflow_deep.mjs   # 遗留工作流深度校验（回退路径）
 ```
@@ -414,7 +414,7 @@ novel-pipeline/
 ├── n8n/                     # 遗留工作流 JSON（回退备份；docs/legacy/ 另有归档）
 ├── scripts/                 # install_daily_task.ps1 / install_autostart.ps1 / watch_daily.py ...
 ├── docs/                    # evolution / planning / research / engineering / reviews
-├── tests/                   # 250 个后端测试（unittest）
+├── tests/                   # 259 个后端测试（unittest）
 └── demo.db                  # 运行数据库（gitignore）
 ```
 

@@ -32,6 +32,26 @@ class MonitorTests(unittest.TestCase):
         )
         self.assertTrue(any("发布失败" in i for i in issues))
 
+    def test_planning_and_finished_books_do_not_warn(self):
+        env = {"TOMATO_COOKIE": "c", "TOMATO_CSRF_TOKEN": "t"}
+        nid = db.add_novel(self.conn, "规划书", "都市", "简介")
+        self.conn.execute("UPDATE novels SET status='planning' WHERE id=?", (nid,))
+        nid2 = db.add_novel(self.conn, "完结书", "都市", "简介")
+        self.conn.execute("UPDATE novels SET status='finished' WHERE id=?", (nid2,))
+        self.conn.commit()
+        issues = monitor.run_checks(self.conn, env=env, monthly_budget=100, spent=20)
+        self.assertFalse(any("断更预警" in i for i in issues))
+
+    def test_publishing_book_with_empty_stock_warns(self):
+        env = {"TOMATO_COOKIE": "c", "TOMATO_CSRF_TOKEN": "t"}
+        nid = db.add_novel(self.conn, "连载书", "都市", "简介")
+        self.conn.execute(
+            "UPDATE novels SET status='publishing' WHERE id=?", (nid,)
+        )
+        self.conn.commit()
+        issues = monitor.run_checks(self.conn, env=env, monthly_budget=100, spent=20)
+        self.assertTrue(any("断更预警" in i for i in issues))
+
 
 if __name__ == "__main__":
     unittest.main()

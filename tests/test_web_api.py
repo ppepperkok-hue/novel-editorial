@@ -63,6 +63,14 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(snap["executions"][0]["id"], "sched-1")
         self.assertEqual(snap["executions"][0]["workflow"], "日更")
 
+    def test_bad_query_params_do_not_500(self):
+        with urlopen(f"{self.base}/api/chapters?novel_id=abc", timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        self.assertIn("chapters", data)
+        with urlopen(f"{self.base}/api/daily_runs?limit=abc", timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        self.assertIn("runs", data)
+
     def test_index_served(self):
         with urlopen(self.base + "/", timeout=10) as resp:
             html = resp.read().decode("utf-8")

@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, Menu, Notification, Tray, nativeImage } = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
-const net = require("node:net");
+const http = require("node:http");
 const path = require("node:path");
 
 const { autoUpdater } = require("electron-updater");
@@ -21,19 +21,33 @@ let notifTimer = null;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function portOpen(port) {
+function apiReady(port) {
   return new Promise((resolve) => {
-    const s = net.connect({ port, host: "127.0.0.1" });
-    s.on("connect", () => {
-      s.destroy();
-      resolve(true);
+    const req = http.get(
+      { host: "127.0.0.1", port, path: "/api/control", timeout: 3000 },
+      (res) => {
+        let body = "";
+        res.on("data", (c) => (body += c));
+        res.on("end", () => {
+          try {
+            const j = JSON.parse(body);
+            resolve(Boolean(j && j.scheduler));
+          } catch {
+            resolve(false);
+          }
+        });
+      },
+    );
+    req.on("error", () => resolve(false));
+    req.on("timeout", () => {
+      req.destroy();
+      resolve(false);
     });
-    s.on("error", () => resolve(false));
   });
 }
 
 async function ensureApi() {
-  if (await portOpen(API_PORT)) return;
+  if (await apiReady(API_PORT)) return;
   const dbPath = isPackaged
     ? path.join(app.getPath("userData"), "demo.db")
     : path.join(ROOT, "demo.db");
@@ -47,10 +61,10 @@ async function ensureApi() {
     { cwd: ROOT, stdio: "ignore" },
   );
   for (let i = 0; i < 40; i += 1) {
-    if (await portOpen(API_PORT)) return;
+    if (await apiReady(API_PORT)) return;
     await sleep(500);
   }
-  throw new Error("API service did not start in time");
+  throw new Error("API service did not start or port 8000 is occupied by another service");
 }
 
 function createWindow() {

@@ -118,6 +118,24 @@ class AgentToolLoopTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             agent_tool_loop.run("nobody", "x", db_path=self.db_path)
 
+    def test_failure_returns_usage_and_model(self):
+        """Failed attempts must still surface the accumulated usage so cost
+        accounting and the budget fuse stay truthful (review P1-2)."""
+        calls = {"n": 0}
+
+        def fake(model, system, user, temperature=0.5, max_tokens=1600, messages=None, tools=None, json_mode=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return _resp("", [_tool_call()])
+            raise RuntimeError("boom")
+
+        with mock.patch("tools.agent_tool_loop.chat_deepseek", side_effect=fake):
+            r = agent_tool_loop.run("writer", "x", db_path=self.db_path)
+        self.assertFalse(r["ok"])
+        self.assertIn("usage", r)
+        self.assertIn("model", r)
+        self.assertGreaterEqual(r["usage"]["prompt_tokens"], 1)
+
 
     def test_activity_traced_after_run(self):
         with mock.patch(

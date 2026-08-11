@@ -79,6 +79,22 @@ class PreflightTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertTrue(any("建书" in str(r) for r in result.get("reasons", [])))
 
+    def test_lock_recovered_when_pid_dead(self):
+        lock_path = Path(tempfile.mkdtemp()) / "daily.lock"
+        lock_path.write_text("999999 2026-08-11 00:00:00", encoding="utf-8")
+        with mock.patch.object(preflight, "_pid_alive", return_value=False):
+            ok, _reason = preflight.acquire_lock(lock_path)
+        self.assertTrue(ok)
+        preflight.release_lock(lock_path)
+
+    def test_lock_kept_when_pid_alive(self):
+        lock_path = Path(tempfile.mkdtemp()) / "daily.lock"
+        lock_path.write_text("999999 2026-08-11 00:00:00", encoding="utf-8")
+        with mock.patch.object(preflight, "_pid_alive", return_value=True):
+            ok, reason = preflight.acquire_lock(lock_path)
+        self.assertFalse(ok)
+        self.assertIn("运行锁占用", reason)
+
 
 if __name__ == "__main__":
     unittest.main()

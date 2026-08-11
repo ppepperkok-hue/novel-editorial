@@ -1,4 +1,7 @@
-"""端到端自动连载：大纲 → 逐章生成（带前文记忆）→ 质量门 → 返回发布队列。"""
+"""DEPRECATED 端到端自动连载（n8n 时代路径，当前无调用方）。
+
+现役链路请使用 `tools/editorial_daily.py`；本模块保留为回退后备。
+"""
 
 import argparse
 import json

@@ -204,6 +204,13 @@ class QualityGateTests(unittest.TestCase):
         self.assertTrue(gate["passed"])
         self.assertIn("降级", gate.get("editorNote") or "")
 
+    def test_review_missing_or_unparseable_fails(self):
+        gate = steps.quality_gate(self.LONG, None, None, None, {}, 2000)
+        self.assertFalse(gate["passed"])
+        self.assertTrue(any("逻辑审稿缺失" in e for e in gate["errors"]))
+        gate2 = steps.quality_gate(self.LONG, "not json", None, None, {}, 2000)
+        self.assertFalse(gate2["passed"])
+
 
 class DraftPayloadTests(unittest.TestCase):
     def test_title_volume(self):

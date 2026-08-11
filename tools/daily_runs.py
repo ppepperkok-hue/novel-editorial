@@ -200,3 +200,23 @@ def local_executions(conn, limit=30):
             }
         )
     return out
+
+
+def recover_stale_runs(conn, stale_hours=6):
+    """Mark runs stuck in 'running' (crashed process / power loss) as failed.
+
+    Called once at API startup, mirroring the meeting-session stale recovery.
+    """
+    row = conn.execute(
+        "UPDATE daily_runs SET status='failed', "
+        "finished_at=datetime('now','localtime'), "
+        "error='进程中断或超时（孤儿恢复）', "
+        "detail=? WHERE status='running' AND "
+        "started_at < datetime('now','localtime',?)",
+        (
+            json.dumps({"recovered": True}, ensure_ascii=False),
+            f"-{int(stale_hours)} hours",
+        ),
+    )
+    conn.commit()
+    return row.rowcount

@@ -21,7 +21,10 @@ param(
 )
 
 $projectDir = Split-Path -Parent $PSScriptRoot
-$python = (Get-Command python).Source
+$python = $env:PYTHON_EXE
+if (-not $python) {
+    $python = (Get-Command python).Source
+}
 $dbPath = Join-Path $projectDir $DbPath
 $argList = "tools/editorial_daily.py --db `"$dbPath`" --trigger scheduled"
 $command = "$python $argList"

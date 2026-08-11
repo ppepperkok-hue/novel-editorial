@@ -5,6 +5,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
@@ -22,6 +23,10 @@ def make_env():
     conn.commit()
     conn.close()
     return path, nid
+
+
+def _now_local():
+    return (datetime.now() - timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M:%S")
 
 
 class DailyRunsTests(unittest.TestCase):
@@ -100,6 +105,35 @@ class DailyRunsTests(unittest.TestCase):
             conn.commit()
             self.assertEqual(len(daily_runs.list_runs(conn, limit=-1)), 1)
             self.assertEqual(len(daily_runs.local_executions(conn, limit=99999)), 3)
+        finally:
+            conn.close()
+
+    def test_recover_stale_runs(self):
+        path, _nid = make_env()
+        conn = db.connect(path)
+        try:
+            for run_id, started in (
+                ("stale-1", "2026-08-01 10:00:00"),
+                ("fresh-1", _now_local()),
+            ):
+                conn.execute(
+                    "INSERT INTO daily_runs(run_id,novel_id,trigger,source,status,"
+                    "started_at,finished_at,failed_nodes,error,published,detail,created_at) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))",
+                    (run_id, 1, "manual", "scheduler", "running", started, "", "[]", "", 0, "{}"),
+                )
+            conn.commit()
+            recovered = daily_runs.recover_stale_runs(conn, stale_hours=6)
+            self.assertEqual(recovered, 1)
+            stale = conn.execute(
+                "SELECT status, error FROM daily_runs WHERE run_id='stale-1'"
+            ).fetchone()
+            self.assertEqual(stale["status"], "failed")
+            self.assertIn("孤儿恢复", stale["error"])
+            fresh = conn.execute(
+                "SELECT status FROM daily_runs WHERE run_id='fresh-1'"
+            ).fetchone()
+            self.assertEqual(fresh["status"], "running")
         finally:
             conn.close()
 

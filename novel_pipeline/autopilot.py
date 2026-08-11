@@ -1,4 +1,8 @@
-"""全自动日更编排：生成 → 质量/合规门 → 发布调度 → 健康检查。"""
+"""DEPRECATED 全自动日更编排（n8n 时代路径，当前无调用方）。
+
+现役链路请使用 `tools/editorial_daily.py`；本模块保留为回退后备，与调度器
+共用同一把运行锁，不会被并发调用。
+"""
 
 import argparse
 import json
