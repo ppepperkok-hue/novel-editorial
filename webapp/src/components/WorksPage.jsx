@@ -230,6 +230,11 @@ export default function WorksPage({ data, pushToast }) {
               <>
                 <span className="chip chip-warn">收尾中</span>
                 <span className="text-sm">「{finishing.title}」还剩 {finishing.finish_remaining} 章收尾</span>
+                {finishing.finish_note ? (
+                  <span className="muted text-xs">
+                    评估理由：{String(finishing.finish_note).slice(0, 120)}
+                  </span>
+                ) : null}
               </>
             ) : (
               <>
@@ -404,7 +409,9 @@ export default function WorksPage({ data, pushToast }) {
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-base font-bold">{n.title}</h3>
-                  <span className={`chip ${n.status === "publishing" ? "chip-ok" : n.status === "planning" ? "chip-warn" : "chip-info"}`}>{n.status}</span>
+                  <span className={`chip ${n.status === "publishing" ? "chip-ok" : n.status === "finishing" ? "chip-warn" : n.status === "finished" ? "chip-ok" : n.status === "planning" ? "chip-warn" : "chip-info"}`}>
+                    {n.status === "publishing" ? "连载中" : n.status === "finishing" ? "收尾中" : n.status === "finished" ? "已完结" : n.status === "planning" ? "规划中" : n.status === "ready" ? "待绑定" : n.status}
+                  </span>
                   <span className="chip">{n.platform} · {n.genre}</span>
                 </div>
                 <div className="muted mt-1 text-xs">
