@@ -26,9 +26,44 @@ from novel_editorial.services import audit, knowledge  # noqa: E402
 def _parse_json(text):
     if not text:
         return None
+    text = str(text).strip()
     try:
-        return json.loads(text[text.find("{") : text.rfind("}") + 1])
-    except (ValueError, IndexError):
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+    except (ValueError, TypeError):
+        pass
+    start = text.find("{")
+    if start < 0:
+        return None
+    depth = 0
+    in_string = False
+    escaped = False
+    end = -1
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                end = i
+                break
+    if end < 0:
+        return None
+    try:
+        return json.loads(text[start : end + 1])
+    except (ValueError, TypeError):
         return None
 
 
@@ -47,11 +82,18 @@ def _input_payload(conn):
             }
         )
     hot = {}
+    hot_topics_warning = ""
     if config.HOT_TOPICS_JSON.exists():
         try:
             hot = json.loads(config.HOT_TOPICS_JSON.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            hot = {}
+        except (OSError, ValueError) as exc:
+            hot_topics_warning = f"hot topics JSON 读取失败：{exc}"
+        else:
+            if not isinstance(hot, dict):
+                hot_topics_warning = (
+                    f"hot topics JSON 不是对象（{type(hot).__name__}），已回退空结构"
+                )
+                hot = {}
     drafts = knowledge.list_drafts(conn, status="draft")[:30]
     quality = conn.execute(
         "SELECT COUNT(*) total, COALESCE(SUM(passed),0) passed "
@@ -81,6 +123,7 @@ def _input_payload(conn):
                 for t in (s.get("titles") or [])
             ][:60],
         },
+        "hot_topics_warning": hot_topics_warning,
         "pending_drafts": [
             {
                 "id": d["id"],
@@ -102,6 +145,13 @@ def _input_payload(conn):
 
 def run(conn, dry_run=False):
     payload = _input_payload(conn)
+    warning = payload.get("hot_topics_warning")
+    if warning and not dry_run:
+        audit.log(
+            conn, "knowledge", "keeper_hot_topics_invalid",
+            target_type="config", target_id=str(config.HOT_TOPICS_JSON),
+            detail={"error": warning},
+        )
     agent_md = (config.AGENTS_DIR / "knowledge_keeper.md").read_text(encoding="utf-8")
     prompt = (
         "请按你的[日常维护模式]维护知识库。只输出JSON，不要其他文字。"

@@ -26,8 +26,8 @@ const RUN_STATUS = {
   canceled: ["已取消", "chip-bad"],
 };
 
-export default function ExecutionsPage({ snapshot }) {
-  const [rows, setRows] = useState([]);
+export default function ExecutionsPage({ snapshot, pushToast }) {
+  const [rows, setRows] = useState(() => (snapshot?.executions || []).slice());
   const [error, setError] = useState("");
   const [syncError, setSyncError] = useState("");
   const [detail, setDetail] = useState(null);
@@ -55,6 +55,31 @@ export default function ExecutionsPage({ snapshot }) {
       clearInterval(t);
     };
   }, []);
+
+  // SSE 快照只带最近 5 条：实时更新已加载行的状态，不覆盖轮询拿到的完整列表。
+  useEffect(() => {
+    const snapRows = snapshot?.executions;
+    if (!Array.isArray(snapRows) || snapRows.length === 0) return;
+    setRows((prev) => {
+      const byId = new Map(prev.map((r) => [String(r.id), r]));
+      let changed = false;
+      for (const s of snapRows) {
+        const key = String(s.id);
+        const cur = byId.get(key);
+        if (!cur) continue;
+        if (
+          cur.status !== s.status ||
+          cur.stopped_at !== s.stopped_at ||
+          cur.error !== s.error ||
+          cur.published !== s.published
+        ) {
+          byId.set(key, { ...cur, ...s });
+          changed = true;
+        }
+      }
+      return changed ? [...byId.values()] : prev;
+    });
+  }, [snapshot]);
 
   useEffect(() => {
     let alive = true;
@@ -89,10 +114,10 @@ export default function ExecutionsPage({ snapshot }) {
       setRunDetail(r.run || null);
     } catch (e) {
       setRunDetail(null);
+      pushToast?.("运行详情加载失败：" + (e?.message || String(e)), "bad");
     }
   };
 
-  const fmt = (t) => (t ? String(t).replace("T", " ").slice(5, 19) : "-");
   const duration = (start, stop) => {
     if (!start || !stop) return "—";
     return ((new Date(stop) - new Date(start)) / 1000).toFixed(1) + "s";
@@ -226,7 +251,7 @@ export default function ExecutionsPage({ snapshot }) {
                 );
               })}
               {!rows.length && !error ? (
-                <tr><td colSpan={7} className="empty">暂无执行记录，日更运行后自动写入</td></tr>
+                <tr><td colSpan={6} className="empty">暂无执行记录，日更运行后自动写入</td></tr>
               ) : null}
             </tbody>
           </table>

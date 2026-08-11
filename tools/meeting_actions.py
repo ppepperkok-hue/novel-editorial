@@ -4,14 +4,48 @@ The generic post-meeting action generation (activity.generate_post_meeting_actio
 already turns the report into agent_actions. This module adds the kind-specific
 side effects: incident/retro lessons become knowledge drafts, learning meetings
 turn proposals into drafts, review/critique record explicit markers. Everything
-is idempotent per session (an audit marker prevents double application).
+is idempotent per session: a partial unique index on the audit marker closes the
+check-then-insert race, so concurrent runs apply side effects exactly once.
 """
 
 from __future__ import annotations
 
 import json
+import sqlite3
 
 from tools import meeting_kinds
+
+
+_POST_ACTIONS_INDEX = (
+    "idx_audit_post_actions_once",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_post_actions_once "
+    "ON audit_logs(category, action, target_type, target_id) "
+    "WHERE category='meeting' AND action='post_actions_applied' "
+    "AND target_type='session'",
+)
+
+
+def _ensure_idempotency_index(conn):
+    """Idempotent runtime migration for the exactly-once marker.
+
+    Databases created before this fix may already hold duplicate markers from
+    the old check-then-insert window; keep the earliest row per session, then
+    enforce uniqueness. The partial index only constrains the marker, so
+    unrelated audit rows with the same category/action/target_type are safe.
+    """
+    if any(
+        row[1] == _POST_ACTIONS_INDEX[0]
+        for row in conn.execute("PRAGMA index_list('audit_logs')")
+    ):
+        return
+    conn.execute(
+        "DELETE FROM audit_logs WHERE category='meeting' "
+        "AND action='post_actions_applied' AND target_type='session' "
+        "AND id NOT IN (SELECT MIN(id) FROM audit_logs "
+        "WHERE category='meeting' AND action='post_actions_applied' "
+        "AND target_type='session' GROUP BY target_id)"
+    )
+    conn.execute(_POST_ACTIONS_INDEX[1])
 
 
 def _insert_draft(conn, agent, title, content):
@@ -36,6 +70,7 @@ def run_post_actions(conn, session_id, meeting_id, novel_id, kind, report,
     actions = spec.get("post_actions") or ["actions"]
     # Check the marker first, but only commit it after the side effects below
     # have succeeded: a failed run must stay retryable.
+    _ensure_idempotency_index(conn)
     existing = conn.execute(
         "SELECT 1 FROM audit_logs WHERE category='meeting' "
         "AND action='post_actions_applied' AND target_type='session' "
@@ -118,6 +153,19 @@ def run_post_actions(conn, session_id, meeting_id, novel_id, kind, report,
             ),
         )
         conn.commit()
+    except sqlite3.IntegrityError:
+        # Lost the race: the other run committed the marker (and its side
+        # effects) first. Roll back our duplicate side effects and report
+        # the run as skipped instead of applying them twice.
+        conn.rollback()
+        if conn.execute(
+            "SELECT 1 FROM audit_logs WHERE category='meeting' "
+            "AND action='post_actions_applied' AND target_type='session' "
+            "AND target_id=?",
+            (str(session_id),),
+        ).fetchone() is not None:
+            return {"ok": True, "skipped": True, "reason": "already applied"}
+        raise
     except Exception:
         conn.rollback()
         raise

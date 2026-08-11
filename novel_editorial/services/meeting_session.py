@@ -110,7 +110,10 @@ def get_active_session(conn):
         cutoff = (datetime.now() - timedelta(minutes=_heartbeat_timeout_minutes())).strftime(
             "%Y-%m-%d %H:%M:%S"
         )
-        if session.get("heartbeat_at", "") < cutoff:
+        # NULL heartbeat means the row never had one written (e.g. legacy
+        # rows); treat it as alive instead of comparing None to a string.
+        heartbeat = session.get("heartbeat_at") or _now()
+        if heartbeat < cutoff:
             conn.execute(
                 "UPDATE meeting_sessions SET status='failed', updated_at=? WHERE id=?",
                 (_now(), row["id"]),
@@ -581,6 +584,10 @@ def _run_locked(conn, session_id):
                     "SELECT status, instruction FROM meeting_sessions WHERE id=?", (session_id,)
                 ).fetchone()
                 if r["status"] == "cancelled":
+                    return
+                if r["status"] == "failed":
+                    # failed elsewhere (e.g. failure persistence): stop
+                    # polling forever and let run_session clean up.
                     return
                 if r["status"] == "running":
                     break

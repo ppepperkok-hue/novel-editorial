@@ -39,6 +39,22 @@
 | L-033 | R6 | sync_latest 两路径结构差 count 键 | novel_knowledge.py | 已修（R7-D-03） |
 | L-034 | R6 | _add_conflict_draft 的 category 参数未使用 | novel_knowledge.py | 已修（R7-D-04） |
 | L-035 | R6 | 多文件 LF/CRLF 行尾混用 | 批量 | 待处理（独立格式化批次，避免混 diff） |
+
+## 第九轮新增遗留（20260812）
+
+| 编号 | 来源 | 遗留项 | 文件 | 状态 |
+| --- | --- | --- | --- | --- |
+| L-048 | R9 | topics 解析与 attendees 同类风险；report 解析失败无留痕 | services/misc.py | 待处理 |
+| L-049 | R9 | 首尾花括号截取函数（与 knowledge_keeper 同病） | tools/distill_lessons.py | 待处理 |
+| L-050 | R9 | 热点 sources 非 list 时 s.get 崩溃 | tools/knowledge_keeper.py | 待处理 |
+| L-051 | R9 | resolve 对 LIKE 通配符未转义；docstring 示例与 CLI 不符 | tools/novel_knowledge.py | 待处理 |
+| L-052 | R9 | upsert_chapters 对元素无 dict 防线 | tools/record_work.py | 待处理 |
+| L-053 | R9 | n8n_api Cookie 重复附加；token 静默作废缓存陈旧 | tools/n8n_api.py | 待处理 |
+| L-054 | R9 | _run_fix_worker 建议 stdin 传任务 | scripts/_run_fix_worker.ps1 | 待处理（低） |
+| L-055 | R9 | delete_book reply_to 回复链 ref 全 0 残留 | tools/delete_book.py | 待处理（低） |
+| L-056 | R9 | ai_taste_check detect 非字符串输入 TypeError | tools/ai_taste_check.py | 待处理 |
+| L-057 | R9 | 测试普遍不清理 mkdtemp 目录 | tests/ | 待处理 |
+| L-058 | R9 | 预检失败不写 failed_nodes（链路图精度） | editorial_daily/preflight | 待处理 |
 | L-036 | R6 | config.load_env 只 strip 不剥行内注释 | config.py | 已修（R7-A1-08） |
 | L-037 | R5 | bind_book env 写成功后 DB 提交异常的小概率半更新 | ending.py | 不处理（小概率，方向已修正） |
 | L-038 | R5 | _normalize_action_items 不含全角逗号 | activity.py | 不处理（既有行为） |

@@ -32,6 +32,7 @@ export default function ChaptersPage({ data }) {
   const [expanded, setExpanded] = useState(null);
   const [reader, setReader] = useState(null);
   const [readerBody, setReaderBody] = useState(null);
+  const [readerError, setReaderError] = useState(null);
   const [fontSize, setFontSize] = useState(15);
   const [taste, setTaste] = useState(null);
   const [tasteLoading, setTasteLoading] = useState(false);
@@ -68,14 +69,15 @@ export default function ChaptersPage({ data }) {
   const openReader = async (c) => {
     setReader(c);
     setReaderBody(null);
+    setReaderError(null);
     setFontSize(15);
     setTaste(null);
     setTasteError(null);
     try {
       const r = await getChapterContent(c.id);
       setReaderBody(r.content || "");
-    } catch {
-      setReaderBody("");
+    } catch (e) {
+      setReaderError(e?.message || String(e) || "正文加载失败");
     }
   };
 
@@ -215,7 +217,17 @@ export default function ChaptersPage({ data }) {
               </div>
             </div>
             <div className="modal-body reader-body">
-              {readerBody === null ? (
+              {readerError ? (
+                <div className="rounded-lg border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-400">
+                  <div>正文加载失败：{readerError}</div>
+                  <button
+                    className="btn !px-3 !py-1 mt-2 text-xs"
+                    onClick={() => openReader(reader)}
+                  >
+                    重试
+                  </button>
+                </div>
+              ) : readerBody === null ? (
                 <div className="empty">正文加载中…</div>
               ) : readerBody ? (
                 <div className="reader-content" style={{ fontSize: `${fontSize}px` }}>

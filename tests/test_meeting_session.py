@@ -149,9 +149,32 @@ class MeetingSessionTests(unittest.TestCase):
         self.assertIn("规则怪谈", row["title"])
 
     def test_meeting_malformed_agency_does_not_crash(self):
-        speech = {"speech": "x", "agency": "不是数组", "outbox": {"to": "eic"}}
-        meeting_session._handle_meeting_actions(self.conn, "writer", 1, speech)
-        self.assertTrue(True)
+        speech = {
+            "speech": "x",
+            "agency": "不是数组",
+            "outbox": {"to": "eic"},
+            "memory_used": ["上周结论"],
+        }
+        result = meeting_session._handle_meeting_actions(self.conn, "writer", 1, speech)
+        self.assertIsNone(result)
+        agency_rows = self.conn.execute(
+            "SELECT COUNT(*) c FROM agent_activity "
+            "WHERE agent='writer' AND activity_type='agency_report'"
+        ).fetchone()["c"]
+        self.assertEqual(agency_rows, 0)
+        audit_rows = self.conn.execute(
+            "SELECT COUNT(*) c FROM audit_logs WHERE category='agency'"
+        ).fetchone()["c"]
+        self.assertEqual(audit_rows, 0)
+        msgs = self.conn.execute(
+            "SELECT COUNT(*) c FROM agent_messages WHERE from_agent='writer'"
+        ).fetchone()["c"]
+        self.assertEqual(msgs, 0)
+        memory = self.conn.execute(
+            "SELECT COUNT(*) c FROM agent_activity "
+            "WHERE agent='writer' AND activity_type='memory_used'"
+        ).fetchone()["c"]
+        self.assertEqual(memory, 1)
 
     def test_planning_meeting_full_chain_without_novel(self):
         import json

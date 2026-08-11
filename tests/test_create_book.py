@@ -161,7 +161,7 @@ class CreateBookFlowTests(unittest.TestCase):
             self.assertEqual(row["status"], "publishing")
             self.assertEqual(row["book_id"], "12345")
             self.assertIn("FANQIE_BOOK_ID=12345", env_file.read_text(encoding="utf-8"))
-            self.assertIn("FANQIE_VOLUME_ID=v99", env_file.read_text(encoding="utf-8"))
+            self.assertNotIn("FANQIE_VOLUME_ID", env_file.read_text(encoding="utf-8"), "deprecated env key must not be written")
             logs = conn.execute(
                 "SELECT category, action FROM audit_logs WHERE target_id=1"
             ).fetchall()

@@ -338,7 +338,7 @@ def _upsert_summary(conn, novel_id, chapter_id, seq, ch, run_id=""):
 
 def upsert_chapters(conn, novel_id, chapters, run_id=""):
     for ch in chapters or []:
-        seq = int(ch.get("seq") or 0)
+        seq = _to_int(ch.get("seq") or 0, 0, "seq")
         if not seq:
             continue
         outline = str(ch.get("outline") or "")
@@ -448,7 +448,9 @@ def _rate_for_model(model):
 
 def upsert_costs(conn, novel_id, payload, run_id=""):
     """Record LLM token usage into cost_logs; a non-empty run_id makes the
-    insert idempotent so n8n retries do not double-count costs."""
+    insert idempotent so n8n retries do not double-count costs. The dedup
+    key is the full entry (run/node/model/tokens), so multiple LLM calls
+    of the same node inside one run are all kept."""
     for c in payload.get("costs") or []:
         if not isinstance(c, dict):
             continue
@@ -458,15 +460,16 @@ def upsert_costs(conn, novel_id, payload, run_id=""):
             continue
         model = str(c.get("model") or "")
         node = str(c.get("node") or "")
+        rate = _rate_for_model(model)
+        cost = round(pt / 1000.0 * rate + ct / 1000.0 * rate, 6)
         if run_id:
             dup = conn.execute(
-                "SELECT id FROM cost_logs WHERE run_id=? AND node_name=?",
-                (run_id, node),
+                "SELECT id FROM cost_logs WHERE run_id=? AND node_name=? "
+                "AND model=? AND prompt_tokens=? AND completion_tokens=?",
+                (run_id, node, model, pt, ct),
             ).fetchone()
             if dup:
                 continue
-        rate = _rate_for_model(model)
-        cost = round(pt / 1000.0 * rate + ct / 1000.0 * rate, 6)
         conn.execute(
             "INSERT INTO cost_logs(novel_id,node_name,model,prompt_tokens,"
             "completion_tokens,cost,run_id,created_at) VALUES(?,?,?,?,?,?,?,?)",

@@ -114,12 +114,25 @@ def load_meetings(conn, limit=20):
         except (TypeError, json.JSONDecodeError):
             report = {}
         decisions = report.get("decisions") or {}
+        try:
+            attendees = json.loads(r["attendees"] or "[]")
+        except (TypeError, json.JSONDecodeError) as exc:
+            attendees = []
+            try:
+                config.ALERTS_LOG.parent.mkdir(parents=True, exist_ok=True)
+                with config.ALERTS_LOG.open("a", encoding="utf-8") as f:
+                    f.write(
+                        f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
+                        f"weekly_meetings {r['id']} attendees 解析失败: {exc}\n"
+                    )
+            except Exception:  # noqa: BLE001 - failure logging must never break the API
+                pass
         out.append(
             {
                 "id": r["id"],
                 "held_at": r["held_at"],
                 "novel_id": r["novel_id"],
-                "attendees": json.loads(r["attendees"] or "[]"),
+                "attendees": attendees,
                 "topics": json.loads(r["topics"] or "[]"),
                 "status": r["status"],
                 "summary": report.get("discussion_summary", ""),

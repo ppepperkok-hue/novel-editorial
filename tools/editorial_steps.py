@@ -329,6 +329,8 @@ def _load_flavor_words(root):
         return DEFAULT_FLAVOR_WORDS
 
 
+# 唯一权威来源是仓库根目录 ai_words.json（与 novel_editorial/quality_gate.py
+# 同源）；此内置表只是读取失败时的回退副本，禁止单独扩充，避免两处词表漂移。
 DEFAULT_FLAVOR_WORDS = [
     "突然", "顿时", "仿佛", "缓缓", "不由得", "微微一", "嘴角", "眼神一凝", "低沉",
     "冷哼一声", "心中一动", "不禁", "瞬间", "面无表情", "淡淡", "不由自主", "情不自禁",

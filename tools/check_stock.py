@@ -28,16 +28,17 @@ def check_stock(conn, novel_id=0):
         stock_sql += " AND novel_id=?"
         params = (int(novel_id),)
     stock = conn.execute(stock_sql, params).fetchone()["c"]
-    try:
-        target = int(settings.get("pending_publish") or 0)
-    except (TypeError, ValueError):
-        target = 0
-    if not target:
+    def _parse_int(raw, fallback):
+        if raw in (None, ""):
+            return fallback
         try:
-            target = int(settings.get("daily_chapters") or 2)
+            return int(raw)
         except (TypeError, ValueError):
-            target = 2
-    target = max(1, min(target, 10))
+            return fallback
+
+    pending = _parse_int(settings.get("pending_publish"), 0)
+    target = pending if pending else _parse_int(settings.get("daily_chapters"), 2)
+    target = min(max(target, 0), 10)
     need = max(0, target - stock)
     if novel_id:
         book = conn.execute(

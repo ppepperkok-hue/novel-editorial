@@ -54,8 +54,6 @@ def _origin_allowed(origin, port):
     allowed = {
         f"http://127.0.0.1:{port}",
         f"http://localhost:{port}",
-        "http://127.0.0.1",
-        "http://localhost",
     }
     return origin in allowed
 
@@ -1178,7 +1176,7 @@ def _fail_orphan_sessions(db_path):
         try:
             cur = conn.execute(
                 "UPDATE meeting_sessions SET status='failed' "
-                "WHERE status IN ('running','awaiting_input') AND heartbeat_at < ?",
+                "WHERE status='running' AND heartbeat_at < ?",
                 (cutoff,),
             )
             conn.commit()

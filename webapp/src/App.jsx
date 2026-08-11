@@ -57,7 +57,7 @@ export default function App() {
   }, []);
 
   const [error, refreshPoll] = usePolling(fetchDashboard, 5000);
-  usePolling(fetchControl, 15000);
+  const [controlError] = usePolling(fetchControl, 15000);
   const refresh = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -99,7 +99,7 @@ export default function App() {
         return;
       }
       const num = Number(e.key);
-      if (num >= 1 && num <= NAV.length) {
+      if (num >= 1 && num <= 9) {
         go(NAV[num - 1].id);
       }
     };
@@ -139,7 +139,7 @@ export default function App() {
     });
   };
 
-  const online = Boolean(control?.scheduler);
+  const online = Boolean(control?.scheduler) && !controlError;
 
   if (!data) {
     return (
@@ -198,7 +198,7 @@ export default function App() {
     chapters: () => <ChaptersPage data={data} />,
     agents: () => <AgentsPage pushToast={pushToast} />,
     cost: () => <CostPage data={data} />,
-    executions: () => <ExecutionsPage snapshot={liveSnapshot} />,
+    executions: () => <ExecutionsPage snapshot={liveSnapshot} pushToast={pushToast} />,
     flow: () => <FlowPage />,
     editorial: () => <EditorialPage />,
     reader: () => <ReaderPage data={data} />,
@@ -219,6 +219,7 @@ export default function App() {
         mini={mini}
         toggleMini={toggleMini}
         online={online}
+        schedulerError={controlError}
         liveSnapshot={liveSnapshot}
         data={data}
       />

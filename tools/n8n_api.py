@@ -16,6 +16,8 @@ BASE = (
 cj = http.cookiejar.CookieJar()
 opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
 
+_token_cache = None
+
 
 def _credentials():
     env = config.load_env()
@@ -31,6 +33,9 @@ def _credentials():
 
 
 def auth_token():
+    global _token_cache
+    if _token_cache is not None:
+        return _token_cache
     email, password = _credentials()
     req = urllib.request.Request(
         BASE + "/rest/login",
@@ -41,22 +46,37 @@ def auth_token():
     r = opener.open(req, timeout=10)
     for h in (r.headers.get_all("Set-Cookie") or []):
         if h.startswith("n8n-auth="):
-            return h.split(";", 1)[0].split("=", 1)[1]
+            _token_cache = h.split(";", 1)[0].split("=", 1)[1]
+            return _token_cache
     raise RuntimeError("no n8n-auth cookie")
 
 
-def request(method, path, body=None):
-    headers = {"Cookie": "n8n-auth=" + auth_token()}
+def _open(method, path, body, token):
+    headers = {"Cookie": "n8n-auth=" + token}
     data = None
     if body is not None:
         data = json.dumps(body).encode()
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(BASE + path, data=data, headers=headers, method=method)
+    r = opener.open(req, timeout=15)
+    raw = r.read().decode()
+    return r.status, (json.loads(raw) if raw else None)
+
+
+def request(method, path, body=None):
+    """Send one request, reusing the session token; on auth failure
+    re-login exactly once and retry."""
     try:
-        r = opener.open(req, timeout=15)
-        raw = r.read().decode()
-        return r.status, (json.loads(raw) if raw else None)
+        return _open(method, path, body, auth_token())
     except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            global _token_cache
+            _token_cache = None
+            cj.clear()
+            try:
+                return _open(method, path, body, auth_token())
+            except urllib.error.HTTPError as retry_err:
+                e = retry_err
         raw = e.read().decode()
         print("HTTP error body:", raw[:2000])
         raise

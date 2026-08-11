@@ -64,8 +64,16 @@ export default function FlowPage() {
   const { nodes, edges } = useMemo(() => {
     if (!flow) return { nodes: [], edges: [] };
     const last = flow.last_run || {};
-    const status = last.status || "idle";
+    const overall = last.status || "idle";
+    const nodeStatus = flow.node_status || {};
     const failed = new Set(flow.failed_ids || []);
+    const statusOf = (nid) =>
+      nodeStatus[nid] ||
+      (failed.has(nid) ? "failed" : overall === "running" ? "run" : "idle");
+    const edgeClassOf = (nid) => {
+      const st = statusOf(nid);
+      return st === "failed" ? "flow-bad" : st === "run" ? "flow-run" : "flow-idle";
+    };
     const byGroup = {};
     for (const n of flow.nodes || []) {
       (byGroup[n.group] = byGroup[n.group] || []).push(n);
@@ -78,7 +86,7 @@ export default function FlowPage() {
           id: n.id,
           position: { x, y: i * 84 },
           data: { label: n.label },
-          className: `flow-node flow-${status}${failed.has(n.id) ? " flow-failed" : ""}`,
+          className: `flow-node flow-${statusOf(n.id)}`,
           style: { width: 160 },
         });
       });
@@ -88,7 +96,7 @@ export default function FlowPage() {
       source: e.source,
       target: e.target,
       type: "smoothstep",
-      className: `flow-edge flow-${status}`,
+      className: `flow-edge ${edgeClassOf(e.target)}`,
     }));
     return { nodes: rfNodes, edges: rfEdges };
   }, [flow]);
@@ -134,7 +142,7 @@ export default function FlowPage() {
         <div className="panel flex flex-wrap items-center gap-1.5 px-4 py-2.5 text-xs">
           <span className="muted mr-1">图例：</span>
           {groupLegend}
-          <span className="chip chip-soft">● 绿=成功 · 橙=部分 · 红=失败 · 蓝=运行中 · 灰=待命</span>
+          <span className="chip chip-soft">红=失败节点 · 蓝=运行中 · 灰=待命（成功/未执行暂无法逐节点区分，整体状态见徽标）</span>
         </div>
       </div>
 

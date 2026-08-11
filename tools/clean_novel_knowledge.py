@@ -306,7 +306,7 @@ def main():
             return
         backup_dir = ROOT / "backups"
         backup_dir.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
         backup = backup_dir / f"{path.stem}-{stamp}.db"
         backup_conn = sqlite3.connect(backup)
         try:

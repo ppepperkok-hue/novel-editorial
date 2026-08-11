@@ -64,7 +64,10 @@ export function TitleBar() {
   );
 }
 
-export function Sidebar({ page, go, mini, toggleMini, online, liveSnapshot, data }) {
+export function Sidebar({ page, go, mini, toggleMini, online, schedulerError, liveSnapshot, data }) {
+  const state = schedulerError ? "error" : online ? "online" : "offline";
+  const dotClass = state === "error" ? "bg-[var(--warn)]" : state === "online" ? "ok" : "bad";
+  const stateText = state === "error" ? "连接异常" : state === "online" ? "在线" : "离线";
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -91,8 +94,8 @@ export function Sidebar({ page, go, mini, toggleMini, online, liveSnapshot, data
       </nav>
       <div className="sidebar-foot">
         <div className={`mb-2 flex items-center ${mini ? "justify-center" : ""}`}>
-          <span className={`dot ${online ? "ok" : "bad"}`} />
-          {!mini && <>调度器 {online ? "在线" : "离线"}</>}
+          <span className={`dot ${dotClass}`} />
+          {!mini && <>调度器 {stateText}</>}
         </div>
         {!mini && (
           <>
@@ -169,7 +172,7 @@ export function HelpModal({ open, onClose }) {
         <div className="modal-body">
           <div className="flex flex-col gap-2 text-sm">
             {[
-              [`1 – ${NAV.length}`, "切换页面"],
+              ["1 – 9", "切换页面（其余入口走侧边栏或 Ctrl+K）"],
               ["Ctrl+K", "打开命令面板"],
               ["Ctrl+R", "刷新数据"],
               ["?", "显示/隐藏本帮助"],

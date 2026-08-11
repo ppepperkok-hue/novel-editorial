@@ -44,8 +44,9 @@ def _purge_novel(conn, novel_id):
     """Delete a novel and every row that references it, in FK-safe order.
 
     SQLite enforces foreign keys (PRAGMA foreign_keys=ON), so child tables
-    that reference chapters by chapter_id must be deleted before chapters,
-    and tables that reference the novel by novel_id before novels.
+    that reference chapters by chapter_id/ref_chapter_id must be deleted
+    before chapters, and tables that reference the novel by novel_id before
+    novels.
     """
     tables = [
         r[0]
@@ -58,6 +59,14 @@ def _purge_novel(conn, novel_id):
         if "chapter_id" in cols:
             conn.execute(
                 f'DELETE FROM "{t}" WHERE chapter_id IN '
+                "(SELECT id FROM chapters WHERE novel_id=?)",
+                (novel_id,),
+            )
+    for t in tables:
+        cols = [r[1] for r in conn.execute(f'PRAGMA table_info("{t}")')]
+        if "ref_chapter_id" in cols:
+            conn.execute(
+                f'DELETE FROM "{t}" WHERE ref_chapter_id IN '
                 "(SELECT id FROM chapters WHERE novel_id=?)",
                 (novel_id,),
             )

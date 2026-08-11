@@ -9,6 +9,27 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 DB = str(ROOT / "demo.db")
 
+
+# daily_runs statuses: scheduler writes running/completed/partial/failed
+# (docs/planning/de-n8n-mapping.md), while legacy n8n sync rows keep
+# success/crashed/error/canceled/skipped. Map every stored value to a
+# stable monitor label so the displayed status matches the real state.
+STATUS_LABELS = {
+    "running": "running",
+    "waiting": "running",
+    "new": "running",
+    "completed": "completed",
+    "success": "completed",
+    "partial": "partial",
+    "failed": "failed",
+    "error": "failed",
+    "crashed": "failed",
+    "skipped": "skipped",
+    "canceled": "skipped",
+}
+TERMINAL_STATUSES = {"completed", "partial", "failed", "success", "crashed", "error", "canceled", "skipped"}
+
+
 def snapshot():
     from novel_editorial import db as pipeline_db
 
@@ -45,7 +66,7 @@ def snapshot():
             ).fetchall()
         ]
         costs = conn.execute(
-            "SELECT ROUND(SUM(cost),4) c FROM cost_logs WHERE created_at>=date('now','localtime','-1 day')"
+            "SELECT ROUND(SUM(cost),4) c FROM cost_logs WHERE created_at>=date('now','localtime')"
         ).fetchone()["c"] or 0.0
     finally:
         conn.close()
@@ -65,9 +86,11 @@ def main():
         pass
     for _ in range(90):
         s = snapshot()
+        raw_status = s["exec"].get("status") or "none"
+        status_label = STATUS_LABELS.get(raw_status, raw_status)
         print(
             f"[{time.strftime('%H:%M:%S')}] exec={s['exec']['id']} "
-            f"status={s['exec']['status']} chapters={len(s['chapters'])} "
+            f"status={status_label} chapters={len(s['chapters'])} "
             f"publishes={len(s['publishes'])} cost={s['cost_today']}"
         )
         for c in s["chapters"][-3:]:
@@ -77,10 +100,9 @@ def main():
             )
         for p in s["publishes"][-3:]:
             print(f"  pub ch{p['chapter_id']} {p['result']} err={p['error'] or '-'}")
-        if s["exec"].get("status") in ("completed", "partial", "failed", "error", "running"):
-            print("EXEC DONE:", s["exec"]["status"])
-            if s["exec"]["status"] != "running":
-                break
+        if raw_status in TERMINAL_STATUSES:
+            print("EXEC DONE:", status_label)
+            break
         time.sleep(30)
 
 

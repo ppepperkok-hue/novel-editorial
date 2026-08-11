@@ -33,14 +33,19 @@ if (-not (Test-Path -LiteralPath $codexJs)) {
 # hidden, and stdout/stderr are redirected to files. No console window.
 $taskText = Get-Content -LiteralPath $Task -Raw -Encoding UTF8
 $taskText = $taskText -replace "`r?`n", " "
+if ($taskText.Length -gt 15000) {
+    throw "task text is $($taskText.Length) chars (> 15000); split the task file into smaller tasks"
+}
 $parts = @(
     '"' + $codexJs + '"',
     "exec",
-    "--ephemeral",
-    "-m",
-    '"' + $Model + '"',
-    '"' + $taskText + '"'
+    "--ephemeral"
 )
+if ($Model) {
+    $parts += "-m"
+    $parts += '"' + $Model + '"'
+}
+$parts += '"' + $taskText + '"'
 $cmdLine = $parts -join " "
 $p = Start-Process -FilePath "node" -ArgumentList $cmdLine `
     -WorkingDirectory $root -RedirectStandardOutput $Out `

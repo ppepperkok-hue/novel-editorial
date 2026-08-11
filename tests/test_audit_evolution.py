@@ -180,7 +180,7 @@ class EndingBindTests(unittest.TestCase):
             self.assertTrue(r["ok"])
             content = tmp_env.read_text(encoding="utf-8")
             self.assertIn("FANQIE_BOOK_ID=newbook", content)
-            self.assertIn("FANQIE_VOLUME_ID=v2", content)
+            self.assertNotIn("FANQIE_VOLUME_ID=v2", content, "deprecated env key must not be rewritten")
             row = conn.execute("SELECT status, book_id FROM novels WHERE id=2").fetchone()
             self.assertEqual(row["status"], "publishing")
             self.assertEqual(row["book_id"], "newbook")

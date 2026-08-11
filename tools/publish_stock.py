@@ -259,6 +259,13 @@ def publish_batch(conn, novel_id, target, env):
             "failures": [],
             "warnings": ["收尾余量已用完，作品按已完结处理，停止发布"],
         }
+    if target <= 0:
+        return {
+            "target": target,
+            "published": 0,
+            "failures": [],
+            "warnings": ["本次发布目标为 0，不发布"],
+        }
     rows = conn.execute(
         "SELECT c.id, c.novel_id, c.seq, c.title, c.status, "
         "COALESCE(cc.content, '') AS content "
@@ -361,7 +368,7 @@ def main():
     except (AttributeError, ValueError):
         pass
     ap = argparse.ArgumentParser(description="从存稿池发布章节到番茄")
-    ap.add_argument("--chapters", type=int, default=0, help="本次发布章数（默认读设置）")
+    ap.add_argument("--chapters", type=int, default=None, help="本次发布章数（0 表示不发布；默认读设置）")
     ap.add_argument("--db", default="demo.db")
     args = ap.parse_args()
 
@@ -406,12 +413,18 @@ def main():
             r["key"]: r["value"]
             for r in conn.execute("SELECT key, value FROM settings").fetchall()
         }
-        target = (
-            args.chapters
-            or _safe_int_setting("pending_publish", settings.get("pending_publish"), 0)
-            or _safe_int_setting("daily_chapters", settings.get("daily_chapters"), 2)
-        )
-        target = max(1, min(target, 10))
+        if args.chapters is None:
+            pending = _safe_int_setting(
+                "pending_publish", settings.get("pending_publish"), 0
+            )
+            target = (
+                pending
+                if pending
+                else _safe_int_setting("daily_chapters", settings.get("daily_chapters"), 2)
+            )
+        else:
+            target = _safe_int_setting("--chapters", args.chapters, 2)
+        target = max(0, min(target, 10))
         summary = publish_batch(conn, novel_id, target, env)
         if settings.get("pending_publish") and summary.get("published"):
             conn.execute(
