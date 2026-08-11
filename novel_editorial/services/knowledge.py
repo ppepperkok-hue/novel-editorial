@@ -74,7 +74,7 @@ def write_knowledge(file, meta, body):
         raise ValueError("knowledge file path escapes the knowledge directory")
     if path.suffix != ".md":
         raise ValueError("knowledge file must be .md")
-    meta.setdefault("updated_at", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    meta["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     meta.setdefault("title", path.stem)
     meta.setdefault("type", "craft")
     meta.setdefault("agents", [])

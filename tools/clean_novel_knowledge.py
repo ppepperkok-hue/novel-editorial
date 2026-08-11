@@ -182,6 +182,17 @@ def plan_clean(conn):
 
 
 def _merge_history(conn, keep_id, drop_id):
+    keep = conn.execute(
+        "SELECT id FROM novel_knowledge WHERE id=?", (keep_id,)
+    ).fetchone()
+    if keep is None:
+        # Chained plan referenced a keep row already removed: drop safely.
+        conn.execute(
+            "DELETE FROM novel_knowledge_history WHERE knowledge_id=?",
+            (drop_id,),
+        )
+        conn.execute("DELETE FROM novel_knowledge WHERE id=?", (drop_id,))
+        return
     conn.execute(
         "UPDATE novel_knowledge_history SET knowledge_id=? WHERE knowledge_id=?",
         (keep_id, drop_id),
@@ -210,6 +221,10 @@ def apply_clean(conn, plan):
         if item["keep_id"]:
             _merge_history(conn, item["keep_id"], item["id"])
         else:
+            conn.execute(
+                "DELETE FROM novel_knowledge_history WHERE knowledge_id=?",
+                (item["id"],),
+            )
             conn.execute("DELETE FROM novel_knowledge WHERE id=?", (item["id"],))
     for item in plan["similar_rules"]:
         _merge_history(conn, item["keep_id"], item["drop_id"])

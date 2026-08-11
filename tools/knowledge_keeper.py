@@ -132,7 +132,13 @@ def run(conn, dry_run=False):
             ),
         )
         conn.commit()
-    parsed = _parse_json(text) or {}
+    parsed = _parse_json(text)
+    if not parsed:
+        return {
+            "ok": False,
+            "error": "知识管家输出不可解析（非 JSON），本次未执行任何更新",
+            "raw": str(text or "")[:300],
+        }
     if dry_run:
         return {
             "ok": True,

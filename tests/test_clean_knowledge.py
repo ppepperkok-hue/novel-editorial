@@ -19,6 +19,63 @@ def make_db():
 
 
 class CleanKnowledgeTests(unittest.TestCase):
+    def test_merge_history_keeps_missing_drop_safe(self):
+        conn, nid = make_db()
+        try:
+            conn.execute(
+                "INSERT INTO novel_knowledge(novel_id,category,entity,content,version,updated_at) "
+                "VALUES(?,?,?,?,1,'2026-01-01 00:00:00')",
+                (nid, "world_rule", "保留行", "内容"),
+            )
+            conn.execute(
+                "INSERT INTO novel_knowledge_history(knowledge_id,content,version,created_at) "
+                "VALUES(1,'旧','1','2026-01-01 00:00:00')"
+            )
+            conn.commit()
+            clean_novel_knowledge._merge_history(conn, 999, 1)
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) c FROM novel_knowledge").fetchone()["c"],
+                0,
+            )
+        finally:
+            conn.close()
+
+    def test_apply_clean_deletes_with_history(self):
+        conn, nid = make_db()
+        try:
+            conn.execute(
+                "INSERT INTO novel_knowledge(novel_id,category,entity,content,version,updated_at) "
+                "VALUES(?,?,?,?,1,'2026-01-01 00:00:00')",
+                (nid, "world_rule", "金手指重复", "内容"),
+            )
+            conn.execute(
+                "INSERT INTO novel_knowledge_history(knowledge_id,content,version,created_at) "
+                "VALUES(1,'旧','1','2026-01-01 00:00:00')"
+            )
+            conn.commit()
+            clean_novel_knowledge.apply_clean(
+                conn,
+                {
+                    "renames": [],
+                    "state_rows": [],
+                    "golden_finger_dups": [{"keep_id": None, "id": 1}],
+                    "similar_rules": [],
+                    "misclassified": [],
+                },
+            )
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) c FROM novel_knowledge").fetchone()["c"],
+                0,
+            )
+            self.assertEqual(
+                conn.execute(
+                    "SELECT COUNT(*) c FROM novel_knowledge_history"
+                ).fetchone()["c"],
+                0,
+            )
+        finally:
+            conn.close()
+
     def test_plan_renames_sentence_entities(self):
         conn, nid = make_db()
         try:

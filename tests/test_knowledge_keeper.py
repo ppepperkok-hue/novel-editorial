@@ -32,6 +32,27 @@ class KnowledgeKeeperTests(unittest.TestCase):
     def tearDown(self):
         self.conn.close()
 
+    def test_run_fails_explicitly_on_non_json(self):
+        with mock.patch(
+            "tools.knowledge_keeper.chat_deepseek",
+            return_value={
+                "text": "我不会输出 JSON，就说散文吧",
+                "usage": {},
+                "model": "deepseek-v4-flash",
+            },
+        ):
+            result = knowledge_keeper.run(self.conn)
+        self.assertFalse(result["ok"])
+        self.assertIn("不可解析", result["error"])
+
+    def test_write_knowledge_refreshes_updated_at(self):
+        kdir = make_knowledge_dir()
+        with mock.patch.object(knowledge, "KNOWLEDGE_DIR", kdir):
+            result = knowledge.write_knowledge(
+                "market.md", {"updated_at": "2020-01-01"}, "新内容"
+            )
+        self.assertNotEqual(result["meta"]["updated_at"], "2020-01-01")
+
     def test_run_updates_market_only_and_drafts_rest(self):
         kdir = make_knowledge_dir()
         keeper_output = {
