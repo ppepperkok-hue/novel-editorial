@@ -84,6 +84,9 @@ class OutboxTests(unittest.TestCase):
         self.assertEqual(actions[0]["agent"], "writer")
         self.assertIn("按留言重做", actions[0]["task"])
         self.assertEqual(actions[0]["priority"], "high")
+        self.assertEqual(len(self.ctx.rework_requests), 1)
+        self.assertEqual(self.ctx.rework_requests[0]["message_id"], original["id"])
+        self.assertEqual(self.ctx.rework_requests[0]["body"], "我重做这章")
 
     def test_outbox_decision_clarify_only_resolves(self):
         original = mailroom.send(

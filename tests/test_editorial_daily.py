@@ -323,6 +323,63 @@ class EditorialDailyTests(unittest.TestCase):
         self.assertEqual(len(directives), 2)
         self.assertIn("握手动作", directives[0])
 
+    def test_writer_task_injects_rework_requirement(self):
+        ctx = editorial_daily._Ctx(self.novel_id, self.db_path, dry_run=True)
+        ctx.writing_context = "前情提要"
+        ctx.rework_requests = [{"body": "重写开篇钩子，开头太平"}]
+        meta, outline, guard = self._writer_fixture()
+        task = editorial_daily._writer_task(ctx, 0, meta, outline, guard, 2000)
+        self.assertIn("同事要求重做", task)
+        self.assertIn("重写开篇钩子", task)
+
+    def test_run_track_instant_rework_closes_loop(self):
+        from tools import mailroom  # noqa: E402
+        from novel_editorial.services import activity  # noqa: E402
+
+        original = mailroom.send(
+            self.conn, "reviewer", "writer", "请重写第二章", novel_id=self.novel_id
+        )
+        created = activity.create_action(
+            self.conn, "writer", "按留言重做：请重写第二章", novel_id=self.novel_id
+        )
+        ctx = editorial_daily._Ctx(self.novel_id, self.db_path, dry_run=True)
+        ctx.writing_context = "前情提要"
+        ctx.rework_requests = [
+            {
+                "body": "请重写第二章",
+                "message_id": original["id"],
+                "action_id": created["id"],
+            }
+        ]
+        meta = {"protagonist": "林舟", "start_num": 1}
+        outline = {
+            "genre": "都市",
+            "keywords": "旧书店",
+            "bible": {
+                "characters": [{"name": "林舟", "role": "主角"}],
+                "relationships": [],
+                "world_rules": ["旧书店只在夜间开门"],
+            },
+            "chapter1": {"title": "开篇", "emotion": "好奇", "position": "开篇"},
+            "chapter2": {"title": "试探", "emotion": "紧张", "position": "推进"},
+        }
+        guard = {"constraints": [], "character_beats": {}}
+        track = editorial_daily._run_track(
+            ctx, self.conn, 0, outline, guard, meta, 2000, {}
+        )
+        self.assertTrue(ctx.rework_applied)
+        self.assertTrue(track["gate"]["passed"])
+        row = self.conn.execute(
+            "SELECT status, resolution FROM agent_messages WHERE id=?",
+            (original["id"],),
+        ).fetchone()
+        self.assertEqual(row["status"], "resolved")
+        self.assertEqual(row["resolution"], "rework")
+        act = self.conn.execute(
+            "SELECT status FROM agent_actions WHERE id=?", (created["id"],)
+        ).fetchone()
+        self.assertEqual(act["status"], "done")
+
     def test_two_runs_are_idempotent(self):
         self._ok_preflight()
         r1 = editorial_daily.daily(

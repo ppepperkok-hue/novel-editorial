@@ -119,7 +119,7 @@ def _handle_outbox(ctx, node, text):
 
                     prefix = "按留言重做：" if decision == "rework" else "明日处理："
                     task = prefix + str(item.get("body") or "")[:200]
-                    activity.create_action(
+                    created = activity.create_action(
                         conn,
                         from_agent,
                         task,
@@ -131,6 +131,14 @@ def _handle_outbox(ctx, node, text):
                         },
                         priority="high" if decision == "rework" else "medium",
                     )
+                    if decision == "rework" and created.get("ok"):
+                        ctx.rework_requests.append(
+                            {
+                                "body": str(item.get("body") or "")[:400],
+                                "message_id": reply_to,
+                                "action_id": created.get("id"),
+                            }
+                        )
     finally:
         conn.close()
     return json.dumps(obj, ensure_ascii=False)
@@ -206,6 +214,8 @@ class _Ctx:
         self.tool_attempts = []
         self.dispatch = None
         self.claimed_notes = ""
+        self.rework_requests = []
+        self.rework_applied = False
         self.mood_notes = ""
         self.reviewer_mood = ""
         self.lock_path = None
@@ -736,6 +746,9 @@ def _writer_task(ctx, idx, meta, outline, guard, target_words, prev_track=None):
         parts.append(dispatch_note)
     if ctx.claimed_notes:
         parts.append(ctx.claimed_notes)
+    rework = ctx.rework_requests[min(int(idx or 0), max(0, len(ctx.rework_requests) - 1))] if ctx.rework_requests else None
+    if rework:
+        parts.append("同事要求重做：" + str(rework.get("body") or "") + "。请按此重写本章。")
     if ctx.mood_notes:
         parts.append("今日心情：" + ctx.mood_notes)
     return "；".join(parts)
@@ -914,7 +927,7 @@ def _editor_task_for(writer_text, outline):
 
 
 def _review_retry(ctx, conn, idx, outline, guard, meta, target_words, prev_track,
-                  suffix, chapter, original_editor, gate, review_text):
+                  suffix, chapter, original_editor, gate, review_text, extra_reason=""):
     """S11: negotiate a rewrite when the gate rejects a track.
 
     The reviewer sends a rejection message with reasons, the writer replies
@@ -935,6 +948,8 @@ def _review_retry(ctx, conn, idx, outline, guard, meta, target_words, prev_track
     reason = "；".join(
         str(x) for x in ((gate.get("errors") or []) + issues) if str(x)
     ) or "审稿未通过，请按审稿意见修改"
+    if extra_reason:
+        reason = str(extra_reason)[:300] + "；" + reason
 
     reviewer_c = _canonical_agent("审稿" + suffix)
     writer_c = _canonical_agent("写手" + suffix)
@@ -1092,6 +1107,20 @@ def _run_track(ctx, conn, idx, outline, guard, meta, target_words, env, prev_tra
             "feedback_rejected",
             novel_id=ctx.novel_id,
         )
+    track_req = (
+        ctx.rework_requests[idx]
+        if idx < len(ctx.rework_requests)
+        else None
+    )
+    if track_req and config.REWORK_MAX > 0 and not ctx.rework_applied:
+        gate, editor_text, review_text = _review_retry(
+            ctx, conn, idx, outline, guard, meta, target_words, prev_track,
+            suffix, chapter, editor_text, gate, review_text,
+            extra_reason=str(track_req.get("body") or ""),
+        )
+        ctx.rework_applied = True
+        _settle_rework(conn, track_req)
+    elif not gate.get("passed"):
         gate, editor_text, review_text = _review_retry(
             ctx, conn, idx, outline, guard, meta, target_words, prev_track,
             suffix, chapter, editor_text, gate, review_text,
@@ -1104,6 +1133,28 @@ def _run_track(ctx, conn, idx, outline, guard, meta, target_words, env, prev_tra
         "editor_text": editor_text,
         "failed": False,
     }
+
+
+def _settle_rework(conn, rework):
+    """Close the loop of an instant rework: resolve the source message and
+    mark the fallback action done."""
+    try:
+        from tools import mailroom  # noqa: PLC0415
+        from novel_editorial.services import activity  # noqa: PLC0415
+
+        if rework.get("message_id"):
+            mailroom.resolve(conn, rework["message_id"], "rework")
+        if rework.get("action_id"):
+            activity.update_action(
+                conn, rework["action_id"], status="done",
+                result="即时重写已完成",
+            )
+    except Exception as exc:  # noqa: BLE001
+        audit.log(
+            conn, "editorial", "settle_rework_failed",
+            target_type="action", target_id=str(rework.get("action_id") or ""),
+            detail={"error": str(exc)[:200]},
+        )
 
 
 def _publish_track(ctx, idx, track, outline, meta, target_words, env):
