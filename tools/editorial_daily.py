@@ -33,6 +33,7 @@ from tools import (  # noqa: E402
     collect_reader_stats,
     current_book,
     editorial_steps as steps,
+    mailroom,
     novel_knowledge,
     preflight,
     publish_stock,
@@ -65,6 +66,70 @@ AGENT_PARAMS = {
 
 def _j(obj):
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+
+
+def _canonical_agent(node):
+    from tools.agent_tool_loop import _resolve_agent_file  # noqa: PLC0415
+
+    stem = _resolve_agent_file(node)
+    return stem.stem if stem is not None else node
+
+
+def _handle_outbox(ctx, node, text):
+    """Extract an optional `outbox` array from structured agent output (S4).
+
+    The outbox is persisted through mailroom so agents can leave messages
+    for colleagues; failures are recorded as explicit warnings. The outbox
+    field is stripped from the returned text.
+    """
+    raw = str(text or "")
+    obj = steps.robust_json(raw) if raw.strip().startswith(("{", "[")) else None
+    if not isinstance(obj, dict) or not isinstance(obj.get("outbox"), list):
+        return text
+    outbox = obj.pop("outbox")
+    from_agent = _canonical_agent(node)
+    conn = db.connect(ctx.db_path)
+    try:
+        for item in outbox:
+            if not isinstance(item, dict):
+                continue
+            result = mailroom.send(
+                conn,
+                from_agent,
+                str(item.get("to") or ""),
+                str(item.get("body") or ""),
+                subject=str(item.get("subject") or ""),
+                kind=str(item.get("kind") or "note"),
+                novel_id=ctx.novel_id,
+                chapter_id=int(item.get("chapter_id") or 0),
+            )
+            if not result.get("ok"):
+                ctx.warnings.append(
+                    f"outbox {node} -> {item.get('to')}: {result.get('error', 'unknown')}"
+                )
+    finally:
+        conn.close()
+    return json.dumps(obj, ensure_ascii=False)
+
+
+def _mark_injected_read(ctx, node):
+    """Mark the mailbox entries shown in the injected snapshot as read (S4)."""
+    agent = _canonical_agent(node)
+    conn = db.connect(ctx.db_path)
+    try:
+        result = mailroom.list_messages(
+            conn,
+            agent=agent,
+            novel_id=ctx.novel_id,
+            status="unread",
+            limit=config.AGENT_CTX_MESSAGES,
+        )
+        if result.get("ok"):
+            ids = [m["id"] for m in result["messages"]]
+            if ids:
+                mailroom.mark_read(conn, ids)
+    finally:
+        conn.close()
 
 
 class _Ctx:
@@ -212,6 +277,9 @@ def _agent(ctx, node, task, target_words=None):
     )
     if failed:
         return None
+    if not ctx.dry_run:
+        text = _handle_outbox(ctx, node, text)
+        _mark_injected_read(ctx, node)
     ctx.agent_calls.append({"node": node, "chars": len(str(text or ""))})
     return str(text or "")
 
