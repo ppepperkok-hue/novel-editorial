@@ -77,6 +77,23 @@
 | L-062 | R10 | novel_knowledge.get() entity LIKE 未转义 | novel_knowledge.py | 待处理 |
 | L-063 | R10 | record_work 活动统计 c.get 裸调 / upsert_characters 无防线 | record_work.py | 待处理 |
 | L-064 | R10 | get_meta sources dict 崩溃 / top_keywords 非 list | get_meta.py | 待处理 |
+
+## 第十一轮遗留更新（20260812）
+
+| 编号 | 来源 | 遗留项 | 文件 | 状态 |
+| --- | --- | --- | --- | --- |
+| L-059 | R10 | knowledge_drafts accept ValueError 500 | web_api.py | 已修（R11-A1-03） |
+| L-060 | R10 | 知识端点 conn 泄漏 | web_api.py | 已修（R11-A1-04） |
+| L-061 | R10 | workday resume 重复日记 | workday.py | 已修（R11-A2-08） |
+| L-062 | R10 | get() entity LIKE 未转义 | novel_knowledge.py | 已修（R11-C-05） |
+| L-063 | R10 | record_work 活动统计/upsert_characters 防线 | record_work.py | 已修（R11-D-05） |
+| L-064 | R10 | get_meta sources/top_keywords | get_meta.py | 已修（R11-D-07） |
+| L-065 | R11 | 会议创建未收敛单一入口（CLI 绕过锁） | agent_meeting/misc | 待处理 |
+| L-066 | R11 | /api/novel_knowledge upsert 错误语义 200+ok:false | web_api.py | 待处理 |
+| L-067 | R11 | completed_with_pending 未映射（daily_runs/flow_graph） | daily_runs.py/flow_graph.py | 待处理 |
+| L-068 | R11 | 锁与告警路径硬编码 ROOT | control/editorial_daily/preflight | 待处理 |
+| L-069 | R11 | desktop api-error 通道未桥接 preload/webapp | desktop | 待处理 |
+| L-070 | R11 | export 全节点缺失 exit 0 / distill 元素缺字段静默 | export_agent_prompts/distill_lessons | 待处理 |
 | L-036 | R6 | config.load_env 只 strip 不剥行内注释 | config.py | 已修（R7-A1-08） |
 | L-037 | R5 | bind_book env 写成功后 DB 提交异常的小概率半更新 | ending.py | 不处理（小概率，方向已修正） |
 | L-038 | R5 | _normalize_action_items 不含全角逗号 | activity.py | 不处理（既有行为） |

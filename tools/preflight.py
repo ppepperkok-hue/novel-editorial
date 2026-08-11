@@ -86,9 +86,10 @@ def check_cookie():
 
 
 def check_already_ran(conn, novel_id=0):
-    """Whether the given novel (0 = any novel, legacy CLI default) already
+    """Whether the given novel (0 = any novel, legacy/global sentinel) already
     published a chapter today. Per-book filtering keeps multi-book setups
-    from blocking one novel because another one ran."""
+    from blocking one novel because another one ran; the CLI resolves the
+    active novel before calling this."""
     sql = (
         "SELECT COUNT(*) c FROM chapters "
         "WHERE status='published' AND published_at >= date('now','localtime')"
@@ -224,7 +225,17 @@ def main():
             budget = args.budget
         manual_requested = str(settings.get("manual_run_requested", "0")) == "1"
         cookie_ok, cookie_reason = check_cookie()
-        already_ran = check_already_ran(conn)
+        active = conn.execute(
+            "SELECT id FROM novels "
+            "WHERE status IN ('publishing','finishing') "
+            "ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        already_ran_novel_id = int(active["id"]) if active else None
+        already_ran = (
+            check_already_ran(conn, already_ran_novel_id)
+            if already_ran_novel_id
+            else False
+        )
         if manual_requested:
             already_ran = False
         budget_ok, spent = check_budget(conn, budget)
@@ -274,6 +285,7 @@ def main():
                 "reasons": reasons,
                 "cookie_valid": cookie_ok,
                 "already_ran": already_ran,
+                "already_ran_novel_id": already_ran_novel_id,
                 "budget_ok": budget_ok,
                 "book_ok": book_ok,
             },
@@ -286,6 +298,7 @@ def main():
                     "cookie_valid": cookie_ok,
                     "cookie_reason": cookie_reason,
                     "already_ran": already_ran,
+                    "already_ran_novel_id": already_ran_novel_id,
                     "manual_run_requested": manual_requested,
                     "budget_ok": budget_ok,
                     "spent": spent,

@@ -224,6 +224,12 @@ def distill(conn, meeting_id=None, session_id=None):
             "ok": False,
             "error": f"distill lessons must be a list, got {type(lessons).__name__}",
         }
+    if not lessons:
+        return {
+            "ok": False,
+            "error": "distill output lessons list is empty",
+            "meeting": mat["source"],
+        }
     skipped_lessons = []
     drafted = 0
     for idx, item in enumerate(lessons):

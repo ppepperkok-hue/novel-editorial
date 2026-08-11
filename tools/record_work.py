@@ -43,6 +43,15 @@ def _to_int(value, default=0, field=""):
         return default
 
 
+def _trace(message):
+    """Append a trace line to alerts.log; I/O failure must not crash the run."""
+    try:
+        with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {message}\n")
+    except OSError:
+        pass
+
+
 def upsert_novel(conn, payload):
     book_id = str(payload.get("book_id") or "")
     title = str(payload.get("book_name") or payload.get("title") or "未命名")
@@ -95,6 +104,11 @@ def upsert_novel(conn, payload):
 
 def upsert_characters(conn, novel_id, protagonists):
     for i, p in enumerate(protagonists or [], start=1):
+        if not isinstance(p, dict):
+            _trace(
+                f"record_work: protagonists[{i}] ({type(p).__name__}) 非 dict，已跳过"
+            )
+            continue
         name = str(p.get("name") or "主角" + str(i))
         row = conn.execute(
             "SELECT id FROM characters WHERE novel_id=? AND name=?", (novel_id, name)
@@ -353,7 +367,10 @@ def upsert_chapters(conn, novel_id, chapters, run_id=""):
             continue
         outline = str(ch.get("outline") or "")
         title = str(ch.get("title") or "")
-        status = str(ch.get("status") or "published")
+        status = str(ch.get("status") or "").strip()
+        if not status:
+            status = "unknown"
+            _trace(f"record_work: 章节 {seq} 缺少 status，标记为 unknown（不视为已发布）")
         words = _to_int(ch.get("words") or 0, 0, "words")
         item_id = str(ch.get("fanqie_item_id") or "")
         published_at = str(ch.get("published_at") or "")
@@ -520,6 +537,20 @@ def record_payload(conn, payload):
     upsert_costs(conn, novel_id, payload, run_id=str(payload.get("run_id") or ""))
     from novel_editorial.services import activity  # noqa: PLC0415
 
+    chapters = payload.get("chapters") or []
+    published = 0
+    failed = 0
+    for c in chapters:
+        if not isinstance(c, dict):
+            _trace(
+                f"record_work: chapters 元素 ({type(c).__name__}) 非 dict，统计时已跳过"
+            )
+            continue
+        if c.get("status") == "published":
+            published += 1
+        if c.get("error"):
+            failed += 1
+
     activity.log_activity(
         conn,
         "system",
@@ -527,20 +558,16 @@ def record_payload(conn, payload):
         "daily_summary",
         "日更运行结果已归档",
         {
-            "chapters": len(payload.get("chapters") or []),
-            "published": sum(
-                1 for c in (payload.get("chapters") or []) if c.get("status") == "published"
-            ),
-            "failed": sum(
-                1 for c in (payload.get("chapters") or []) if c.get("error")
-            ),
+            "chapters": len(chapters),
+            "published": published,
+            "failed": failed,
         },
     )
     conn.commit()
     return {
         "ok": True,
         "novel_id": novel_id,
-        "chapters": len(payload.get("chapters") or []),
+        "chapters": len(chapters),
     }
 
 

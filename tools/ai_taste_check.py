@@ -29,6 +29,7 @@ FILLER = [
     "突然", "不由自主", "情不自禁", "微微一愣", "缓缓说道", "一股强大的气息",
     "与此同时", "这一刻", "就在这时", "不是…而是", "值得注意的是", "使得",
     "仿佛", "似乎", "隐约", "轻轻", "微微", "缓缓", "默默", "暗暗",
+    "不是……而是",
 ]
 
 EXCLAMATION_PATTERN = re.compile(
@@ -88,19 +89,37 @@ def detect(text):
     exclam = len(EXCLAMATION_PATTERN.findall(text))
     if exclam > 3:
         notes.append(f"连续感叹/问号 {exclam} 处")
-    # parallel four-character stacking heuristic: count adjacent 4-char
-    # sequences by their real positions (text.find() gave wrong offsets when
-    # a phrase repeated).
-    positions = [m.start() for m in re.finditer(r"[\u4e00-\u9fff]{4}", text)]
+    # parallel four-character stacking heuristic: a stack site is either a
+    # continuous CJK segment of exactly 8 chars (two jammed 4-char phrases,
+    # counted once per segment; longer clauses such as 16-char narrative
+    # runs are not split into arbitrary 4-char windows), or a
+    # punctuation-joined sequence of standalone 4-char phrases weighted by
+    # adjacent pairs (k-1 for k phrases), so a single three-phrase parallel
+    # such as "天崩地裂，日月无光，山河变色" is still detected while plain
+    # narrative stays quiet.
     runs = 0
+    for m in re.finditer(r"[\u4e00-\u9fff]+", text):
+        if len(m.group()) == 8:
+            runs += 1
+    islands = list(
+        re.finditer(
+            r"(?<![\u4e00-\u9fff])[\u4e00-\u9fff]{4}(?![\u4e00-\u9fff])", text
+        )
+    )
+    separators = set("，、；。！？：…,.;!?")
     i = 0
-    while i < len(positions) - 1:
-        if positions[i + 1] - positions[i] == 4:
+    while i < len(islands) - 1:
+        gap = text[islands[i].end() : islands[i + 1].start()]
+        if gap and all(ch.isspace() or ch in separators for ch in gap):
             j = i + 1
-            while j < len(positions) - 1 and positions[j + 1] - positions[j] == 4:
+            while j < len(islands) - 1:
+                gap = text[islands[j].end() : islands[j + 1].start()]
+                if not gap or not all(
+                    ch.isspace() or ch in separators for ch in gap
+                ):
+                    break
                 j += 1
-            if j > i:
-                runs += 1
+            runs += j - i
             i = j + 1
         else:
             i += 1

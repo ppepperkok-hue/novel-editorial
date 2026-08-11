@@ -70,6 +70,7 @@ def render_html(conn):
     status = last.get("status") or "idle"
     status_text = {
         "completed": "上次成功",
+        "completed_with_pending": "上次完成（有待办）",
         "success": "上次成功",
         "partial": "上次部分成功",
         "failed": "上次失败",
@@ -79,6 +80,7 @@ def render_html(conn):
     }.get(status, "待命（暂无运行）")
     status_class = {
         "completed": "ok",
+        "completed_with_pending": "warn",
         "success": "ok",
         "partial": "warn",
         "failed": "bad",

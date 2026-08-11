@@ -385,7 +385,17 @@ def main():
             )
         )
         return
-    conn = db.connect(db_path)
+    try:
+        conn = db.connect(db_path)
+    except Exception as e:  # noqa: BLE001
+        release_lock(lock_path)
+        print(
+            json.dumps(
+                {"ok": False, "published": 0, "error": f"数据库连接失败：{e}"},
+                ensure_ascii=False,
+            )
+        )
+        return
     try:
         env = load_env()
         # 按活跃书语义选择（与 tools/current_book.py 一致）：只取

@@ -12,6 +12,11 @@ from novel_editorial.services import activity
 from tools import agent_meeting, architect_weekly, meeting_kinds, meeting_materials
 
 _MEETING_LOCK = threading.Lock()
+# Serializes create_session's check-and-insert so concurrent callers (e.g.
+# ThreadingHTTPServer threads) cannot both create a running meeting session.
+# Deliberately separate from _MEETING_LOCK, which is held for the entire
+# meeting run and would block new session creation for up to an hour.
+_CREATE_SESSION_LOCK = threading.Lock()
 FINISH_TOKEN = "__FINISH__"
 MAX_ROUNDS = 20
 MEETING_TIMEOUT_SECONDS = 60 * 60
@@ -28,37 +33,38 @@ def create_session(conn, topic, novel_id=0, db_path="", kind="topic"):
         return {"ok": False, "error": f"kind must be one of {meeting_kinds.MEETING_KIND_NAMES}"}
     if not topic or not str(topic).strip():
         return {"ok": False, "error": "topic 不能为空"}
-    active = get_active_session(conn)
-    if active is not None:
-        return {
-            "ok": False,
-            "error": f"已有会议进行中（#{active['id']}），请先结束或关闭当前会议",
-        }
-    if not novel_id and kind != "planning":
-        row = conn.execute("SELECT id FROM novels ORDER BY id DESC LIMIT 1").fetchone()
-        novel_id = row["id"] if row else 0
-    cur = conn.execute(
-        "INSERT INTO meeting_sessions(kind,topic,status,novel_id,db_path,heartbeat_at,created_at,updated_at) "
-        "VALUES(?,?,?,?,?,?,?,?)",
-        (
-            kind,
-            str(topic).strip(),
-            "running",
-            novel_id,
-            str(db_path or ""),
-            _now(),
-            _now(),
-            _now(),
-        ),
-    )
-    conn.commit()
-    session_id = cur.lastrowid
-    audit.log(
-        conn, "meeting", "start_session",
-        target_type="session", target_id=session_id,
-        detail={"topic": topic, "kind": kind},
-    )
-    return {"ok": True, "session_id": session_id}
+    with _CREATE_SESSION_LOCK:
+        active = get_active_session(conn)
+        if active is not None:
+            return {
+                "ok": False,
+                "error": f"已有会议进行中（#{active['id']}），请先结束或关闭当前会议",
+            }
+        if not novel_id and kind != "planning":
+            row = conn.execute("SELECT id FROM novels ORDER BY id DESC LIMIT 1").fetchone()
+            novel_id = row["id"] if row else 0
+        cur = conn.execute(
+            "INSERT INTO meeting_sessions(kind,topic,status,novel_id,db_path,heartbeat_at,created_at,updated_at) "
+            "VALUES(?,?,?,?,?,?,?,?)",
+            (
+                kind,
+                str(topic).strip(),
+                "running",
+                novel_id,
+                str(db_path or ""),
+                _now(),
+                _now(),
+                _now(),
+            ),
+        )
+        conn.commit()
+        session_id = cur.lastrowid
+        audit.log(
+            conn, "meeting", "start_session",
+            target_type="session", target_id=session_id,
+            detail={"topic": topic, "kind": kind},
+        )
+        return {"ok": True, "session_id": session_id}
 
 
 def get_session(conn, session_id):

@@ -49,6 +49,7 @@ export default function AgentsPage({ pushToast }) {
   const [states, setStates] = useState([]);
   const [editDiary, setEditDiary] = useState(null);
   const [moodDraft, setMoodDraft] = useState(null);
+  const moodDraftAgentRef = useRef(null);
   const logRef = useRef(null);
 
   const load = async () => {
@@ -99,16 +100,20 @@ export default function AgentsPage({ pushToast }) {
     return (
       base.model !== selected.model ||
       String(base.temperature) !== String(selected.temperature) ||
-      base.prompt !== selected.prompt
+      base.prompt !== selected.prompt ||
+      moodDraft !== null
     );
-  }, [selected, agents]);
+  }, [selected, agents, moodDraft]);
 
   const applyPick = (a) => {
     setSelected({ ...a });
     setLog([]);
+    setMoodDraft(null);
+    moodDraftAgentRef.current = null;
   };
 
   const pick = (a) => {
+    if (selected && a.file === selected.file) return;
     if (dirty && selected && a.file !== selected.file) {
       setPendingPick(a);
       return;
@@ -134,10 +139,22 @@ export default function AgentsPage({ pushToast }) {
     note: "",
   };
 
+  const updateMoodDraft = (next) => {
+    moodDraftAgentRef.current = moodAgentKey;
+    setMoodDraft(next);
+  };
+
   const saveMood = async () => {
-    const r = await updateAgentState(selected.file.replace(/\.md$/, ""), 0, currentMood);
+    if (!selected) return;
+    const draftAgent = moodDraftAgentRef.current || moodAgentKey;
+    if (draftAgent !== moodAgentKey) {
+      pushToast("心情草稿属于其他 Agent，已取消保存；请切回原 Agent 再保存", "bad");
+      return;
+    }
+    const r = await updateAgentState(draftAgent, 0, currentMood);
     pushToast(r.ok ? "心情已更新" : "更新失败：" + (r.error || "未知"), r.ok ? "ok" : "bad");
     setMoodDraft(null);
+    moodDraftAgentRef.current = null;
     getAgentStates().then((x) => setStates(x.states || []));
   };
 
@@ -350,7 +367,7 @@ export default function AgentsPage({ pushToast }) {
                         step="0.1"
                         className="input mt-1"
                         value={currentMood[k] ?? 0.5}
-                        onChange={(e) => setMoodDraft({ ...currentMood, [k]: Number(e.target.value) })}
+                        onChange={(e) => updateMoodDraft({ ...currentMood, [k]: Number(e.target.value) })}
                       />
                     </label>
                   ))}
@@ -359,7 +376,7 @@ export default function AgentsPage({ pushToast }) {
                   className="input mt-2"
                   placeholder="心情备注（可选）"
                   value={currentMood.note || ""}
-                  onChange={(e) => setMoodDraft({ ...currentMood, note: e.target.value })}
+                  onChange={(e) => updateMoodDraft({ ...currentMood, note: e.target.value })}
                 />
               </div>
 
@@ -439,7 +456,7 @@ export default function AgentsPage({ pushToast }) {
       <ConfirmDialog
         open={pendingPick !== null}
         title="放弃未保存的修改？"
-        body={`当前「${selected?.name}」的修改尚未保存，切换后会丢失。`}
+        body={`当前「${selected?.name}」的修改或心情草稿尚未保存，切换后会丢失。`}
         confirmText="放弃并切换"
         onCancel={() => setPendingPick(null)}
         onConfirm={() => {

@@ -110,6 +110,58 @@ def _clean_protagonist_name(name):
     return name[:5]
 
 
+def _warn(message):
+    """Append a trace line to alerts.log; I/O failure must not crash the run."""
+    try:
+        with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {message}\n")
+    except OSError:
+        pass
+
+
+def _normalize_protagonists(protagonists):
+    """Coerce protagonists DB JSON into a list of dicts with a "name".
+
+    Accepts a list (dict entries or plain names), a single dict (either a
+    {"name": ...} entry or a {name: description} mapping), or a plain string
+    (treated as one protagonist name). Invalid shapes fall back to [] and
+    leave a trace in alerts.log.
+    """
+    if isinstance(protagonists, str):
+        _warn(
+            f"create_book: protagonists 为字符串形状 "
+            f"({protagonists[:50]!r})，已按单个主角名清洗"
+        )
+        protagonists = [protagonists]
+    elif isinstance(protagonists, dict):
+        if "name" in protagonists:
+            protagonists = [protagonists]
+        else:
+            protagonists = [{"name": name} for name in protagonists]
+    if not isinstance(protagonists, list):
+        _warn(
+            f"create_book: protagonists 形状非法"
+            f"（{type(protagonists).__name__}），已回退为空"
+        )
+        return []
+    cleaned = []
+    for i, p in enumerate(protagonists):
+        if isinstance(p, dict):
+            name = p.get("name")
+        elif isinstance(p, str):
+            name = p
+        else:
+            name = None
+        if not name:
+            _warn(
+                f"create_book: protagonists[{i}] "
+                f"({type(p).__name__}) 无法取得 name，已跳过"
+            )
+            continue
+        cleaned.append({"name": str(name)})
+    return cleaned
+
+
 def _category_name(c):
     return c.get("name") or c.get("category_name") or ""
 
@@ -253,11 +305,12 @@ def create_book_on_fanqie(conn, novel_id):
         tags = json.loads(row["tags"] or "[]")
     except (TypeError, json.JSONDecodeError):
         tags = []
-    protagonists = []
+    protagonists_raw = row["protagonists"] or ""
     try:
-        protagonists = json.loads(row["protagonists"] or "[]")
+        protagonists = json.loads(protagonists_raw or "[]")
     except (TypeError, json.JSONDecodeError):
-        protagonists = []
+        protagonists = protagonists_raw
+    protagonists = _normalize_protagonists(protagonists)
 
     gender = _gender(genre)
     try:

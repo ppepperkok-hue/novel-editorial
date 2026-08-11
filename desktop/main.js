@@ -23,6 +23,8 @@ let apiStopping = false;
 let apiRestartCount = 0;
 const API_RESTART_MAX = 3;
 const API_RESTART_DELAY_MS = 3000;
+const API_RESTART_COOLDOWN_MS = 10 * 60 * 1000;
+let lastApiCrashAt = 0;
 let startupReady = false;
 let showRequested = false;
 
@@ -71,12 +73,48 @@ function userDbPath() {
   return dbPath;
 }
 
+function runtimeDataDir() {
+  // Runtime artifacts (hot-topics, exports, alerts, reader stats, locks)
+  // live next to the DB in userData; the install dir stays read-only.
+  return app.getPath("userData");
+}
+
+function dataDirProblems() {
+  const problems = [];
+  const base = runtimeDataDir();
+  const dirs = [
+    base,
+    path.join(base, "exports"),
+    path.join(base, "demo_data"),
+    path.join(base, "n8n_tmp"),
+    // The backend still resolves weekly/daily locks against ROOT
+    // (services/control.py, tools/editorial_daily.py), so the install dir
+    // itself must remain writable for those lock files.
+    path.join(ROOT, "n8n_tmp"),
+  ];
+  for (const dir of dirs) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      const probe = path.join(dir, `.write-probe-${process.pid}`);
+      fs.writeFileSync(probe, "ok");
+      fs.unlinkSync(probe);
+    } catch (err) {
+      problems.push(`${dir}：${(err && err.message) || err}`);
+    }
+  }
+  return problems;
+}
+
 function spawnApiProcess() {
   const dbPath = userDbPath();
   const child = spawn(
     PYTHONW,
     ["-m", "novel_editorial.web_api", "--db", dbPath, "--port", String(API_PORT)],
-    { cwd: ROOT, stdio: "ignore" },
+    {
+      cwd: ROOT,
+      env: { ...process.env, NOVEL_DATA_DIR: runtimeDataDir() },
+      stdio: "ignore",
+    },
   );
   apiProc = child;
   let spawnFailed = false;
@@ -93,6 +131,12 @@ function spawnApiProcess() {
   child.on("exit", (code, signal) => {
     if (spawnFailed || apiStopping) return;
     apiProc = null;
+    const now = Date.now();
+    if (lastApiCrashAt && now - lastApiCrashAt >= API_RESTART_COOLDOWN_MS) {
+      // No crash for the full cooldown: restore the full restart budget.
+      apiRestartCount = 0;
+    }
+    lastApiCrashAt = now;
     const reason = `后端服务异常退出（code=${code}${signal ? `, signal=${signal}` : ""}）`;
     console.error(reason);
     if (win) {
@@ -185,6 +229,17 @@ function showWindow() {
   win.focus();
 }
 
+function stripInlineComment(value) {
+  // Mirror novel_editorial.config._strip_inline_comment: cut a trailing
+  // "#" comment that follows whitespace; "a=b#c" keeps the glued "#c".
+  let cut = value.length;
+  for (const sep of [" #", "\t#"]) {
+    const idx = value.indexOf(sep);
+    if (idx !== -1) cut = Math.min(cut, idx);
+  }
+  return cut < value.length ? value.slice(0, cut).trim() : value.trim();
+}
+
 function panelToken() {
   // Mirror web_api._panel_token(): process env wins, then ~/.n8n/.env.
   if (process.env.PANEL_TOKEN) return process.env.PANEL_TOKEN.trim();
@@ -194,7 +249,7 @@ function panelToken() {
       if (!line.includes("=")) continue;
       const eq = line.indexOf("=");
       if (line.slice(0, eq).trim() === "PANEL_TOKEN") {
-        return line.slice(eq + 1).trim();
+        return stripInlineComment(line.slice(eq + 1));
       }
     }
   } catch {
@@ -320,7 +375,11 @@ function watchExecutions() {
 
 function setupAutoUpdater() {
   if (!isPackaged) return;
+  console.log(`Desktop app version: ${app.getVersion()}`);
   autoUpdater.autoDownload = true;
+  autoUpdater.on("error", (err) => {
+    console.error("auto-update check failed:", err);
+  });
   autoUpdater.on("update-downloaded", () => {
     if (Notification.isSupported()) {
       new Notification({
@@ -341,6 +400,19 @@ app.whenReady().then(async () => {
   app.on("second-instance", () => {
     showWindow();
   });
+  const dataDirIssues = dataDirProblems();
+  if (dataDirIssues.length) {
+    const msg =
+      "数据目录不可写，热点采集、周会锁、导出与告警将无法落盘：\n" +
+      dataDirIssues.join("\n") +
+      "\n\n请安装到当前用户可写的目录（不要选择“为所有用户安装”），" +
+      "或为安装目录开放写入权限后重新启动应用。";
+    console.error(msg);
+    dialog.showErrorBox("文学编辑部启动失败", msg);
+    app.isQuiting = true;
+    app.quit();
+    return;
+  }
   try {
     await ensureApi();
   } catch (e) {

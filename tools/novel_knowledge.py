@@ -249,8 +249,8 @@ def get(conn, novel_id, category=None, entity=None, limit=300):
         sql += " AND category=?"
         args.append(category)
     if entity:
-        sql += " AND entity LIKE ?"
-        args.append(f"%{entity}%")
+        sql += " AND entity LIKE ? ESCAPE '\\'"
+        args.append(f"%{_like_escape(entity)}%")
     sql += " ORDER BY category, entity LIMIT ?"
     args.append(limit)
     return [dict(r) for r in conn.execute(sql, args).fetchall()]

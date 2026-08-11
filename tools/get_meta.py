@@ -38,6 +38,15 @@ def _safe_json(value, fallback, field):
     return parsed
 
 
+def _trace(message):
+    """Append a trace line to alerts.log; I/O failure must not crash the CLI."""
+    try:
+        with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {message}\n")
+    except OSError:
+        pass
+
+
 def main():
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -85,12 +94,32 @@ def main():
                     except OSError:
                         pass
                 if hot_data is not None:
+                    sources = hot_data.get("sources") or []
+                    if not isinstance(sources, list):
+                        _trace("get_meta: hot_topics.sources 非 list，已回退为空")
+                        sources = []
                     all_titles = []
-                    for src in hot_data.get("sources") or []:
-                        all_titles.extend(src.get("titles") or [])
+                    for src in sources:
+                        if not isinstance(src, dict):
+                            _trace(
+                                f"get_meta: hot_topics.sources 元素 "
+                                f"({type(src).__name__}) 非 dict，已跳过"
+                            )
+                            continue
+                        titles = src.get("titles") or []
+                        if not isinstance(titles, list):
+                            _trace(
+                                "get_meta: hot_topics.sources.titles 非 list，已跳过"
+                            )
+                            titles = []
+                        all_titles.extend(titles)
+                    top_keywords = hot_data.get("top_keywords") or []
+                    if not isinstance(top_keywords, list):
+                        _trace("get_meta: hot_topics.top_keywords 非 list，已回退为空")
+                        top_keywords = []
                     hot = {
                         "updated_at": hot_data.get("updated_at") or "",
-                        "top_keywords": hot_data.get("top_keywords") or [],
+                        "top_keywords": top_keywords,
                         "titles": all_titles[:30],
                     }
             except (OSError, ValueError):

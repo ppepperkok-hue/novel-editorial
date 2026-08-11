@@ -200,6 +200,22 @@ def run(conn, dry_run=False):
             "error": "知识管家输出不可解析（非 JSON），本次未执行任何更新",
             "raw": str(text or "")[:300],
         }
+    required_keys = ("auto_updates", "draft_suggestions", "deprecations")
+    invalid_keys = [
+        key for key in required_keys if not isinstance(parsed.get(key), list)
+    ]
+    if invalid_keys:
+        audit.log(
+            conn, "knowledge", "keeper_output_schema_invalid",
+            target_type="output", target_id="",
+            detail={"invalid_keys": invalid_keys, "raw": str(text or "")[:300]},
+        )
+        return {
+            "ok": False,
+            "error": "知识管家输出 schema 非法（缺少或类型错误）："
+            + ", ".join(invalid_keys),
+            "invalid_keys": invalid_keys,
+        }
     if dry_run:
         return {
             "ok": True,

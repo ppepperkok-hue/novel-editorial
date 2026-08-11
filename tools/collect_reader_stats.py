@@ -12,6 +12,7 @@ import os
 import sys
 import urllib.parse
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -20,10 +21,21 @@ sys.path.insert(0, str(ROOT))
 from novel_editorial import config, db  # noqa: E402
 
 OUT_CSV = ROOT / "demo_data" / "reader_stats.csv"
+PAGE_SIZE = 200
+MAX_PAGES = 100
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
 )
+
+
+def _trace(message):
+    """Append a trace line to alerts.log; I/O failure must not crash the run."""
+    try:
+        with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {message}\n")
+    except OSError:
+        pass
 
 
 def load_env(env_file):
@@ -60,28 +72,53 @@ def norm_rate(value):
 
 
 def fetch_stats(book_id):
-    qs = urllib.parse.urlencode(
-        {
-            "aid": "2503",
-            "app_name": "muye_novel",
-            "book_id": book_id,
-            "page_index": "0",
-            "page_count": "200",
-        }
-    )
-    req = urllib.request.Request(
-        "https://fanqienovel.com/api/author/stats/chapter_list_v1/v0/?" + qs,
-        headers={
-            "Cookie": os.environ["FANQIE_COOKIE"],
-            "X-Secsdk-Csrf-Token": os.environ["FANQIE_CSRF_TOKEN"],
-            "User-Agent": UA,
-            "Accept": "application/json, text/plain, */*",
-            "Origin": "https://fanqienovel.com",
-            "Referer": "https://fanqienovel.com/main/writer/",
-        },
-    )
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.loads(r.read().decode("utf-8", "ignore"))
+    """Fetch every chapter-stats page (PAGE_SIZE per page) until a short page."""
+    all_items = []
+    for page in range(MAX_PAGES):
+        qs = urllib.parse.urlencode(
+            {
+                "aid": "2503",
+                "app_name": "muye_novel",
+                "book_id": book_id,
+                "page_index": str(page),
+                "page_count": str(PAGE_SIZE),
+            }
+        )
+        req = urllib.request.Request(
+            "https://fanqienovel.com/api/author/stats/chapter_list_v1/v0/?" + qs,
+            headers={
+                "Cookie": os.environ["FANQIE_COOKIE"],
+                "X-Secsdk-Csrf-Token": os.environ["FANQIE_CSRF_TOKEN"],
+                "User-Agent": UA,
+                "Accept": "application/json, text/plain, */*",
+                "Origin": "https://fanqienovel.com",
+                "Referer": "https://fanqienovel.com/main/writer/",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=30) as r:
+            payload = json.loads(r.read().decode("utf-8", "ignore"))
+        if payload.get("code") != 0:
+            if not all_items:
+                return payload
+            raise RuntimeError(
+                f"第 {page + 1} 页采集失败：{payload.get('message') or payload}"
+            )
+        items = (payload.get("data") or {}).get("chapter_stats_list") or []
+        if not isinstance(items, list):
+            _trace(
+                f"collect_reader_stats: 第 {page + 1} 页 chapter_stats_list "
+                f"({type(items).__name__}) 非 list，已跳过该页"
+            )
+            items = []
+        all_items.extend(items)
+        if len(items) < PAGE_SIZE:
+            break
+    else:
+        _trace(
+            f"collect_reader_stats: 达到页数上限 {MAX_PAGES}（每页 {PAGE_SIZE} 章），"
+            "已截断，后续章节未采集"
+        )
+    return {"code": 0, "data": {"chapter_stats_list": all_items}}
 
 
 def run(db_path, env_file=None, out_csv=None):

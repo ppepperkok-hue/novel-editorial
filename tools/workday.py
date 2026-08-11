@@ -51,6 +51,48 @@ def _current_novel_id(conn):
     return row["id"] if row else 0
 
 
+def _diaries_written(conn, novel_id, started_at):
+    """True when daily diaries already exist inside this workday window."""
+    row = conn.execute(
+        "SELECT COUNT(*) c FROM agent_diaries "
+        "WHERE novel_id=? AND diary_type='daily' AND created_at>=?",
+        (novel_id or 0, str(started_at or "")),
+    ).fetchone()
+    return bool(row and row["c"])
+
+
+def _recover_stale_open(conn, stale_hours=12):
+    """Recover workday rows stuck mid-run by a crashed process, mirroring
+    daily_runs.recover_stale_runs. awaiting_close is a deliberate decision
+    point, so it is never auto-recovered."""
+    row = conn.execute(
+        "SELECT run_id, phase, status FROM daily_runs "
+        "WHERE source='workday' AND phase NOT IN ('finished','awaiting_close') "
+        "AND started_at < datetime('now','localtime',?) "
+        "ORDER BY id DESC LIMIT 1",
+        (f"-{int(stale_hours)} hours",),
+    ).fetchone()
+    if row is None:
+        return None
+    conn.execute(
+        "UPDATE daily_runs SET status='failed', phase='finished', "
+        "finished_at=datetime('now','localtime'), error=?, detail=? "
+        "WHERE run_id=?",
+        (
+            "进程中断或超时（孤立恢复）",
+            _j({"recovered": True, "stale_phase": row["phase"]}),
+            row["run_id"],
+        ),
+    )
+    conn.commit()
+    audit.log(
+        conn, "workday", "stale_recovered",
+        target_type="run", target_id=row["run_id"],
+        detail={"phase": row["phase"], "status": row["status"], "stale_hours": stale_hours},
+    )
+    return row["run_id"]
+
+
 def _morning_plan(conn, run_id, mode, boss_instruction, dry_run, db_path):
     """Editor-in-chief (or deterministic fallback) sets today's plan."""
     if mode == "write":
@@ -107,9 +149,12 @@ def open(conn, chapters=None, trigger="manual", mode="write", boss_instruction="
     if db_path is None:
         db_path = conn.execute("PRAGMA database_list").fetchone()[2]
     db_path = str(Path(db_path).resolve())
+    # R11-A2-03: a process killed during opening/morning/producing must not
+    # lock the office forever; stale rows are recovered like daily_runs.
+    _recover_stale_open(conn)
     active = conn.execute(
         "SELECT run_id, phase, status FROM daily_runs "
-        "WHERE source='workday' AND status='running' "
+        "WHERE source='workday' AND phase!='finished' "
         "ORDER BY id DESC LIMIT 1"
     ).fetchone()
     if active is not None:
@@ -219,6 +264,7 @@ def resume(conn, run_id, chapters=None, dry_run=False, db_path=None):
         result = editorial_daily.daily(
             conn, chapters=chapters, trigger="manual", dry_run=dry_run,
             db_path=db_path, workday_run_id=run_id, lock_held=True,
+            skip_diaries=_diaries_written(conn, row["novel_id"], row["started_at"]),
         )
         if not dry_run:
             _update(conn, run_id, phase="awaiting_close")
@@ -273,11 +319,7 @@ def _close_locked(conn, run_id, dry_run, row):
     if not dry_run:
         # R10-A2-01: daily() 的 _wrapup 已在 produce 日写过 daily 日记，
         # close 只补写非产出日（org/meeting 等），避免同一工作日双写。
-        already_diaries = conn.execute(
-            "SELECT COUNT(*) c FROM agent_diaries "
-            "WHERE novel_id=? AND diary_type='daily' AND created_at>=?",
-            (row["novel_id"] or 0, str(row["started_at"] or "")),
-        ).fetchone()["c"]
+        already_diaries = _diaries_written(conn, row["novel_id"], row["started_at"])
         if already_diaries:
             audit.log(
                 conn, "workday", "diaries_skipped",

@@ -896,143 +896,157 @@ def make_handler(db_path):
                 elif parsed.path == "/api/knowledge":
                     from novel_editorial.services import knowledge as knowledge_service  # noqa: PLC0415
 
-                    action = payload.get("action") or "list"
-                    if action == "list":
-                        result = {"ok": True, "knowledge": knowledge_service.list_knowledge()}
-                    elif action == "read":
-                        item = knowledge_service.read_knowledge(str(payload.get("file") or ""))
-                        result = {"ok": bool(item), "item": item}
-                    elif action == "save":
-                        file = str(payload.get("file") or "")
-                        meta = payload.get("meta") or {}
-                        body = str(payload.get("body") or "")
-                        if not file or not body.strip():
-                            result = {"ok": False, "error": "file and body required"}
-                        else:
-                            try:
-                                item = knowledge_service.write_knowledge(
-                                    file, dict(meta), body
-                                )
-                            except ValueError as exc:
-                                result = {"ok": False, "error": str(exc)}
-                                http_status = 400
+                    try:
+                        action = payload.get("action") or "list"
+                        if action == "list":
+                            result = {"ok": True, "knowledge": knowledge_service.list_knowledge()}
+                        elif action == "read":
+                            item = knowledge_service.read_knowledge(str(payload.get("file") or ""))
+                            result = {"ok": bool(item), "item": item}
+                        elif action == "save":
+                            file = str(payload.get("file") or "")
+                            meta = payload.get("meta") or {}
+                            body = str(payload.get("body") or "")
+                            if not file or not body.strip():
+                                result = {"ok": False, "error": "file and body required"}
                             else:
-                                audit_service.log(
-                                    conn, "knowledge", "save",
-                                    target_type="knowledge", target_id=file,
-                                    detail={"title": meta.get("title")},
-                                )
-                                result = {"ok": True, "item": item}
-                    else:
-                        result = {"ok": False, "error": f"unknown action {action}"}
+                                try:
+                                    item = knowledge_service.write_knowledge(
+                                        file, dict(meta), body
+                                    )
+                                except ValueError as exc:
+                                    result = {"ok": False, "error": str(exc)}
+                                    http_status = 400
+                                else:
+                                    audit_service.log(
+                                        conn, "knowledge", "save",
+                                        target_type="knowledge", target_id=file,
+                                        detail={"title": meta.get("title")},
+                                    )
+                                    result = {"ok": True, "item": item}
+                        else:
+                            result = {"ok": False, "error": f"unknown action {action}"}
+                    finally:
+                        conn.close()
                 elif parsed.path == "/api/knowledge_drafts":
                     from novel_editorial.services import knowledge as knowledge_service  # noqa: PLC0415
 
-                    action = payload.get("action") or "list"
-                    if action == "list":
-                        result = {
-                            "ok": True,
-                            "drafts": knowledge_service.list_drafts(
-                                conn, payload.get("status")
-                            ),
-                        }
-                    elif action in ("accept", "reject", "deprecate"):
-                        draft_id = _parse_int(payload.get("id"), 0)
-                        status = {"accept": "accepted", "reject": "rejected", "deprecate": "deprecated"}[action]
-                        if action == "accept":
-                            # write into a knowledge package chosen by the draft
-                            rows = conn.execute(
-                                "SELECT * FROM knowledge_drafts WHERE id=?", (draft_id,)
-                            ).fetchall()
-                            if not rows:
-                                result = {"ok": False, "error": "draft not found"}
-                            else:
-                                d = dict(rows[0])
-                                agents = []
-                                try:
-                                    agents = json.loads(d.get("agents") or "[]")
-                                except ValueError:
+                    try:
+                        action = payload.get("action") or "list"
+                        if action == "list":
+                            result = {
+                                "ok": True,
+                                "drafts": knowledge_service.list_drafts(
+                                    conn, payload.get("status")
+                                ),
+                            }
+                        elif action in ("accept", "reject", "deprecate"):
+                            draft_id = _parse_int(payload.get("id"), 0)
+                            status = {"accept": "accepted", "reject": "rejected", "deprecate": "deprecated"}[action]
+                            if action == "accept":
+                                # write into a knowledge package chosen by the draft
+                                rows = conn.execute(
+                                    "SELECT * FROM knowledge_drafts WHERE id=?", (draft_id,)
+                                ).fetchall()
+                                if not rows:
+                                    result = {"ok": False, "error": "draft not found"}
+                                else:
+                                    d = dict(rows[0])
                                     agents = []
-                                kind = d.get("kind") or "lesson"
-                                file = (
-                                    "lessons.md"
-                                    if kind in ("lesson", "deprecation")
-                                    else "custom-knowledge.md"
-                                )
-                                meta = {
-                                    "title": d["title"],
-                                    "type": "craft",
-                                    "agents": agents,
-                                    "source": d.get("source") or "agent-draft",
-                                }
-                                knowledge_service.write_knowledge(
-                                    file, meta, d["content"]
-                                )
-                                audit_service.log(
-                                    conn, "knowledge", "accept_draft",
-                                    target_type="knowledge_draft", target_id=draft_id,
-                                    detail={"file": file, "title": d["title"]},
-                                )
-                                knowledge_service.update_draft_status(conn, draft_id, "accepted")
-                                result = {"ok": True, "file": file}
-                        else:
-                            ok = knowledge_service.update_draft_status(conn, draft_id, status)
-                            result = {"ok": ok, "error": None if ok else "draft not found or not in draft state"}
-                    elif action == "distill":
-                        from tools import distill_lessons  # noqa: PLC0415
+                                    try:
+                                        agents = json.loads(d.get("agents") or "[]")
+                                    except ValueError:
+                                        agents = []
+                                    kind = d.get("kind") or "lesson"
+                                    file = (
+                                        "lessons.md"
+                                        if kind in ("lesson", "deprecation")
+                                        else "custom-knowledge.md"
+                                    )
+                                    meta = {
+                                        "title": d["title"],
+                                        "type": "craft",
+                                        "agents": agents,
+                                        "source": d.get("source") or "agent-draft",
+                                    }
+                                    try:
+                                        knowledge_service.write_knowledge(
+                                            file, meta, d["content"]
+                                        )
+                                    except ValueError as exc:
+                                        result = {"ok": False, "error": str(exc)}
+                                        http_status = 400
+                                    else:
+                                        audit_service.log(
+                                            conn, "knowledge", "accept_draft",
+                                            target_type="knowledge_draft", target_id=draft_id,
+                                            detail={"file": file, "title": d["title"]},
+                                        )
+                                        knowledge_service.update_draft_status(conn, draft_id, "accepted")
+                                        result = {"ok": True, "file": file}
+                            else:
+                                ok = knowledge_service.update_draft_status(conn, draft_id, status)
+                                result = {"ok": ok, "error": None if ok else "draft not found or not in draft state"}
+                        elif action == "distill":
+                            from tools import distill_lessons  # noqa: PLC0415
 
-                        result = distill_lessons.distill_latest(
-                            payload.get("meeting_id"),
-                            payload.get("session_id"),
-                            db_path=str(db_path),
-                        )
-                    else:
-                        result = {"ok": False, "error": f"unknown action {action}"}
+                            result = distill_lessons.distill_latest(
+                                payload.get("meeting_id"),
+                                payload.get("session_id"),
+                                db_path=str(db_path),
+                            )
+                        else:
+                            result = {"ok": False, "error": f"unknown action {action}"}
+                    finally:
+                        conn.close()
                 elif parsed.path == "/api/novel_knowledge":
                     from tools import novel_knowledge  # noqa: PLC0415
 
-                    action = payload.get("action") or "list"
-                    novel_id = _parse_int(payload.get("novel_id"), 0)
-                    if action == "list":
-                        result = {
-                            "ok": True,
-                            "items": novel_knowledge.get(
-                                conn, novel_id, category=payload.get("category")
-                            ),
-                        }
-                    elif action == "upsert":
-                        try:
-                            meta = novel_knowledge.upsert_ex(
-                                conn,
-                                novel_id,
-                                str(payload.get("category") or ""),
-                                str(payload.get("entity") or ""),
-                                str(payload.get("content") or ""),
-                                source_chapter=payload.get("source_chapter"),
-                                change_note=str(payload.get("change_note") or ""),
-                                check_similar=True,
-                            )
-                        except ValueError as exc:
-                            result = {"ok": False, "error": str(exc)}
-                        else:
-                            audit_service.log(
-                                conn, "knowledge", "novel_knowledge_upsert",
-                                target_type="novel", target_id=str(novel_id),
-                                detail={
-                                    "category": payload.get("category"),
+                    try:
+                        action = payload.get("action") or "list"
+                        novel_id = _parse_int(payload.get("novel_id"), 0)
+                        if action == "list":
+                            result = {
+                                "ok": True,
+                                "items": novel_knowledge.get(
+                                    conn, novel_id, category=payload.get("category")
+                                ),
+                            }
+                        elif action == "upsert":
+                            try:
+                                meta = novel_knowledge.upsert_ex(
+                                    conn,
+                                    novel_id,
+                                    str(payload.get("category") or ""),
+                                    str(payload.get("entity") or ""),
+                                    str(payload.get("content") or ""),
+                                    source_chapter=payload.get("source_chapter"),
+                                    change_note=str(payload.get("change_note") or ""),
+                                    check_similar=True,
+                                )
+                            except ValueError as exc:
+                                result = {"ok": False, "error": str(exc)}
+                            else:
+                                audit_service.log(
+                                    conn, "knowledge", "novel_knowledge_upsert",
+                                    target_type="novel", target_id=str(novel_id),
+                                    detail={
+                                        "category": payload.get("category"),
+                                        "entity": meta.get("entity"),
+                                        "merged_into": meta.get("merged_into"),
+                                    },
+                                )
+                                result = {
+                                    "ok": bool(meta.get("id")),
+                                    "id": meta.get("id"),
                                     "entity": meta.get("entity"),
                                     "merged_into": meta.get("merged_into"),
-                                },
-                            )
-                            result = {
-                                "ok": bool(meta.get("id")),
-                                "id": meta.get("id"),
-                                "entity": meta.get("entity"),
-                                "merged_into": meta.get("merged_into"),
-                                "similar": meta.get("similar") or [],
-                            }
-                    else:
-                        result = {"ok": False, "error": f"unknown action {action}"}
+                                    "similar": meta.get("similar") or [],
+                                }
+                        else:
+                            result = {"ok": False, "error": f"unknown action {action}"}
+                    finally:
+                        conn.close()
                 self._json(result, status=http_status)
             except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
                 if conn is not None:

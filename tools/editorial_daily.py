@@ -220,18 +220,19 @@ def _mark_injected_read(ctx, node):
     agent = _canonical_agent(node)
     conn = db.connect(ctx.db_path)
     try:
-        result = mailroom.list_messages(
-            conn,
-            agent=agent,
-            novel_id=ctx.novel_id,
-            status="unread",
-            limit=config.AGENT_CTX_MESSAGES,
-            direction="to",
-        )
-        if result.get("ok"):
-            ids = [m["id"] for m in result["messages"]]
-            if ids:
-                mailroom.mark_read(conn, ids)
+        # R11-A2-04: mirror agent_context's scoping (global + this novel) so
+        # novel_id=0 messages shown in the snapshot are marked read too.
+        scope = int(ctx.novel_id or 0)
+        marks = "0, ?" if scope else "0"
+        rows = conn.execute(
+            "SELECT id FROM agent_messages WHERE to_agent=? AND status='unread' "
+            f"AND ref_novel_id IN ({marks}) "
+            "ORDER BY id DESC LIMIT ?",
+            (agent, *((scope,) if scope else ()), config.AGENT_CTX_MESSAGES),
+        ).fetchall()
+        ids = [r["id"] for r in rows]
+        if ids:
+            mailroom.mark_read(conn, ids)
     finally:
         conn.close()
 
@@ -1157,6 +1158,17 @@ def _review_retry(ctx, conn, idx, outline, guard, meta, target_words, prev_track
         reason = "；".join(str(x) for x in (gate_retry.get("errors") or [])) or reason
         editor_text = editor_retry
         current_review = review_retry
+    if gate.get("passed"):
+        # R11-A2-01: the original text passed; an exhausted rework must never
+        # ship the last failed rewrite under the stale pass. Keep the original
+        # text but return a failed gate so nothing publishes and the rework
+        # settles as pending.
+        failed_gate = dict(gate)
+        failed_gate["passed"] = False
+        failed_gate["errors"] = [
+            "重做未通过质量门：" + (reason or "重写仍不达标")[:400]
+        ]
+        return failed_gate, original_editor, review_text
     return gate, editor_text, current_review
 
 
@@ -1458,10 +1470,19 @@ def _publish_track(ctx, idx, track, outline, meta, target_words, env):
         return {"draft": None, "pub": None, "verify": None, "error": str(exc)[:300]}
 
 
-def _wrapup(ctx, conn, db_path, novel_id):
+def _wrapup(ctx, conn, db_path, novel_id, run_id="", skip_diaries=False):
     _settle_claimed_tasks(ctx, conn)
     _run_tool(ctx, "采集阅读数据", lambda: collect_reader_stats.run(db_path))
-    _run_tool(ctx, "全员写日记", lambda: write_diaries.write(conn, novel_id, "daily"))
+    if skip_diaries:
+        # R11-A2-08: a resume reruns the produce chain; diaries already
+        # written by an earlier run of this workday must not be duplicated.
+        audit.log(
+            conn, "workday", "diaries_skipped",
+            target_type="run", target_id=str(run_id or ""),
+            detail={"reason": "daily diaries already written by an earlier produce chain"},
+        )
+    else:
+        _run_tool(ctx, "全员写日记", lambda: write_diaries.write(conn, novel_id, "daily"))
     _run_tool(ctx, "同步设定知识库", lambda: novel_knowledge.sync_latest(conn))
     _run_tool(ctx, "回填行动项", lambda: auto_fill_actions.run(db_path, novel_id=novel_id))
 
@@ -1682,7 +1703,7 @@ def _finish_run(conn, ctx, run_id, status, published=0, error="", detail=None):
     conn.commit()
 
 
-def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, env=None, out_file=None, workday_run_id=None, lock_held=False):
+def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, env=None, out_file=None, workday_run_id=None, lock_held=False, skip_diaries=False):
     """Run one daily shift. Returns the run summary with an explicit status."""
     prev_pending = None
     if chapters and not dry_run:
@@ -1786,7 +1807,10 @@ def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, en
             payload, published, _target = _generate(ctx, conn, stock, env, run_id, out_file)
             ctx.published = published
 
-        _wrapup(ctx, conn, db_path, ctx.novel_id)
+        _wrapup(
+            ctx, conn, db_path, ctx.novel_id,
+            run_id=run_id, skip_diaries=skip_diaries,
+        )
 
         if published >= int(stock.get("target") or 1) and not ctx.failed_nodes:
             status = "completed"

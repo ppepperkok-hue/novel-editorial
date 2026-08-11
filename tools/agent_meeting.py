@@ -616,7 +616,7 @@ def main():
             except Exception as exc:  # noqa: BLE001
                 print(f"note: weekly diaries skipped: {exc}", file=sys.stderr)
         attendees, topics, pick = chair_pick(
-            conn, novel_id, args.dry_run, materials, topic
+            conn, novel_id, args.dry_run, materials, topic, kind=args.kind
         )
         if topic:
             topics = [topic] + [t for t in (topics or []) if t != topic]
@@ -644,7 +644,7 @@ def main():
                 try:
                     speech = round_speech(
                         conn, novel_id, agent, materials, transcript, round_no,
-                        args.dry_run, topic=topic,
+                        args.dry_run, topic=topic, kind=args.kind,
                     )
                 except Exception as exc:  # noqa: BLE001
                     speech = {

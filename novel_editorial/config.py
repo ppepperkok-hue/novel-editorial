@@ -4,6 +4,9 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+# Writable runtime root: the desktop app sets NOVEL_DATA_DIR to the per-user
+# data directory, so read-only install dirs never receive runtime writes.
+RUNTIME_ROOT = Path(os.environ.get("NOVEL_DATA_DIR") or ROOT)
 
 
 def _env_int(key, default):
@@ -15,15 +18,15 @@ def _env_int(key, default):
 AGENTS_DIR = ROOT / "prompts" / "agents"
 N8N_DIR = ROOT / "n8n"
 TOOLS_DIR = ROOT / "tools"
-TMP_DIR = ROOT / "n8n_tmp"
-EXPORTS_DIR = ROOT / "exports"
-DATA_DIR = ROOT / "demo_data"
+TMP_DIR = RUNTIME_ROOT / "n8n_tmp"
+EXPORTS_DIR = RUNTIME_ROOT / "exports"
+DATA_DIR = RUNTIME_ROOT / "demo_data"
 
 WORKFLOW_JSON = N8N_DIR / "novel_workflow.json"
 WEEKLY_WORKFLOW_JSON = N8N_DIR / "architect_weekly.json"
 VALIDATE_JS = TOOLS_DIR / "validate_workflow_deep.mjs"
-ALERTS_LOG = ROOT / "alerts.log"
-HOT_TOPICS_JSON = ROOT / "hot_topics.json"
+ALERTS_LOG = RUNTIME_ROOT / "alerts.log"
+HOT_TOPICS_JSON = RUNTIME_ROOT / "hot_topics.json"
 READER_CSV = DATA_DIR / "reader_stats.csv"
 DB_PATH = ROOT / "demo.db"
 
