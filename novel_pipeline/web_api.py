@@ -140,6 +140,73 @@ def make_handler(db_path):
     except Exception:  # noqa: BLE001 - startup recovery must never block serving
         pass
 
+    def _get_daily_runs(self, parsed):
+        from tools import daily_runs  # noqa: PLC0415
+
+        conn = db.connect(db_path)
+        try:
+            qs = parse_qs(parsed.query)
+            limit = _parse_int(qs.get("limit", ["30"])[0], 30)
+            daily_runs.sync_from_n8n(conn, limit=limit)
+            self._json({"runs": daily_runs.list_runs(conn, limit=limit)})
+        finally:
+            conn.close()
+
+    def _get_daily_runs_detail(self, parsed):
+        from tools import daily_runs  # noqa: PLC0415
+
+        conn = db.connect(db_path)
+        try:
+            qs = parse_qs(parsed.query)
+            run_id = qs.get("run_id", [""])[0] or ""
+            if not run_id:
+                self._json({"error": "run_id required"}, status=400)
+            else:
+                detail = daily_runs.run_detail(conn, run_id)
+                if detail is None:
+                    self._json({"error": "run not found"}, status=404)
+                else:
+                    self._json({"run": detail})
+        finally:
+            conn.close()
+
+    def _get_flow(self, parsed):
+        from tools import flow_graph  # noqa: PLC0415
+
+        conn = db.connect(db_path)
+        try:
+            self._json(flow_graph.build_flow(conn))
+        finally:
+            conn.close()
+
+    def _get_export_flow(self, parsed):
+        from tools import export_flow_html  # noqa: PLC0415
+
+        conn = db.connect(db_path)
+        try:
+            body = export_flow_html.render_html(conn).encode("utf-8")
+        finally:
+            conn.close()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header(
+            "Content-Disposition",
+            'attachment; filename="pipeline-flow.html"',
+        )
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    # Route registry: new endpoints go here instead of the legacy if/elif
+    # chains in do_GET/do_POST. Old endpoints migrate over incrementally.
+    GET_ROUTES = {
+        "/api/daily_runs": _get_daily_runs,
+        "/api/daily_runs/detail": _get_daily_runs_detail,
+        "/api/flow": _get_flow,
+        "/api/export/flow": _get_export_flow,
+    }
+    POST_ROUTES = {}
+
     class Handler(BaseHTTPRequestHandler):
         def _guard(self):
             """Reject browser CSRF and unsafe non-browser writes."""
@@ -180,6 +247,10 @@ def make_handler(db_path):
                 ok, reason = self._guard()
                 if not ok:
                     self._json({"error": reason}, status=403)
+                    return
+                handler = GET_ROUTES.get(path)
+                if handler is not None:
+                    handler(self, parsed)
                     return
                 if path in ("/", "/index.html"):
                     self._serve_index()
@@ -351,34 +422,6 @@ def make_handler(db_path):
                         self._json({"diaries": misc_service.list_diaries(conn, agent, dtype, limit)})
                     finally:
                         conn.close()
-                elif path == "/api/daily_runs":
-                    from tools import daily_runs  # noqa: PLC0415
-
-                    conn = db.connect(db_path)
-                    try:
-                        qs = parse_qs(parsed.query)
-                        limit = _parse_int(qs.get("limit", ["30"])[0], 30)
-                        daily_runs.sync_from_n8n(conn, limit=limit)
-                        self._json({"runs": daily_runs.list_runs(conn, limit=limit)})
-                    finally:
-                        conn.close()
-                elif path == "/api/daily_runs/detail":
-                    from tools import daily_runs  # noqa: PLC0415
-
-                    conn = db.connect(db_path)
-                    try:
-                        qs = parse_qs(parsed.query)
-                        run_id = qs.get("run_id", [""])[0] or ""
-                        if not run_id:
-                            self._json({"error": "run_id required"}, status=400)
-                        else:
-                            detail = daily_runs.run_detail(conn, run_id)
-                            if detail is None:
-                                self._json({"error": "run not found"}, status=404)
-                            else:
-                                self._json({"run": detail})
-                    finally:
-                        conn.close()
                 elif path == "/api/activity":
                     from novel_pipeline.services import activity as activity_service  # noqa: PLC0415
 
@@ -430,32 +473,6 @@ def make_handler(db_path):
                         self._json(control_service.load_control(conn))
                     finally:
                         conn.close()
-                elif path == "/api/flow":
-                    from tools import flow_graph  # noqa: PLC0415
-
-                    conn = db.connect(db_path)
-                    try:
-                        self._json(flow_graph.build_flow(conn))
-                    finally:
-                        conn.close()
-                elif path == "/api/export/flow":
-                    from tools import export_flow_html  # noqa: PLC0415
-
-                    conn = db.connect(db_path)
-                    try:
-                        body = export_flow_html.render_html(conn).encode("utf-8")
-                    finally:
-                        conn.close()
-                    self.send_response(200)
-                    self.send_header("Content-Type", "text/html; charset=utf-8")
-                    self.send_header(
-                        "Content-Disposition",
-                        'attachment; filename="pipeline-flow.html"',
-                    )
-                    self.send_header("Content-Length", str(len(body)))
-                    self.end_headers()
-                    self.wfile.write(body)
-                    return
                 elif path in (
                     "/api/summary",
                     "/api/novels",
@@ -496,7 +513,7 @@ def make_handler(db_path):
             if not ok:
                 self._json({"error": reason}, status=403)
                 return
-            if parsed.path not in (
+            if parsed.path not in POST_ROUTES and parsed.path not in (
                 "/api/control",
                 "/api/agents",
                 "/api/ending/confirm",
@@ -522,6 +539,10 @@ def make_handler(db_path):
                 length = int(self.headers.get("Content-Length") or 0)
                 raw = self.rfile.read(length) if length else b"{}"
                 payload = json.loads(raw.decode("utf-8") or "{}")
+                handler = POST_ROUTES.get(parsed.path)
+                if handler is not None:
+                    handler(self, parsed, payload)
+                    return
                 conn = db.connect(db_path)
                 if parsed.path == "/api/control":
                     try:
