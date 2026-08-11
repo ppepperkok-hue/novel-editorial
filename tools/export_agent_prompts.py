@@ -61,6 +61,10 @@ def main():
         model = body[sm + len("model:'") : body.find("'", sm + len("model:'"))]
         tm = body.find("temperature:", sm)
         temperature = body[tm + len("temperature:") : body.find(",", tm)]
+        mt = body.find("max_tokens:", sm)
+        max_tokens = (
+            body[mt + len("max_tokens:") : body.find(",", mt)] if mt >= 0 else ""
+        )
         s0 = body.find(START_MARK)
         s1 = body.find(END_MARK, s0)
         if s0 < 0 or s1 < 0:
@@ -70,7 +74,9 @@ def main():
         system = system.replace("\\'", "'").replace('\\"', '"').replace("\\\\", "\\")
         system = system.replace(TARGET_WORDS_EXPR, TARGET_WORDS_PLACEHOLDER)
         content = (
-            f"---\nmodel: {model}\ntemperature: {temperature}\n---\n\n{system}\n"
+            f"---\nmodel: {model}\ntemperature: {temperature}\n"
+            + (f"max_tokens: {max_tokens}\n" if max_tokens else "")
+            + f"---\n\n{system}\n"
         )
         (OUT / filename).write_text(content, encoding="utf-8")
         written.add(filename)

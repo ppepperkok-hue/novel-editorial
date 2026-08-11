@@ -63,4 +63,4 @@ n8n 每周日 08:10（或手动）
 
 参考 OpenNovel / long-novel-writer / AI Fiction Studio 设计：
 故事圣经冻结 → 10 章蓝图 → 写前记忆包 → 写后结构化沉淀 → 连贯性专审。
-详见 `prompts/writing_techniques.md` 与 `docs/research/`。
+详见 `prompts/knowledge/` 与 `docs/research/`。

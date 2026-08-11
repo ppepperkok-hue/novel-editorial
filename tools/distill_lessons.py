@@ -32,6 +32,14 @@ def _parse_json(text):
         return None
 
 
+def _safe_load_json(raw, fallback):
+    try:
+        value = json.loads(raw)
+        return value if isinstance(value, list) else fallback
+    except (TypeError, ValueError):
+        return fallback
+
+
 def _meeting_material(conn, meeting_id=None, session_id=None):
     if session_id:
         row = conn.execute(
@@ -81,12 +89,10 @@ def _meeting_material(conn, meeting_id=None, session_id=None):
         "id": d["id"],
         "kind": d.get("kind") or "weekly",
         "topic": "、".join(
-            json.loads(d.get("topics") or "[]")
-            if d.get("topics")
-            else []
+            _safe_load_json(d.get("topics") or "[]", [])
         ),
         "novel_id": d.get("novel_id") or 0,
-        "attendees": json.loads(d.get("attendees") or "[]"),
+        "attendees": _safe_load_json(d.get("attendees") or "[]", []),
         "transcript": [],
         "report": report,
         "source": f"meeting:{d['id']}",

@@ -31,7 +31,9 @@ FILLER = [
     "仿佛", "似乎", "隐约", "轻轻", "微微", "缓缓", "默默", "暗暗",
 ]
 
-EXCLAMATION_PATTERN = re.compile(r"[！！]{2,}|\?{2,}|！\?|？!")
+EXCLAMATION_PATTERN = re.compile(
+    r"[！！]{2,}|[？？]{2,}|！？|？！|\?{2,}|！\?|？!"
+)
 
 
 def count_occurrences(text, words):

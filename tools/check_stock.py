@@ -79,13 +79,19 @@ def main():
         pass
     ap = argparse.ArgumentParser(description="检查存稿池与本次发布目标")
     ap.add_argument("--db", default=str(ROOT / "demo.db"))
+    ap.add_argument("--novel-id", type=int, default=0)
     args = ap.parse_args()
     db_path = Path(args.db)
     if not db_path.is_absolute():
         db_path = ROOT / db_path
     conn = db.connect(db_path)
     try:
-        print(json.dumps(check_stock(conn), ensure_ascii=False))
+        print(
+            json.dumps(
+                check_stock(conn, novel_id=args.novel_id or None),
+                ensure_ascii=False,
+            )
+        )
     finally:
         conn.close()
 

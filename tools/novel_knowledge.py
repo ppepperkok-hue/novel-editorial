@@ -373,8 +373,11 @@ def snapshot(conn, novel_id, per_category=6, max_len=180):
     return out
 
 
-def sync_from_chapters(conn, novel_id, chapter_id=None, limit=3):
-    """Extract facts from recent chapter_summaries into the knowledge store."""
+def sync_from_chapters(conn, novel_id, limit=3):
+    """Extract facts from recent chapter_summaries into the knowledge store.
+
+    CLI: python tools/novel_knowledge.py --sync N --snapshot N（N 为 novel_id）
+    """
     rows = conn.execute(
         "SELECT cs.chapter_id, cs.summary, cs.character_states, cs.world_events, c.seq "
         "FROM chapter_summaries cs JOIN chapters c ON c.id=cs.chapter_id "
