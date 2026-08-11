@@ -581,6 +581,58 @@ class ApplyReportTests(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_clean_character_evolution_keeps_newest_per_novel(self):
+        path = make_db()
+        from tools import apply_architect
+
+        conn = db.connect(path)
+        try:
+            for i in range(205):
+                conn.execute(
+                    "INSERT INTO character_evolution(novel_id,chapter_id,name,snapshot,change_log,arc,created_at) "
+                    "VALUES(1,?,?,?,?,?,datetime('now','localtime'))",
+                    (i + 1, "林舟", "{}", f"change-{i}", ""),
+                )
+            for i in range(10):
+                conn.execute(
+                    "INSERT INTO character_evolution(novel_id,chapter_id,name,snapshot,change_log,arc,created_at) "
+                    "VALUES(2,?,?,?,?,?,datetime('now','localtime'))",
+                    (i + 1, "配角", "{}", f"side-{i}", ""),
+                )
+            conn.commit()
+            r = apply_architect.clean_character_evolution(conn, novel_id=1, keep=200)
+            self.assertEqual(r["removed"], 5)
+            count1 = conn.execute(
+                "SELECT COUNT(*) c FROM character_evolution WHERE novel_id=1"
+            ).fetchone()["c"]
+            count2 = conn.execute(
+                "SELECT COUNT(*) c FROM character_evolution WHERE novel_id=2"
+            ).fetchone()["c"]
+            self.assertEqual(count1, 200)
+            self.assertEqual(count2, 10, "other novels must be untouched")
+            newest = conn.execute(
+                "SELECT change_log FROM character_evolution WHERE novel_id=1 "
+                "ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            self.assertEqual(newest["change_log"], "change-204")
+            # Global clean keeps newest per novel.
+            r2 = apply_architect.clean_character_evolution(conn, keep=50)
+            self.assertGreaterEqual(r2["removed"], 150)
+            self.assertEqual(
+                conn.execute(
+                    "SELECT COUNT(*) c FROM character_evolution WHERE novel_id=1"
+                ).fetchone()["c"],
+                50,
+            )
+            self.assertEqual(
+                conn.execute(
+                    "SELECT COUNT(*) c FROM character_evolution WHERE novel_id=2"
+                ).fetchone()["c"],
+                10,
+            )
+        finally:
+            conn.close()
+
 
 if __name__ == "__main__":
     unittest.main()

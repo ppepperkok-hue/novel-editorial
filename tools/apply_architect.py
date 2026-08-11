@@ -152,6 +152,30 @@ def persist_character_updates(conn, novel_id, char_updates):
         return {"ok": False, "error": f"persist_character_updates failed: {str(exc)[:200]}"}
 
 
+def clean_character_evolution(conn, novel_id=0, keep=200):
+    """Keep the newest `keep` evolution rows per novel; older rows are pruned."""
+    keep = max(1, int(keep or 200))
+    sql = (
+        "DELETE FROM character_evolution WHERE id IN ("
+        "  SELECT id FROM ("
+        "    SELECT id, ROW_NUMBER() OVER (PARTITION BY novel_id ORDER BY id DESC) rn "
+        "    FROM character_evolution"
+    )
+    params = []
+    if novel_id:
+        sql += " WHERE novel_id=?"
+        params.append(int(novel_id))
+    sql += "  ) WHERE rn > ?"
+    params.append(keep)
+    sql += ")"
+    try:
+        cur = conn.execute(sql, params)
+        conn.commit()
+        return {"ok": True, "removed": cur.rowcount}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"clean_character_evolution failed: {str(exc)[:200]}"}
+
+
 def apply_report(conn, novel_id, report):
     """Persist a meeting report: blueprints, reader persona, volume goal."""
     decisions = report.get("decisions") or {}
@@ -190,6 +214,7 @@ def apply_report(conn, novel_id, report):
         bible["characters"] = chars
         outline["bible"] = bible
         persist_character_updates(conn, novel_id, char_updates)
+        clean_character_evolution(conn, novel_id)
     goal = decisions.get("volume_goal_adjust")
     if goal:
         outline["volume_goal"] = str(goal)
