@@ -76,6 +76,82 @@ def create_planning_from_next_book(conn, report, cover_prompt=""):
     return {"ok": True, "id": cur.lastrowid, "duplicate": False}
 
 
+def persist_character_updates(conn, novel_id, char_updates):
+    """Persist weekly character_updates into characters/character_evolution.
+
+    Idempotent: an evolution row is only added when the exact change_log has
+    not been recorded before. Weekly entries carry chapter_id=0.
+    """
+    if not isinstance(char_updates, list) or not char_updates:
+        return {"ok": True, "updated": 0}
+    updated = 0
+    try:
+        for u in char_updates:
+            if not isinstance(u, dict):
+                continue
+            name = str(u.get("name") or "").strip()
+            if not name:
+                continue
+            change_log = str(u.get("change_log") or u.get("current_state") or "").strip()
+            row = conn.execute(
+                "SELECT id, state FROM characters WHERE novel_id=? AND name=?",
+                (novel_id, name),
+            ).fetchone()
+            if row:
+                prev = json.loads(row["state"] or "{}")
+                if u.get("current_state"):
+                    prev["current_state"] = str(u["current_state"])
+                if change_log:
+                    prev["last_weekly_change"] = change_log
+                conn.execute(
+                    "UPDATE characters SET state=? WHERE id=?",
+                    (json.dumps(prev, ensure_ascii=False), row["id"]),
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO characters(novel_id,name,role,traits,goals,state,first_seen_chapter) "
+                    "VALUES(?,?,?,?,?,?,0)",
+                    (
+                        novel_id,
+                        name,
+                        str(u.get("role") or "supporting"),
+                        str(u.get("personality") or ""),
+                        str(u.get("goals") or ""),
+                        json.dumps(
+                            {
+                                "current_state": u.get("current_state") or "",
+                                "last_weekly_change": change_log,
+                            },
+                            ensure_ascii=False,
+                        ),
+                    ),
+                )
+            if not change_log:
+                continue
+            dup = conn.execute(
+                "SELECT id FROM character_evolution WHERE novel_id=? AND name=? "
+                "AND change_log=? LIMIT 1",
+                (novel_id, name, change_log),
+            ).fetchone()
+            if dup is None:
+                conn.execute(
+                    "INSERT INTO character_evolution(novel_id,chapter_id,name,snapshot,"
+                    "change_log,arc,created_at) VALUES(?,0,?,?,?,?,datetime('now','localtime'))",
+                    (
+                        novel_id,
+                        name,
+                        json.dumps(u, ensure_ascii=False),
+                        change_log,
+                        str(u.get("arc") or ""),
+                    ),
+                )
+                updated += 1
+        conn.commit()
+        return {"ok": True, "updated": updated}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"persist_character_updates failed: {str(exc)[:200]}"}
+
+
 def apply_report(conn, novel_id, report):
     """Persist a meeting report: blueprints, reader persona, volume goal."""
     decisions = report.get("decisions") or {}
@@ -113,6 +189,7 @@ def apply_report(conn, novel_id, report):
                     target[k] = str(u[k])
         bible["characters"] = chars
         outline["bible"] = bible
+        persist_character_updates(conn, novel_id, char_updates)
     goal = decisions.get("volume_goal_adjust")
     if goal:
         outline["volume_goal"] = str(goal)

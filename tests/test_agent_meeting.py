@@ -504,6 +504,83 @@ class ApplyReportTests(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_apply_report_persists_character_updates(self):
+        path = make_db()
+        from tools import apply_architect
+
+        conn = db.connect(path)
+        try:
+            conn.execute(
+                "INSERT INTO characters(novel_id,name,role,traits,goals,state,first_seen_chapter) "
+                "VALUES(1,'林舟','主角','冷静','变强','{}',1)"
+            )
+            conn.commit()
+            report = {
+                "decisions": {
+                    "character_updates": [
+                        {
+                            "name": "林舟",
+                            "current_state": "查明真相后心境松动",
+                            "change_log": "本周确认主角动机转变",
+                            "arc": "觉醒",
+                        },
+                        {
+                            "name": "新角色",
+                            "role": "配角",
+                            "current_state": "初登场",
+                            "change_log": "本周新角色加入主线",
+                        },
+                    ]
+                }
+            }
+            r = apply_architect.apply_report(conn, 1, report)
+            self.assertTrue(r["ok"])
+            row = conn.execute(
+                "SELECT state FROM characters WHERE novel_id=1 AND name='林舟'"
+            ).fetchone()
+            state = json.loads(row["state"])
+            self.assertEqual(state["current_state"], "查明真相后心境松动")
+            self.assertEqual(state["last_weekly_change"], "本周确认主角动机转变")
+            evo = conn.execute(
+                "SELECT chapter_id, change_log, arc FROM character_evolution "
+                "WHERE novel_id=1 AND name='林舟'"
+            ).fetchone()
+            self.assertEqual(evo["chapter_id"], 0)
+            self.assertEqual(evo["change_log"], "本周确认主角动机转变")
+            self.assertEqual(evo["arc"], "觉醒")
+            new_char = conn.execute(
+                "SELECT role FROM characters WHERE novel_id=1 AND name='新角色'"
+            ).fetchone()
+            self.assertEqual(new_char["role"], "配角")
+        finally:
+            conn.close()
+
+    def test_character_updates_idempotent(self):
+        path = make_db()
+        from tools import apply_architect
+
+        conn = db.connect(path)
+        try:
+            report = {
+                "decisions": {
+                    "character_updates": [
+                        {
+                            "name": "林舟",
+                            "change_log": "同样的周会结论",
+                        }
+                    ]
+                }
+            }
+            apply_architect.apply_report(conn, 1, report)
+            apply_architect.apply_report(conn, 1, report)
+            count = conn.execute(
+                "SELECT COUNT(*) c FROM character_evolution "
+                "WHERE novel_id=1 AND change_log='同样的周会结论'"
+            ).fetchone()["c"]
+            self.assertEqual(count, 1, "identical weekly change must not duplicate")
+        finally:
+            conn.close()
+
 
 if __name__ == "__main__":
     unittest.main()
