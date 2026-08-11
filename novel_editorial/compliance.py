@@ -20,6 +20,9 @@ EMPTY_WORDS_WARNING = (
 MISSING_WORDS_WARNING = (
     "compliance_words.txt 不存在，仅使用内置 DEFAULT_SENSITIVE_KEYWORDS"
 )
+READ_WORDS_WARNING = (
+    "compliance_words.txt 读取或解码失败，仅使用内置 DEFAULT_SENSITIVE_KEYWORDS"
+)
 
 DEFAULT_SENSITIVE_KEYWORDS = [
     # 违禁品 / 涉毒
@@ -60,20 +63,35 @@ SENSITIVE_KEYWORDS = DEFAULT_SENSITIVE_KEYWORDS
 
 
 def _read_custom_words():
-    """Return custom words from compliance_words.txt (comments skipped)."""
+    """Return custom words from compliance_words.txt (comments skipped).
+
+    Returns None when the file exists but cannot be read/decoded
+    (a RuntimeWarning is emitted and only built-in words are used).
+    """
     if not WORDS_FILE.exists():
         return []
+    try:
+        content = WORDS_FILE.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        warnings.warn(READ_WORDS_WARNING, RuntimeWarning, stacklevel=2)
+        return None
     words = []
-    for line in WORDS_FILE.read_text(encoding="utf-8").splitlines():
+    for line in content.splitlines():
         line = line.strip()
         if line and not line.startswith("#"):
             words.append(line)
     return words
 
 
-def _load_words():
+_UNREAD = object()
+
+
+def _load_words(custom_words=_UNREAD):
     words = list(DEFAULT_SENSITIVE_KEYWORDS)
-    words.extend(_read_custom_words())
+    if custom_words is _UNREAD:
+        custom_words = _read_custom_words()
+    if custom_words:
+        words.extend(custom_words)
     seen = set()
     out = []
     for w in words:
@@ -84,12 +102,14 @@ def _load_words():
 
 
 def check(text, platform="fanqie", ai_declared=True):
-    words = _load_words()
     custom_words = _read_custom_words()
+    words = _load_words(custom_words)
     warnings_list = []
     if not WORDS_FILE.exists():
         warnings_list.append(MISSING_WORDS_WARNING)
         warnings.warn(MISSING_WORDS_WARNING, RuntimeWarning, stacklevel=2)
+    elif custom_words is None:
+        warnings_list.append(READ_WORDS_WARNING)
     elif not custom_words:
         warnings_list.append(EMPTY_WORDS_WARNING)
         warnings.warn(EMPTY_WORDS_WARNING, RuntimeWarning, stacklevel=2)

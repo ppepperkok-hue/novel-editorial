@@ -106,18 +106,23 @@ def find_similar(conn, novel_id, category, entity, limit=5):
 
 
 def _add_conflict_draft(conn, novel_id, category, entity, content):
-    """Write a knowledge-draft row when an entity conflicts with a similar one."""
+    """Write a knowledge-draft row when an entity conflicts with a similar one.
+
+    knowledge_drafts has no novel_id column, so the draft title is namespaced
+    per novel: the same entity in different books keeps its own draft.
+    """
+    title = f"[小说{novel_id}] {entity}"
     existing = conn.execute(
         "SELECT id FROM knowledge_drafts WHERE kind='knowledge' "
         "AND source='auto_conflict' AND title=? AND status='draft'",
-        (entity,),
+        (title,),
     ).fetchone()
     if existing:
         return None
     cur = conn.execute(
         "INSERT INTO knowledge_drafts(kind,agent,source,title,content,status,created_at) "
         "VALUES('knowledge','knowledge_sync','auto_conflict',?,?, 'draft', ?)",
-        (entity, content, _now()),
+        (title, content, _now()),
     )
     return cur.lastrowid
 
@@ -385,6 +390,7 @@ def sync_from_chapters(conn, novel_id, limit=3):
         (novel_id, limit),
     ).fetchall()
     updated = []
+    skipped = []
     for row in reversed(rows):
         cid = row["chapter_id"]
         seq = row["seq"]
@@ -394,11 +400,20 @@ def sync_from_chapters(conn, novel_id, limit=3):
             states = json.loads(row["character_states"] or "{}")
         except ValueError:
             states = {}
+        if not isinstance(states, dict):
+            skipped.append(
+                {
+                    "chapter_id": cid,
+                    "field": "character_states",
+                    "reason": f"expected dict, got {type(states).__name__}",
+                }
+            )
+            states = {}
         try:
             events = json.loads(row["world_events"] or "[]")
         except ValueError:
             events = []
-        for name, state in (states or {}).items():
+        for name, state in states.items():
             if isinstance(state, str):
                 state = {"current_state": state}
             if not isinstance(state, dict):
@@ -451,7 +466,7 @@ def sync_from_chapters(conn, novel_id, limit=3):
             )
             if kid:
                 updated.append(f"timeline:第{seq}章")
-    return {"updated": updated, "count": len(updated)}
+    return {"updated": updated, "count": len(updated), "skipped": skipped}
 
 
 def _as_list(value):
@@ -559,7 +574,7 @@ def sync_from_bible(conn, novel_id, bible, source_chapter=None):
 
 def sync_latest(conn):
     row = conn.execute(
-        "SELECT DISTINCT c.novel_id FROM chapter_summaries cs "
+        "SELECT c.novel_id FROM chapter_summaries cs "
         "JOIN chapters c ON c.id=cs.chapter_id ORDER BY cs.id DESC LIMIT 1"
     ).fetchone()
     if row is None:
@@ -583,8 +598,14 @@ def sync_latest(conn):
     if novel:
         bible = (json.loads(novel["outline"] or "{}") or {}).get("bible") or {}
         updated += sync_from_bible(conn, row["novel_id"], bible).get("updated", [])
-    updated += sync_from_chapters(conn, row["novel_id"]).get("updated", [])
-    return {"ok": True, "novel_id": row["novel_id"], "updated": updated}
+    chapter_result = sync_from_chapters(conn, row["novel_id"])
+    updated += chapter_result.get("updated", [])
+    return {
+        "ok": True,
+        "novel_id": row["novel_id"],
+        "updated": updated,
+        "skipped": chapter_result.get("skipped", []),
+    }
 
 
 def main():

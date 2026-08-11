@@ -61,10 +61,10 @@ def _meeting_material(conn, meeting_id=None, session_id=None):
                 report = {}
         return {
             "id": d["id"],
-            "kind": "topic",
+            "kind": d.get("kind") or "topic",
             "topic": d.get("topic", ""),
             "novel_id": d.get("novel_id") or 0,
-            "attendees": [],
+            "attendees": _safe_load_json(d.get("attendees") or "[]", []),
             "transcript": transcript,
             "report": report,
             "source": f"session:{d['id']}",
@@ -161,6 +161,7 @@ def distill(conn, meeting_id=None, session_id=None):
         "deepseek-v4-flash", "你是复盘分析师。", prompt,
         temperature=0.3, max_tokens=2000,
     )
+    usage = resp.get("usage") or {}
     conn.execute(
         "INSERT INTO cost_logs(novel_id,node_name,model,prompt_tokens,completion_tokens,cost,created_at) "
         "VALUES(?,?,?,?,?,?,datetime('now','localtime'))",
@@ -168,9 +169,9 @@ def distill(conn, meeting_id=None, session_id=None):
             0,
             "蒸馏经验",
             resp["model"],
-            int(resp["usage"].get("prompt_tokens") or 0),
-            int(resp["usage"].get("completion_tokens") or 0),
-            estimate_cost(resp["model"], resp["usage"]),
+            int(usage.get("prompt_tokens") or 0),
+            int(usage.get("completion_tokens") or 0),
+            estimate_cost(resp["model"], usage),
         ),
     )
     conn.commit()

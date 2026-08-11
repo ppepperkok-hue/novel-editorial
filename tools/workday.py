@@ -397,3 +397,7 @@ def main():
         print(json.dumps(result, ensure_ascii=False))
     finally:
         conn.close()
+
+
+if __name__ == "__main__":
+    main()

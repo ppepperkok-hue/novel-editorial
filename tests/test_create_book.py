@@ -74,7 +74,8 @@ class HelperTests(unittest.TestCase):
     def test_gender(self):
         self.assertEqual(create_book._gender("都市"), 1)
         self.assertEqual(create_book._gender("现代言情"), 0)
-        self.assertEqual(create_book._gender("玄幻言情"), 1)  # 男频关键词优先
+        self.assertEqual(create_book._gender("玄幻言情"), 0)  # 言情题材判女频
+        self.assertEqual(create_book._gender("男频无敌"), 1)  # 显式男频标记
 
     def test_clean_protagonist_name(self):
         self.assertEqual(create_book._clean_protagonist_name("林一（主角）/别名"), "林一")

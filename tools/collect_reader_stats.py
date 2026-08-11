@@ -87,10 +87,28 @@ def run(db_path, env_file=None, out_csv=None):
     """Collect per-chapter reader stats into the CSV consumed by data_feedback.
 
     Library entry shared by the CLI and the Python scheduler.
+    The active book comes from the DB (current_book semantics); the
+    FANQIE_BOOK_ID env var is only a fallback for legacy n8n paths.
     """
     if env_file:
         load_env(env_file)
-    book_id = os.environ.get("FANQIE_BOOK_ID", "")
+    conn = db.connect(db_path)
+    try:
+        active = conn.execute(
+            "SELECT book_id FROM novels "
+            "WHERE status IN ('publishing','finishing') "
+            "ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    finally:
+        conn.close()
+    book_id = str(active["book_id"] or "") if active else ""
+    if not book_id:
+        book_id = os.environ.get("FANQIE_BOOK_ID", "")
+    if not book_id:
+        return {
+            "ok": False,
+            "error": "没有活跃连载作品（publishing/finishing），且未设置 FANQIE_BOOK_ID",
+        }
     try:
         payload = fetch_stats(book_id)
     except Exception as e:  # noqa: BLE001

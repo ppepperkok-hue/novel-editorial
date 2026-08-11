@@ -261,15 +261,28 @@ def _due_date(text):
 
 
 def _normalize_action_items(value):
-    """Accept action_items as a list or a string; never raise on bad input."""
+    """Accept action_items as a list, a JSON-array string, or plain text."""
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, list):
+                value = parsed
+            elif isinstance(parsed, dict):
+                # A JSON object is not a task list; splitting it into
+                # fragments would inject garbage tasks.
+                return []
+            else:
+                return [
+                    part.strip()
+                    for part in re.split(r"[\n,;；、]+", text)
+                    if part.strip()
+                ]
     if isinstance(value, list):
         return [item for item in value if isinstance(item, (str, dict))]
-    if isinstance(value, str):
-        return [
-            part.strip()
-            for part in re.split(r"[\n,;；、]+", value)
-            if part.strip()
-        ]
     return []
 
 

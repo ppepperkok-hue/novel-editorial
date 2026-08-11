@@ -277,6 +277,11 @@ def apply_schedule(conn):
             "time": time_str,
             "deploy": {"ok": True, "note": "非 Windows 环境，仅保存定时设置"},
         }
+    db_arg = _db_path()
+    try:
+        db_arg = os.path.relpath(db_arg, ROOT)
+    except ValueError:
+        pass  # cross-drive path: keep the absolute path
     cmd = [
         "powershell",
         "-NoProfile",
@@ -287,7 +292,7 @@ def apply_schedule(conn):
         "-Time",
         time_str,
         "-DbPath",
-        os.path.relpath(_db_path(), ROOT),
+        db_arg,
         "-TaskName",
         DAILY_TASK_NAME,
     ]

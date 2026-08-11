@@ -99,8 +99,9 @@ if ($DryRun) {
 }
 
 Remove-Items -Names $LegacyNames
+$utf8Bom = New-Object System.Text.UTF8Encoding($true)
 foreach ($k in $targets.Keys) {
-    Set-Content -LiteralPath $k -Value $targets[$k] -Encoding ASCII
+    [System.IO.File]::WriteAllText($k, $targets[$k], $utf8Bom)
     Write-Output "registered: $k"
 }
 Write-Output "autostart enabled (web_api:8000)"

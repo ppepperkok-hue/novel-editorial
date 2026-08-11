@@ -36,14 +36,16 @@ run("npm run build", { cwd: path.join(root, "webapp") });
 // 1. build installer
 run("npm run dist", { cwd: __dirname });
 
-// 2. stage ascii-named assets (GitHub/electron-updater safe)
-const files = fs.readdirSync(releaseDir);
-const setup = files.find((f) => f.endsWith(".exe") && f.includes("Setup") && !f.includes("__uninstaller"));
-const bmap = files.find((f) => f.endsWith(".exe.blockmap"));
-if (!setup || !bmap) throw new Error("installer artifacts missing after build");
-const asciiExe = `novel-editorial-desktop-setup-${version}.exe`;
-fs.copyFileSync(path.join(releaseDir, setup), path.join(releaseDir, asciiExe));
-fs.copyFileSync(path.join(releaseDir, bmap), path.join(releaseDir, asciiExe + ".blockmap"));
+// 2. upload the exact artifact names electron-builder recorded in latest.yml,
+// so electron-updater's download path always exists on the release.
+const latestYml = path.join(releaseDir, "latest.yml");
+const latestYmlText = fs.readFileSync(latestYml, "utf8");
+const pathMatch = latestYmlText.match(/^path:\s*(.+)\s*$/m);
+if (!pathMatch) throw new Error(`latest.yml missing path: ${latestYml}`);
+const exeName = pathMatch[1].trim();
+const setup = path.join(releaseDir, exeName);
+const bmap = setup + ".blockmap";
+if (!fs.existsSync(setup) || !fs.existsSync(bmap)) throw new Error("installer artifacts missing after build");
 
 // 3. tag & push (idempotent: skip when the tag already exists)
 let tagExists = false;
@@ -76,8 +78,6 @@ if (exists) {
 gh(`release create v${version} --title "v${version}" --notes "Novel Editorial Desktop v${version}"`);
 
 // 5. upload assets (clobber so re-runs are idempotent)
-gh(
-  `release upload v${version} "${path.join(releaseDir, asciiExe)}" "${path.join(releaseDir, asciiExe + ".blockmap")}" "${path.join(releaseDir, "latest.yml")}" --clobber`,
-);
+gh(`release upload v${version} "${setup}" "${bmap}" "${latestYml}" --clobber`);
 
 console.log(`Released https://github.com/${owner}/${repo}/releases/tag/v${version}`);

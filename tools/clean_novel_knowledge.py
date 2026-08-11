@@ -290,21 +290,24 @@ def main():
         pass
     ap = argparse.ArgumentParser(description="Clean the per-novel knowledge store")
     ap.add_argument("--db", default=None)
-    ap.add_argument("--dry-run", action="store_true", default=True)
+    ap.add_argument("--dry-run", action="store_true", help="只报告不落库（默认行为）")
     ap.add_argument("--apply", action="store_true", help="actually apply the plan")
     args = ap.parse_args()
+    if args.apply and args.dry_run:
+        raise SystemExit("--dry-run 与 --apply 不能同时使用")
+    dry_run = args.dry_run or not args.apply
     path = Path(args.db) if args.db else config.DB_PATH
     conn = db.connect(path)
     try:
         plan = plan_clean(conn)
         counts = {k: len(v) for k, v in plan.items()}
-        if not args.apply:
-            print(json.dumps({"dry_run": True, "counts": counts, "plan": plan}, ensure_ascii=False, indent=1))
+        if dry_run:
+            print(json.dumps({"dry_run": dry_run, "counts": counts, "plan": plan}, ensure_ascii=False, indent=1))
             return
         backup_dir = ROOT / "backups"
         backup_dir.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        backup = backup_dir / f"demo-{stamp}.db"
+        backup = backup_dir / f"{path.stem}-{stamp}.db"
         shutil.copy2(path, backup)
         apply_clean(conn, plan)
         print(json.dumps({"applied": True, "backup": str(backup), "counts": counts}, ensure_ascii=False, indent=1))

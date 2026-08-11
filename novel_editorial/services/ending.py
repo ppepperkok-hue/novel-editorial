@@ -43,29 +43,33 @@ def bind_book(conn, novel_id, book_id, volume_id=""):
     book_id = str(book_id or "").strip()
     if not book_id:
         return {"ok": False, "error": "book_id 不能为空"}
+    env_file = config.N8N_ENV_FILE
+    lines = []
+    replaced = {"FANQIE_BOOK_ID": False, "FANQIE_VOLUME_ID": False}
+    try:
+        if env_file.exists():
+            for line in env_file.read_text(encoding="utf-8").splitlines():
+                if line.startswith("FANQIE_BOOK_ID="):
+                    lines.append(f"FANQIE_BOOK_ID={book_id}")
+                    replaced["FANQIE_BOOK_ID"] = True
+                elif line.startswith("FANQIE_VOLUME_ID="):
+                    lines.append(f"FANQIE_VOLUME_ID={volume_id}")
+                    replaced["FANQIE_VOLUME_ID"] = True
+                else:
+                    lines.append(line)
+        if not replaced["FANQIE_BOOK_ID"]:
+            lines.append(f"FANQIE_BOOK_ID={book_id}")
+        if not replaced["FANQIE_VOLUME_ID"]:
+            lines.append(f"FANQIE_VOLUME_ID={volume_id}")
+        env_file.parent.mkdir(parents=True, exist_ok=True)
+        env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        return {"ok": False, "error": f"n8n env 写入失败，未修改数据库: {exc}"}
     conn.execute(
         "UPDATE novels SET book_id=?, volume_id=?, status='publishing' WHERE id=?",
         (book_id, volume_id, novel_id),
     )
     conn.commit()
-    env_file = config.N8N_ENV_FILE
-    lines = []
-    replaced = {"FANQIE_BOOK_ID": False, "FANQIE_VOLUME_ID": False}
-    if env_file.exists():
-        for line in env_file.read_text(encoding="utf-8").splitlines():
-            if line.startswith("FANQIE_BOOK_ID="):
-                lines.append(f"FANQIE_BOOK_ID={book_id}")
-                replaced["FANQIE_BOOK_ID"] = True
-            elif line.startswith("FANQIE_VOLUME_ID="):
-                lines.append(f"FANQIE_VOLUME_ID={volume_id}")
-                replaced["FANQIE_VOLUME_ID"] = True
-            else:
-                lines.append(line)
-    if not replaced["FANQIE_BOOK_ID"]:
-        lines.append(f"FANQIE_BOOK_ID={book_id}")
-    if not replaced["FANQIE_VOLUME_ID"]:
-        lines.append(f"FANQIE_VOLUME_ID={volume_id}")
-    env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
     audit.log(
         conn,
         "ending",

@@ -14,13 +14,48 @@ from novel_editorial import db  # noqa: E402
 from novel_editorial.services import audit  # noqa: E402
 
 
+def _parse_seq(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def merge_blueprints(old, updates):
-    by_seq = {int(b.get("seq") or 0): b for b in old if b.get("seq")}
-    for u in updates or []:
-        seq = int(u.get("seq") or 0)
-        if not seq:
+    """Merge blueprint updates by chapter seq, tolerating non-numeric seq.
+
+    Entries without a usable seq keep their encounter order by getting the
+    next free integer after the highest parsed seq, so weekly decisions still
+    land instead of aborting the whole report.
+    """
+    old = old or []
+    updates = updates or []
+    by_seq = {}
+    for b in old:
+        seq = _parse_seq(b.get("seq"))
+        if seq:
+            by_seq[seq] = b
+    for u in updates:
+        seq = _parse_seq(u.get("seq"))
+        if seq:
+            by_seq[seq] = {**by_seq.get(seq, {}), **u}
+    next_seq = max(by_seq, default=0) + 1
+    for b in old:
+        seq = _parse_seq(b.get("seq"))
+        if seq:
             continue
-        by_seq[seq] = {**by_seq.get(seq, {}), **u}
+        while next_seq in by_seq:
+            next_seq += 1
+        by_seq[next_seq] = {**b, "seq": next_seq}
+        next_seq += 1
+    for u in updates:
+        seq = _parse_seq(u.get("seq"))
+        if seq:
+            continue
+        while next_seq in by_seq:
+            next_seq += 1
+        by_seq[next_seq] = {**by_seq.get(next_seq, {}), **u, "seq": next_seq}
+        next_seq += 1
     return [by_seq[k] for k in sorted(by_seq)]
 
 

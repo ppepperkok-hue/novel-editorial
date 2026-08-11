@@ -119,6 +119,7 @@ def run(conn, dry_run=False):
             temperature=0.3, max_tokens=2400,
         )
         text = resp["text"]
+        usage = resp.get("usage") or {}
         conn.execute(
             "INSERT INTO cost_logs(novel_id,node_name,model,prompt_tokens,completion_tokens,cost,created_at) "
             "VALUES(?,?,?,?,?,?,datetime('now','localtime'))",
@@ -126,9 +127,9 @@ def run(conn, dry_run=False):
                 0,
                 "知识管家",
                 resp["model"],
-                int(resp["usage"].get("prompt_tokens") or 0),
-                int(resp["usage"].get("completion_tokens") or 0),
-                estimate_cost(resp["model"], resp["usage"]),
+                int(usage.get("prompt_tokens") or 0),
+                int(usage.get("completion_tokens") or 0),
+                estimate_cost(resp["model"], usage),
             ),
         )
         conn.commit()

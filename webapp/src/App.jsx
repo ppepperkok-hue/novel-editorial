@@ -56,14 +56,19 @@ export default function App() {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4600);
   }, []);
 
-  const [dashboardError, refreshDashboard] = usePolling(fetchDashboard, 5000);
+  const [dashboardError] = usePolling(fetchDashboard, 5000);
   usePolling(fetchControl, 15000);
   const error = dashboardError;
   const refresh = useCallback(async () => {
     setRefreshing(true);
-    refreshDashboard();
-    setRefreshing(false);
-  }, [refreshDashboard]);
+    try {
+      await fetchDashboard();
+    } catch (e) {
+      console.error("refresh failed", e);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [fetchDashboard]);
 
   useEffect(() => {
     const tk = setInterval(() => setNow(new Date()), 1000);

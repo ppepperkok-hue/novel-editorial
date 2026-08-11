@@ -4,6 +4,7 @@ Usage:
     python record_work.py <base64-json>
 """
 
+import argparse
 import base64
 import json
 import os
@@ -465,14 +466,22 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8")
     except (AttributeError, ValueError):
         pass
-    if len(sys.argv) < 2:
-        raise SystemExit("usage: record_work.py <base64-json> | --file <json-file>")
-    if sys.argv[1] == "--file":
-        with open(sys.argv[2], encoding="utf-8") as f:
+    ap = argparse.ArgumentParser(description="归档日更运行结果到本地库")
+    ap.add_argument("--db", default=str(DB_PATH))
+    ap.add_argument("--file", metavar="JSON_FILE", help="从 JSON 文件读取 payload")
+    ap.add_argument("payload", nargs="?", help="base64 编码的 JSON payload")
+    args = ap.parse_args()
+    if args.file:
+        with open(args.file, encoding="utf-8") as f:
             payload = json.load(f)
+    elif args.payload:
+        payload = json.loads(base64.b64decode(args.payload).decode("utf-8"))
     else:
-        payload = json.loads(base64.b64decode(sys.argv[1]).decode("utf-8"))
-    conn = db.connect(DB_PATH)
+        ap.error("需要 <base64-json> 或 --file <json-file>")
+    db_path = Path(args.db)
+    if not db_path.is_absolute():
+        db_path = ROOT / db_path
+    conn = db.connect(db_path)
     try:
         result = record_payload(conn, payload)
         print(json.dumps(result, ensure_ascii=False))

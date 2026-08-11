@@ -51,9 +51,11 @@ EXTRA_LABELS = ("主题", "角色", "情节")
 MAX_EXTRA_LABELS = 2
 MAX_PROTAGONISTS = 2
 
-# Female-only genres; anything with a male keyword below stays male (gender=1).
+# Female-only genres; neutral setting words (仙侠/玄幻/都市/科幻) do NOT
+# imply male, so 仙侠言情/都市言情 stay female. Only explicit male markers
+# override to gender=1.
 _FEMALE_GENRES = {"言情", "女频", "现代言情", "古代言情", "仙侠言情", "豪门", "宫斗"}
-_MALE_KEYWORDS = ("仙侠", "玄幻", "武侠", "男频", "都市", "科幻")
+_MALE_KEYWORDS = ("男频", "无敌", "赘婿", "战神", "后宫", "种马")
 
 
 def load_env():

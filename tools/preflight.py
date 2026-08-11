@@ -208,11 +208,6 @@ def main():
     ap.add_argument("--db", default="demo.db")
     ap.add_argument("--budget", type=float, default=100.0)
     ap.add_argument("--env-file", default=str(ENV_FILE))
-    ap.add_argument(
-        "--no-lock",
-        action="store_true",
-        help="legacy compatibility: manual preflight never acquires the run lock",
-    )
     args = ap.parse_args()
 
     load_env(args.env_file)

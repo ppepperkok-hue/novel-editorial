@@ -17,7 +17,7 @@ const API_PORT = 8000;
 let apiProc = null;
 let win = null;
 let tray = null;
-let lastExecKey = "";
+const notifiedExecKeys = new Set();
 let notifTimer = null;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -47,12 +47,22 @@ function apiReady(port) {
   });
 }
 
+function userDbPath() {
+  // Keep runtime data outside the install dir so NSIS upgrades never
+  // overwrite the user's live database; seed from the bundled demo.db only
+  // on first launch.
+  const dbPath = path.join(app.getPath("userData"), "demo.db");
+  const seedDb = path.join(ROOT, "demo.db");
+  if (!fs.existsSync(dbPath) && fs.existsSync(seedDb)) {
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    fs.copyFileSync(seedDb, dbPath);
+  }
+  return dbPath;
+}
+
 async function ensureApi() {
   if (await apiReady(API_PORT)) return;
-  // Keep the DB beside ROOT (config.DB_PATH): control.py calls
-  // os.path.relpath(_db_path(), ROOT), which throws across drives when the
-  // installer is on another disk (e.g. userData on C:, app on E:).
-  const dbPath = path.join(ROOT, "demo.db");
+  const dbPath = userDbPath();
   apiProc = spawn(
     PYTHONW,
     ["-m", "novel_editorial.web_api", "--db", dbPath, "--port", String(API_PORT)],
@@ -187,26 +197,25 @@ function createTray() {
 }
 
 function watchExecutions() {
+  const terminalStates = ["success", "error", "failed", "crashed", "partial"];
   notifTimer = setInterval(async () => {
     try {
       const r = await fetch(`http://127.0.0.1:${API_PORT}/api/executions`);
       const data = await r.json();
       const list = data.executions || [];
-      if (!list.length) return;
-      const first = list[0];
-      const key = `${first.workflow}-${first.id}-${first.status}`;
-      const terminalStates = ["success", "error", "failed", "crashed", "partial"];
-      if (lastExecKey && lastExecKey !== key && terminalStates.includes(first.status)) {
-        if (Notification.isSupported()) {
-          const outcome =
-            first.status === "success" ? "成功" : first.status === "partial" ? "部分成功" : "失败";
-          new Notification({
-            title: "小说流水线",
-            body: `${first.workflow}执行${outcome}（#${first.id}）`,
-          }).show();
-        }
+      for (const exec of list) {
+        if (!terminalStates.includes(exec.status)) continue;
+        const key = `${exec.workflow}-${exec.id}-${exec.status}`;
+        if (notifiedExecKeys.has(key)) continue;
+        notifiedExecKeys.add(key);
+        if (!Notification.isSupported()) continue;
+        const outcome =
+          exec.status === "success" ? "成功" : exec.status === "partial" ? "部分成功" : "失败";
+        new Notification({
+          title: "小说流水线",
+          body: `${exec.workflow}执行${outcome}（#${exec.id}）`,
+        }).show();
       }
-      lastExecKey = key;
     } catch (e) {
       // API temporarily unavailable; keep polling
     }
@@ -245,6 +254,8 @@ app.whenReady().then(async () => {
       String((e && e.message) || e) +
         "\n\n请确认 Python（pythonw）已安装且端口 8000 未被占用，然后重新启动应用。",
     );
+    app.isQuiting = true;
+    app.quit();
     return;
   }
   createWindow();

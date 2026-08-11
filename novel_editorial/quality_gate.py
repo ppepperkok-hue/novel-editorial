@@ -7,6 +7,7 @@
 
 import re
 import json
+import warnings
 from pathlib import Path
 
 CJK_RE = re.compile(r"[\u4e00-\u9fff]")
@@ -20,7 +21,15 @@ AI_FLAVOR_WORDS = [
 _WORDS_FILE = Path(__file__).resolve().parent.parent / "ai_words.json"
 try:
     _AI_DATA = json.loads(_WORDS_FILE.read_text(encoding="utf-8"))
-    AI_FLAVOR_WORDS = _AI_DATA.get("ai_flavor", AI_FLAVOR_WORDS)
+    _ai_flavor = _AI_DATA.get("ai_flavor", AI_FLAVOR_WORDS)
+    if not isinstance(_ai_flavor, list):
+        warnings.warn(
+            "ai_words.json 的 ai_flavor 不是列表，回退内置 AI 味词表",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+    else:
+        AI_FLAVOR_WORDS = _ai_flavor
 except (OSError, ValueError):
     pass
 

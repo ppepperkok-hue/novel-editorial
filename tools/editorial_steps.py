@@ -336,6 +336,14 @@ DEFAULT_FLAVOR_WORDS = [
 ]
 
 
+def _safe_float(value):
+    """Best-effort numeric parse; returns None for non-numeric input."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def quality_gate(
     edited_text,
     review_text,
@@ -396,7 +404,15 @@ def quality_gate(
     reader_passed = True
     reader_note = ""
     if reader:
-        reader_passed = bool(reader.get("would_read_next")) and float(reader.get("score") or 0) >= 7 and float(reader.get("hook_rating") or 0) >= 7
+        score = _safe_float(reader.get("score") or 0)
+        hook = _safe_float(reader.get("hook_rating") or 0)
+        if score is None or hook is None:
+            reader_note = "读者评分非数字，按0处理"
+        reader_passed = (
+            bool(reader.get("would_read_next"))
+            and (score or 0) >= 7
+            and (hook or 0) >= 7
+        )
     else:
         reader_note = "读者审稿缺失，已降级"
     if editor:

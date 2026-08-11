@@ -253,8 +253,19 @@ def write(conn, novel_id, mode, dry_run=False, materials=None):
                 "error": settle.get("error", ""),
             },
         )
-    clean_old(conn)
-    print(json.dumps({"ok": True, "mode": mode, "written": len(results)}, ensure_ascii=False))
+    stale = 0
+    if dry_run:
+        stale = conn.execute(
+            "SELECT COUNT(*) c FROM agent_diaries "
+            "WHERE created_at < date('now','localtime','-56 days')"
+        ).fetchone()["c"]
+    else:
+        clean_old(conn)
+    out = {"ok": True, "mode": mode, "written": len(results)}
+    if dry_run:
+        out["dry_run"] = True
+        out["would_clean_old"] = stale
+    print(json.dumps(out, ensure_ascii=False))
 
 
 def main():

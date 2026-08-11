@@ -678,13 +678,20 @@ def _apply_writer_responses(ctx, conn, dispatch):
     replaces it with the writer's alternative (approved by default), reject
     clears the assignment so the track falls back to the plain writer task.
     Any parse failure or missing output degrades to accept. The whole feature
-    is gated by TASK_RESPONSE_MODE=on.
+    is gated by TASK_RESPONSE_MODE=on. Accepts both the raw dispatch dict and
+    the envelope `{"mode", "dispatch"}` returned by `_dispatch`, so writer
+    assignments resolved here are visible to `_writer_dispatch_notes`.
     """
     if config.TASK_RESPONSE_MODE != "on":
         return dispatch
     if not isinstance(dispatch, dict):
         return dispatch
-    assignments = dispatch.get("assignments") or []
+    inner = (
+        dispatch.get("dispatch")
+        if isinstance(dispatch.get("dispatch"), dict)
+        else dispatch
+    )
+    assignments = inner.get("assignments") or []
     if not assignments:
         return dispatch
     resolved = []
@@ -735,6 +742,8 @@ def _apply_writer_responses(ctx, conn, dispatch):
         elif decision == "reject":
             a = {**a, "task": "", "note": ""}
         resolved.append(a)
+    if inner is not dispatch:
+        return {**dispatch, "dispatch": {**inner, "assignments": resolved}}
     return {**dispatch, "assignments": resolved}
 
 

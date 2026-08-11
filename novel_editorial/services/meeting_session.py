@@ -325,9 +325,18 @@ def run_session(session_id, db_path=""):
     """Background worker: executes rounds, pauses for user instructions."""
     conn = None
     try:
-        # Use the database the session was created on; never fall back to a
-        # hardcoded demo.db lookup that silently misses sessions in other DBs.
-        conn = novel_editorial.db.connect(db_path or config.DB_PATH)
+        # Use the database stored on the session row; never silently fall
+        # back to a hardcoded demo.db lookup that misses sessions in other DBs.
+        requested = str(db_path or "").strip()
+        conn = novel_editorial.db.connect(requested or config.DB_PATH)
+        if not requested:
+            row = conn.execute(
+                "SELECT db_path FROM meeting_sessions WHERE id=?", (session_id,)
+            ).fetchone()
+            row_db = str(row["db_path"] or "").strip() if row is not None else ""
+            if row_db:
+                conn.close()
+                conn = novel_editorial.db.connect(row_db)
         with _MEETING_LOCK:
             _run_locked(conn, session_id)
     finally:
