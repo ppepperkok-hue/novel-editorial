@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from novel_pipeline.llm_client import chat_deepseek
+from novel_pipeline.services import audit
 
 ACTION_STATUSES = ("pending", "claimed", "in_progress", "done", "skipped")
 AGENTS_DIR = Path(__file__).resolve().parent.parent.parent / "prompts" / "agents"
@@ -143,6 +144,14 @@ def claim_action(conn, action_id, agent, novel_id=0):
         (agent, int(action_id)),
     )
     conn.commit()
+    audit.log(
+        conn,
+        "agent",
+        "action_claimed",
+        target_type="action",
+        target_id=int(action_id),
+        detail={"agent": agent, "task": row["task"][:200]},
+    )
     log_activity(
         conn,
         agent,
@@ -201,6 +210,18 @@ def update_action(conn, action_id, status=None, result=None, task=None, agent=No
         ),
     )
     conn.commit()
+    audit.log(
+        conn,
+        "agent",
+        "action_status",
+        target_type="action",
+        target_id=int(action_id),
+        detail={
+            "status": new_status,
+            "agent": row["agent"],
+            "task": row["task"][:200],
+        },
+    )
     log_activity(
         conn,
         row["agent"],

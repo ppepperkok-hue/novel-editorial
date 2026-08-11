@@ -164,6 +164,20 @@ class AgentActionsTests(unittest.TestCase):
         ).fetchone()
         self.assertEqual(row["status"], "done")
 
+    def test_claim_and_status_audited(self):
+        activity.claim_action(self.conn, self.action_id, "writer", novel_id=1)
+        activity.update_action(self.conn, self.action_id, "in_progress", agent="writer")
+        claimed = self.conn.execute(
+            "SELECT COUNT(*) c FROM audit_logs WHERE category='agent' "
+            "AND action='action_claimed'"
+        ).fetchone()["c"]
+        self.assertGreaterEqual(claimed, 1)
+        status = self.conn.execute(
+            "SELECT COUNT(*) c FROM audit_logs WHERE category='agent' "
+            "AND action='action_status'"
+        ).fetchone()["c"]
+        self.assertGreaterEqual(status, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

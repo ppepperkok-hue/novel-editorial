@@ -56,6 +56,11 @@ class PromiseTests(unittest.TestCase):
             "SELECT status FROM agent_promises WHERE promise='周四前交卷纲'"
         ).fetchone()
         self.assertEqual(row["status"], "kept")
+        settle_audit = self.conn.execute(
+            "SELECT COUNT(*) c FROM audit_logs WHERE category='agent' "
+            "AND action='promise_settle'"
+        ).fetchone()["c"]
+        self.assertGreaterEqual(settle_audit, 1)
 
     def test_settle_keeps_review_promise(self):
         self._add_promise("通读检查第三章", due_at="2099-01-01")

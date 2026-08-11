@@ -102,6 +102,19 @@ class MailroomTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["sent"], 3)
 
+    def test_send_and_resolve_audited(self):
+        audit_send = self.conn.execute(
+            "SELECT COUNT(*) c FROM audit_logs WHERE category='message' "
+            "AND action='mail_send'"
+        ).fetchone()["c"]
+        self.assertGreaterEqual(audit_send, 3)
+        mailroom.resolve(self.conn, self.r1["id"], "done")
+        audit_resolve = self.conn.execute(
+            "SELECT COUNT(*) c FROM audit_logs WHERE category='message' "
+            "AND action='mail_resolve'"
+        ).fetchone()["c"]
+        self.assertGreaterEqual(audit_resolve, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+from novel_pipeline.services import audit
+
 
 def _now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -167,6 +169,17 @@ def settle_promises(conn, novel_id=0, days=7):
                     conn, row["agent"], "eic", "promise_broken", novel_id
                 )
         conn.commit()
+        audit.log(
+            conn,
+            "agent",
+            "promise_settle",
+            target_type="promise",
+            detail={
+                "kept": kept,
+                "broken": broken,
+                "open": len(rows) - len(kept) - len(broken),
+            },
+        )
         return {
             "ok": True,
             "kept": kept,

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from novel_pipeline.services import audit
+
 RESOLUTIONS = ("accepted", "rejected", "done")
 
 
@@ -46,6 +48,20 @@ def send(conn, from_agent, to_agent, body, subject="", kind="note",
             ),
         )
         conn.commit()
+        audit.log(
+            conn,
+            "message",
+            "mail_send",
+            target_type="agent",
+            target_id=str(to_agent),
+            detail={
+                "message_id": cur.lastrowid,
+                "from": str(from_agent),
+                "kind": str(kind or "note"),
+                "subject": str(subject or "")[:200],
+                "novel_id": int(novel_id or 0),
+            },
+        )
         return {"ok": True, "id": cur.lastrowid}
     except Exception as exc:  # noqa: BLE001
         return _err(f"send failed: {str(exc)[:200]}")
@@ -149,6 +165,14 @@ def resolve(conn, message_id, resolution="done"):
             (resolution, _now(), int(message_id)),
         )
         conn.commit()
+        audit.log(
+            conn,
+            "message",
+            "mail_resolve",
+            target_type="message",
+            target_id=int(message_id),
+            detail={"resolution": resolution},
+        )
         return {"ok": cur.rowcount > 0, "updated": cur.rowcount}
     except Exception as exc:  # noqa: BLE001
         return _err(f"resolve failed: {str(exc)[:200]}")
