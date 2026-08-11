@@ -22,7 +22,7 @@
 | P1-3 | ✅ | 8649492 | collect_reader_stats `--env-file` 默认值改用 `config.N8N_ENV_FILE`；失败测试 CLI --help 冒烟（stdout 重定向防污染） |
 | P1-4 | ✅ | 8649492 | `_purge_novel` 三阶段删除：chapter_id 子表 → chapters/volumes → 其余 novel_id 表 → novels；失败测试 test_purge_novel_is_fk_safe |
 | P1-5 | ✅ | f4c7361 | upsert 幂等：内容相同且无 change_note 时跳过版本/历史写入；合并事件仍版本化；失败测试 test_upsert_same_content_is_idempotent |
-| P1-6 | ✅ | 待提交 | release.js 对 `gh release view` 不存在容错；顺带清理 desktop 产物名与发版文案残留的 pipeline 命名；`node --check` 验证 |
+| P1-6 | ✅ | c41f8ff | release.js 对 `gh release view` 不存在容错；顺带清理 desktop 产物名与发版文案残留的 pipeline 命名；`node --check` 验证 |
 
 全量回归：453 后端 + 16 前端全绿（P1-1 后 449 → P1-2 后 450 → P1-3/P1-4 后 452 → P1-5 后 453）。
 
