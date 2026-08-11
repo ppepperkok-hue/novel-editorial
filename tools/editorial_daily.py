@@ -602,6 +602,113 @@ def _memory_task(idx, outline, editor_text, ctx):
     )
 
 
+def _editor_task_for(writer_text, outline):
+    return (
+        "初稿：" + str(writer_text or "")
+        + "；角色卡：" + _j((outline.get("bible") or {}).get("characters") or [])
+        + "；人物关系：" + _j((outline.get("bible") or {}).get("relationships") or [])
+        + "；世界观规则：" + _j((outline.get("bible") or {}).get("world_rules") or [])
+        + "；文风指南：" + str((outline.get("bible") or {}).get("style_guide") or "")
+    )
+
+
+def _review_retry(ctx, conn, idx, outline, guard, meta, target_words, prev_track,
+                  suffix, chapter, original_editor, gate, review_text):
+    """S11: negotiate a rewrite when the gate rejects a track.
+
+    The reviewer sends a rejection message with reasons, the writer replies
+    with intent/plan, then writer -> editor -> reviewer -> gate run once more
+    (up to REVIEW_RETRY_MAX rounds). Compliance blocks never rewrite. Returns
+    the best (gate, editor_text, review_text).
+    """
+    max_retries = config.REVIEW_RETRY_MAX
+    if max_retries <= 0 or any(
+        "合规拦截" in e for e in (gate.get("errors") or [])
+    ):
+        return gate, original_editor, review_text
+
+    review = gate.get("review") or {}
+    issues = review.get("issues") or review.get("must_fix") or []
+    if not isinstance(issues, list):
+        issues = [issues]
+    reason = "；".join(
+        str(x) for x in ((gate.get("errors") or []) + issues) if str(x)
+    ) or "审稿未通过，请按审稿意见修改"
+
+    reviewer_c = _canonical_agent("审稿" + suffix)
+    writer_c = _canonical_agent("写手" + suffix)
+    editor_text = original_editor
+    current_review = review_text
+    for attempt in range(max_retries):
+        if not ctx.dry_run:
+            mailroom.send(
+                conn,
+                reviewer_c,
+                writer_c,
+                subject="审稿打回",
+                body=f"第 {attempt + 1} 轮打回：" + reason[:400],
+                kind="review_feedback",
+                novel_id=ctx.novel_id,
+            )
+        reply_task = (
+            "审稿打回了你的稿子，理由：" + reason
+            + "。请回复 JSON {intent(修改意图一句话), plan(修改要点，2-3条)}。"
+        )
+        reply = _agent(ctx, "写手" + suffix, reply_task)
+        plan = ""
+        intent = "我会按理由修改"
+        if reply is not None:
+            robj = steps.robust_json(reply)
+            if isinstance(robj, dict):
+                plan = str(robj.get("plan") or "")
+                intent = str(robj.get("intent") or intent)
+            else:
+                intent = str(reply)[:200]
+            if not ctx.dry_run:
+                mailroom.send(
+                    conn,
+                    writer_c,
+                    reviewer_c,
+                    subject="返工说明",
+                    body=intent[:400],
+                    kind="reply",
+                    novel_id=ctx.novel_id,
+                )
+        rewrite_task = (
+            _writer_task(ctx, idx, meta, outline, guard, target_words, prev_track)
+            + "；审稿打回理由：" + reason
+            + "；你的修改计划：" + (plan or "按理由逐条修改")
+        )
+        writer_retry = _agent(ctx, "写手" + suffix, rewrite_task, target_words)
+        if writer_retry is None:
+            break
+        editor_retry = _agent(
+            ctx, "润色" + suffix, _editor_task_for(writer_retry, outline), target_words
+        )
+        if editor_retry is None:
+            break
+        review_retry = _agent(
+            ctx,
+            "审稿" + suffix,
+            _reviewer_task(idx, outline, editor_retry, prev_track, ctx),
+        )
+        if review_retry is None:
+            break
+        gate_retry = steps.quality_gate(
+            editor_retry, review_retry, None, None, chapter, target_words, ROOT
+        )
+        relations.apply_event(
+            conn, reviewer_c, writer_c, "feedback_rejected",
+            novel_id=ctx.novel_id,
+        )
+        if gate_retry.get("passed"):
+            return gate_retry, editor_retry, review_retry
+        reason = "；".join(str(x) for x in (gate_retry.get("errors") or [])) or reason
+        editor_text = editor_retry
+        current_review = review_retry
+    return gate, editor_text, current_review
+
+
 def _run_track(ctx, conn, idx, outline, guard, meta, target_words, env, prev_track=None):
     """Run one full A/B track: writer -> editor -> reviewer -> reader -> eic
     -> quality gate -> memory summary. Publishing happens afterwards."""
@@ -611,14 +718,9 @@ def _run_track(ctx, conn, idx, outline, guard, meta, target_words, env, prev_tra
     writer_text = _agent(ctx, "写手" + suffix, _writer_task(ctx, idx, meta, outline, guard, target_words, prev_track), target_words)
     if writer_text is None:
         return {"gate": None, "summary": {}, "failed": True}
-    editor_task = (
-        "初稿：" + writer_text
-        + "；角色卡：" + _j((outline.get("bible") or {}).get("characters") or [])
-        + "；人物关系：" + _j((outline.get("bible") or {}).get("relationships") or [])
-        + "；世界观规则：" + _j((outline.get("bible") or {}).get("world_rules") or [])
-        + "；文风指南：" + str((outline.get("bible") or {}).get("style_guide") or "")
+    editor_text = _agent(
+        ctx, "润色" + suffix, _editor_task_for(writer_text, outline), target_words
     )
-    editor_text = _agent(ctx, "润色" + suffix, editor_task, target_words)
     if editor_text is None:
         return {"gate": None, "summary": {}, "failed": True}
     relations.apply_event(
@@ -685,6 +787,10 @@ def _run_track(ctx, conn, idx, outline, guard, meta, target_words, env, prev_tra
             _canonical_agent("写手" + suffix),
             "feedback_rejected",
             novel_id=ctx.novel_id,
+        )
+        gate, editor_text, review_text = _review_retry(
+            ctx, conn, idx, outline, guard, meta, target_words, prev_track,
+            suffix, chapter, editor_text, gate, review_text,
         )
     memory_text = _agent(ctx, "提炼剧情" + suffix, _memory_task(idx, outline, editor_text, ctx))
     summary = steps.parse_summary(memory_text) if memory_text is not None else {}
