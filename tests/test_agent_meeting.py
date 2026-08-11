@@ -118,6 +118,46 @@ class MaterialsTests(unittest.TestCase):
 
 
 class RoundSpeechRetryTests(unittest.TestCase):
+    def test_round_speech_injects_collaboration_context(self):
+        path = make_db()
+        from tools import agent_meeting, architect_weekly, mailroom
+
+        conn = db.connect(path)
+        try:
+            mailroom.send(conn, "eic", "planner", "会前先看下市场热点", subject="提醒", novel_id=1)
+            materials = architect_weekly.build_materials(conn, 1)
+            captured = {}
+
+            def fake_ask(conn, novel_id, agent, user, temperature, dry_run, mock_text,
+                         max_tokens=1600, tools=None, messages=None, system_override=None):
+                captured["system"] = system_override
+                return (
+                    json.dumps(
+                        {
+                            "weekly_summary": "小结",
+                            "feelings": "平稳",
+                            "opinion": "意见",
+                            "concerns": [],
+                            "proposals": [],
+                            "priority": "中",
+                        }
+                    ),
+                    {"prompt_tokens": 1, "completion_tokens": 1},
+                    "mock",
+                    [],
+                )
+
+            with mock.patch("tools.agent_meeting.ask", side_effect=fake_ask):
+                agent_meeting.round_speech(
+                    conn, 1, "planner", materials, [], 1, dry_run=False
+                )
+            system = captured.get("system") or ""
+            self.assertIn("编辑部协作上下文", system)
+            self.assertIn("来自 eic", system)
+            self.assertIn("会前先看下市场热点", system)
+        finally:
+            conn.close()
+
     def test_round_speech_retries_and_uses_structured_json(self):
         path = make_db()
         from tools import agent_meeting, architect_weekly

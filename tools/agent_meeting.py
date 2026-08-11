@@ -397,6 +397,14 @@ def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run,
         "按需自主调用，可多次调用；调用后基于返回内容按[会议模式]输出最终 JSON。"
     )
     system = agent_md(agent) + tool_rule + ("\n\n" + index if index else "")
+    try:
+        from tools import agent_context  # noqa: PLC0415
+
+        snapshot = agent_context.build_context_snapshot(conn, agent, novel_id or 0)
+        if snapshot:
+            system += "\n\n" + snapshot
+    except Exception:  # noqa: BLE001 - injection must never break a speech
+        pass
     user += "；" + natural_rule + "；" + json_rule
 
     text, _usage, _model, tool_calls = ask(
