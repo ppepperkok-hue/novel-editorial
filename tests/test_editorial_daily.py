@@ -559,7 +559,7 @@ class EditorialDailyTests(unittest.TestCase):
     def test_compliance_hit_blocks_publish(self):
         """Sensitive-word hits must block the track before publishing."""
         self._ok_preflight()
-        bad_text = "他推开门走进院子，风从巷口吹来，远处传来吆喝声。" * 100 + "违规示例词"
+        bad_text = "他推开门走进院子，风从巷口吹来，远处传来吆喝声。" * 100 + "冰毒"
 
         def fake_agent(node, task, temperature=None, max_tokens=None, target_words=None, novel_id=None, db_path=None, model=None):
             if node.startswith("写手") or node.startswith("润色"):

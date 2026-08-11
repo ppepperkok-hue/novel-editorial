@@ -70,7 +70,7 @@ describe("App", () => {
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     expect(await screen.findByPlaceholderText(/搜索命令/)).toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText(/搜索命令/), { target: { value: "成本" } });
-    expect(screen.getByText("打开成本中心")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("打开成本中心")).toBeInTheDocument());
     expect(screen.queryByText("打开作品库")).not.toBeInTheDocument();
     fireEvent.keyDown(screen.getByPlaceholderText(/搜索命令/), { key: "Escape" });
     await waitFor(() => expect(screen.queryByPlaceholderText(/搜索命令/)).not.toBeInTheDocument());

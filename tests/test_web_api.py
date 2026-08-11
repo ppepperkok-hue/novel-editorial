@@ -64,9 +64,11 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(snap["executions"][0]["workflow"], "日更")
 
     def test_bad_query_params_do_not_500(self):
-        with urlopen(f"{self.base}/api/chapters?novel_id=abc", timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        self.assertIn("chapters", data)
+        # Required parameters reject garbage explicitly with 400.
+        with self.assertRaises(HTTPError) as ctx:
+            urlopen(f"{self.base}/api/chapters?novel_id=abc", timeout=10)
+        self.assertEqual(ctx.exception.code, 400)
+        # Optional parameters fall back to defaults instead of crashing.
         with urlopen(f"{self.base}/api/daily_runs?limit=abc", timeout=10) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         self.assertIn("runs", data)

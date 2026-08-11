@@ -202,10 +202,12 @@ def local_executions(conn, limit=30):
     return out
 
 
-def recover_stale_runs(conn, stale_hours=6):
+def recover_stale_runs(conn, stale_hours=12):
     """Mark runs stuck in 'running' (crashed process / power loss) as failed.
 
     Called once at API startup, mirroring the meeting-session stale recovery.
+    The threshold is a pure time heuristic (no heartbeat yet); 12h is well
+    above the longest realistic daily run including LLM retry chains.
     """
     row = conn.execute(
         "UPDATE daily_runs SET status='failed', "

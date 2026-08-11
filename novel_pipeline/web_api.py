@@ -193,7 +193,16 @@ def make_handler(db_path):
                     conn = db.connect(db_path)
                     try:
                         qs = parse_qs(parsed.query)
-                        novel_id = _parse_int(qs["novel_id"][0], None) if qs.get("novel_id") else None
+                        if qs.get("novel_id"):
+                            novel_id = _parse_int(qs["novel_id"][0], None)
+                            if novel_id is None:
+                                self._json(
+                                    {"error": "novel_id must be an integer"},
+                                    status=400,
+                                )
+                                return
+                        else:
+                            novel_id = None
                         self._json({"chapters": dashboard_service.load_chapters(conn, novel_id)})
                     finally:
                         conn.close()
@@ -203,7 +212,10 @@ def make_handler(db_path):
                         qs = parse_qs(parsed.query)
                         chapter_id = _parse_int(qs["chapter_id"][0], None) if qs.get("chapter_id") else None
                         if chapter_id is None:
-                            self._json({"error": "chapter_id required"}, status=400)
+                            self._json(
+                                {"error": "chapter_id required and must be an integer"},
+                                status=400,
+                            )
                         else:
                             row = conn.execute(
                                 "SELECT chapter_id, content, updated_at "

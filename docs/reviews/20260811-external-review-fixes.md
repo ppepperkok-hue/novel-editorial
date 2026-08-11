@@ -107,3 +107,18 @@ DEPRECATED（保留为回退后备；monitor 仍使用 `SAFE_BACKLOG`/`backlog_l
 - `node tools/validate_workflow_deep.mjs`：OK（未改工作流）。
 - 外部报告的 3 个 P1 全部确认并修复；8 个 P2 全部处理（4 修复 + 1 文档如实 +
   1 接入 + 1 恢复机制 + 1 标注）；8 个 P3 全部处理。
+
+## 复核跟进（2026-08-11 v2）
+
+按复核报告 `20260811-fix-verification.md` 处理剩余 P3：
+
+1. README 测试数统一为 276（3 处）。
+2. 合规词库真实化：`compliance.py` 内置 25 个通用明显违规词（违禁品/赌博/
+   诈骗/暴恐/色情露骨/代充广告引流），并支持 `compliance_words.txt` 按平台
+   规则扩展合并；新增 `tests/test_compliance.py`（命中/未命中/自定义文件合并）。
+3. `/api/chapters?novel_id=abc` 等必填参数改为显式 400，不再退化为全量查询。
+4. `app.test.jsx` 命令面板过滤断言改 `waitFor`，消除偶发竞态。
+5. `recover_stale_runs` 默认阈值 6h → 12h（纯时间启发式，覆盖极端重试链；
+   心跳机制留待后续）。
+
+验证：后端 279 OK（276 + 3）、前端 8 OK、build OK。
