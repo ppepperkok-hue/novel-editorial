@@ -150,6 +150,7 @@ class _Ctx:
         self.costs = []
         self.agent_calls = []
         self.tool_attempts = []
+        self.dispatch = None
         self.lock_path = None
         self.dry_item_counter = 0
 
@@ -472,6 +473,53 @@ def _preflight(ctx, conn, env, trigger):
         "spent": spent,
         "budget": budget,
     }
+
+
+def _dispatch(ctx, conn, stock):
+    """S10: chief-editor dispatch in editorial mode; fixed mode is a no-op.
+
+    Phase one is advisory: the editor assigns work, the assignments are
+    broadcast as mailroom messages and stored in the run detail. The fixed
+    pipeline still executes; later steps may consume the dispatch.
+    """
+    if config.DISPATCH_MODE != "editorial":
+        return {"mode": "fixed", "dispatch": None, "degraded": False}
+    task = (
+        "你是主编。今天开工，请根据当前信息分派今日工作。"
+        "只输出 JSON：{chapters(今日计划章数), focus(今日重点一句话), "
+        "assignments:[{agent(planner|writer|editor|reviewer|reader|memory), "
+        "task(一句话可执行), note}]}，1-3 条。"
+        "今日信息：" + _j(
+            {
+                "stock": stock,
+                "novel_id": ctx.novel_id,
+                "writing_context_tail": ctx.writing_context[-600:],
+            }
+        )
+    )
+    text = _agent(ctx, "eic", task)
+    if text is None:
+        ctx.warnings.append("主编分派失败，本次沿用固定流程")
+        return {"mode": "editorial", "dispatch": None, "degraded": True}
+    obj = steps.robust_json(text)
+    if not isinstance(obj, dict):
+        ctx.warnings.append("主编分派输出不可解析，沿用固定流程")
+        return {"mode": "editorial", "dispatch": None, "degraded": True}
+    assignments = [
+        a
+        for a in (obj.get("assignments") or [])
+        if isinstance(a, dict) and str(a.get("agent") or "").strip()
+    ]
+    if assignments and not ctx.dry_run:
+        mailroom.broadcast(
+            conn,
+            "eic",
+            [str(a["agent"]).strip() for a in assignments],
+            subject="今日分派",
+            body=_j(assignments)[:800],
+            novel_id=ctx.novel_id,
+        )
+    return {"mode": "editorial", "dispatch": obj, "degraded": False}
 
 
 def _writer_task(ctx, idx, meta, outline, guard, target_words, prev_track=None):
@@ -1001,6 +1049,7 @@ def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, en
             if not result.get("ok") and result.get("error"):
                 ctx.failed_nodes.append("发布存稿")
         else:
+            ctx.dispatch = _dispatch(ctx, conn, stock)
             payload, published, _target = _generate(ctx, conn, stock, env, run_id, out_file)
             ctx.published = published
 
@@ -1018,6 +1067,7 @@ def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, en
             "agent_calls": len(ctx.agent_calls),
             "tools": ctx.tool_attempts,
             "reasons": pre.get("reasons") or [],
+            "dispatch": ctx.dispatch,
         }
         if not dry_run:
             _finish_run(conn, ctx, run_id, status, published, error, detail)
