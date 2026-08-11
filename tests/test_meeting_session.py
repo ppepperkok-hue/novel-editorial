@@ -52,6 +52,61 @@ class MeetingSessionTests(unittest.TestCase):
         self.assertEqual(s["novel_id"], 0)
         self.assertEqual(s["status"], "running")
 
+    def test_topic_request_becomes_action_and_archived(self):
+        from tools import mailroom  # noqa: E402
+
+        r = mailroom.send(
+            self.conn, "guard", "eic", "规则台账模板需要统一",
+            subject="议题提议", kind="topic_request",
+        )
+        self.assertTrue(r["ok"])
+        created = meeting_session._persist_topic_request_actions(self.conn, 1, 2, 0)
+        self.assertEqual(created, 1)
+        actions = self.conn.execute(
+            "SELECT agent, task, session_id, meeting_id FROM agent_actions"
+        ).fetchall()
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0]["agent"], "guard")
+        self.assertIn("规则台账模板", actions[0]["task"])
+        self.assertEqual(actions[0]["session_id"], 1)
+        self.assertEqual(actions[0]["meeting_id"], 2)
+        row = self.conn.execute(
+            "SELECT status FROM agent_messages WHERE kind='topic_request'"
+        ).fetchone()
+        self.assertEqual(row["status"], "archived")
+
+    def test_repeat_close_is_idempotent(self):
+        from tools import mailroom  # noqa: E402
+
+        mailroom.send(self.conn, "reader", "eic", "某章会掉读", kind="topic_request")
+        self.assertEqual(
+            meeting_session._persist_topic_request_actions(self.conn, 1, 2, 0), 1
+        )
+        self.assertEqual(
+            meeting_session._persist_topic_request_actions(self.conn, 1, 2, 0), 0
+        )
+        n = self.conn.execute(
+            "SELECT COUNT(*) c FROM agent_actions"
+        ).fetchone()["c"]
+        self.assertEqual(n, 1)
+
+    def test_switch_off_creates_nothing(self):
+        from tools import mailroom  # noqa: E402
+
+        mailroom.send(self.conn, "guard", "eic", "测试议题", kind="topic_request")
+        with mock.patch(
+            "novel_pipeline.services.meeting_session.config.TOPIC_REQUEST_ACTIONS",
+            False,
+        ):
+            created = meeting_session._persist_topic_request_actions(
+                self.conn, 1, 2, 0
+            )
+        self.assertEqual(created, 0)
+        n = self.conn.execute(
+            "SELECT COUNT(*) c FROM agent_actions"
+        ).fetchone()["c"]
+        self.assertEqual(n, 0)
+
     def test_planning_meeting_full_chain_without_novel(self):
         import json
 

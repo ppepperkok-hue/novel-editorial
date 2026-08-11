@@ -206,6 +206,46 @@ def _record_topic_requests(conn, agent, novel_id, speech):
         )
 
 
+def _persist_topic_request_actions(conn, session_id, meeting_id, novel_id=0):
+    """F4: turn unconsumed topic_request mail into action items after a meeting.
+
+    Each unarchived topic_request becomes an action owned by its proposer,
+    then the mail is archived so a repeated close can never duplicate it.
+    Disabled via TOPIC_REQUEST_ACTIONS=off.
+    """
+    if not config.TOPIC_REQUEST_ACTIONS:
+        return 0
+    from tools import mailroom  # noqa: PLC0415
+
+    scope = "AND ref_novel_id=?" if novel_id else ""
+    params = (int(novel_id),) if novel_id else ()
+    rows = conn.execute(
+        f"SELECT id, from_agent, body, subject FROM agent_messages "
+        f"WHERE kind='topic_request' AND status!='archived' {scope} "
+        "ORDER BY id ASC",
+        params,
+    ).fetchall()
+    created = 0
+    for r in rows:
+        task = str(r["body"] or r["subject"] or "").strip()[:300]
+        if not task:
+            continue
+        result = activity.create_action(
+            conn,
+            str(r["from_agent"] or "").strip() or "eic",
+            task,
+            novel_id=novel_id or 0,
+            session_id=session_id,
+            meeting_id=meeting_id,
+            detail={"source": "topic_request", "message_id": r["id"]},
+        )
+        if result.get("ok"):
+            mailroom.archive(conn, r["id"])
+            created += 1
+    conn.commit()
+    return created
+
+
 def run_session(session_id, db_path=""):
     """Background worker: executes rounds, pauses for user instructions."""
     conn = None
@@ -474,6 +514,30 @@ def _run_locked(conn, session_id):
                 conn,
                 "meeting",
                 "post_meeting_actions_failed",
+                target_type="session",
+                target_id=session_id,
+                detail={"error": str(exc)[:300]},
+            )
+            conn.commit()
+        try:
+            converted = _persist_topic_request_actions(
+                conn, session_id, weekly_id, novel_id
+            )
+            if converted:
+                audit.log(
+                    conn,
+                    "meeting",
+                    "topic_requests_to_actions",
+                    target_type="session",
+                    target_id=session_id,
+                    detail={"created": converted},
+                )
+                conn.commit()
+        except Exception as exc:  # noqa: BLE001
+            audit.log(
+                conn,
+                "meeting",
+                "topic_requests_to_actions_failed",
                 target_type="session",
                 target_id=session_id,
                 detail={"error": str(exc)[:300]},
