@@ -25,7 +25,6 @@ from novel_pipeline.services import (  # noqa: E402
     ending as ending_service,
     meeting_session as meeting_service,
     misc as misc_service,
-    n8n as n8n_service,
 )
 
 _SNAPSHOT = {}
@@ -50,21 +49,24 @@ def _origin_allowed(origin, port):
     return origin in allowed
 
 
+def _build_snapshot(conn):
+    """Snapshot payload backed by local state only (no n8n dependency)."""
+    from tools import daily_runs  # noqa: PLC0415
+
+    return {
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "executions": daily_runs.local_executions(conn)[:5],
+        "issues": len(misc_service.load_alerts(conn)["issues"]),
+        "monthly_cost": dashboard_service.load_summary(conn)["monthly_cost"],
+    }
+
+
 def _snapshot_loop(db_path):
     while True:
         try:
             conn = db.connect(db_path)
             try:
-                snapshot = {
-                    "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "workflows": {
-                        "daily": n8n_service.workflow_status(config.N8N_WORKFLOW_DAILY),
-                        "weekly": n8n_service.workflow_status(config.N8N_WORKFLOW_WEEKLY),
-                    },
-                    "executions": n8n_service.executions()[:5],
-                    "issues": len(misc_service.load_alerts(conn)["issues"]),
-                    "monthly_cost": dashboard_service.load_summary(conn)["monthly_cost"],
-                }
+                snapshot = _build_snapshot(conn)
             finally:
                 conn.close()
             with _SNAPSHOT_LOCK:

@@ -44,6 +44,17 @@ class ExportFlowHtmlTests(unittest.TestCase):
         self.assertIn('id="flow-data"', html)
         self.assertIn("application/json", html)
 
+    def test_error_content_is_html_escaped(self):
+        self.conn.execute(
+            "UPDATE daily_runs SET error='<script>alert(1)</script> & <b>boom</b>' "
+            "WHERE run_id='r1'"
+        )
+        self.conn.commit()
+        doc = export_flow_html.render_html(self.conn)
+        self.assertIn("&lt;script&gt;", doc)
+        self.assertIn("&lt;b&gt;", doc)
+        self.assertNotIn("alert(1)</script>", doc)
+
     def test_cli_writes_file(self):
         out = os.path.join(self.tmpdir, "report.html")
         import sys

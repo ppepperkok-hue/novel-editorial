@@ -150,6 +150,40 @@ class ControlTests(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_weekly_worker_skips_when_lock_held(self):
+        from novel_pipeline.services import control
+
+        with mock.patch(
+            "tools.preflight.acquire_lock",
+            return_value=(False, "已有周会在途"),
+        ) as acq:
+            with mock.patch("novel_pipeline.services.control._run_cli") as cli:
+                with mock.patch("novel_pipeline.services.control._alert") as alert:
+                    control._weekly_worker()
+        acq.assert_called_once()
+        cli.assert_not_called()
+        alert.assert_called_once()
+        self.assertIn("已有周会在途", alert.call_args[0][0])
+
+    def test_weekly_worker_releases_lock(self):
+        from novel_pipeline.services import control
+
+        lock_path = control.ROOT / "n8n_tmp" / "weekly.lock"
+        if lock_path.exists():
+            lock_path.unlink()
+        with mock.patch(
+            "tools.preflight.acquire_lock",
+            return_value=(True, ""),
+        ):
+            with mock.patch("novel_pipeline.services.control._run_cli"):
+                with mock.patch(
+                    "tools.preflight.release_lock"
+                ) as release:
+                    control._weekly_worker()
+        release.assert_called_once_with(lock_path)
+        if lock_path.exists():
+            lock_path.unlink()
+
 
 class MiscTests(unittest.TestCase):
     def test_diary_list_and_update(self):

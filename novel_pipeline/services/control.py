@@ -99,6 +99,22 @@ def _background_daily(chapters=None):
 
 def _background_weekly():
     def worker():
+        _weekly_worker()
+
+    _spawn(worker)
+
+
+def _weekly_worker():
+    """Run the weekly chain once; a held weekly lock means another meeting is
+    already running, so this invocation is skipped with an explicit alert."""
+    from tools import preflight  # noqa: PLC0415
+
+    lock_path = ROOT / "n8n_tmp" / "weekly.lock"
+    locked, lock_reason = preflight.acquire_lock(lock_path)
+    if not locked:
+        _alert(f"周会已在进行中，本次跳过：{lock_reason}")
+        return
+    try:
         try:
             from novel_pipeline import hot_topics  # noqa: PLC0415
 
@@ -113,8 +129,8 @@ def _background_weekly():
             ["--db", str(config.DB_PATH), "--kind", "weekly"],
         )
         _run_cli("tools/distill_lessons.py", ["--db", str(config.DB_PATH)])
-
-    _spawn(worker)
+    finally:
+        preflight.release_lock(lock_path)
 
 
 def run_workflow_now(workflow):

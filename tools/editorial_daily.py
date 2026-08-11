@@ -80,6 +80,7 @@ class _Ctx:
         self.failed_nodes = []
         self.warnings = []
         self.errors = []
+        self.published = 0
         self.costs = []
         self.agent_calls = []
         self.tool_attempts = []
@@ -593,6 +594,8 @@ def _publish_track(ctx, idx, track, outline, meta, target_words, env):
             env,
         )
         pub = steps.parse_publish_response(pub_raw)
+        if pub.get("published"):
+            ctx.published += 1
         verify = None
         if pub.get("published"):
             verify_resp = _fanqie_get(
@@ -850,10 +853,12 @@ def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, en
                 lambda: publish_stock.publish_batch(conn, ctx.novel_id, stock["target"], env),
             )
             published = int((result or {}).get("published") or 0)
+            ctx.published = published
             if not result.get("ok") and result.get("error"):
                 ctx.failed_nodes.append("发布存稿")
         else:
             payload, published, _target = _generate(ctx, conn, stock, env, run_id, out_file)
+            ctx.published = published
 
         _wrapup(ctx, conn, db_path, ctx.novel_id)
 
@@ -887,13 +892,21 @@ def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, en
     except Exception as exc:  # noqa: BLE001
         ctx.errors.append(f"调度器异常: {str(exc)[:400]}")
         error = "；".join(ctx.errors)
-        _finish_run(conn, ctx, run_id, "failed", 0, error, {"warnings": ctx.warnings})
+        _finish_run(
+            conn,
+            ctx,
+            run_id,
+            "failed",
+            ctx.published,
+            error,
+            {"warnings": ctx.warnings},
+        )
         return {
             "ok": False,
             "skipped": False,
             "run_id": run_id,
             "status": "failed",
-            "published": 0,
+            "published": ctx.published,
             "failed_nodes": ctx.failed_nodes,
             "warnings": ctx.warnings,
             "error": error,

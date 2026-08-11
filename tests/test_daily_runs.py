@@ -61,12 +61,45 @@ class DailyRunsTests(unittest.TestCase):
             self.assertEqual(crashed["status"], "crashed")
             self.assertEqual(json.loads(crashed["failed_nodes"]), ["预检"])
             self.assertEqual(crashed["error"], "预检失败")
+            source = conn.execute(
+                "SELECT source FROM daily_runs WHERE run_id='1001'"
+            ).fetchone()
+            self.assertEqual(source["source"], "n8n-legacy")
             # UTC timestamps are shifted to local (+8)
             ok = conn.execute(
                 "SELECT started_at, finished_at FROM daily_runs WHERE run_id='1001'"
             ).fetchone()
             self.assertEqual(ok["started_at"], "2026-08-11 12:31:19")
             self.assertEqual(ok["finished_at"], "2026-08-11 13:32:12")
+        finally:
+            conn.close()
+
+    def test_limit_is_clamped(self):
+        path, _nid = make_env()
+        conn = db.connect(path)
+        try:
+            for i in range(3):
+                conn.execute(
+                    "INSERT INTO daily_runs(run_id,novel_id,trigger,source,status,"
+                    "started_at,finished_at,failed_nodes,error,published,detail,created_at) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))",
+                    (
+                        f"r{i}",
+                        1,
+                        "manual",
+                        "scheduler",
+                        "completed",
+                        "2026-08-11 10:00:00",
+                        "2026-08-11 10:01:00",
+                        "[]",
+                        "",
+                        1,
+                        "{}",
+                    ),
+                )
+            conn.commit()
+            self.assertEqual(len(daily_runs.list_runs(conn, limit=-1)), 1)
+            self.assertEqual(len(daily_runs.local_executions(conn, limit=99999)), 3)
         finally:
             conn.close()
 

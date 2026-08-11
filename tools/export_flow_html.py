@@ -11,6 +11,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import sys
 from datetime import datetime
@@ -75,6 +76,8 @@ def render_html(conn):
         f"{last.get('started_at') or '—'} → {last.get('finished_at') or '—'}"
     )
     error = last.get("error") or ""
+    summary = html.escape(summary)
+    error = html.escape(error)
     groups = "".join(
         f'<span class="chip">{GROUP_LABEL[g]}</span>' for g in GROUP_X
     )

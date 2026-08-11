@@ -42,6 +42,27 @@ class WebApiTests(unittest.TestCase):
         self.assertIn("executions", data, "dashboard must carry executions fallback")
         self.assertIn("updated_at", data)
 
+    def test_build_snapshot_uses_local_runs_without_n8n(self):
+        from novel_pipeline.web_api import _build_snapshot
+
+        conn = db.connect(self.db_path)
+        try:
+            conn.execute(
+                "INSERT INTO daily_runs(run_id,novel_id,trigger,source,status,"
+                "started_at,finished_at,failed_nodes,error,published,detail,created_at) "
+                "VALUES('sched-1',1,'manual','scheduler','completed',"
+                "'2026-08-11 10:00:00','2026-08-11 10:01:00','[]','',2,'{}',"
+                "'2026-08-11 10:00:00')"
+            )
+            conn.commit()
+            snap = _build_snapshot(conn)
+        finally:
+            conn.close()
+        self.assertNotIn("workflows", snap)
+        self.assertIn("executions", snap)
+        self.assertEqual(snap["executions"][0]["id"], "sched-1")
+        self.assertEqual(snap["executions"][0]["workflow"], "日更")
+
     def test_index_served(self):
         with urlopen(self.base + "/", timeout=10) as resp:
             html = resp.read().decode("utf-8")

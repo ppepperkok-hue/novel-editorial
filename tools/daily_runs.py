@@ -134,11 +134,12 @@ def sync_from_n8n(conn, limit=20):
 
 
 def list_runs(conn, limit=30):
+    limit = max(1, min(int(limit or 30), 500))
     rows = conn.execute(
         "SELECT run_id, novel_id, trigger, status, started_at, finished_at, "
         "published, failed_nodes, error, created_at FROM daily_runs "
         "ORDER BY id DESC LIMIT ?",
-        (int(limit or 30),),
+        (limit,),
     ).fetchall()
     out = []
     for r in rows:
@@ -172,11 +173,12 @@ def local_executions(conn, limit=30):
     Keeps the old n8n executions shape (`id/workflow/status/started_at/
     stopped_at/error`) so the frontend table keeps working without n8n.
     """
+    limit = max(1, min(int(limit or 30), 500))
     rows = conn.execute(
         "SELECT run_id, trigger, source, status, started_at, finished_at, "
         "published, failed_nodes, error FROM daily_runs "
         "ORDER BY id DESC LIMIT ?",
-        (int(limit or 30),),
+        (limit,),
     ).fetchall()
     out = []
     for r in rows:
