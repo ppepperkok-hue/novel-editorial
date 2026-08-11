@@ -272,6 +272,12 @@ def _run_locked(conn, session_id):
                         (_now(), session_id),
                     )
                     conn.commit()
+                if isinstance(speech, dict) and isinstance(speech.get("promises"), list):
+                    from tools import promises  # noqa: PLC0415
+
+                    promises.record_promises(
+                        conn, agent, novel_id or 0, speech["promises"], source="meeting"
+                    )
                 transcript.append({"round": round_no, "agent": agent, "speech": speech})
                 activity.log_activity(
                     conn,

@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT))
 from novel_pipeline import db  # noqa: E402
 from novel_pipeline.llm_client import chat_deepseek, estimate_cost  # noqa: E402
 from novel_pipeline.services import activity  # noqa: E402
+from tools import promises  # noqa: E402
 
 AGENTS_DIR = ROOT / "prompts" / "agents"
 AGENTS = [
@@ -183,6 +184,16 @@ def write(conn, novel_id, mode, dry_run=False, materials=None):
                 "VALUES(?,?,?,datetime('now','localtime'))",
                 (agent, novel_id, json.dumps(mood, ensure_ascii=False)),
             )
+        if (
+            mode == "weekly"
+            and not dry_run
+            and isinstance(content, dict)
+            and isinstance(content.get("promises"), list)
+            and content["promises"]
+        ):
+            promises.record_promises(
+                conn, agent, novel_id, content["promises"], source="weekly"
+            )
         if not dry_run:
             record_cost(conn, novel_id, agent, usage, model)
         activity.log_activity(
@@ -202,6 +213,22 @@ def write(conn, novel_id, mode, dry_run=False, materials=None):
             },
         )
         results.append({"agent": agent, "type": mode, "ok": True})
+    if mode == "weekly" and not dry_run:
+        settle = promises.settle_promises(conn, novel_id)
+        activity.log_activity(
+            conn,
+            "system",
+            novel_id,
+            "promise_settle",
+            "本周承诺结算",
+            {
+                "kept": settle.get("kept") or [],
+                "broken": settle.get("broken") or [],
+                "open": settle.get("open", 0),
+                "ok": settle.get("ok"),
+                "error": settle.get("error", ""),
+            },
+        )
     clean_old(conn)
     print(json.dumps({"ok": True, "mode": mode, "written": len(results)}, ensure_ascii=False))
 
