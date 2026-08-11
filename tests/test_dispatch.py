@@ -85,5 +85,58 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(result["dispatch"]["chapters"], 2)
         self.assertEqual(mailroom.list_messages(self.conn, agent="writer")["messages"], [])
 
+    def _ctx_with_dispatch(self, dispatch):
+        ctx = editorial_daily._Ctx(1, self.db_path, dry_run=True)
+        ctx.writing_context = "前情提要"
+        ctx.dispatch = dispatch
+        return ctx
+
+    def _writer_fixture(self):
+        meta = {"protagonist": "林舟"}
+        outline = {
+            "genre": "都市",
+            "keywords": "旧书店",
+            "bible": {
+                "characters": [{"name": "林舟", "role": "主角"}],
+                "relationships": [],
+                "world_rules": ["旧书店只在夜间开门"],
+            },
+            "chapter1": {"title": "开篇", "emotion": "好奇", "position": "开篇"},
+            "chapter2": {"title": "试探", "emotion": "紧张", "position": "推进"},
+        }
+        guard = {"constraints": [], "character_beats": {}}
+        return meta, outline, guard
+
+    def test_writer_task_injects_dispatch_note(self):
+        dispatch = json.loads(self._dispatch_json())
+        ctx = self._ctx_with_dispatch(dispatch)
+        meta, outline, guard = self._writer_fixture()
+        task_a = editorial_daily._writer_task(ctx, 0, meta, outline, guard, 2000)
+        task_b = editorial_daily._writer_task(ctx, 1, meta, outline, guard, 2000)
+        self.assertIn("主编今日分派", task_a)
+        self.assertIn("写今天两章", task_a)
+        self.assertIn("钩子要够", task_a)
+        self.assertIn("主编今日分派", task_b)
+
+    def test_writer_task_uses_second_assignment_for_track_b(self):
+        dispatch = json.loads(self._dispatch_json())
+        dispatch["assignments"] = [
+            {"agent": "writer", "task": "A章主攻开篇钩子", "note": ""},
+            {"agent": "writer", "task": "B章埋下伏笔", "note": ""},
+        ]
+        ctx = self._ctx_with_dispatch(dispatch)
+        meta, outline, guard = self._writer_fixture()
+        task_a = editorial_daily._writer_task(ctx, 0, meta, outline, guard, 2000)
+        task_b = editorial_daily._writer_task(ctx, 1, meta, outline, guard, 2000)
+        self.assertIn("A章主攻开篇钩子", task_a)
+        self.assertNotIn("B章埋下伏笔", task_a)
+        self.assertIn("B章埋下伏笔", task_b)
+
+    def test_writer_task_without_dispatch_is_unchanged(self):
+        ctx = self._ctx_with_dispatch(None)
+        meta, outline, guard = self._writer_fixture()
+        task = editorial_daily._writer_task(ctx, 0, meta, outline, guard, 2000)
+        self.assertNotIn("主编今日分派", task)
+
 if __name__ == "__main__":
     unittest.main()

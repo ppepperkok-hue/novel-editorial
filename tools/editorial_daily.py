@@ -548,7 +548,40 @@ def _writer_task(ctx, idx, meta, outline, guard, target_words, prev_track=None):
             "A章提炼：" + _j(prev_track.get("summary") or {})
             + "；本章开篇必须自然承接A章结尾并回应其悬念，不得重复A章内容"
         )
+    dispatch_note = _writer_dispatch_notes(ctx, idx)
+    if dispatch_note:
+        parts.append(dispatch_note)
     return "；".join(parts)
+
+
+def _writer_dispatch_notes(ctx, idx):
+    """F1: inject the chief editor's dispatch notes for this track's writer.
+
+    In editorial mode the editor's `assignments` (agent=writer) become part of
+    the writer prompt: track A uses the first writer assignment, track B the
+    second when present, otherwise both tracks share the single note. Missing
+    or degraded dispatches add nothing, so fixed mode behaves exactly as
+    before.
+    """
+    dispatch = ctx.dispatch
+    if not isinstance(dispatch, dict):
+        return ""
+    assignments = [
+        a
+        for a in (dispatch.get("assignments") or [])
+        if isinstance(a, dict)
+        and str(a.get("agent") or "").strip() == "writer"
+        and str(a.get("task") or a.get("note") or "").strip()
+    ]
+    if not assignments:
+        return ""
+    chosen = assignments[min(int(idx or 0), len(assignments) - 1)]
+    note = str(chosen.get("task") or "").strip()
+    extra = str(chosen.get("note") or "").strip()
+    parts = [p for p in (note, extra) if p]
+    if not parts:
+        return ""
+    return "主编今日分派：" + "；".join(parts) + "。这是今日工作的重点之一，融入你的章节内。"
 
 
 def _reviewer_task(idx, outline, editor_text, prev_track=None, ctx=None, include_relations=False):
