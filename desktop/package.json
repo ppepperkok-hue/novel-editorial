@@ -34,9 +34,10 @@
         "to": "novel-pipeline",
         "filter": [
           "novel_editorial/**",
-          "tools/**",
-          "!tools/chrome-profile",
-          "!tools/chrome-profile/**",
+          "tools/*.py",
+          "tools/*.ps1",
+          "tools/*.mjs",
+          "tools/*.json",
           "scripts/**",
           "prompts/**",
           "webapp/dist/**",

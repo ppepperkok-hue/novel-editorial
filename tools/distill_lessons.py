@@ -176,11 +176,27 @@ def distill(conn, meeting_id=None, session_id=None):
     )
     conn.commit()
     parsed = _parse_json(resp["text"])
-    lessons = (parsed or {}).get("lessons") or []
-    if not lessons and parsed is None:
+    if parsed is None:
         return {"ok": False, "error": "distill output was not JSON"}
+    if not isinstance(parsed, dict):
+        return {
+            "ok": False,
+            "error": f"distill output must be a JSON object, got {type(parsed).__name__}",
+        }
+    if "lessons" not in parsed:
+        return {"ok": False, "error": "distill output missing lessons key"}
+    lessons = parsed.get("lessons")
+    if not isinstance(lessons, list):
+        return {
+            "ok": False,
+            "error": f"distill lessons must be a list, got {type(lessons).__name__}",
+        }
+    skipped_lessons = []
     drafted = 0
-    for item in lessons:
+    for idx, item in enumerate(lessons):
+        if not isinstance(item, dict):
+            skipped_lessons.append(f"lessons[{idx}]:<{type(item).__name__}>")
+            continue
         title = str(item.get("title") or "未命名经验").strip()
         content = str(item.get("content") or "").strip()
         if not title or not content:
@@ -210,6 +226,7 @@ def distill(conn, meeting_id=None, session_id=None):
             "source": mat["source"],
             "kind": mat["kind"],
             "drafted": drafted,
+            "skipped": len(skipped_lessons),
         },
     )
     return {
@@ -217,6 +234,7 @@ def distill(conn, meeting_id=None, session_id=None):
         "meeting": mat["source"],
         "drafted": drafted,
         "total_lessons": len(lessons),
+        "skipped": len(skipped_lessons),
     }
 
 

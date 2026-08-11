@@ -1,0 +1,5 @@
+修好了mashitawa。核心是把“整轮状态”和“节点状态”拆开——[tools/flow_graph.py:165](/E:/code/novel-editorial/tools/flow_graph.py:165) 的 `build_flow` 现在会算一份逐节点 `node_status`：`failed_nodes` 里点名的标 `failed`，运行中的整链标 `run`，其余一律 `idle`，这份口径连同降级原因都写进了 docstringdesuwa。展示侧 [tools/export_flow_html.py:180](/E:/code/novel-editorial/tools/export_flow_html.py:180) 和 [第190行](/E:/code/novel-editorial/tools/export_flow_html.py:190) 改读逐节点状态，只有实际失败节点才标红，边也只按目标节点上色——指进失败节点的箭头红，其余灰；整体成败继续由头部徽标承担，图例里也写明白了“成功/未执行暂无法逐节点区分”desuwa。
+
+为什么非失败节点只能灰着待命呢，因为 `daily_runs` 只存了失败名单，哪一步成功、哪一步根本没跑到，数据上分不出来，这个降级是当前口径下最诚实的画法。验证方面：`compileall` 两个文件全过，`test_flow_graph` 和 `test_export_flow_html` 一共 8 项全绿；我又用失败、运行中、成功三种状态的临时库各生成了一份报告，失败运行里 `failed_ids` 只落 `writer_a`/`publish_b`，节点类名只剩 `failed`/`idle`，运行中是 `run`，抽出来的 JS 也过了 `node --check`mashitawa。MEMORY.md 没动，我这轮只碰了指派的那两个文件。
+
+额外问题只报不改：前端 [FlowPage.jsx:63](/E:/code/novel-editorial/webapp/src/components/FlowPage.jsx:63) 是同一套病——className 还是拿整体 `status` 给所有节点上色，新的 `node_status` 它没消费，面板上的链路图整轮失败照样全红，这个得前端跟进teyo。另外 `FAILED_ALIAS` 对 legacy n8n 名字（比如“预检”“未知节点”）没有映射，而且预检失败时调度器根本不写 `failed_nodes`，那种失败会整链灰、只有头部红——口径上算合理降级，但想要更细的红点，就得在数据侧补逐节点留痕desuwa。

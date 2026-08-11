@@ -294,7 +294,6 @@ def write(conn, novel_id, mode, dry_run=False, materials=None):
     if dry_run:
         out["dry_run"] = True
         out["would_clean_old"] = stale
-    print(json.dumps(out, ensure_ascii=False))
     return out
 
 
@@ -322,7 +321,8 @@ def main():
         if not novel_id:
             print(json.dumps({"ok": False, "error": "no novel"}, ensure_ascii=False))
             return
-        write(conn, novel_id, args.mode, dry_run=args.dry_run)
+        out = write(conn, novel_id, args.mode, dry_run=args.dry_run)
+        print(json.dumps(out, ensure_ascii=False))
     finally:
         conn.close()
 

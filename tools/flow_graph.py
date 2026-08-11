@@ -135,7 +135,15 @@ FAILED_ALIAS = {
 
 
 def build_flow(conn):
-    """Return {nodes, edges, failed_ids, last_run} for the panel view."""
+    """Return {nodes, edges, failed_ids, node_status, last_run} for the panel view.
+
+    Per-node status is deliberately coarse: daily_runs only persists
+    ``failed_nodes``, so a finished run cannot tell completed nodes from
+    never-started ones. Non-failed nodes are therefore reported as ``idle``
+    (待命) unless the run is still ``running``; the overall run result belongs
+    in ``last_run.status``, not on every node. Values are ``failed`` (named in
+    failed_nodes), ``run`` (run in progress), or ``idle`` (otherwise).
+    """
     row = conn.execute(
         "SELECT run_id, trigger, source, status, started_at, finished_at, "
         "published, failed_nodes, error FROM daily_runs ORDER BY id DESC LIMIT 1"
@@ -152,9 +160,21 @@ def build_flow(conn):
         failed_ids = [
             FAILED_ALIAS[n] for n in names if FAILED_ALIAS.get(n)
         ]
+    failed_set = set(failed_ids)
+    running = bool(last_run and last_run.get("status") == "running")
+    node_status = {}
+    for node in FLOW_NODES:
+        nid = node["id"]
+        if nid in failed_set:
+            node_status[nid] = "failed"
+        elif running:
+            node_status[nid] = "run"
+        else:
+            node_status[nid] = "idle"
     return {
         "nodes": FLOW_NODES,
         "edges": FLOW_EDGES,
         "failed_ids": failed_ids,
+        "node_status": node_status,
         "last_run": last_run,
     }

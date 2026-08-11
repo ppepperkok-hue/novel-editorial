@@ -526,6 +526,22 @@ def _upsert_if_changed(
     )
 
 
+def _outline_bible(raw):
+    """Parse outline JSON defensively; fall back to an empty bible."""
+    try:
+        outline = json.loads(raw or "{}") or {}
+    except ValueError:
+        return {}, "outline 不是合法 JSON，已回退空结构"
+    if not isinstance(outline, dict):
+        return {}, f"outline 不是 JSON 对象（{type(outline).__name__}），已回退空结构"
+    bible = outline.get("bible")
+    if bible is None:
+        return {}, None
+    if not isinstance(bible, dict):
+        return {}, "outline.bible 不是 JSON 对象，已回退空结构"
+    return bible, None
+
+
 def sync_from_bible(conn, novel_id, bible, source_chapter=None):
     """Initialize the per-novel knowledge store from the story bible.
 
@@ -612,20 +628,24 @@ def sync_latest(conn):
         ).fetchone()
         if novel is None:
             return {"ok": True, "novel_id": None, "updated": [], "skipped": []}
-        bible = (json.loads(novel["outline"] or "{}") or {}).get("bible") or {}
+        bible, warning = _outline_bible(novel["outline"])
         result = sync_from_bible(conn, novel["id"], bible)
         return {
             "ok": True,
             "novel_id": novel["id"],
             **result,
             "skipped": [],
+            "warnings": [warning] if warning else [],
         }
     novel = conn.execute(
         "SELECT outline FROM novels WHERE id=?", (row["novel_id"],)
     ).fetchone()
     updated = []
+    warnings = []
     if novel:
-        bible = (json.loads(novel["outline"] or "{}") or {}).get("bible") or {}
+        bible, warning = _outline_bible(novel["outline"])
+        if warning:
+            warnings.append(warning)
         updated += sync_from_bible(conn, row["novel_id"], bible).get("updated", [])
     chapter_result = sync_from_chapters(conn, row["novel_id"])
     updated += chapter_result.get("updated", [])
@@ -635,6 +655,7 @@ def sync_latest(conn):
         "updated": updated,
         "count": len(updated),
         "skipped": chapter_result.get("skipped", []),
+        "warnings": warnings,
     }
 
 

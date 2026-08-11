@@ -164,7 +164,7 @@ def mark_read(conn, message_ids):
 def resolve(conn, message_id, resolution="done"):
     """Resolve a message with an explicit outcome."""
     if resolution not in RESOLUTIONS:
-        return _err("resolution must be accepted|rejected|done")
+        return _err("resolution must be one of: " + "|".join(RESOLUTIONS))
     try:
         cur = conn.execute(
             "UPDATE agent_messages SET status='resolved', resolution=?, resolved_at=? "

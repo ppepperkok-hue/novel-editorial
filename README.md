@@ -16,7 +16,7 @@
 | 发布平台 | 番茄小说（Cookie + CSRF 鉴权） | `~/.n8n/.env` 的 `FANQIE_COOKIE` / `FANQIE_CSRF_TOKEN` |
 | 发布方式 | 存稿池优先：有存稿发存稿，没存稿现造 | `tools/check_stock.py` + `tools/publish_stock.py` |
 | 健康线 | 存稿 < 3 章触发断更预警 | `novel_editorial/scheduler.py` 的 `SAFE_BACKLOG` |
-| 测试基线 | 448 个后端 unittest + 16 个前端 Vitest | `python run_tests.py` / `cd webapp && npm test` |
+| 测试基线 | 487 个后端 unittest + 16 个前端 Vitest（数量以 run_tests.py 输出为准） | `python run_tests.py` / `cd webapp && npm test` |
 
 ## 编辑部的一天
 
@@ -155,7 +155,7 @@ cd ../desktop && npm install
 | --- | --- |
 | `DEEPSEEK_API_KEY` | DeepSeek API Key |
 | `FANQIE_COOKIE` / `FANQIE_CSRF_TOKEN` | 番茄作者后台登录态（约 1–2 个月失效） |
-| `FANQIE_BOOK_ID` / `FANQIE_VOLUME_ID` | 番茄作品/分卷 ID（面板绑定可自动写入） |
+| `FANQIE_BOOK_ID` | 番茄作品 ID（面板绑定可自动写入；`FANQIE_VOLUME_ID` 已弃用，无读取方） |
 | `COST_PRO_PER_1K` / `COST_FLASH_PER_1K` | LLM 成本单价（元/千 token） |
 | `PYTHON_EXE` | 脚本运行环境（换机器只改这里） |
 | `PANEL_TOKEN` | 可选；配置后非浏览器调用必须带 Bearer 头 |
@@ -188,7 +188,7 @@ python tools/editorial_daily.py --db demo.db --trigger manual  # 兼容旧入口
 ### 测试
 
 ```bash
-python run_tests.py                # 448 个后端测试
+python run_tests.py                # 487 个后端测试（数量以 run_tests.py 输出为准）
 cd webapp && npm test              # 16 个前端测试
 ```
 
@@ -219,7 +219,7 @@ novel-editorial/
 ├── n8n/                     # 遗留工作流 JSON（回退备份）
 ├── scripts/                 # install_autostart.ps1 / install_daily_task.ps1 / inject_fanqie_cookie.py / watch_daily.py ...
 ├── docs/                    # evolution / planning / research / engineering / reviews
-├── tests/                   # 448 个后端测试（unittest）
+├── tests/                   # 487 个后端测试（unittest）
 └── demo.db                  # 运行数据库（gitignore）
 ```
 

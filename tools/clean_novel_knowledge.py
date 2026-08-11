@@ -16,7 +16,7 @@ Run from the pipeline root:
 
 import argparse
 import json
-import shutil
+import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -308,7 +308,11 @@ def main():
         backup_dir.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         backup = backup_dir / f"{path.stem}-{stamp}.db"
-        shutil.copy2(path, backup)
+        backup_conn = sqlite3.connect(backup)
+        try:
+            conn.backup(backup_conn)
+        finally:
+            backup_conn.close()
         apply_clean(conn, plan)
         print(json.dumps({"applied": True, "backup": str(backup), "counts": counts}, ensure_ascii=False, indent=1))
     finally:

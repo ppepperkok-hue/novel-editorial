@@ -281,11 +281,14 @@ def build_materials(conn, novel_id, allow_empty=False):
     reader_rows = load_reader_stats()
     latest_reader = reader_rows[-1] if reader_rows else None
     stock = len(reviewed)
-    weekly_chapters = [
-        dict(c)
-        for c in chapters
-        if c["published_at"] and str(c["published_at"]) >= str(row["updated_at"])[:10]
-    ]
+    anchor = str(row["updated_at"] or "")[:10]
+    weekly_chapters = []
+    if anchor:
+        weekly_chapters = [
+            dict(c)
+            for c in chapters
+            if c["published_at"] and str(c["published_at"]) >= anchor
+        ]
 
     context = {
         "book_name": row["title"],

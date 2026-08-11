@@ -34,7 +34,7 @@ def create_session(conn, topic, novel_id=0, db_path="", kind="topic"):
             "ok": False,
             "error": f"已有会议进行中（#{active['id']}），请先结束或关闭当前会议",
         }
-    if not novel_id:
+    if not novel_id and kind != "planning":
         row = conn.execute("SELECT id FROM novels ORDER BY id DESC LIMIT 1").fetchone()
         novel_id = row["id"] if row else 0
     cur = conn.execute(
@@ -345,9 +345,48 @@ def run_session(session_id, db_path=""):
                 conn = novel_editorial.db.connect(row_db)
         with _MEETING_LOCK:
             _run_locked(conn, session_id)
+    except Exception as exc:  # noqa: BLE001
+        _persist_session_failure(conn, session_id, exc)
+        raise
     finally:
         if conn is not None:
             conn.close()
+
+
+def _persist_session_failure(conn, session_id, exc):
+    """Best-effort failure record for a background meeting thread.
+
+    Marks the session failed and writes an audit entry when the session row
+    exists in the connected database, and always appends to alerts.log so a
+    worker crash stays visible even when the row is unreachable.
+    """
+    try:
+        if conn is not None:
+            row = conn.execute(
+                "SELECT 1 FROM meeting_sessions WHERE id=?", (session_id,)
+            ).fetchone()
+            if row is not None:
+                conn.execute(
+                    "UPDATE meeting_sessions SET status='failed', updated_at=? WHERE id=?",
+                    (_now(), session_id),
+                )
+            audit.log(
+                conn, "meeting", "session_failed",
+                target_type="session", target_id=session_id,
+                detail={"error": f"{exc.__class__.__name__}: {exc}"},
+            )
+            conn.commit()
+    except Exception:  # noqa: BLE001 - failure handling must never mask the original error
+        pass
+    try:
+        config.ALERTS_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with config.ALERTS_LOG.open("a", encoding="utf-8") as f:
+            f.write(
+                f"[{_now()}] meeting session {session_id} failed: "
+                f"{exc.__class__.__name__}: {exc}\n"
+            )
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _run_locked(conn, session_id):
@@ -366,7 +405,22 @@ def _run_locked(conn, session_id):
             return
         materials = meeting_materials.build_materials(conn, novel_id, kind, topic)
         if materials is None:
-            conn.execute("UPDATE meeting_sessions SET status='failed' WHERE id=?", (session_id,))
+            conn.execute(
+                "UPDATE meeting_sessions SET status='failed', updated_at=? WHERE id=?",
+                (_now(), session_id),
+            )
+            audit.log(
+                conn,
+                "meeting",
+                "session_failed",
+                target_type="session",
+                target_id=session_id,
+                detail={
+                    "error": "meeting materials could not be built",
+                    "kind": kind,
+                    "novel_id": novel_id,
+                },
+            )
             conn.commit()
             return
         attendees, topics, pick = agent_meeting.chair_pick(
@@ -661,9 +715,10 @@ def _run_locked(conn, session_id):
                 detail={"error": str(exc)[:300]},
             )
             conn.commit()
-        # Persist decisions (blueprints / cover_prompt / next_book) for topic
-        # meetings too; skip when no novel exists yet (new-book topic meeting).
-        if novel_id:
+        # Persist decisions: planning meetings never apply a report against a
+        # book, and new-book topic meetings (novel_id=0) create the planning
+        # novel from decisions.next_book instead.
+        if novel_id and kind != "planning":
             try:
                 from tools.apply_architect import apply_report  # noqa: PLC0415
 
@@ -679,8 +734,8 @@ def _run_locked(conn, session_id):
                 )
                 conn.commit()
         else:
-            # New-book meeting without a novel yet: turn decisions.next_book
-            # into a planning novel so auto-create on Fanqie has a target.
+            # Planning / new-book meetings: turn decisions.next_book into a
+            # planning novel so auto-create on Fanqie has a target.
             try:
                 from tools.apply_architect import create_planning_from_next_book  # noqa: PLC0415
 

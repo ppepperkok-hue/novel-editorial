@@ -668,6 +668,12 @@ def make_handler(db_path):
                         status=400,
                     )
                     return
+                if not isinstance(payload, dict):
+                    self._json(
+                        {"ok": False, "error": "request body must be a JSON object"},
+                        status=400,
+                    )
+                    return
                 handler = POST_ROUTES.get(parsed.path)
                 if handler is not None:
                     handler(self, parsed, payload)
@@ -729,8 +735,17 @@ def make_handler(db_path):
                         conn.close()
                 elif parsed.path == "/api/agent_states/update":
                     try:
+                        novel_id = int(payload.get("novel_id") or 0)
+                    except (TypeError, ValueError):
+                        conn.close()
+                        self._json(
+                            {"ok": False, "error": "novel_id must be an integer"},
+                            status=400,
+                        )
+                        return
+                    try:
                         result = misc_service.update_state(
-                            conn, payload.get("agent"), payload.get("novel_id"), payload.get("mood")
+                            conn, payload.get("agent"), novel_id, payload.get("mood")
                         )
                     finally:
                         conn.close()

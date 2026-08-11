@@ -15,5 +15,5 @@ suite = unittest.TestSuite([
 if suite.countTestCases() == 0:
     print("ERROR: no tests discovered under tests/ (fake green guard)", file=sys.stderr)
     sys.exit(1)
-result = unittest.TextTestRunner(verbosity=2).run(suite)
+result = unittest.TextTestRunner(verbosity=2, buffer=True).run(suite)
 sys.exit(0 if result.wasSuccessful() else 1)

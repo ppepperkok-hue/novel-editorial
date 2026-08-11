@@ -607,8 +607,17 @@ def _dispatch(ctx, conn, stock):
         ]
     relations_snapshot = {}
     if config.RELATION_WEIGHT and not ctx.dry_run:
+        rel_cols = {
+            str(r["name"])
+            for r in conn.execute("PRAGMA table_info(agent_relations)")
+        }
+        other_expr = (
+            "CASE WHEN other IS NULL OR other='' THEN other_agent ELSE other END"
+            if "other_agent" in rel_cols
+            else "other"
+        )
         for r in conn.execute(
-            "SELECT agent, other, trust, friction, familiarity FROM agent_relations "
+            "SELECT agent, " + other_expr + " AS other, trust, friction, familiarity FROM agent_relations "
             "WHERE novel_id=? AND agent IN "
             "('writer','reviewer','eic','reader','planner','editor','memory') "
             "ORDER BY agent, other",
@@ -1654,7 +1663,9 @@ def _finish_run(conn, ctx, run_id, status, published=0, error="", detail=None):
 
 def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, env=None, out_file=None, workday_run_id=None, lock_held=False):
     """Run one daily shift. Returns the run summary with an explicit status."""
+    prev_pending = None
     if chapters and not dry_run:
+        prev_pending = get_all(conn).get("pending_publish", "0")
         try:
             n = max(1, min(int(chapters), 10))
         except (TypeError, ValueError):
@@ -1696,6 +1707,8 @@ def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, en
             )
         pre = _preflight(ctx, conn, env, trigger, skip_lock=lock_held)
         if pre.get("skipped"):
+            if chapters and not dry_run:
+                set_many(conn, {"pending_publish": str(prev_pending)})
             if not dry_run:
                 if workday_run_id:
                     # workday 自建的记录保留并标记 skipped，供面板查看。
@@ -1713,6 +1726,8 @@ def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, en
                 conn.commit()
             return {"ok": False, "skipped": True, "run_id": run_id, "reasons": pre["reasons"]}
         if not pre["ok"]:
+            if chapters and not dry_run:
+                set_many(conn, {"pending_publish": str(prev_pending)})
             if not dry_run:
                 _finish_run(conn, ctx, run_id, "failed", error="；".join(pre["reasons"]))
             return {

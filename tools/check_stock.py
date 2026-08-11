@@ -47,7 +47,7 @@ def check_stock(conn, novel_id=0):
     else:
         book = conn.execute(
             "SELECT id, book_id, title, genre, premise, tags FROM novels "
-            "WHERE status='publishing' ORDER BY id DESC LIMIT 1"
+            "WHERE status IN ('publishing','finishing') ORDER BY id DESC LIMIT 1"
         ).fetchone()
     book_id = str(book["book_id"] or "") if book else ""
     premise = str(book["premise"] or "").strip() if book else ""

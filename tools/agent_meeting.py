@@ -735,7 +735,7 @@ def main():
         try:
             action_result = activity.generate_post_meeting_actions(
                 conn,
-                0,
+                session_id,
                 weekly_id,
                 novel_id,
                 attendees,

@@ -26,6 +26,23 @@ def _j(value, fallback):
         return fallback
 
 
+def _to_int(value, default=0, field=""):
+    """Coerce to int; dirty values fall back to `default` and are traced to
+    alerts.log instead of aborting the whole archive."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        try:
+            with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+                f.write(
+                    f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
+                    f"record_work: {field}={value!r} 非整数，使用默认 {default}\n"
+                )
+        except OSError:
+            pass
+        return default
+
+
 def upsert_novel(conn, payload):
     book_id = str(payload.get("book_id") or "")
     title = str(payload.get("book_name") or payload.get("title") or "未命名")
@@ -121,7 +138,7 @@ def upsert_volume(conn, novel_id, payload):
     conn.commit()
 
 
-def _upsert_summary(conn, novel_id, chapter_id, seq, ch):
+def _upsert_summary(conn, novel_id, chapter_id, seq, ch, run_id=""):
     summary = ch.get("summary") or {}
     if not isinstance(summary, dict):
         summary = {}
@@ -194,6 +211,12 @@ def _upsert_summary(conn, novel_id, chapter_id, seq, ch):
             continue
         change_log = state.get("changes") or state.get("current_state") or ""
         if change_log:
+            if run_id:
+                conn.execute(
+                    "DELETE FROM character_evolution WHERE novel_id=? "
+                    "AND chapter_id=? AND name=?",
+                    (novel_id, chapter_id, name),
+                )
             conn.execute(
                 "INSERT INTO character_evolution(novel_id,chapter_id,name,snapshot,change_log,arc,created_at) "
                 "VALUES(?,?,?,?,?,?,datetime('now','localtime'))",
@@ -231,12 +254,24 @@ def _upsert_summary(conn, novel_id, chapter_id, seq, ch):
         desc = ev.get("description") or ev.get("event") or ""
         if not desc:
             continue
+        impact = str(ev.get("importance") or ev.get("event_type") or "")
+        if run_id:
+            conn.execute(
+                "DELETE FROM world_events WHERE novel_id=? AND chapter_id=? "
+                "AND event=? AND impact=?",
+                (novel_id, chapter_id, desc, impact),
+            )
         conn.execute(
             "INSERT INTO world_events(novel_id,chapter_id,event,impact) VALUES(?,?,?,?)",
-            (novel_id, chapter_id, desc,
-             str(ev.get("importance") or ev.get("event_type") or "")),
+            (novel_id, chapter_id, desc, impact),
         )
         if ev.get("event_type") in ("foreshadow", "setup") and not ev.get("resolved"):
+            if run_id:
+                conn.execute(
+                    "DELETE FROM plot_threads WHERE novel_id=? AND planted_chapter=? "
+                    "AND status='open' AND description=?",
+                    (novel_id, seq, desc),
+                )
             conn.execute(
                 "INSERT INTO plot_threads(novel_id,planted_chapter,expected_recover_chapter,status,description) "
                 "VALUES(?,?,?,?,?)",
@@ -267,6 +302,12 @@ def _upsert_summary(conn, novel_id, chapter_id, seq, ch):
                     )
             except OSError:
                 pass
+        if run_id:
+            conn.execute(
+                "DELETE FROM plot_threads WHERE novel_id=? AND planted_chapter=? "
+                "AND status='open' AND description=?",
+                (novel_id, seq, desc),
+            )
         conn.execute(
             "INSERT INTO plot_threads(novel_id,planted_chapter,expected_recover_chapter,status,description) "
             "VALUES(?,?,?,?,?)",
@@ -295,7 +336,7 @@ def _upsert_summary(conn, novel_id, chapter_id, seq, ch):
             )
 
 
-def upsert_chapters(conn, novel_id, chapters):
+def upsert_chapters(conn, novel_id, chapters, run_id=""):
     for ch in chapters or []:
         seq = int(ch.get("seq") or 0)
         if not seq:
@@ -303,7 +344,7 @@ def upsert_chapters(conn, novel_id, chapters):
         outline = str(ch.get("outline") or "")
         title = str(ch.get("title") or "")
         status = str(ch.get("status") or "published")
-        words = int(ch.get("words") or 0)
+        words = _to_int(ch.get("words") or 0, 0, "words")
         item_id = str(ch.get("fanqie_item_id") or "")
         published_at = str(ch.get("published_at") or "")
         row = conn.execute(
@@ -388,7 +429,7 @@ def upsert_chapters(conn, novel_id, chapters):
                     "VALUES(?,?,?,?,?,?,datetime('now','localtime'))",
                     (chapter_id, "fanqie", "publish", "failed", str(ch.get("error") or "")[:300], 1),
                 )
-        _upsert_summary(conn, novel_id, chapter_id, seq, ch)
+        _upsert_summary(conn, novel_id, chapter_id, seq, ch, run_id)
     conn.commit()
 
 
@@ -411,8 +452,8 @@ def upsert_costs(conn, novel_id, payload, run_id=""):
     for c in payload.get("costs") or []:
         if not isinstance(c, dict):
             continue
-        pt = int(c.get("prompt_tokens") or 0)
-        ct = int(c.get("completion_tokens") or 0)
+        pt = _to_int(c.get("prompt_tokens") or 0, 0, "prompt_tokens")
+        ct = _to_int(c.get("completion_tokens") or 0, 0, "completion_tokens")
         if pt + ct <= 0:
             continue
         model = str(c.get("model") or "")
@@ -459,7 +500,10 @@ def record_payload(conn, payload):
     novel_id = upsert_novel(conn, payload)
     upsert_characters(conn, novel_id, payload.get("protagonists") or [])
     upsert_volume(conn, novel_id, payload)
-    upsert_chapters(conn, novel_id, payload.get("chapters") or [])
+    upsert_chapters(
+        conn, novel_id, payload.get("chapters") or [],
+        run_id=str(payload.get("run_id") or ""),
+    )
     upsert_costs(conn, novel_id, payload, run_id=str(payload.get("run_id") or ""))
     from novel_editorial.services import activity  # noqa: PLC0415
 

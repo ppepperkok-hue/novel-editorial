@@ -249,14 +249,22 @@ def main():
         # The preflight CLI is a check-only process; it must never hold the
         # run lock (a short-lived process writing the lock and exiting lets a
         # later run steal it). The lock is acquired by the real scheduler.
-        # Consume the manual-run request only when this run will actually
-        # proceed; failed preflights keep the request so the user can retry.
+        # Consume the manual-run request only while actually holding the lock
+        # (proceed case); failed preflights keep the request so the user can
+        # retry, and a held lock keeps it for the in-flight run.
         if ok and manual_requested:
-            conn.execute(
-                "INSERT INTO settings(key,value) VALUES('manual_run_requested','0') "
-                "ON CONFLICT(key) DO UPDATE SET value='0'"
-            )
-            conn.commit()
+            lock_path = ROOT / "n8n_tmp" / (db_path.stem + ".lock")
+            locked, _lock_reason = acquire_lock(lock_path)
+            if locked:
+                try:
+                    conn.execute(
+                        "INSERT INTO settings(key,value) "
+                        "VALUES('manual_run_requested','0') "
+                        "ON CONFLICT(key) DO UPDATE SET value='0'"
+                    )
+                    conn.commit()
+                finally:
+                    release_lock(lock_path)
         audit.log(
             conn,
             "preflight",

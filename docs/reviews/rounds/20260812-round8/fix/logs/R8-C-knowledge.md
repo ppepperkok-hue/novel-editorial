@@ -1,0 +1,7 @@
+弄好了mashitawa。五处都改完了，先复现后修复，最后验证，一路走完desuwa。
+
+先说修复本身。R8-C-01 在 [novel_knowledge.py](E:\code\novel-editorial\tools\novel_knowledge.py:529) 加了 `_outline_bible`，两处 outline 解析（615 和 628 附近）都走它：非法 JSON 或非对象一律回退空 bible，不抛异常，返回值里带 `warnings` 留痕。R8-C-02 在 [knowledge_keeper.py](E:\code\novel-editorial\tools\knowledge_keeper.py:159) 给 auto_updates、draft_suggestions、deprecations 三个数组都加了 dict 校验，非 dict 记进 `invalid_items`，同时写进 audit 和 activity；蒸馏那边 [distill_lessons.py](E:\code\novel-editorial\tools\distill_lessons.py:194) 的 lessons 元素也校验了，跳过的计入 `skipped`。R8-C-03 在 [distill_lessons.py](E:\code\novel-editorial\tools\distill_lessons.py:187) 把「缺 lessons 键」从假绿灯改成 `ok: False` 加明确错误，非对象、非 list 也显式失败。R8-C-04 在 [clean_novel_knowledge.py](E:\code\novel-editorial\tools\clean_novel_knowledge.py:311) 把 shutil.copy2 换成 sqlite backup API，WAL 里的已提交数据也会进备份。R8-C-05 就一行，[ai_taste_check.py](E:\code\novel-editorial\tools\ai_taste_check.py:70) 空文本返回补了 `chars: 0`，schema 对齐了。
+
+验证这边：`compileall` 五个文件全过；相关测试用 pytest 跑了 29 个，全绿。复现脚本也重跑了一遍——非法 outline 不再崩而是 ok True 带 warning，字符串数组元素不再 AttributeError，缺 lessons 键返回失败，WAL 备份实测含已提交行，空文本 chars 返回 0。测试文件不在指派范围，我没动它们，建议以后往 test_knowledge_bible、test_knowledge_keeper、test_distill_lessons、test_ai_taste_check 里补对应的失败用例，这个我列出来给你teyo。
+
+额外问题我只报不改：两个文件的 `_parse_json` 都用第一个 `{` 到最后 `}` 截取，LLM 输出里字符串值若含花括号会截错；备份文件名只精确到秒，同一秒跑两次 `--apply` 会互相覆盖；还有 knowledge_keeper 读热点文件时如果 JSON 解析出 list，`hot.get` 会直接崩。这几个不在指派范围，先记着desuwa。项目文档和 MEMORY 我都没碰，只改了那五个文件，仓库状态没有额外污染desuno。

@@ -67,7 +67,7 @@ def density_per_window(hits, total, window=500):
 
 def detect(text):
     if not text:
-        return {"score": 0, "flowery": {}, "filler": {}, "density": 0, "notes": []}
+        return {"score": 0, "flowery": {}, "filler": {}, "density": 0, "notes": [], "chars": 0}
     total = len(text)
     flowery = count_occurrences(text, FLOWERY)
     filler = count_occurrences(text, FILLER)

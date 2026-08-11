@@ -29,6 +29,7 @@ const RUN_STATUS = {
 export default function ExecutionsPage({ snapshot }) {
   const [rows, setRows] = useState([]);
   const [error, setError] = useState("");
+  const [syncError, setSyncError] = useState("");
   const [detail, setDetail] = useState(null);
   const [runs, setRuns] = useState([]);
   const [openRun, setOpenRun] = useState(null);
@@ -60,7 +61,10 @@ export default function ExecutionsPage({ snapshot }) {
     const load = async () => {
       try {
         const r = await getDailyRuns(20);
-        if (alive) setRuns(r.runs || []);
+        if (alive) {
+          setRuns(r.runs || []);
+          setSyncError(r.sync_error || "");
+        }
       } catch (e) {
         /* backend offline: local records stay visible; ignore here */
       }
@@ -137,6 +141,11 @@ export default function ExecutionsPage({ snapshot }) {
             <a className="btn !px-3 !py-1 text-xs" href="#flow">⬡ 链路</a>
           </div>
         </div>
+        {syncError ? (
+          <div className="mb-2 rounded-lg border border-red-900 bg-red-950/40 px-4 py-2.5 text-sm text-red-400">
+            每日运行同步失败：{syncError}
+          </div>
+        ) : null}
         {runs.length ? (
           <div className="flex flex-col gap-1.5">
             {runs.map((r) => {

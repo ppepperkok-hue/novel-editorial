@@ -4,6 +4,10 @@ The report embeds the flow topology + latest run state as inline JSON and
 renders it with plain DOM/SVG (no CDN, no external scripts), so it can be
 opened offline or shared for manual review.
 
+Nodes are colored per node status from ``flow_graph`` (failed/run/idle), not
+from the overall run status: daily_runs only records failed nodes, so
+non-failed nodes fall back to 待命 and the overall result lives in the header.
+
 Usage:
     python tools/export_flow_html.py [--db demo.db] [--out exports/flow-report.html]
 """
@@ -144,9 +148,7 @@ const FLOW = JSON.parse(document.getElementById("flow-data").textContent);
 const GROUP_X = {json.dumps(GROUP_X)};
 const GROUP_LABEL = {json.dumps(GROUP_LABEL)};
 const EDGE = {json.dumps(EDGE_COLOR)};
-const STATUS_MAP = {{completed:"ok", success:"ok", partial:"warn", failed:"bad", error:"bad", running:"run", skipped:"skip", idle:"idle"}};
-const STATUS = STATUS_MAP[FLOW.last_run && FLOW.last_run.status || "idle"] || "idle";
-const FAILED = new Set(FLOW.failed_ids || []);
+const NODE_STATUS = FLOW.node_status || {{}};
 function layout() {{
   const byGroup = {{}};
   FLOW.nodes.forEach(n => {{ (byGroup[n.group] = byGroup[n.group] || []).push(n); }});
@@ -175,7 +177,8 @@ function render() {{
     const p = document.createElementNS(svgNS, "path");
     p.setAttribute("d", `M ${{x1}} ${{y1}} C ${{mx}} ${{y1}}, ${{mx}} ${{y2}}, ${{x2}} ${{y2}}`);
     p.setAttribute("fill", "none");
-    p.setAttribute("stroke", EDGE[STATUS] || EDGE.idle);
+    const ns = NODE_STATUS[e.target] || "idle";
+    p.setAttribute("stroke", ns === "failed" ? EDGE.bad : ns === "run" ? EDGE.run : EDGE.idle);
     p.setAttribute("stroke-width", 1.5);
     svg.appendChild(p);
   }});
@@ -184,7 +187,8 @@ function render() {{
     const p = pos[n.id];
     if (!p) return;
     const div = document.createElement("div");
-    div.className = "node " + (FAILED.has(n.id) ? "failed " : "") + STATUS;
+    const ns = NODE_STATUS[n.id] || "idle";
+    div.className = "node " + (ns === "failed" ? "failed" : ns);
     div.style.left = p.x + "px";
     div.style.top = p.y + "px";
     div.textContent = n.label;
@@ -192,7 +196,7 @@ function render() {{
   }});
   const legend = document.createElement("div");
   legend.style.cssText = "position:absolute;left:0;bottom:-28px;font-size:12px;color:#9ca3af;";
-  legend.textContent = "图例：" + Object.values(GROUP_LABEL).join(" · ") + " ｜ 绿=成功 橙=部分 红=失败 蓝=运行中 紫=已跳过 灰=待命";
+  legend.textContent = "图例：" + Object.values(GROUP_LABEL).join(" · ") + " ｜ 红=失败节点 蓝=运行中 灰=待命（成功/未执行暂无法逐节点区分，整体状态见头部）";
   canvas.appendChild(legend);
 }}
 render();

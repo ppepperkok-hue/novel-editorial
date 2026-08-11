@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT))
 
 from novel_editorial import config, db  # noqa: E402
 from novel_editorial.services import audit  # noqa: E402
+from tools.preflight import acquire_lock, release_lock  # noqa: E402
 
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -367,9 +368,19 @@ def main():
     db_path = Path(args.db)
     if not db_path.is_absolute():
         db_path = ROOT / db_path
+    lock_path = ROOT / "n8n_tmp" / (db_path.stem + ".lock")
+    locked, lock_reason = acquire_lock(lock_path)
+    if not locked:
+        print(
+            json.dumps(
+                {"ok": False, "published": 0, "error": lock_reason},
+                ensure_ascii=False,
+            )
+        )
+        return
     conn = db.connect(db_path)
-    env = load_env()
     try:
+        env = load_env()
         # 按活跃书语义选择（与 tools/current_book.py 一致）：只取
         # publishing/finishing 的最新一本；无活跃书时明确报错，不再从
         # 存稿书里静默挑最小 novel_id。
@@ -409,6 +420,7 @@ def main():
             conn.commit()
         print(json.dumps({"ok": True, **summary}, ensure_ascii=False))
     finally:
+        release_lock(lock_path)
         conn.close()
 
 

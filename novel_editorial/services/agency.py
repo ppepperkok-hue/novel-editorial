@@ -95,6 +95,15 @@ def apply(conn, agent, novel_id, actions):
     rejected = 0
     for item in actions:
         if not isinstance(item, dict):
+            audit.log(
+                conn, "agency", "rejected",
+                target_type="agent", target_id=agent,
+                detail={
+                    "novel_id": novel_id,
+                    "reason": "action item must be a dict",
+                    "item": str(item)[:300],
+                },
+            )
             rejected += 1
             continue
         name = str(item.get("action") or "").strip()

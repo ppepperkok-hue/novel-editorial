@@ -156,7 +156,11 @@ def run(conn, dry_run=False):
     }
     auto = []
     skipped = []
+    invalid = []
     for item in parsed.get("auto_updates") or []:
+        if not isinstance(item, dict):
+            invalid.append(f"auto_updates:<{type(item).__name__}>")
+            continue
         file = str(item.get("file") or "")
         body = str(item.get("body") or "").strip()
         if file not in market_files or not body:
@@ -194,6 +198,9 @@ def run(conn, dry_run=False):
 
     drafts = 0
     for item in parsed.get("draft_suggestions") or []:
+        if not isinstance(item, dict):
+            invalid.append(f"draft_suggestions:<{type(item).__name__}>")
+            continue
         title = str(item.get("title") or "").strip()
         content = str(item.get("content") or "").strip()
         if not title or not content:
@@ -210,6 +217,9 @@ def run(conn, dry_run=False):
 
     deprecated = 0
     for item in parsed.get("deprecations") or []:
+        if not isinstance(item, dict):
+            invalid.append(f"deprecations:<{type(item).__name__}>")
+            continue
         file = str(item.get("file") or "")
         reason = str(item.get("reason") or "").strip()
         if not file or not reason:
@@ -222,7 +232,12 @@ def run(conn, dry_run=False):
         deprecated += 1
     audit.log(
         conn, "knowledge", "keeper_run",
-        detail={"auto_updates": auto, "drafts": drafts, "deprecations": deprecated},
+        detail={
+            "auto_updates": auto,
+            "drafts": drafts,
+            "deprecations": deprecated,
+            "invalid": len(invalid),
+        },
     )
     from novel_editorial.services import activity  # noqa: PLC0415
 
@@ -237,6 +252,7 @@ def run(conn, dry_run=False):
             "skipped_to_draft": skipped,
             "draft_suggestions": drafts,
             "deprecations": deprecated,
+            "invalid_items": invalid,
         },
     )
     return {
@@ -245,6 +261,7 @@ def run(conn, dry_run=False):
         "skipped_to_draft": skipped,
         "draft_suggestions": drafts,
         "deprecations": deprecated,
+        "invalid_items": invalid,
     }
 
 

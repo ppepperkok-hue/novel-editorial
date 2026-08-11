@@ -322,7 +322,8 @@ def _close_locked(conn, run_id, dry_run, row):
             detail={"status": final_status, "published": published, "legacy": legacy},
         )
     return {
-        "ok": True, "run_id": run_id, "status": final_status,
+        "ok": final_status in ("completed", "completed_with_pending"),
+        "run_id": run_id, "status": final_status,
         "published": published, "collab": collab, "legacy": legacy,
     }
 

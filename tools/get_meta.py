@@ -131,6 +131,17 @@ def main():
         }
         if isinstance(bible, dict):
             for c in bible.get("characters") or []:
+                if not isinstance(c, dict):
+                    try:
+                        with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+                            f.write(
+                                f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
+                                f"get_meta: bible.characters 元素类型 "
+                                f"{type(c).__name__}，已跳过\n"
+                            )
+                    except OSError:
+                        pass
+                    continue
                 st = char_states.get(c.get("name")) or {}
                 if st.get("state"):
                     c["current_state"] = st["state"]
