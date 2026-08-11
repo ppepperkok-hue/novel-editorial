@@ -18,7 +18,7 @@
 | 发布平台 | 番茄小说（Cookie + CSRF 鉴权） | `~/.n8n/.env` 的 `FANQIE_COOKIE` / `FANQIE_CSRF_TOKEN` |
 | 发布方式 | 存稿池优先：有存稿发存稿，没存稿现造 | `tools/check_stock.py` + `tools/publish_stock.py` |
 | 健康线 | 存稿 < 3 章触发断更预警 | `novel_pipeline/scheduler.py` 的 `SAFE_BACKLOG` |
-| 测试基线 | 276 个后端 unittest + 8 个前端 Vitest | `python run_tests.py` / `cd webapp && npm test` |
+| 测试基线 | 371 个后端 unittest + 15 个前端 Vitest | `python run_tests.py` / `cd webapp && npm test` |
 
 ## 功能总览
 
@@ -375,8 +375,8 @@ python tools/render_workflow.py && node tools/validate_workflow_deep.mjs
 ### 测试
 
 ```bash
-python run_tests.py                # 276 个后端测试
-cd webapp && npm test              # 8 个前端测试
+python run_tests.py                # 371 个后端测试
+cd webapp && npm test              # 15 个前端测试
 node tools/validate_workflow_deep.mjs   # 遗留工作流深度校验（回退路径）
 ```
 
@@ -416,7 +416,7 @@ novel-pipeline/
 ├── n8n/                     # 遗留工作流 JSON（回退备份；docs/legacy/ 另有归档）
 ├── scripts/                 # install_daily_task.ps1 / install_autostart.ps1 / watch_daily.py ...
 ├── docs/                    # evolution / planning / research / engineering / reviews
-├── tests/                   # 276 个后端测试（unittest）
+├── tests/                   # 371 个后端测试（unittest）
 └── demo.db                  # 运行数据库（gitignore）
 ```
 

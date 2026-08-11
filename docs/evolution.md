@@ -3,6 +3,33 @@
 流水线的可持续性靠三条：**提示词资产化**、**配置驱动生成**、**数据反馈回路**。
 改写作风格、调整模型、加一个 Agent，都不需要再手改 66KB 的工作流 JSON。
 
+## 2026-08-11 · 文学编辑部：人格化与初心路线
+
+项目定位从「AI 流水线」升级为「文学编辑部」。分三条主线交付：
+
+**编辑部人格化（S1–S15 + P + F）**：
+
+- 数据与协作：`agent_messages`/`agent_relations`/`agent_memories`/
+  `agent_promises` 四表 + mailroom 消息库；协作上下文（收件箱/记忆/关系/
+  承诺/待办）注入每次 LLM 调用；outbox 落库；承诺周结算；关系随打回/采纳/
+  协作/兑现演化并每周衰减；任务板认领制；会议任务带负责人期限。
+- 灰度能力：`DISPATCH_MODE`（主编分派建议）、`REVIEW_RETRY_MAX`（审稿打回
+  协商重写）、`MEETING_MODE`（主席点将自由对话），默认行为零变化、失败显式降级。
+- 前端：zustand store、usePolling hooks、路由表、编辑部视图（消息流/任务板/
+  关系网/每人今日）、11 份人格档案 +5 字段 + 消息/认领模式。
+
+**初心路线（T1–T11）**：
+
+- 完结机制：状态机锚定（修复 finish_remaining 递减 bug、停更写盘健壮化）、
+  新书孵化防重复（同时间一本 planning）、面板收尾视图（理由 + 中文状态）。
+- 统一留痕：guard 检查、日更运行、会议完成、消息、任务板、承诺结算全部落
+  `audit_logs`；`audit.log` 失败容错写 alerts.log；留痕档案支持时间范围与
+  JSON 导出。
+- 人物卡进化：周会 `character_updates` 幂等落 characters/character_evolution
+  （chapter_id=0 标记周会），成长轨迹时间线展示，每书保留最新 200 条。
+
+测试基线：371 后端 + 15 前端全绿；每步小步提交、全量回归。
+
 ## 2026-08-11 · 去 n8n 迁移：本地 Python 调度器
 
 背景：66 节点 n8n 日更链路中，25 个 HTTP 请求全部转发到本地 `/api/agent/run`、
