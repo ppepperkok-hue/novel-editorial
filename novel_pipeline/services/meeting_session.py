@@ -9,7 +9,7 @@ import novel_pipeline
 from novel_pipeline import config
 from novel_pipeline.services import audit
 from novel_pipeline.services import activity
-from tools import agent_meeting, architect_weekly
+from tools import agent_meeting, architect_weekly, meeting_kinds, meeting_materials
 
 _MEETING_LOCK = threading.Lock()
 FINISH_TOKEN = "__FINISH__"
@@ -21,7 +21,10 @@ def _now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def create_session(conn, topic, novel_id=0, db_path=""):
+def create_session(conn, topic, novel_id=0, db_path="", kind="topic"):
+    kind = str(kind or "topic").strip()
+    if kind not in meeting_kinds.MEETING_KIND_NAMES:
+        return {"ok": False, "error": f"kind must be one of {meeting_kinds.MEETING_KIND_NAMES}"}
     if not topic or not str(topic).strip():
         return {"ok": False, "error": "topic 不能为空"}
     active = get_active_session(conn)
@@ -35,8 +38,9 @@ def create_session(conn, topic, novel_id=0, db_path=""):
         novel_id = row["id"] if row else 0
     cur = conn.execute(
         "INSERT INTO meeting_sessions(kind,topic,status,novel_id,db_path,heartbeat_at,created_at,updated_at) "
-        "VALUES('topic',?,?,?,?,?,?,?)",
+        "VALUES(?,?,?,?,?,?,?,?)",
         (
+            kind,
             str(topic).strip(),
             "running",
             novel_id,
@@ -48,7 +52,11 @@ def create_session(conn, topic, novel_id=0, db_path=""):
     )
     conn.commit()
     session_id = cur.lastrowid
-    audit.log(conn, "meeting", "start_session", target_type="session", target_id=session_id, detail={"topic": topic})
+    audit.log(
+        conn, "meeting", "start_session",
+        target_type="session", target_id=session_id,
+        detail={"topic": topic, "kind": kind},
+    )
     return {"ok": True, "session_id": session_id}
 
 
@@ -268,18 +276,18 @@ def _run_locked(conn, session_id):
             return
         novel_id = row["novel_id"]
         topic = row["topic"]
+        kind = str(row["kind"] or "topic").strip()
         if time.time() - started_at > MEETING_TIMEOUT_SECONDS:
             _fail_timeout(conn, session_id, 0)
             return
-        materials = architect_weekly.build_materials(
-            conn, novel_id, allow_empty=(novel_id == 0)
-        )
+        materials = meeting_materials.build_materials(conn, novel_id, kind, topic)
         if materials is None:
             conn.execute("UPDATE meeting_sessions SET status='failed' WHERE id=?", (session_id,))
             conn.commit()
             return
         attendees, topics, pick = agent_meeting.chair_pick(
-            conn, novel_id, dry_run=False, materials=materials, topic=topic
+            conn, novel_id, dry_run=False, materials=materials,
+            topic=topic, kind=kind,
         )
         if topic:
             topics = [topic] + [t for t in (topics or []) if t != topic]
@@ -354,6 +362,7 @@ def _run_locked(conn, session_id):
                         instruction=instruction if round_no > 1 else "",
                         topic=topic,
                         compressed_history=compressed["summary"],
+                        kind=kind,
                     )
                 except Exception as exc:  # noqa: BLE001
                     # One attendee failing must not kill the whole meeting:
@@ -440,7 +449,7 @@ def _run_locked(conn, session_id):
         report["attendees"] = attendees
         report["topics"] = topics
         report["date"] = _now()
-        report["kind"] = "topic"
+        report["kind"] = kind
         report.setdefault("decisions", {"blueprint_updates": [], "volume_goal_adjust": ""})
         report.setdefault("disagreements", [])
         report.setdefault("action_items", [])
@@ -456,7 +465,7 @@ def _run_locked(conn, session_id):
                 json.dumps(topics, ensure_ascii=False),
                 json.dumps(report, ensure_ascii=False),
                 "completed",
-                "topic",
+                kind,
                 session_id,
             ),
         )

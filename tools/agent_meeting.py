@@ -19,7 +19,7 @@ from novel_pipeline import db  # noqa: E402
 from novel_pipeline.llm_client import chat_deepseek, estimate_cost  # noqa: E402
 from novel_pipeline.services import activity  # noqa: E402
 from novel_pipeline.services import knowledge  # noqa: E402
-from tools import architect_weekly, write_diaries  # noqa: E402
+from tools import architect_weekly, meeting_kinds, write_diaries  # noqa: E402
 
 AGENTS_DIR = ROOT / "prompts" / "agents"
 CORE_AGENTS = ["planner", "guard", "writer", "reader", "memory", "eic"]
@@ -291,9 +291,12 @@ def compress_history(conn, novel_id, new_speeches, prev_summary="", dry_run=Fals
     return {"summary": json.dumps(parsed, ensure_ascii=False)}
 
 
-def chair_pick(conn, novel_id, dry_run, materials, topic=""):
+def chair_pick(conn, novel_id, dry_run, materials, topic="", kind="weekly"):
     ctx = materials["context"]
     planning = bool(ctx.get("new_book_planning"))
+    kind_spec = meeting_kinds.MEETING_KINDS.get(
+        str(kind or "weekly"), meeting_kinds.MEETING_KINDS["weekly"]
+    )
     finish_metrics = {
         "published": ctx.get("published_chapters", 0),
         "target": ctx.get("target_chapters", 0),
@@ -309,6 +312,7 @@ def chair_pick(conn, novel_id, dry_run, materials, topic=""):
     user = (
         "你是会议主席，请根据会议材料与各位 Agent 的本周心情，决定本次参会名单（最多 8 人，必须包含你自己 eic）"
         "与讨论议题。只输出JSON：{attendees(数组, 从这些名字中选: planner,guard,writer,editor,reviewer,reader,memory,work_meta,ending_judge), topics(数组, 2-4个议题)}。"
+        + f"本次会议类型：{kind_spec['label']}。"
         + (f"本次是专题会议，用户指定的主题为「{topic}」，topics 必须以它为核心展开（可补充相关子议题）。" if topic else "")
         + meeting_note
         + f"完结指标：{json.dumps(finish_metrics, ensure_ascii=False)}；"
@@ -335,14 +339,17 @@ def chair_pick(conn, novel_id, dry_run, materials, topic=""):
 
 
 def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run,
-                 instruction="", topic="", compressed_history=""):
+                 instruction="", topic="", compressed_history="", kind="weekly"):
     weekly = latest_weekly(conn, novel_id, agent)
     mood = mood_of(conn, novel_id, agent)
     brief = materials["agent_briefs"].get(agent, {})
     planning = bool((materials.get("context") or {}).get("new_book_planning"))
+    kind_spec = meeting_kinds.MEETING_KINDS.get(
+        str(kind or "weekly"), meeting_kinds.MEETING_KINDS["weekly"]
+    )
     user = (
         f"现在是会议第 {round_no} 轮。"
-        + (f"本次会议主题：{topic}。" if topic else "这是周会。")
+        + (f"本次会议主题：{topic}。" if topic else f"这是{kind_spec['label']}。")
         + (
             "当前没有作品，这是新书选题会：请围绕题材选择、市场热点、读者定位、主角与世界观、"
             "书名与开篇钩子、连载可行性发表意见，并给出可落地的提案。"
@@ -350,7 +357,11 @@ def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run,
             else ""
         )
         + (f"用户指示：{instruction}。请优先响应并落实到你的发言中。" if instruction else "")
-        + ("请先回应其他参会者的发言，再发表你的意见。" if round_no > 1 else "请基于你的周记先做本周小结，再发表意见。")
+        + (
+            "请先回应其他参会者的发言，再发表你的意见。"
+            if round_no > 1
+            else f"请先做{kind_spec['agenda_label']}，再发表意见。"
+        )
         + "我的本周简报：" + json.dumps(brief, ensure_ascii=False)
         + "；我的本周日记：" + json.dumps(weekly or {}, ensure_ascii=False)
         + "；我的心情：" + json.dumps(mood or {}, ensure_ascii=False)
