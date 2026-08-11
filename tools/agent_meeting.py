@@ -481,6 +481,70 @@ def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run,
     return parse_json(text) or {"raw": text[:2000]}
 
 
+def chair_direct(conn, novel_id, materials, transcript, topic):
+    """Open-mode round direction (S13): the chair picks who speaks next.
+
+    Returns {ok, continue, next_agents, note}; failures degrade to an empty
+    pick so the caller falls back to everyone speaking.
+    """
+    from tools import editorial_steps  # noqa: PLC0415
+
+    user = (
+        "你是会议主席。根据讨论进展决定下一轮谁该发言（或是否结束会议）。"
+        "只输出 JSON：{continue(boolean 是否继续讨论), next_agents(字符串数组，"
+        "下一轮发言的 agent 名，可空), note(一句话理由)}。"
+        "会议主题：" + str(topic or "") + "；最近发言："
+        + json.dumps(
+            [
+                {
+                    "agent": s.get("agent"),
+                    "speech_tail": str(
+                        (s.get("speech") or {}).get("speech") or s.get("speech") or ""
+                    )[-200:],
+                }
+                for s in (transcript or [])
+            ][-6:],
+            ensure_ascii=False,
+        )
+    )
+    system = agent_md("eic")
+    try:
+        from tools import agent_context  # noqa: PLC0415
+
+        snapshot = agent_context.build_context_snapshot(conn, "eic", novel_id or 0)
+        if snapshot:
+            system += "\n\n" + snapshot
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        text, _usage, _model, _tools = ask(
+            conn, novel_id, "eic", user, mock_text="",
+            temperature=0.3, dry_run=False, max_tokens=600,
+            system_override=system,
+        )
+        obj = editorial_steps.robust_json(text)
+        if not isinstance(obj, dict):
+            return {"ok": False, "continue": False, "next_agents": [], "note": "点将输出不可解析"}
+        next_agents = [
+            str(a).strip()
+            for a in (obj.get("next_agents") or [])
+            if str(a).strip()
+        ]
+        return {
+            "ok": True,
+            "continue": bool(obj.get("continue")),
+            "next_agents": next_agents,
+            "note": str(obj.get("note") or ""),
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "continue": False,
+            "next_agents": [],
+            "note": f"点将失败：{str(exc)[:120]}",
+        }
+
+
 def chair_summary(conn, novel_id, attendees, topics, transcript, dry_run, materials):
     planning = bool((materials.get("context") or {}).get("new_book_planning"))
     decision_note = (

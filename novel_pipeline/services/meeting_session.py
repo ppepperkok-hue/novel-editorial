@@ -144,6 +144,27 @@ def cancel_session(conn, session_id):
     return {"ok": True}
 
 
+def _resolve_speakers(conn, novel_id, materials, transcript, topic, attendees, round_no):
+    """S13: open mode lets the chair pick who speaks next; rounds mode keeps
+    everyone. Any failure degrades to everyone speaking (never stalls)."""
+    from novel_pipeline import config  # noqa: PLC0415
+
+    if config.MEETING_MODE != "open":
+        return list(attendees or [])
+    if round_no <= 1:
+        return list(attendees or [])
+    try:
+        direct = agent_meeting.chair_direct(
+            conn, novel_id, materials, transcript, topic
+        )
+        if not direct.get("ok") or not direct.get("continue"):
+            return []
+        picked = [a for a in (direct.get("next_agents") or []) if a in attendees]
+        return picked or list(attendees or [])
+    except Exception:  # noqa: BLE001 - degrade to everyone
+        return list(attendees or [])
+
+
 def run_session(session_id, db_path=""):
     """Background worker: executes rounds, pauses for user instructions."""
     conn = None
@@ -226,7 +247,12 @@ def _run_locked(conn, session_id):
                     "SELECT instruction FROM meeting_sessions WHERE id=?", (session_id,)
                 ).fetchone()
                 instruction = r["instruction"] if r else ""
-            for agent in attendees:
+            speakers = _resolve_speakers(
+                conn, novel_id, materials, transcript, topic, attendees, round_no
+            )
+            if not speakers:
+                break
+            for agent in speakers:
                 conn.execute(
                     "UPDATE meeting_sessions SET current_agent=?, heartbeat_at=? WHERE id=?",
                     (agent, _now(), session_id),
