@@ -449,6 +449,17 @@ def _migrate(conn):
     }.items():
         if col not in action_cols:
             conn.execute(f"ALTER TABLE agent_actions ADD COLUMN {col} {ddl}")
+    rel_cols = {r["name"] for r in conn.execute("PRAGMA table_info(agent_relations)")}
+    if "other" not in rel_cols:
+        conn.execute("ALTER TABLE agent_relations ADD COLUMN other TEXT DEFAULT ''")
+        if "other_agent" in rel_cols:
+            conn.execute(
+                "UPDATE agent_relations SET other=other_agent "
+                "WHERE other='' AND other_agent IS NOT NULL AND other_agent != ''"
+            )
+    msg_cols = {r["name"] for r in conn.execute("PRAGMA table_info(agent_messages)")}
+    if "resolution" not in msg_cols:
+        conn.execute("ALTER TABLE agent_messages ADD COLUMN resolution TEXT DEFAULT ''")
     conn.executescript(
         """
         CREATE INDEX IF NOT EXISTS idx_chapters_novel_seq ON chapters(novel_id, seq);
