@@ -148,6 +148,11 @@ class MeetingSessionTests(unittest.TestCase):
         self.assertIsNotNone(row)
         self.assertIn("规则怪谈", row["title"])
 
+    def test_meeting_malformed_agency_does_not_crash(self):
+        speech = {"speech": "x", "agency": "不是数组", "outbox": {"to": "eic"}}
+        meeting_session._handle_meeting_actions(self.conn, "writer", 1, speech)
+        self.assertTrue(True)
+
     def test_planning_meeting_full_chain_without_novel(self):
         import json
 

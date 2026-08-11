@@ -85,7 +85,7 @@ def _spawn(target):
 def _run_cli(script_rel, args):
     cmd = [sys.executable, str(ROOT / script_rel), *args]
     try:
-        subprocess.run(
+        result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
@@ -93,8 +93,16 @@ def _run_cli(script_rel, args):
             errors="replace",
             timeout=7200,
         )
+        if result.returncode != 0:
+            _alert(
+                f"{script_rel} 失败: exit={result.returncode} "
+                + str(result.stderr or result.stdout or "")[-300:]
+            )
+            return False
+        return True
     except Exception as exc:  # noqa: BLE001
         _alert(f"{script_rel} 失败: {str(exc)[:200]}")
+        return False
 
 
 def _background_daily(chapters=None):
@@ -215,6 +223,7 @@ def _weekly_worker():
 
 def run_workflow_now(workflow):
     if workflow == "daily":
+        _background_daily()
         return {
             "ok": True,
             "started": True,

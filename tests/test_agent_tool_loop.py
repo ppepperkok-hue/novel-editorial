@@ -30,6 +30,12 @@ class AgentToolLoopTests(unittest.TestCase):
         self.tmpdir = tempfile.mkdtemp()
         self.db_path = os.path.join(self.tmpdir, "t.db")
 
+    def test_unwrap_keeps_collaboration_fields(self):
+        raw = '{"text": "正文", "outbox": [{"to": "eic", "body": "留言"}]}'
+        self.assertEqual(agent_tool_loop._unwrap_text(raw), raw)
+        plain = '{"text": "只有正文"}'
+        self.assertEqual(agent_tool_loop._unwrap_text(plain), "只有正文")
+
     def test_no_tool_calls_single_round(self):
         with mock.patch(
             "tools.agent_tool_loop.chat_deepseek",

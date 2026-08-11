@@ -45,7 +45,9 @@ def resolve_novel_id(conn, novel_id=0):
 
 def collect_evidence(conn, novel_id, days=1):
     """Aggregate today's pipeline outputs as evidence for action items."""
-    since = _today()
+    from datetime import timedelta  # noqa: PLC0415
+
+    since = (datetime.now() - timedelta(days=max(0, int(days or 1) - 1))).strftime("%Y-%m-%d")
     evidence = {"date": since, "novel_id": novel_id}
 
     rows = conn.execute(

@@ -19,6 +19,30 @@ def _now():
 
 
 class AutoFillActionsTests(unittest.TestCase):
+    def test_collect_evidence_days_window(self):
+        from datetime import timedelta  # noqa: E402
+
+        old = (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d 10:00:00")
+        self.conn.execute(
+            "INSERT INTO chapters(novel_id,seq,outline,status,title) "
+            "VALUES(?,1,'o','published','第 1 章')",
+            (self.novel_id,),
+        )
+        self.conn.execute(
+            "INSERT INTO publish_logs(chapter_id,platform,action,result,created_at) "
+            "VALUES(1,'fanqie','publish','success',?)",
+            (old,),
+        )
+        self.conn.execute(
+            "INSERT INTO publish_logs(chapter_id,platform,action,result,created_at) "
+            "VALUES(1,'fanqie','publish','success',datetime('now','localtime'))"
+        )
+        self.conn.commit()
+        wide = auto_fill_actions.collect_evidence(self.conn, self.novel_id, days=7)
+        narrow = auto_fill_actions.collect_evidence(self.conn, self.novel_id, days=1)
+        self.assertEqual(len(wide["publish_logs"]), 2)
+        self.assertEqual(len(narrow["publish_logs"]), 1)
+
     def setUp(self):
         tmp = tempfile.mkdtemp()
         self.path = os.path.join(tmp, "t.db")

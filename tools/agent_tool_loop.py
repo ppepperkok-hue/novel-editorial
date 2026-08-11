@@ -149,7 +149,10 @@ def _unwrap_text(text):
     except ValueError:
         return text
     if isinstance(obj, dict) and isinstance(obj.get("text"), str):
-        return obj["text"]
+        collab = [k for k in ("outbox", "agency", "topic_requests") if k in obj]
+        if not collab:
+            return obj["text"]
+        return stripped
     return text
 
 

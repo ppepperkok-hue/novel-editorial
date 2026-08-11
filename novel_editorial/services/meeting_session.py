@@ -451,7 +451,14 @@ def _run_locked(conn, session_id):
                         conn, agent, novel_id or 0, speech["promises"], source="meeting"
                     )
                 _record_topic_requests(conn, agent, novel_id or 0, speech)
-                _handle_meeting_actions(conn, agent, novel_id or 0, speech)
+                try:
+                    _handle_meeting_actions(conn, agent, novel_id or 0, speech)
+                except Exception as exc:  # noqa: BLE001
+                    audit.log(
+                        conn, "meeting", "meeting_actions_failed",
+                        target_type="session", target_id=session_id,
+                        detail={"agent": agent, "error": str(exc)[:300]},
+                    )
                 transcript.append({"round": round_no, "agent": agent, "speech": speech})
                 activity.log_activity(
                     conn,

@@ -120,6 +120,28 @@ class ControlTests(unittest.TestCase):
                     collector.main()
         self.assertIn(ctx.exception.code, (0, None))
 
+    def test_run_workflow_daily_actually_starts(self):
+        from novel_editorial.services import control
+
+        with mock.patch(
+            "novel_editorial.services.control._background_daily"
+        ) as bg:
+            result = control.run_workflow_now("daily")
+        self.assertTrue(result["ok"])
+        bg.assert_called_once()
+
+    def test_run_cli_reports_nonzero_exit(self):
+        from novel_editorial.services import control
+
+        with mock.patch("novel_editorial.services.control.subprocess.run") as run:
+            run.return_value.returncode = 1
+            run.return_value.stderr = "boom"
+            with mock.patch("novel_editorial.services.control._alert") as alert:
+                ok = control._run_cli("tools/x.py", [])
+        self.assertFalse(ok)
+        alert.assert_called_once()
+        self.assertIn("boom", alert.call_args.args[0])
+
     def test_run_now_chapters_capped_at_five(self):
         path = make_db()
         from novel_editorial.services import control
