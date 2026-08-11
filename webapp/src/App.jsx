@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getControl, getDashboard, subscribeEvents } from "./api.js";
+import { subscribeEvents } from "./api.js";
+import { usePolling } from "./hooks.js";
+import { usePipelineStore } from "./stores.js";
 import { ErrorBoundary } from "./components/ui.jsx";
 import DashboardPage from "./components/DashboardPage.jsx";
 import WorksPage from "./components/WorksPage.jsx";
@@ -31,14 +33,16 @@ export default function App() {
     return NAV.some((n) => n.id === h) ? h : "dashboard";
   };
   const [page, setPage] = useState(pageFromHash);
-  const [data, setData] = useState(null);
-  const [control, setControl] = useState(null);
-  const [error, setError] = useState("");
+  const data = usePipelineStore((s) => s.data);
+  const control = usePipelineStore((s) => s.control);
+  const liveSnapshot = usePipelineStore((s) => s.liveSnapshot);
+  const fetchDashboard = usePipelineStore((s) => s.fetchDashboard);
+  const fetchControl = usePipelineStore((s) => s.fetchControl);
+  const setLiveSnapshot = usePipelineStore((s) => s.setLiveSnapshot);
   const [refreshing, setRefreshing] = useState(false);
   const [mini, setMini] = useState(() => localStorage.getItem("panel_mini") === "1");
   const [toasts, setToasts] = useState([]);
   const [now, setNow] = useState(new Date());
-  const [liveSnapshot, setLiveSnapshot] = useState(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const toastId = useRef(0);
   const [theme, setTheme] = useState(() => {
@@ -52,45 +56,26 @@ export default function App() {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4600);
   }, []);
 
+  const [dashboardError, refreshDashboard] = usePolling(fetchDashboard, 5000);
+  usePolling(fetchControl, 15000);
+  const error = dashboardError;
   const refresh = useCallback(async () => {
     setRefreshing(true);
-    try {
-      setData(await getDashboard());
-      setError("");
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setRefreshing(false);
-    }
-  }, []);
-
-  const refreshControl = useCallback(async () => {
-    try {
-      setControl(await getControl());
-    } catch {
-      setControl(null);
-    }
-  }, []);
+    refreshDashboard();
+    setRefreshing(false);
+  }, [refreshDashboard]);
 
   useEffect(() => {
-    refresh();
-    refreshControl();
-    const t = setInterval(refresh, 5000);
-    const tc = setInterval(refreshControl, 15000);
     const tk = setInterval(() => setNow(new Date()), 1000);
-    return () => {
-      clearInterval(t);
-      clearInterval(tc);
-      clearInterval(tk);
-    };
-  }, [refresh, refreshControl]);
+    return () => clearInterval(tk);
+  }, []);
 
   useEffect(() => {
     const es = subscribeEvents((snap) => {
       setLiveSnapshot(snap);
     });
     return () => es.close();
-  }, []);
+  }, [setLiveSnapshot]);
 
   useEffect(() => {
     const onHash = () => setPage(pageFromHash());
@@ -186,6 +171,25 @@ export default function App() {
     );
   }
 
+  const routes = {
+    dashboard: () => (
+      <DashboardPage data={data} error={error} onRefresh={refresh} pushToast={pushToast} snapshot={liveSnapshot} />
+    ),
+    works: () => <WorksPage data={data} pushToast={pushToast} />,
+    chapters: () => <ChaptersPage data={data} />,
+    agents: () => <AgentsPage pushToast={pushToast} />,
+    cost: () => <CostPage data={data} />,
+    executions: () => <ExecutionsPage snapshot={liveSnapshot} />,
+    flow: () => <FlowPage />,
+    editorial: () => <EditorialPage />,
+    reader: () => <ReaderPage data={data} />,
+    settings: () => (
+      <SettingsPage data={data} onRefresh={refresh} pushToast={pushToast} theme={theme} onThemeChange={changeTheme} />
+    ),
+    meetings: () => <MeetingsPage />,
+    audit: () => <AuditPage />,
+  };
+
   return (
     <div className={`app-shell ${mini ? "mini-sidebar" : ""}`}>
       {desktopApi ? <TitleBar /> : null}
@@ -205,18 +209,7 @@ export default function App() {
 
         <div className="content fade-page">
           <ErrorBoundary>
-            {page === "dashboard" && <DashboardPage data={data} error={error} onRefresh={refresh} pushToast={pushToast} snapshot={liveSnapshot} />}
-            {page === "works" && <WorksPage data={data} pushToast={pushToast} />}
-            {page === "chapters" && <ChaptersPage data={data} />}
-            {page === "agents" && <AgentsPage pushToast={pushToast} />}
-            {page === "cost" && <CostPage data={data} />}
-            {page === "executions" && <ExecutionsPage snapshot={liveSnapshot} />}
-            {page === "flow" && <FlowPage />}
-            {page === "editorial" && <EditorialPage />}
-            {page === "reader" && <ReaderPage data={data} />}
-            {page === "settings" && <SettingsPage data={data} onRefresh={refresh} pushToast={pushToast} theme={theme} onThemeChange={changeTheme} />}
-            {page === "meetings" && <MeetingsPage />}
-            {page === "audit" && <AuditPage />}
+            {routes[page] ? routes[page]() : null}
           </ErrorBoundary>
         </div>
       </main>

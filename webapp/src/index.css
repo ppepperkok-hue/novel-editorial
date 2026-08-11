@@ -72,6 +72,9 @@
   --text: #1f2430;
   --muted: #6b7280;
   --accent: #3b82c4;
+  --progress-ok: linear-gradient(90deg, #34d399, #22c55e);
+  --progress-warn: linear-gradient(90deg, #fbbf24, #f97316);
+  --progress-bad: linear-gradient(90deg, #f87171, #ef4444);
   --accent-2: #4a95c4;
   --accent-text: #2b6fa8;
   --accent-soft: rgba(59, 130, 196, 0.1);
@@ -738,11 +741,11 @@ textarea.input {
 .progress > div {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #38bdf8, #818cf8);
+  background: var(--progress-ok, linear-gradient(90deg, #38bdf8, #818cf8));
   transition: width 0.4s ease;
 }
-.progress.warn > div { background: linear-gradient(90deg, #fbbf24, #f97316); }
-.progress.bad > div { background: linear-gradient(90deg, #f87171, #ef4444); }
+.progress.warn > div { background: var(--progress-warn, linear-gradient(90deg, #fbbf24, #f97316)); }
+.progress.bad > div { background: var(--progress-bad, linear-gradient(90deg, #f87171, #ef4444)); }
 
 .status-dot {
   width: 8px;
