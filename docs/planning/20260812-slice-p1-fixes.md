@@ -53,20 +53,22 @@
 
 | # | 分片 | 问题 | 位置 | 状态 |
 | --- | --- | --- | --- | --- |
-| P3-1 | core | `_serve_static` 前缀检查可逃逸到 dist 兄弟目录 | web_api.py:1021-1028 | 待修 |
-| P3-2 | core | claim_action check-then-act 竞态致重复认领 | activity.py:132-144 | 待修 |
-| P3-3 | editorial | `_mark_injected_read` 把自己发的消息标已读 | editorial_daily.py:107-117 | 待修 |
-| P3-4 | editorial | round_speech 的 `if tool_calls:` 分支死代码 | agent_meeting.py:431-486 | 待修 |
-| P3-5 | editorial | weekly_payload 历史日记 json.loads 无保护 | write_diaries.py:118-120 | 待修 |
-| P3-6 | platform | check_stock `--novel-id` 未接 CLI | check_stock.py:88 | 待修 |
-| P3-7 | knowledge | ai_taste_check 漏检全角问号连续/叹问组合 | ai_taste_check.py:34 | 待修 |
-| P3-8 | knowledge | novel_knowledge 死参数与 CLI 文档不一致 | novel_knowledge.py:365 | 待修 |
-| P3-9 | knowledge | prompts/ 根目录旧模板死文件 | prompts/editor.md 等 | 待修 |
-| P3-10 | knowledge | export_agent_prompts 导出丢失 max_tokens | export_agent_prompts.py:72-76 | 待修 |
-| P3-11 | knowledge | distill_lessons 脏 JSON 无保护 | distill_lessons.py:83-89 | 待修 |
-| P3-12 | frontend | DashboardPage 发布章数 modal/runNow 死代码 | DashboardPage.jsx | 待修 |
-| P3-13 | frontend | desktop/main.js 注册未暴露的 IPC | desktop/main.js | 待修 |
-| P3-14 | frontend | desktop/main.js spawn pythonw 无错误处理 | desktop/main.js | 待修 |
-| P3-15 | tests | run_tests.py 零测试假绿路径 + ai_words 重叠 + .env.example 遗漏 + 午夜边界 flake | tests/run_tests.py 等 | 待修 |
+| P3-1 | core | `_serve_static` 前缀检查可逃逸到 dist 兄弟目录 | web_api.py:1021-1028 | ✅ 97d33ca |
+| P3-2 | core | claim_action check-then-act 竞态致重复认领 | activity.py:132-144 | ✅ 97d33ca |
+| P3-3 | editorial | `_mark_injected_read` 把自己发的消息标已读 | editorial_daily.py:107-117 | ✅ 97d33ca |
+| P3-4 | editorial | round_speech 的 `if tool_calls:` 分支死代码 | agent_meeting.py:431-486 | ✅ 97d33ca |
+| P3-5 | editorial | weekly_payload 历史日记 json.loads 无保护 | write_diaries.py:118-120 | ✅ 97d33ca |
+| P3-6 | platform | check_stock `--novel-id` 未接 CLI | check_stock.py:88 | ✅ 7285138 |
+| P3-7 | knowledge | ai_taste_check 漏检全角问号连续/叹问组合 | ai_taste_check.py:34 | ✅ 7285138 |
+| P3-8 | knowledge | novel_knowledge 死参数与 CLI 文档不一致 | novel_knowledge.py:365 | ✅ 7285138 |
+| P3-9 | knowledge | prompts/ 根目录旧模板死文件 | prompts/editor.md 等 | ✅ 7285138（并修后备管线路径指向 prompts/agents） |
+| P3-10 | knowledge | export_agent_prompts 导出丢失 max_tokens | export_agent_prompts.py:72-76 | ✅ 7285138 |
+| P3-11 | knowledge | distill_lessons 脏 JSON 无保护 | distill_lessons.py:83-89 | ✅ 7285138 |
+| P3-12 | frontend | DashboardPage 发布章数 modal/runNow 死代码 | DashboardPage.jsx | ✅ 待提交（章数选择并入开工卡片） |
+| P3-13 | frontend | desktop/main.js 注册未暴露的 IPC | desktop/main.js | ✅ 待提交 |
+| P3-14 | frontend | desktop/main.js spawn pythonw 无错误处理 | desktop/main.js | ✅ 待提交（error 事件 + api-error 通道） |
+| P3-15 | tests | run_tests.py 零测试假绿 + ai_words 重叠双倍计数 + .env.example 遗漏 + 午夜边界 flake | tests/run_tests.py 等 | ✅ 待提交（零测试守卫、非重叠计数、env 补全；午夜 flake 记录在案） |
+
+全量回归：472 后端 + 16 前端全绿（P3-15 的午夜边界 flake 为记录项，未发现实际复现）。
 
 流程约定：每次分片审查完成后，`run_review.ps1` 自动调用 `tools/summarize_slices.py` 生成 `*-slices-summary.md`（多份报告先汇总），再归档索引、汇总与各分片报告。

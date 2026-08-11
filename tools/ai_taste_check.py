@@ -45,6 +45,13 @@ def count_occurrences(text, words):
     return hits
 
 
+def _non_overlap_count(text, words):
+    if not words:
+        return 0
+    pattern = re.compile("|".join(re.escape(w) for w in words))
+    return len(pattern.findall(text))
+
+
 def detect(text):
     if not text:
         return {"score": 0, "flowery": {}, "filler": {}, "density": 0, "notes": []}
@@ -52,8 +59,8 @@ def detect(text):
     per500 = max(1, total / 500)
     flowery = count_occurrences(text, FLOWERY)
     filler = count_occurrences(text, FILLER)
-    flowery_n = sum(flowery.values())
-    filler_n = sum(filler.values())
+    flowery_n = _non_overlap_count(text, FLOWERY)
+    filler_n = _non_overlap_count(text, FILLER)
     density = round(flowery_n / per500, 2)
     notes = []
     if density > 2:

@@ -76,24 +76,6 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
     onRefresh();
   };
 
-  const runNow = async (chapters) => {
-    setRunning(true);
-    setConfirm(null);
-    try {
-      const r = await postControl({ action: "run_now", mode: "write", chapters });
-      pushToast(
-        r.ok
-          ? `编辑部已开工：目标 ${chapters} 章（存稿优先）`
-          : "开工失败：" + (r.error || "未知"),
-        r.ok ? "ok" : "bad",
-      );
-      refreshControl();
-      onRefresh();
-    } finally {
-      setRunning(false);
-    }
-  };
-
   const openWorkday = async (mode, chapters) => {
     setRunning(true);
     try {
@@ -433,6 +415,15 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
                     自由安排
                   </button>
                 </div>
+                <select
+                  className="input mt-2"
+                  value={runChapters}
+                  onChange={(e) => setRunChapters(Number(e.target.value))}
+                >
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <option key={n} value={n}>{n} 章</option>
+                  ))}
+                </select>
                 <input
                   className="input mt-2"
                   placeholder="老板指令（可选），如：今天赶两章"
@@ -586,39 +577,6 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
           <div className="empty">暂无热点数据，等待采集任务写入。</div>
         )}
       </section>
-
-      {confirm === "run" ? (
-        <div className="modal-mask" onMouseDown={(e) => e.target === e.currentTarget && setConfirm(null)}>
-          <div className="modal confirm-modal">
-            <div className="modal-head">
-              <div className="text-sm font-bold">本次发布几章？</div>
-              <button className="btn !px-2 !py-0.5 text-sm" onClick={() => setConfirm(null)}>✕</button>
-            </div>
-            <div className="modal-body">
-              <div className="mb-4 text-sm text-slate-400">
-                存稿池有存货就直接发，不够会自动补造。最多一次发 5 章。
-              </div>
-              <div className="flex gap-2">
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <button
-                    key={n}
-                    className={`btn flex-1 !py-3 text-base ${runChapters === n ? "btn-primary" : ""}`}
-                    onClick={() => setRunChapters(n)}
-                  >
-                    {n} 章
-                  </button>
-                ))}
-              </div>
-              <div className="mt-5 flex justify-end gap-2">
-                <button className="btn" onClick={() => setConfirm(null)}>取消</button>
-                <button className="btn btn-ok" disabled={running} onClick={() => runNow(runChapters)}>
-                  发布 {runChapters} 章
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       <ConfirmDialog
         open={confirm === "pause-daily"}

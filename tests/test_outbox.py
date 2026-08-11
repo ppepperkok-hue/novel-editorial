@@ -122,7 +122,7 @@ class OutboxTests(unittest.TestCase):
         self.assertEqual(count["unread"], 0)
 
     def test_agent_integration_persists_outbox_and_marks_read(self):
-        mailroom.send(self.conn, "eic", "writer", "早会消息", novel_id=1)
+        mailroom.send(self.conn, "planner", "eic", "早会消息", novel_id=1)
 
         def fake_run(node, task, temperature=None, max_tokens=None, target_words=None, novel_id=None, db_path=None, model=None):
             return {
@@ -142,11 +142,13 @@ class OutboxTests(unittest.TestCase):
         parsed = json.loads(text)
         self.assertEqual(parsed["verdict"], "pass")
         self.assertNotIn("outbox", parsed)
-        planner_msgs = mailroom.list_messages(self.conn, agent="planner")["messages"]
+        planner_msgs = mailroom.list_messages(
+            self.conn, agent="planner", direction="to"
+        )["messages"]
         self.assertEqual(len(planner_msgs), 1)
         self.assertEqual(planner_msgs[0]["from_agent"], "eic")
-        writer_unread = mailroom.unread_count(self.conn, "writer", novel_id=1)
-        self.assertEqual(writer_unread["unread"], 0)
+        eic_unread = mailroom.unread_count(self.conn, "eic", novel_id=1)
+        self.assertEqual(eic_unread["unread"], 0)
 
     def test_dry_run_skips_outbox_and_read_marking(self):
         ctx = editorial_daily._Ctx(1, self.db_path, dry_run=True)

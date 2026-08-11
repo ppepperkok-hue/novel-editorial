@@ -18,7 +18,7 @@ from novel_editorial import compliance, db, quality_gate
 from novel_editorial.llm_client import LLMClient, MockLLMClient
 from novel_editorial.publisher import FanqieHttpAdapter, ManualAdapter
 
-PROMPTS_DIR = ROOT / "prompts"
+PROMPTS_DIR = ROOT / "prompts" / "agents"
 
 
 def load_prompt(name):

@@ -60,6 +60,12 @@ async function ensureApi() {
     ["-m", "novel_editorial.web_api", "--db", dbPath, "--port", String(API_PORT)],
     { cwd: ROOT, stdio: "ignore" },
   );
+  apiProc.on("error", (err) => {
+    console.error("pythonw spawn failed:", err);
+    if (win) {
+      win.webContents.send("api-error", String((err && err.message) || err));
+    }
+  });
   for (let i = 0; i < 40; i += 1) {
     if (await apiReady(API_PORT)) return;
     await sleep(500);
@@ -195,9 +201,6 @@ function setupAutoUpdater() {
         body: "新版本已下载，重启应用即可安装",
       }).show();
     }
-    ipcMain.handle("app:install-update", () => {
-      autoUpdater.quitAndInstall();
-    });
   });
   autoUpdater.checkForUpdatesAndNotify().catch(() => {});
 }
