@@ -455,8 +455,9 @@ def _get_meta(ctx, book_id):
         return None
 
 
-def _preflight(ctx, conn, env, trigger):
-    """Mirror tools/preflight.py checks; acquires the shared atomic lock."""
+def _preflight(ctx, conn, env, trigger, skip_lock=False):
+    """Mirror tools/preflight.py checks; acquires the shared atomic lock
+    unless the caller (e.g. the workday) already holds it."""
     settings = get_all(conn)
     enabled = str(settings.get("daily_enabled", "true")).strip().lower() in (
         "1",
@@ -499,7 +500,7 @@ def _preflight(ctx, conn, env, trigger):
     if manual_requested:
         reasons.append("手动请求运行已生效")
     ok = enabled and cookie_ok and not already_ran and budget_ok and book_ok
-    if ok:
+    if ok and not skip_lock:
         lock_path = ROOT / "n8n_tmp" / (Path(ctx.db_path).stem + ".lock")
         locked, lock_reason = preflight.acquire_lock(lock_path)
         if not locked:
@@ -1390,7 +1391,7 @@ def _finish_run(conn, ctx, run_id, status, published=0, error="", detail=None):
     conn.commit()
 
 
-def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, env=None, out_file=None):
+def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, env=None, out_file=None, workday_run_id=None, lock_held=False):
     """Run one daily shift. Returns the run summary with an explicit status."""
     if chapters:
         try:
@@ -1407,14 +1408,23 @@ def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, en
         os.environ.setdefault(k, v)
     book = current_book.current_book(conn)
     ctx = _Ctx(book["novel_id"], db_path, dry_run, book["book_id"], "")
-    run_id = "scheduler-" + datetime.now().strftime("%Y%m%d%H%M%S") + "-" + uuid.uuid4().hex[:6]
+    run_id = workday_run_id or (
+        "scheduler-" + datetime.now().strftime("%Y%m%d%H%M%S") + "-" + uuid.uuid4().hex[:6]
+    )
     started = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     if not dry_run:
-        conn.execute(
-            "INSERT INTO daily_runs(run_id, novel_id, trigger, source, status, started_at, created_at) "
-            "VALUES(?,?,?,?,?,?,?)",
-            (run_id, ctx.novel_id, trigger, "scheduler", "running", started, started),
-        )
+        if workday_run_id:
+            conn.execute(
+                "UPDATE daily_runs SET novel_id=?, trigger=?, source='workday', "
+                "status='running', started_at=?, updated_at=? WHERE run_id=?",
+                (ctx.novel_id, trigger, started, started, run_id),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO daily_runs(run_id, novel_id, trigger, source, status, started_at, created_at) "
+                "VALUES(?,?,?,?,?,?,?)",
+                (run_id, ctx.novel_id, trigger, "scheduler", "running", started, started),
+            )
         conn.commit()
     try:
         if not dry_run:
@@ -1423,7 +1433,7 @@ def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, en
                 "备份数据库",
                 lambda: backup.backup_db(db_path, ROOT / "backups"),
             )
-        pre = _preflight(ctx, conn, env, trigger)
+        pre = _preflight(ctx, conn, env, trigger, skip_lock=lock_held)
         if pre.get("skipped"):
             if not dry_run:
                 # A skipped scheduled run must not leave a forever-running row.

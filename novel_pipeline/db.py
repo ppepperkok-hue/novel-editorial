@@ -262,7 +262,8 @@ CREATE TABLE IF NOT EXISTS agent_activity (
     activity_type TEXT NOT NULL,
     title TEXT NOT NULL,
     detail TEXT DEFAULT '{}',
-    created_at TEXT DEFAULT ''
+    created_at TEXT DEFAULT '',
+    updated_at TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS agent_messages (
@@ -325,6 +326,12 @@ CREATE TABLE IF NOT EXISTS daily_runs (
     trigger TEXT DEFAULT 'scheduled',
     source TEXT DEFAULT 'scheduler',
     status TEXT NOT NULL DEFAULT 'running',
+    phase TEXT DEFAULT '',
+    mode TEXT DEFAULT 'write',
+    boss_instruction TEXT DEFAULT '',
+    today_plan TEXT DEFAULT '{}',
+    collab_summary TEXT DEFAULT '{}',
+    legacy TEXT DEFAULT '{}',
     started_at TEXT DEFAULT '',
     finished_at TEXT DEFAULT '',
     failed_nodes TEXT DEFAULT '[]',
@@ -418,6 +425,17 @@ def _migrate(conn):
     run_cols = {r["name"] for r in conn.execute("PRAGMA table_info(daily_runs)")}
     if "source" not in run_cols:
         conn.execute("ALTER TABLE daily_runs ADD COLUMN source TEXT DEFAULT 'scheduler'")
+    for col, ddl in {
+        "phase": "TEXT DEFAULT ''",
+        "mode": "TEXT DEFAULT 'write'",
+        "boss_instruction": "TEXT DEFAULT ''",
+        "today_plan": "TEXT DEFAULT '{}'",
+        "collab_summary": "TEXT DEFAULT '{}'",
+        "legacy": "TEXT DEFAULT '{}'",
+        "updated_at": "TEXT DEFAULT ''",
+    }.items():
+        if col not in run_cols:
+            conn.execute(f"ALTER TABLE daily_runs ADD COLUMN {col} {ddl}")
     qr_cols = {r["name"] for r in conn.execute("PRAGMA table_info(quality_reports)")}
     if "notes" not in qr_cols:
         conn.execute("ALTER TABLE quality_reports ADD COLUMN notes TEXT DEFAULT ''")

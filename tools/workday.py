@@ -1,0 +1,307 @@
+"""Editorial workday (R4-1): open -> morning -> producing -> awaiting_close
+-> closing (manual). The workday is the primary driver: nothing autonomous
+happens while the office is closed.
+
+Library entry:
+    workday.open(conn, chapters=None, trigger="manual", mode="write", ...)
+    workday.close(conn, run_id, ...)
+    workday.resume(conn, run_id, ...)
+
+The daily_runs row created here is the same row the produce chain updates
+(workday_run_id), so the panel sees one workday, not two runs.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+import uuid
+from datetime import datetime
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from novel_pipeline import config, db  # noqa: E402
+from novel_pipeline.services import audit  # noqa: E402
+from tools import editorial_daily, preflight  # noqa: E402
+
+MODES = ("write", "org", "meeting", "free")
+
+
+def _now():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _j(obj):
+    return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+
+
+def _update(conn, run_id, **fields):
+    sets = ", ".join(f"{k}=?" for k in fields)
+    conn.execute(
+        f"UPDATE daily_runs SET {sets}, updated_at=? WHERE run_id=?",
+        (*fields.values(), _now(), run_id),
+    )
+    conn.commit()
+
+
+def _current_novel_id(conn):
+    row = conn.execute("SELECT id FROM novels ORDER BY id DESC LIMIT 1").fetchone()
+    return row["id"] if row else 0
+
+
+def _morning_plan(conn, run_id, mode, boss_instruction, dry_run, db_path):
+    """Editor-in-chief (or deterministic fallback) sets today's plan."""
+    if mode == "write":
+        plan = {"produce": True, "chapters": None, "meeting": False, "focus": "按计划写稿"}
+    elif mode == "org":
+        plan = {"produce": False, "chapters": 0, "meeting": False, "focus": "整理日：知识库/人物卡/消息/议题"}
+    elif mode == "meeting":
+        plan = {"produce": False, "chapters": 0, "meeting": True, "focus": "开会日：启动会议"}
+    else:
+        plan = {"produce": True, "chapters": None, "meeting": False, "focus": "主编现场决定"}
+    if mode == "free" or (boss_instruction and mode not in ("org", "meeting")):
+        task = (
+            "你是主编。今日老板指令：" + str(boss_instruction or "自由安排")
+            + "。请只输出 JSON：{produce(bool), chapters(整数或null), "
+            "meeting(bool), focus(一句话)}。"
+        )
+        if dry_run:
+            text = (
+                '{"produce": true, "chapters": null, "meeting": false, '
+                '"focus": "按存稿与任务板安排今日"}'
+            )
+        else:
+            from tools import agent_tool_loop  # noqa: PLC0415
+
+            r = agent_tool_loop.run(
+                "eic", task, temperature=0.2, max_tokens=800,
+                novel_id=0, db_path=str(db_path),
+            )
+            text = r.get("text") or ""
+        try:
+            start = text.index("{")
+            end = text.rindex("}") + 1
+            parsed = json.loads(text[start:end])
+            if isinstance(parsed, dict):
+                plan = {
+                    "produce": bool(parsed.get("produce", plan["produce"])),
+                    "chapters": parsed.get("chapters") or None,
+                    "meeting": bool(parsed.get("meeting", False)),
+                    "focus": str(parsed.get("focus") or plan["focus"])[:200],
+                }
+        except (ValueError, json.JSONDecodeError):
+            pass  # deterministic fallback stays
+    _update(conn, run_id, today_plan=_j(plan), phase="morning")
+    return plan
+
+
+def open(conn, chapters=None, trigger="manual", mode="write", boss_instruction="",
+         dry_run=False, db_path=None):
+    """Open the office and run a workday up to the awaiting_close decision
+    point. Never auto-closes: the boss decides (close / meeting / resume)."""
+    if mode not in MODES:
+        return {"ok": False, "error": f"mode must be one of {MODES}"}
+    if db_path is None:
+        db_path = conn.execute("PRAGMA database_list").fetchone()[2]
+    db_path = str(Path(db_path).resolve())
+    lock_path = ROOT / "n8n_tmp" / (Path(db_path).stem + ".lock")
+    locked, reason = preflight.acquire_lock(lock_path)
+    if not locked:
+        return {"ok": False, "error": str(reason), "locked": False}
+    run_id = (
+        "workday-" + datetime.now().strftime("%Y%m%d%H%M%S")
+        + "-" + uuid.uuid4().hex[:6]
+    )
+    novel_id = _current_novel_id(conn)
+    if not dry_run:
+        conn.execute(
+            "INSERT INTO daily_runs(run_id, novel_id, trigger, source, status, "
+            "phase, mode, boss_instruction, started_at, created_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (
+                run_id, novel_id, trigger, "workday", "running", "opening",
+                mode, str(boss_instruction or "")[:200], _now(), _now(),
+            ),
+        )
+        conn.commit()
+    try:
+        plan = _morning_plan(
+            conn, run_id, mode, boss_instruction, dry_run, db_path
+        )
+        produce = None
+        if plan.get("produce"):
+            _update(conn, run_id, phase="producing")
+            produce = editorial_daily.daily(
+                conn,
+                chapters=chapters or plan.get("chapters"),
+                trigger=trigger,
+                dry_run=dry_run,
+                db_path=db_path,
+                workday_run_id=run_id,
+                lock_held=True,
+            )
+        else:
+            _update(conn, run_id, published=0)
+            produce = {"status": "skipped", "published": 0}
+        _update(conn, run_id, phase="awaiting_close")
+        return {
+            "ok": True,
+            "run_id": run_id,
+            "status": "awaiting_close",
+            "mode": mode,
+            "plan": plan,
+            "produce": produce,
+        }
+    except Exception as exc:  # noqa: BLE001
+        if not dry_run:
+            _update(
+                conn, run_id, status="failed", phase="finished",
+                error=str(exc)[:400],
+            )
+        return {"ok": False, "error": str(exc)[:400], "run_id": run_id}
+    finally:
+        preflight.release_lock(lock_path)
+
+
+def resume(conn, run_id, chapters=None, dry_run=False, db_path=None):
+    """Continue producing from the decision point (partial follow-up)."""
+    row = conn.execute("SELECT * FROM daily_runs WHERE run_id=?", (run_id,)).fetchone()
+    if row is None:
+        return {"ok": False, "error": "run not found"}
+    if row["phase"] != "awaiting_close":
+        return {"ok": False, "error": f"cannot resume from phase {row['phase']}"}
+    if db_path is None:
+        db_path = conn.execute("PRAGMA database_list").fetchone()[2]
+    db_path = str(Path(db_path).resolve())
+    _update(conn, run_id, phase="producing", status="running")
+    result = editorial_daily.daily(
+        conn, chapters=chapters, trigger="manual", dry_run=dry_run,
+        db_path=db_path, workday_run_id=run_id, lock_held=True,
+    )
+    _update(conn, run_id, phase="awaiting_close")
+    return {"ok": True, "run_id": run_id, "status": "awaiting_close", "produce": result}
+
+
+def close(conn, run_id, dry_run=False, db_path=None):
+    """Manually close the workday: collaborate -> diaries -> backlog ->
+    broadcast -> terminal status. This is the only way to finish a workday."""
+    row = conn.execute("SELECT * FROM daily_runs WHERE run_id=?", (run_id,)).fetchone()
+    if row is None:
+        return {"ok": False, "error": "run not found"}
+    if row["status"] == "finished":
+        return {"ok": False, "error": "already finished"}
+    if row["phase"] not in ("awaiting_close", "producing"):
+        return {"ok": False, "error": f"cannot close from phase {row['phase']}"}
+    _update(conn, run_id, phase="closing")
+    unread = conn.execute(
+        "SELECT COUNT(*) c FROM agent_messages WHERE status='unread'"
+    ).fetchone()["c"]
+    open_promises = conn.execute(
+        "SELECT COUNT(*) c FROM agent_promises WHERE status='open'"
+    ).fetchone()["c"]
+    pending_actions = conn.execute(
+        "SELECT COUNT(*) c FROM agent_actions "
+        "WHERE status IN ('pending','claimed','in_progress')"
+    ).fetchone()["c"]
+    collab = {
+        "unread_messages": unread,
+        "open_promises": open_promises,
+        "pending_actions": pending_actions,
+    }
+    _update(conn, run_id, collab_summary=_j(collab))
+    if not dry_run:
+        try:
+            from tools import write_diaries  # noqa: PLC0415
+
+            write_diaries.write(conn, row["novel_id"] or 0, "daily")
+        except Exception as exc:  # noqa: BLE001
+            audit.log(
+                conn, "workday", "diaries_failed",
+                target_type="run", target_id=run_id,
+                detail={"error": str(exc)[:200]},
+            )
+    published = int(row["published"] or 0)
+    produce_status = str(row["status"] or "running")
+    legacy = {}
+    if produce_status in ("partial", "failed"):
+        legacy["pending"] = "昨日主产出未完成，今天晨会优先处理"
+    if pending_actions:
+        legacy["pending_actions"] = pending_actions
+    if produce_status in ("completed", "skipped"):
+        final_status = "completed_with_pending" if legacy else "completed"
+    elif published > 0:
+        final_status = "partial"
+    else:
+        final_status = "failed"
+    if not dry_run:
+        try:
+            from tools import mailroom  # noqa: PLC0415
+
+            mailroom.broadcast(
+                conn, "eic", list(config.AGENT_NAMES),
+                subject="收工",
+                body="今天的工作结束了。收工小结：" + _j(collab),
+                novel_id=row["novel_id"] or 0,
+            )
+        except Exception as exc:  # noqa: BLE001
+            audit.log(
+                conn, "workday", "broadcast_failed",
+                target_type="run", target_id=run_id,
+                detail={"error": str(exc)[:200]},
+            )
+    _update(
+        conn, run_id, status=final_status, phase="finished",
+        legacy=_j(legacy),
+    )
+    audit.log(
+        conn, "workday", "closed",
+        target_type="run", target_id=run_id,
+        detail={"status": final_status, "published": published, "legacy": legacy},
+    )
+    return {
+        "ok": True, "run_id": run_id, "status": final_status,
+        "published": published, "collab": collab, "legacy": legacy,
+    }
+
+
+def main():
+    """CLI: python tools/workday.py --action open|close|resume [--mode ...]"""
+    import argparse  # noqa: PLC0415
+
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+    ap = argparse.ArgumentParser(description="editorial workday")
+    ap.add_argument("--action", choices=["open", "close", "resume"], required=True)
+    ap.add_argument("--db", default="demo.db")
+    ap.add_argument("--run-id", default="")
+    ap.add_argument("--mode", default="write", choices=list(MODES))
+    ap.add_argument("--chapters", type=int, default=None)
+    ap.add_argument("--trigger", default="manual", choices=["manual", "scheduled"])
+    ap.add_argument("--boss", default="")
+    ap.add_argument("--dry-run", action="store_true")
+    args = ap.parse_args()
+    db_path = Path(args.db)
+    if not db_path.is_absolute():
+        db_path = ROOT / db_path
+    conn = db.connect(db_path)
+    try:
+        if args.action == "open":
+            result = open(
+                conn, chapters=args.chapters, trigger=args.trigger,
+                mode=args.mode, boss_instruction=args.boss,
+                dry_run=args.dry_run, db_path=str(db_path),
+            )
+        elif args.action == "close":
+            result = close(conn, args.run_id, dry_run=args.dry_run, db_path=str(db_path))
+        else:
+            result = resume(
+                conn, args.run_id, chapters=args.chapters,
+                dry_run=args.dry_run, db_path=str(db_path),
+            )
+        print(json.dumps(result, ensure_ascii=False))
+    finally:
+        conn.close()
