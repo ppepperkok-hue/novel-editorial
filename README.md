@@ -16,7 +16,7 @@
 | 发布平台 | 番茄小说（Cookie + CSRF 鉴权） | `~/.n8n/.env` 的 `FANQIE_COOKIE` / `FANQIE_CSRF_TOKEN` |
 | 发布方式 | 存稿池优先：有存稿发存稿，没存稿现造 | `tools/check_stock.py` + `tools/publish_stock.py` |
 | 健康线 | 存稿 < 3 章触发断更预警 | `novel_editorial/scheduler.py` 的 `SAFE_BACKLOG` |
-| 测试基线 | 439 个后端 unittest + 16 个前端 Vitest | `python run_tests.py` / `cd webapp && npm test` |
+| 测试基线 | 448 个后端 unittest + 16 个前端 Vitest | `python run_tests.py` / `cd webapp && npm test` |
 
 ## 编辑部的一天
 
@@ -189,7 +189,7 @@ python tools/editorial_daily.py --db demo.db --trigger manual  # 兼容旧入口
 ### 测试
 
 ```bash
-python run_tests.py                # 439 个后端测试
+python run_tests.py                # 448 个后端测试
 cd webapp && npm test              # 16 个前端测试
 ```
 
@@ -220,7 +220,7 @@ novel-editorial/
 ├── n8n/                     # 遗留工作流 JSON（回退备份）
 ├── scripts/                 # install_autostart.ps1 / install_daily_task.ps1 / finish_rename.ps1 ...
 ├── docs/                    # evolution / planning / research / engineering / reviews
-├── tests/                   # 439 个后端测试（unittest）
+├── tests/                   # 448 个后端测试（unittest）
 └── demo.db                  # 运行数据库（gitignore）
 ```
 
