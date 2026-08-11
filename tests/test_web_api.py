@@ -169,6 +169,18 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(len(data["nodes"]), 1)
         self.assertEqual(data["nodes"][0]["label"], "林一")
 
+    def test_daily_runs_endpoints(self):
+        with mock.patch(
+            "tools.daily_runs._n8n_executions", return_value=[]
+        ):
+            with urlopen(f"{self.base}/api/daily_runs", timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        self.assertIn("runs", data)
+        with self.assertRaises(HTTPError):
+            urlopen(
+                f"{self.base}/api/daily_runs/detail?run_id=not-exist", timeout=10
+            )
+
     def test_cross_origin_post_rejected(self):
         req = __import__("urllib.request", fromlist=["Request"]).Request(
             f"{self.base}/api/control",

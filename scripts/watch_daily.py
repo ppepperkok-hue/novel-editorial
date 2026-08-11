@@ -1,6 +1,7 @@
 """Watch the running daily workflow via n8n executions + local DB."""
 
 import json
+import os
 import sys
 import time
 import urllib.request
@@ -8,7 +9,12 @@ import sqlite3
 from pathlib import Path
 
 DB = r"E:\code\novel-pipeline\demo.db"
-KEY = "n8n_api_52e390a21bfb0d6620fe75ea343774df"
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from novel_pipeline import config  # noqa: E402
+
+KEY = config.env_value("N8N_API_KEY", "")
 
 
 def n8n_get(path):

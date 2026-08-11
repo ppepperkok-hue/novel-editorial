@@ -314,6 +314,34 @@ def make_handler(db_path):
                         self._json({"diaries": misc_service.list_diaries(conn, agent, dtype, limit)})
                     finally:
                         conn.close()
+                elif path == "/api/daily_runs":
+                    from tools import daily_runs  # noqa: PLC0415
+
+                    conn = db.connect(db_path)
+                    try:
+                        qs = parse_qs(parsed.query)
+                        limit = int(qs.get("limit", ["30"])[0] or 30)
+                        daily_runs.sync_from_n8n(conn, limit=limit)
+                        self._json({"runs": daily_runs.list_runs(conn, limit=limit)})
+                    finally:
+                        conn.close()
+                elif path == "/api/daily_runs/detail":
+                    from tools import daily_runs  # noqa: PLC0415
+
+                    conn = db.connect(db_path)
+                    try:
+                        qs = parse_qs(parsed.query)
+                        run_id = qs.get("run_id", [""])[0] or ""
+                        if not run_id:
+                            self._json({"error": "run_id required"}, status=400)
+                        else:
+                            detail = daily_runs.run_detail(conn, run_id)
+                            if detail is None:
+                                self._json({"error": "run not found"}, status=404)
+                            else:
+                                self._json({"run": detail})
+                    finally:
+                        conn.close()
                 elif path == "/api/activity":
                     from novel_pipeline.services import activity as activity_service  # noqa: PLC0415
 

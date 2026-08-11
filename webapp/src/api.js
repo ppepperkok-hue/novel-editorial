@@ -23,6 +23,10 @@ export const getAgents = () => getJSON("/api/agents");
 export const postAgents = (payload) => postJSON("/api/agents", payload);
 export const getCost = () => getJSON("/api/cost");
 export const getExecutions = () => getJSON("/api/executions");
+export const getDailyRuns = (limit) =>
+  getJSON("/api/daily_runs" + (limit ? "?limit=" + limit : ""));
+export const getDailyRunDetail = (runId) =>
+  getJSON("/api/daily_runs/detail?run_id=" + encodeURIComponent(runId));
 export const getChapterContent = (chapterId) =>
   getJSON("/api/chapter_content?chapter_id=" + chapterId);
 

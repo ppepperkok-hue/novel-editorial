@@ -258,6 +258,21 @@ CREATE TABLE IF NOT EXISTS agent_activity (
     detail TEXT DEFAULT '{}',
     created_at TEXT DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS daily_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL UNIQUE,
+    novel_id INTEGER DEFAULT 0,
+    trigger TEXT DEFAULT 'scheduled',
+    status TEXT NOT NULL DEFAULT 'running',
+    started_at TEXT DEFAULT '',
+    finished_at TEXT DEFAULT '',
+    failed_nodes TEXT DEFAULT '[]',
+    error TEXT DEFAULT '',
+    published INTEGER DEFAULT 0,
+    detail TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT ''
+);
 """
 
 
@@ -352,6 +367,7 @@ def _migrate(conn):
         CREATE INDEX IF NOT EXISTS idx_actions_session ON agent_actions(session_id);
         CREATE INDEX IF NOT EXISTS idx_activity_agent_created ON agent_activity(agent, created_at);
         CREATE INDEX IF NOT EXISTS idx_activity_created ON agent_activity(created_at);
+        CREATE INDEX IF NOT EXISTS idx_daily_runs_status ON daily_runs(status, created_at);
         """
     )
     # Deduplicate (novel_id, seq) keeping the published row when possible;

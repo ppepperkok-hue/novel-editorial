@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getExecutions } from "../api.js";
+import { getDailyRunDetail, getDailyRuns, getExecutions } from "../api.js";
 import { fmtRelative } from "./ui.jsx";
 
 const STATUS = {
@@ -12,10 +12,23 @@ const STATUS = {
   crashed: ["崩溃", "chip-bad"],
 };
 
+const RUN_STATUS = {
+  success: ["成功", "chip-ok"],
+  failed: ["失败", "chip-bad"],
+  error: ["失败", "chip-bad"],
+  crashed: ["崩溃", "chip-bad"],
+  running: ["运行中", "chip-warn"],
+  waiting: ["等待中", "chip-warn"],
+  canceled: ["已取消", "chip-bad"],
+};
+
 export default function ExecutionsPage({ snapshot }) {
   const [rows, setRows] = useState([]);
   const [error, setError] = useState("");
   const [detail, setDetail] = useState(null);
+  const [runs, setRuns] = useState([]);
+  const [openRun, setOpenRun] = useState(null);
+  const [runDetail, setRunDetail] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -37,6 +50,39 @@ export default function ExecutionsPage({ snapshot }) {
       clearInterval(t);
     };
   }, []);
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const r = await getDailyRuns(20);
+        if (alive) setRuns(r.runs || []);
+      } catch (e) {
+        /* n8n offline: local records stay visible; ignore here */
+      }
+    };
+    load();
+    const t = setInterval(load, 30000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
+
+  const toggleRun = async (runId) => {
+    if (openRun === runId) {
+      setOpenRun(null);
+      setRunDetail(null);
+      return;
+    }
+    setOpenRun(runId);
+    try {
+      const r = await getDailyRunDetail(runId);
+      setRunDetail(r.run || null);
+    } catch (e) {
+      setRunDetail(null);
+    }
+  };
 
   const fmt = (t) => (t ? String(t).replace("T", " ").slice(5, 19) : "-");
   const duration = (start, stop) => {
@@ -77,6 +123,56 @@ export default function ExecutionsPage({ snapshot }) {
           <div className="kpi-value">{finished ? Math.round((success / finished) * 100) : "—"}%</div>
           <div className="kpi-sub">按已完成执行计算</div>
         </div>
+      </div>
+
+      <div className="panel p-4">
+        <div className="mb-2 flex items-center justify-between">
+          <div className="text-sm font-bold">日更运行留痕</div>
+          <span className="muted text-xs">本地持久化，n8n 离线也可回看</span>
+        </div>
+        {runs.length ? (
+          <div className="flex flex-col gap-1.5">
+            {runs.map((r) => {
+              const meta = RUN_STATUS[r.status] || [r.status, "chip-warn"];
+              return (
+                <div key={r.run_id} className="rounded-lg border border-[var(--line)] bg-[var(--bg-soft)]">
+                  <button
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs"
+                    onClick={() => toggleRun(r.run_id)}
+                  >
+                    <span className={`chip ${meta[1]}`}>{meta[0]}</span>
+                    <span className="code">{r.run_id}</span>
+                    <span className="muted">
+                      {r.started_at ? String(r.started_at).slice(5, 16) : "-"}
+                      {r.finished_at ? " → " + String(r.finished_at).slice(11, 19) : ""}
+                    </span>
+                    <span className="muted">发布 {r.published} 章</span>
+                    {(r.failed_nodes || []).length ? (
+                      <span className="chip chip-bad">{r.failed_nodes[0]}</span>
+                    ) : null}
+                    <span className="muted ml-auto">{openRun === r.run_id ? "▲" : "▼"}</span>
+                  </button>
+                  {openRun === r.run_id && runDetail ? (
+                    <div className="border-t border-[var(--line-soft)] px-3 py-2">
+                      <div className="muted mb-1 text-xs">
+                        触发 {runDetail.trigger} · 失败节点 {(runDetail.failed_nodes || []).join("、") || "无"}
+                      </div>
+                      {runDetail.error ? (
+                        <pre className="code max-h-40 overflow-auto rounded-lg bg-[var(--code-bg)] p-2.5 text-xs leading-relaxed text-red-300">
+                          {runDetail.error}
+                        </pre>
+                      ) : (
+                        <div className="muted text-xs">本次运行无错误详情</div>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="muted text-xs">暂无本地运行留痕，日更执行后自动写入。</div>
+        )}
       </div>
 
       <div className="panel overflow-hidden">
