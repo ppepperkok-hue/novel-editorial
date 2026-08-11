@@ -1047,6 +1047,19 @@ def _generate(ctx, conn, stock, env, run_id, out_file):
         "guard_passed": None,
         "guard_issues": [],
     }
+    if not ctx.dry_run:
+        audit.log(
+            conn,
+            "guard",
+            "guard_check",
+            target_type="novel",
+            target_id=ctx.novel_id,
+            detail={
+                "passed": guard.get("guard_passed"),
+                "issues": guard.get("guard_issues") or [],
+                "constraints": guard.get("constraints") or [],
+            },
+        )
 
     track_a = _run_track(ctx, conn, 0, outline, guard, meta, target_words, env)
     track_b = _run_track(ctx, conn, 1, outline, guard, meta, target_words, env, track_a)
@@ -1177,6 +1190,20 @@ def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, en
         }
         if not dry_run:
             _finish_run(conn, ctx, run_id, status, published, error, detail)
+            audit.log(
+                conn,
+                "operation",
+                "daily_run",
+                target_type="novel",
+                target_id=ctx.novel_id,
+                detail={
+                    "run_id": run_id,
+                    "status": status,
+                    "published": published,
+                    "failed_nodes": ctx.failed_nodes,
+                    "error": error,
+                },
+            )
         return {
             "ok": status == "completed",
             "skipped": False,

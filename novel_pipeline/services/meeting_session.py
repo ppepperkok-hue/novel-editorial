@@ -422,6 +422,19 @@ def _run_locked(conn, session_id):
         )
         conn.commit()
         weekly_id = cur.lastrowid
+        audit.log(
+            conn,
+            "meeting",
+            "completed",
+            target_type="session",
+            target_id=session_id,
+            detail={
+                "meeting_id": weekly_id,
+                "attendees": attendees,
+                "topics": topics,
+                "action_items": len(report.get("action_items") or []),
+            },
+        )
         activity.log_activity(
             conn,
             "eic",

@@ -146,6 +146,13 @@ class MeetingSessionTests(unittest.TestCase):
         row = self.conn.execute(
             "SELECT novel_id, report FROM weekly_meetings ORDER BY id DESC LIMIT 1"
         ).fetchone()
+        audit = self.conn.execute(
+            "SELECT detail FROM audit_logs WHERE category='meeting' "
+            "AND action='completed' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        self.assertIsNotNone(audit, "meeting completion must be audited")
+        audit_detail = json.loads(audit["detail"])
+        self.assertIn("meeting_id", audit_detail)
         self.assertEqual(row["novel_id"], 0)
         report = json.loads(row["report"])
         self.assertEqual(report["decisions"]["next_book"]["book_name"], "测试新书")

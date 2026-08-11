@@ -278,6 +278,18 @@ class EditorialDailyTests(unittest.TestCase):
             "SELECT COUNT(*) c FROM cost_logs WHERE run_id LIKE 'scheduler-%'"
         ).fetchone()["c"]
         self.assertGreater(cost, 0)
+        guard_audit = self.conn.execute(
+            "SELECT COUNT(*) c FROM audit_logs WHERE category='guard' "
+            "AND action='guard_check'"
+        ).fetchone()["c"]
+        self.assertGreaterEqual(guard_audit, 1)
+        run_audit = self.conn.execute(
+            "SELECT detail FROM audit_logs WHERE category='operation' "
+            "AND action='daily_run' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        self.assertIsNotNone(run_audit)
+        run_detail = json.loads(run_audit["detail"])
+        self.assertEqual(run_detail["status"], "completed")
 
     def test_exception_after_publish_keeps_published_count(self):
         """An exception after a track published must not zero the run stats."""
