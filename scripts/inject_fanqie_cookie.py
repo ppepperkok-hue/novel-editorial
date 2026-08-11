@@ -8,7 +8,7 @@ import urllib.request
 import websocket  # websocket-client
 from pathlib import Path
 
-ENV_FILE = r"C:\Users\Administrator\.n8n\.env"
+ENV_FILE = Path.home() / ".n8n" / ".env"
 CDP = "http://127.0.0.1:9222"
 
 

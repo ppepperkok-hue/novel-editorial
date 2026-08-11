@@ -42,3 +42,5 @@ desktop/build/
 .idea/
 Thumbs.db
 .DS_Store
+
+tools/debug/

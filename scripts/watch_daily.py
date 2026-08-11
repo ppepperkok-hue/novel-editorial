@@ -5,6 +5,7 @@ import sys
 import time
 import urllib.request
 import sqlite3
+from pathlib import Path
 
 DB = r"E:\code\novel-pipeline\demo.db"
 KEY = "n8n_api_52e390a21bfb0d6620fe75ea343774df"
@@ -20,7 +21,7 @@ def n8n_get(path):
 
 
 def n8n_exec():
-    conn = sqlite3.connect(r"C:\Users\Administrator\.n8n\database.sqlite")
+    conn = sqlite3.connect(Path.home() / ".n8n" / "database.sqlite")
     conn.row_factory = sqlite3.Row
     try:
         r = conn.execute(
