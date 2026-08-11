@@ -83,9 +83,20 @@ class DeleteBookTests(unittest.TestCase):
         finally:
             conn.close()
 
-    def test_delete_and_reset_full_flow(self):
+    def test_delete_and_purge_full_flow(self):
         path = make_db()
         conn = db.connect(path)
+        conn.execute(
+            "INSERT INTO volumes(novel_id,seq,goal) VALUES(1,1,'卷')"
+        )
+        conn.execute(
+            "INSERT INTO chapters(novel_id,seq,outline,status) "
+            "VALUES(1,1,'章纲','published')"
+        )
+        conn.execute(
+            "INSERT INTO characters(novel_id,name,role) VALUES(1,'林一','主角')"
+        )
+        conn.commit()
         responses = [
             {"code": 0, "data": {"can_delete": True, "is_signing": False}},
             {"code": 0, "data": None},
@@ -100,12 +111,21 @@ class DeleteBookTests(unittest.TestCase):
             self.assertEqual(delete_call.args[0], "POST")
             self.assertEqual(delete_call.args[1], "/api/author/book/delete/v0")
             self.assertEqual(delete_call.args[2], {"book_id": "12345"})
-            row = conn.execute(
-                "SELECT status, book_id, volume_id FROM novels WHERE id=1"
-            ).fetchone()
-            self.assertEqual(row["status"], "planning")
-            self.assertEqual(row["book_id"], "")
-            self.assertEqual(row["volume_id"], "")
+            self.assertIsNone(
+                conn.execute("SELECT id FROM novels WHERE id=1").fetchone()
+            )
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) c FROM volumes WHERE novel_id=1").fetchone()["c"],
+                0,
+            )
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) c FROM chapters WHERE novel_id=1").fetchone()["c"],
+                0,
+            )
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) c FROM characters WHERE novel_id=1").fetchone()["c"],
+                0,
+            )
             logs = conn.execute(
                 "SELECT action FROM audit_logs WHERE target_id=1"
             ).fetchall()

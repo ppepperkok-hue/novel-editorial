@@ -486,7 +486,7 @@ export default function WorksPage({ data, pushToast }) {
                       className="btn !border-red-900/60 !text-red-400"
                       disabled={deleting === n.id}
                       onClick={async () => {
-                        if (!window.confirm(`确定删除番茄上的《${n.title}》？删除后不可恢复，本地会重置为待建书。`)) return;
+                        if (!window.confirm(`确定删除番茄上的《${n.title}》？删除后不可恢复，本地作品数据会一并清空。`)) return;
                         setDeleting(n.id);
                         try {
                           const r = await deleteBookOnFanqie(n.id);
@@ -501,7 +501,7 @@ export default function WorksPage({ data, pushToast }) {
                     >
                       {deleting === n.id ? "删除中…" : "删除番茄书籍"}
                     </button>
-                    <span className="muted text-xs">平台侧删除，本地自动重置为待建书</span>
+                    <span className="muted text-xs">平台侧删除，本地作品一并清空</span>
                   </div>
                 ) : null}
               </div>

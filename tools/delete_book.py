@@ -8,6 +8,8 @@ Permission gate:
 The platform only allows deletion when ``can_delete`` is true (books under
 signing review cannot be deleted). Deleting is irreversible on Fanqie, so
 the tool refuses to run without --yes and the panel sends confirm=true.
+After a successful platform delete the local novel row and all related
+rows (chapters, characters, knowledge, diaries, ...) are purged as well.
 
 Run from the pipeline root:
     python tools/delete_book.py --novel-id N --yes
@@ -38,8 +40,20 @@ def _book_detail(env, book_id):
     return res.get("data") or {}
 
 
+def _purge_novel(conn, novel_id):
+    """Delete a novel and every row that references it."""
+    tables = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+    ).fetchall()
+    for (t,) in tables:
+        cols = [r[1] for r in conn.execute(f'PRAGMA table_info("{t}")')]
+        if "novel_id" in cols:
+            conn.execute(f'DELETE FROM "{t}" WHERE novel_id=?', (novel_id,))
+    conn.execute("DELETE FROM novels WHERE id=?", (novel_id,))
+
+
 def delete_book_on_fanqie(conn, novel_id, confirm=False):
-    """Delete the Fanqie book bound to a novel, then reset it to planning."""
+    """Delete the Fanqie book bound to a novel, then purge the local novel."""
     row = conn.execute(
         "SELECT id, title, status, book_id, volume_id FROM novels WHERE id=?",
         (novel_id,),
@@ -75,11 +89,6 @@ def delete_book_on_fanqie(conn, novel_id, confirm=False):
     if res.get("code") != 0:
         return {"ok": False, "error": f"番茄拒绝删除：{res.get('message') or res}"}
 
-    conn.execute(
-        "UPDATE novels SET book_id='', volume_id='', status='planning' WHERE id=?",
-        (novel_id,),
-    )
-    conn.commit()
     audit.log(
         conn,
         "ending",
@@ -88,9 +97,11 @@ def delete_book_on_fanqie(conn, novel_id, confirm=False):
         target_id=novel_id,
         detail={"book_id": book_id},
     )
+    _purge_novel(conn, novel_id)
+    conn.commit()
     return {
         "ok": True,
-        "note": f"已在番茄删除《{row['title']}》并重置为待建书",
+        "note": f"已在番茄删除《{row['title']}》并清空本地作品数据",
     }
 
 
