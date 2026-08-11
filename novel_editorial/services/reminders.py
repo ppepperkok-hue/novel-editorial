@@ -123,6 +123,7 @@ def start_worker(db_path, delay_seconds=60, interval_seconds=1800):
                 conn.close()
         except Exception as exc:  # noqa: BLE001
             print("reminder check failed:", str(exc)[:200])
+        prev_minute = None
         while True:
             time.sleep(interval_seconds)
             try:
@@ -131,11 +132,18 @@ def start_worker(db_path, delay_seconds=60, interval_seconds=1800):
                     settings = get_all(conn)
                     rt = str(settings.get("reminder_time", "20:00")).split(":")
                     now = datetime.now()
-                    if (
-                        len(rt) == 2
-                        and now.hour == int(rt[0])
-                        and now.minute == int(rt[1])
-                    ):
+                    if len(rt) == 2:
+                        target = int(rt[0]) * 60 + int(rt[1])
+                        current = now.hour * 60 + now.minute
+                        crossed = (
+                            prev_minute is not None
+                            and prev_minute < target <= current
+                        )
+                        if crossed:
+                            check_and_notify(conn)
+                        prev_minute = current
+                    else:
+                        prev_minute = None
                         check_and_notify(conn)
                 finally:
                     conn.close()

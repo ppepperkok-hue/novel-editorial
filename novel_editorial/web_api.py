@@ -1148,7 +1148,9 @@ def main():
     _fail_orphan_sessions(args.db)
     from novel_editorial.services import reminders  # noqa: PLC0415
 
-    reminders.start_worker(str(Path(args.db).resolve()))
+    active_db = str(Path(args.db).resolve())
+    control_service.set_db_path(active_db)
+    reminders.start_worker(active_db)
     server = ThreadingHTTPServer((args.host, args.port), make_handler(args.db))
     print(f"监控面板：http://{args.host}:{args.port}/  （Ctrl+C 停止）")
     try:

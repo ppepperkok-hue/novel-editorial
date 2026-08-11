@@ -87,6 +87,22 @@ class DiaryTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_dry_run_diary_does_not_write(self):
+        path = make_db()
+        from tools import write_diaries
+
+        conn = db.connect(path)
+        try:
+            write_diaries.write(conn, 1, "weekly", dry_run=True)
+            n = conn.execute("SELECT COUNT(*) c FROM agent_diaries").fetchone()["c"]
+            self.assertEqual(n, 0, "dry-run must not write diaries")
+            s = conn.execute("SELECT COUNT(*) c FROM agent_states").fetchone()["c"]
+            self.assertEqual(s, 0, "dry-run must not write moods")
+            a = conn.execute("SELECT COUNT(*) c FROM agent_activity").fetchone()["c"]
+            self.assertEqual(a, 0, "dry-run must not write activity")
+        finally:
+            conn.close()
+
     def test_weekly_diary_persists_opinions_as_memories(self):
         path = make_db()
         from tools import write_diaries
@@ -353,7 +369,7 @@ class MeetingDryRunTests(unittest.TestCase):
         try:
             self.assertEqual(
                 conn.execute("SELECT COUNT(*) FROM agent_diaries WHERE diary_type='weekly'").fetchone()[0],
-                11,
+                0,
             )
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM weekly_meetings").fetchone()[0], 1)
             session = conn.execute(

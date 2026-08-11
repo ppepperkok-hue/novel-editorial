@@ -38,6 +38,7 @@
           "prompts/**",
           "webapp/dist/**",
           "web/**",
+          "demo.db",
           "README.md"
         ]
       }

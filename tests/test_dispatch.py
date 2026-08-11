@@ -118,6 +118,16 @@ class DispatchTests(unittest.TestCase):
         self.assertIn("钩子要够", task_a)
         self.assertIn("主编今日分派", task_b)
 
+    def test_writer_task_injects_dispatch_envelope(self):
+        obj = json.loads(self._dispatch_json())
+        ctx = self._ctx_with_dispatch(
+            {"mode": "editorial", "dispatch": obj}
+        )
+        meta, outline, guard = self._writer_fixture()
+        task_a = editorial_daily._writer_task(ctx, 0, meta, outline, guard, 2000)
+        self.assertIn("主编今日分派", task_a)
+        self.assertIn("写今天两章", task_a)
+
     def test_writer_task_uses_second_assignment_for_track_b(self):
         dispatch = json.loads(self._dispatch_json())
         dispatch["assignments"] = [

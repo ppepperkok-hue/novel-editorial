@@ -141,6 +141,12 @@ def _handle_outbox(ctx, node, text):
                         )
     finally:
         conn.close()
+    if (
+        isinstance(obj, dict)
+        and isinstance(obj.get("text"), str)
+        and set(obj.keys()) == {"text"}
+    ):
+        return obj["text"]
     return json.dumps(obj, ensure_ascii=False)
 
 
@@ -766,9 +772,14 @@ def _writer_dispatch_notes(ctx, idx):
     dispatch = ctx.dispatch
     if not isinstance(dispatch, dict):
         return ""
+    inner = (
+        dispatch.get("dispatch")
+        if isinstance(dispatch.get("dispatch"), dict)
+        else dispatch
+    )
     assignments = [
         a
-        for a in (dispatch.get("assignments") or [])
+        for a in (inner.get("assignments") or [])
         if isinstance(a, dict)
         and str(a.get("agent") or "").strip() == "writer"
         and str(a.get("task") or a.get("note") or "").strip()

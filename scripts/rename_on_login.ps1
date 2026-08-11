@@ -28,7 +28,7 @@ if (-not (Test-Path $old) -or (Test-Path $new)) {
 
 try {
     Get-CimInstance Win32_Process |
-        Where-Object { $_.CommandLine -match "novel[-_]pipeline" } |
+        Where-Object { $_.CommandLine -match "novel[-_]pipeline" -and $_.ProcessId -ne $PID } |
         ForEach-Object {
             Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
         }

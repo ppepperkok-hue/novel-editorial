@@ -78,6 +78,16 @@ class WorkdayTests(unittest.TestCase):
         self.assertTrue(result["ok"], result)
         self.assertEqual(result["produce"]["status"], "skipped")
 
+    def test_close_org_workday_is_completed_not_failed(self):
+        result = workday.open(
+            self.conn, trigger="manual", mode="org",
+            dry_run=False, db_path=self.db_path,
+        )
+        closed = workday.close(
+            self.conn, result["run_id"], dry_run=True, db_path=self.db_path
+        )
+        self.assertEqual(closed["status"], "completed", closed)
+
     def test_open_persists_one_workday_row(self):
         result = workday.open(
             self.conn, trigger="manual", mode="org",

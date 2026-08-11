@@ -173,7 +173,7 @@ def open(conn, chapters=None, trigger="manual", mode="write", boss_instruction="
                 lock_held=True,
             )
         else:
-            _update(conn, run_id, published=0)
+            _update(conn, run_id, published=0, status="skipped")
             produce = {"status": "skipped", "published": 0}
         _update(conn, run_id, phase="awaiting_close")
         return {

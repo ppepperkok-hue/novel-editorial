@@ -19,6 +19,18 @@ ROOT = config.ROOT
 DAILY_TASK_SCRIPT = ROOT / "scripts" / "install_daily_task.ps1"
 DAILY_TASK_NAME = "NovelEditorialDaily"
 
+_ACTIVE_DB = None
+
+
+def set_db_path(db_path):
+    """Point every control background path at the service's active database."""
+    global _ACTIVE_DB
+    _ACTIVE_DB = str(db_path or "")
+
+
+def _db_path():
+    return _ACTIVE_DB or str(config.DB_PATH)
+
 
 def _alert(message):
     try:
@@ -108,7 +120,7 @@ def _run_cli(script_rel, args):
 def _background_daily(chapters=None):
     def worker():
         try:
-            conn = db.connect(str(config.DB_PATH))
+            conn = db.connect(_db_path())
             try:
                 from tools import editorial_daily  # noqa: PLC0415
 
@@ -116,7 +128,7 @@ def _background_daily(chapters=None):
                     conn,
                     chapters=chapters,
                     trigger="manual",
-                    db_path=str(config.DB_PATH),
+                    db_path=_db_path(),
                 )
             finally:
                 conn.close()
@@ -129,7 +141,7 @@ def _background_daily(chapters=None):
 def _background_workday(mode="write", chapters=None, boss_instruction=""):
     def worker():
         try:
-            conn = db.connect(str(config.DB_PATH))
+            conn = db.connect(_db_path())
             try:
                 from tools import workday  # noqa: PLC0415
 
@@ -139,7 +151,7 @@ def _background_workday(mode="write", chapters=None, boss_instruction=""):
                     trigger="manual",
                     mode=mode,
                     boss_instruction=boss_instruction,
-                    db_path=str(config.DB_PATH),
+                    db_path=_db_path(),
                 )
             finally:
                 conn.close()
@@ -152,12 +164,12 @@ def _background_workday(mode="write", chapters=None, boss_instruction=""):
 def _background_close(run_id):
     def worker():
         try:
-            conn = db.connect(str(config.DB_PATH))
+            conn = db.connect(_db_path())
             try:
                 from tools import workday  # noqa: PLC0415
 
                 workday.close(
-                    conn, run_id, db_path=str(config.DB_PATH)
+                    conn, run_id, db_path=_db_path()
                 )
             finally:
                 conn.close()
@@ -170,12 +182,12 @@ def _background_close(run_id):
 def _background_resume(run_id, chapters=None):
     def worker():
         try:
-            conn = db.connect(str(config.DB_PATH))
+            conn = db.connect(_db_path())
             try:
                 from tools import workday  # noqa: PLC0415
 
                 workday.resume(
-                    conn, run_id, chapters=chapters, db_path=str(config.DB_PATH)
+                    conn, run_id, chapters=chapters, db_path=_db_path()
                 )
             finally:
                 conn.close()
@@ -211,12 +223,12 @@ def _weekly_worker():
             )
         except Exception as exc:  # noqa: BLE001
             _alert(f"周会热点采集失败: {str(exc)[:200]}")
-        _run_cli("tools/architect_weekly.py", ["--db", str(config.DB_PATH)])
+        _run_cli("tools/architect_weekly.py", ["--db", _db_path()])
         _run_cli(
             "tools/agent_meeting.py",
-            ["--db", str(config.DB_PATH), "--kind", "weekly"],
+            ["--db", _db_path(), "--kind", "weekly"],
         )
-        _run_cli("tools/distill_lessons.py", ["--db", str(config.DB_PATH)])
+        _run_cli("tools/distill_lessons.py", ["--db", _db_path()])
     finally:
         preflight.release_lock(lock_path)
 

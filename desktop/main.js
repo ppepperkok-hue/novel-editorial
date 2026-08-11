@@ -218,7 +218,11 @@ app.whenReady().then(async () => {
     await ensureApi();
   } catch (e) {
     console.error(e);
-    app.quit();
+    dialog.showErrorBox(
+      "文学编辑部启动失败",
+      String((e && e.message) || e) +
+        "\n\n请确认 Python（pythonw）已安装且端口 8000 未被占用，然后重新启动应用。",
+    );
     return;
   }
   createWindow();

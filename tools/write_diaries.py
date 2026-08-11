@@ -177,23 +177,24 @@ def write(conn, novel_id, mode, dry_run=False, materials=None):
             content = parse_json(resp["text"]) or {"raw": resp["text"][:2000]}
             usage = resp["usage"]
             model = resp["model"]
-        conn.execute(
-            "INSERT INTO agent_diaries(agent,novel_id,diary_type,content,created_at) "
-            "VALUES(?,?,?,?,datetime('now','localtime'))",
-            (agent, novel_id, mode, json.dumps(content, ensure_ascii=False)),
-        )
-        if mode == "weekly":
-            mood = content.get("mood") if isinstance(content, dict) else None
-            if isinstance(mood, dict):
-                mood.setdefault("note", "")
-            else:
-                mood = {"satisfaction": 0.5, "concern": 0.5, "excitement": 0.5, "fatigue": 0.3, "note": ""}
-            conn.execute("DELETE FROM agent_states WHERE agent=? AND novel_id=?", (agent, novel_id))
+        if not dry_run:
             conn.execute(
-                "INSERT INTO agent_states(agent,novel_id,mood,updated_at) "
-                "VALUES(?,?,?,datetime('now','localtime'))",
-                (agent, novel_id, json.dumps(mood, ensure_ascii=False)),
+                "INSERT INTO agent_diaries(agent,novel_id,diary_type,content,created_at) "
+                "VALUES(?,?,?,?,datetime('now','localtime'))",
+                (agent, novel_id, mode, json.dumps(content, ensure_ascii=False)),
             )
+            if mode == "weekly":
+                mood = content.get("mood") if isinstance(content, dict) else None
+                if isinstance(mood, dict):
+                    mood.setdefault("note", "")
+                else:
+                    mood = {"satisfaction": 0.5, "concern": 0.5, "excitement": 0.5, "fatigue": 0.3, "note": ""}
+                conn.execute("DELETE FROM agent_states WHERE agent=? AND novel_id=?", (agent, novel_id))
+                conn.execute(
+                    "INSERT INTO agent_states(agent,novel_id,mood,updated_at) "
+                    "VALUES(?,?,?,datetime('now','localtime'))",
+                    (agent, novel_id, json.dumps(mood, ensure_ascii=False)),
+                )
         if mode == "weekly" and not dry_run and isinstance(content, dict):
             opinions = content.get("opinions_changed")
             if isinstance(opinions, list):
@@ -218,22 +219,23 @@ def write(conn, novel_id, mode, dry_run=False, materials=None):
             )
         if not dry_run:
             record_cost(conn, novel_id, agent, usage, model)
-        activity.log_activity(
-            conn,
-            agent,
-            novel_id,
-            "diary",
-            f"写了{('周记' if mode == 'weekly' else '今日日记')}",
-            {
-                "diary_type": mode,
-                "what_done": str((content.get("what_done") or content.get("week_summary") or "")[:200])
-                if isinstance(content, dict)
-                else "",
-                "feelings": str((content.get("feelings") or "")[:100])
-                if isinstance(content, dict)
-                else "",
-            },
-        )
+        if not dry_run:
+            activity.log_activity(
+                conn,
+                agent,
+                novel_id,
+                "diary",
+                f"写了{('周记' if mode == 'weekly' else '今日日记')}",
+                {
+                    "diary_type": mode,
+                    "what_done": str((content.get("what_done") or content.get("week_summary") or "")[:200])
+                    if isinstance(content, dict)
+                    else "",
+                    "feelings": str((content.get("feelings") or "")[:100])
+                    if isinstance(content, dict)
+                    else "",
+                },
+            )
         results.append({"agent": agent, "type": mode, "ok": True})
     if mode == "weekly" and not dry_run:
         settle = promises.settle_promises(conn, novel_id)

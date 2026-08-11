@@ -52,6 +52,13 @@ class OutboxTests(unittest.TestCase):
         text = "正文里提到 outbox 这个词也不该被解析"
         self.assertEqual(editorial_daily._handle_outbox(self.ctx, "写手A", text), text)
 
+    def test_outbox_text_envelope_returns_prose(self):
+        text = json.dumps(
+            {"text": "这是正文", "outbox": [{"to": "eic", "body": "留言"}]}
+        )
+        result = editorial_daily._handle_outbox(self.ctx, "写手A", text)
+        self.assertEqual(result, "这是正文")
+
     def test_outbox_decision_rework_creates_action_and_resolves(self):
         original = mailroom.send(
             self.conn, "reviewer", "writer", "请重写第二章", novel_id=1
