@@ -104,6 +104,22 @@ def unread_count(conn, agent, novel_id=0):
         return _err(f"unread failed: {str(exc)[:200]}")
 
 
+def unread_summary(conn, novel_id=0):
+    """Per-recipient unread counts (the manual 'process messages' pump view)."""
+    try:
+        sql = "SELECT to_agent, COUNT(*) c FROM agent_messages WHERE status='unread'"
+        params = []
+        if novel_id:
+            sql += " AND ref_novel_id=?"
+            params.append(int(novel_id))
+        sql += " GROUP BY to_agent ORDER BY c DESC"
+        rows = conn.execute(sql, params).fetchall()
+        agents = {r["to_agent"]: r["c"] for r in rows}
+        return {"ok": True, "agents": agents, "total": sum(agents.values())}
+    except Exception as exc:  # noqa: BLE001
+        return _err(f"unread_summary failed: {str(exc)[:200]}")
+
+
 def mark_read(conn, message_ids):
     """Mark unread messages as read; returns the number actually updated."""
     ids = [int(i) for i in (message_ids or []) if str(i).strip().isdigit()]

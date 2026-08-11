@@ -197,6 +197,73 @@ def make_handler(db_path):
         self.end_headers()
         self.wfile.write(body)
 
+    def _get_mailbox(self, parsed):
+        from tools import mailroom  # noqa: PLC0415
+
+        qs = parse_qs(parsed.query)
+        conn = db.connect(db_path)
+        try:
+            result = mailroom.list_messages(
+                conn,
+                agent=qs.get("agent", [""])[0] or None,
+                novel_id=_parse_int(qs.get("novel_id", ["0"])[0]),
+                status=qs.get("status", [""])[0] or None,
+                limit=_parse_int(qs.get("limit", ["50"])[0], 50),
+            )
+        finally:
+            conn.close()
+        self._json(result)
+
+    def _get_relations(self, parsed):
+        from tools import editorial_state  # noqa: PLC0415
+
+        qs = parse_qs(parsed.query)
+        conn = db.connect(db_path)
+        try:
+            result = editorial_state.list_relations(
+                conn,
+                agent=qs.get("agent", [""])[0] or None,
+                novel_id=_parse_int(qs.get("novel_id", ["0"])[0]),
+                limit=_parse_int(qs.get("limit", ["50"])[0], 50),
+            )
+        finally:
+            conn.close()
+        self._json(result)
+
+    def _get_memories(self, parsed):
+        from tools import editorial_state  # noqa: PLC0415
+
+        qs = parse_qs(parsed.query)
+        conn = db.connect(db_path)
+        try:
+            result = editorial_state.list_memories(
+                conn,
+                agent=qs.get("agent", [""])[0] or None,
+                novel_id=_parse_int(qs.get("novel_id", ["0"])[0]),
+                category=qs.get("category", [""])[0] or None,
+                limit=_parse_int(qs.get("limit", ["50"])[0], 50),
+            )
+        finally:
+            conn.close()
+        self._json(result)
+
+    def _get_promises(self, parsed):
+        from tools import editorial_state  # noqa: PLC0415
+
+        qs = parse_qs(parsed.query)
+        conn = db.connect(db_path)
+        try:
+            result = editorial_state.list_promises(
+                conn,
+                agent=qs.get("agent", [""])[0] or None,
+                novel_id=_parse_int(qs.get("novel_id", ["0"])[0]),
+                status=qs.get("status", [""])[0] or None,
+                limit=_parse_int(qs.get("limit", ["50"])[0], 50),
+            )
+        finally:
+            conn.close()
+        self._json(result)
+
     # Route registry: new endpoints go here instead of the legacy if/elif
     # chains in do_GET/do_POST. Old endpoints migrate over incrementally.
     GET_ROUTES = {
@@ -204,6 +271,10 @@ def make_handler(db_path):
         "/api/daily_runs/detail": _get_daily_runs_detail,
         "/api/flow": _get_flow,
         "/api/export/flow": _get_export_flow,
+        "/api/agents/mailbox": _get_mailbox,
+        "/api/agents/relations": _get_relations,
+        "/api/agents/memories": _get_memories,
+        "/api/agents/promises": _get_promises,
     }
     POST_ROUTES = {}
 

@@ -329,6 +329,19 @@ def handle_control(conn, payload):
             },
         )
         return result
+    if action == "process_messages":
+        from tools import mailroom  # noqa: PLC0415
+
+        result = mailroom.unread_summary(
+            conn, novel_id=payload.get("novel_id") or 0
+        )
+        audit.log(
+            conn,
+            "operation",
+            "process_messages",
+            detail={"total_unread": result.get("total", 0), "ok": result.get("ok")},
+        )
+        return result
     return {"ok": False, "error": f"unknown action {action}"}
 
 

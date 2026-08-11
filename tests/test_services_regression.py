@@ -184,6 +184,21 @@ class ControlTests(unittest.TestCase):
         if lock_path.exists():
             lock_path.unlink()
 
+    def test_process_messages_returns_unread_summary(self):
+        path = make_db()
+        from novel_pipeline.services import control
+        from tools import mailroom
+
+        conn = db.connect(path)
+        try:
+            mailroom.send(conn, "reviewer", "writer", "打回", novel_id=1)
+            result = control.handle_control(conn, {"action": "process_messages"})
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["total"], 1)
+            self.assertEqual(result["agents"]["writer"], 1)
+        finally:
+            conn.close()
+
 
 class MiscTests(unittest.TestCase):
     def test_diary_list_and_update(self):

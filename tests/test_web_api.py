@@ -73,6 +73,24 @@ class WebApiTests(unittest.TestCase):
             data = json.loads(resp.read().decode("utf-8"))
         self.assertIn("runs", data)
 
+    def test_editorial_read_endpoints(self):
+        from tools import mailroom
+
+        conn = db.connect(self.db_path)
+        try:
+            mailroom.send(conn, "reviewer", "writer", "第二章逻辑有漏洞", novel_id=1)
+        finally:
+            conn.close()
+        with urlopen(f"{self.base}/api/agents/mailbox?agent=writer", timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        self.assertTrue(data["ok"])
+        self.assertEqual(len(data["messages"]), 1)
+        for path in ("relations", "memories", "promises"):
+            with urlopen(f"{self.base}/api/agents/{path}?agent=writer", timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            self.assertTrue(data["ok"], path)
+            self.assertIn("items", data)
+
     def test_index_served(self):
         with urlopen(self.base + "/", timeout=10) as resp:
             html = resp.read().decode("utf-8")

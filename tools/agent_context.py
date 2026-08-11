@@ -9,6 +9,7 @@ snapshot degrades gracefully to empty sections.
 from __future__ import annotations
 
 from novel_pipeline import config
+from tools import editorial_state
 
 
 def _truncate(text, limit):
@@ -50,12 +51,9 @@ def build_context_snapshot(conn, agent, novel_id=0):
             )
         sections.append("收件箱：\n" + "\n".join(lines))
 
-    memories = conn.execute(
-        "SELECT category, content, importance FROM agent_memories "
-        "WHERE agent=? AND novel_id IN (" + marks + ") "
-        "ORDER BY importance DESC, id DESC LIMIT ?",
-        (agent, *scopes, config.AGENT_CTX_MEMORIES),
-    ).fetchall()
+    memories = editorial_state.list_memories(
+        conn, agent=agent, novel_id=novel_id, limit=config.AGENT_CTX_MEMORIES
+    ).get("items") or []
     if memories:
         sections.append(
             "最近记忆：\n"
@@ -65,12 +63,9 @@ def build_context_snapshot(conn, agent, novel_id=0):
             )
         )
 
-    relations = conn.execute(
-        "SELECT other, familiarity, trust, friction FROM agent_relations "
-        "WHERE agent=? AND novel_id IN (" + marks + ") "
-        "ORDER BY updated_at DESC, id DESC LIMIT ?",
-        (agent, *scopes, config.AGENT_CTX_RELATIONS),
-    ).fetchall()
+    relations = editorial_state.list_relations(
+        conn, agent=agent, novel_id=novel_id, limit=config.AGENT_CTX_RELATIONS
+    ).get("items") or []
     if relations:
         sections.append(
             "我与同事的关系：\n"
@@ -84,12 +79,14 @@ def build_context_snapshot(conn, agent, novel_id=0):
             )
         )
 
-    promises = conn.execute(
-        "SELECT promise, due_at FROM agent_promises "
-        "WHERE agent=? AND novel_id IN (" + marks + ") AND status='open' "
-        "ORDER BY due_at ASC, id ASC LIMIT ?",
-        (agent, *scopes, config.AGENT_CTX_PROMISES),
-    ).fetchall()
+    promises = [
+        r for r in (
+            editorial_state.list_promises(
+                conn, agent=agent, novel_id=novel_id, status="open",
+                limit=config.AGENT_CTX_PROMISES,
+            ).get("items") or []
+        )
+    ]
     if promises:
         sections.append(
             "我未兑现的承诺：\n"
