@@ -99,9 +99,11 @@ def build_context_snapshot(conn, agent, novel_id=0):
 
     actions = conn.execute(
         "SELECT task, status FROM agent_actions "
-        "WHERE agent=? AND novel_id IN (" + marks + ") AND status='pending' "
+        "WHERE novel_id IN (" + marks + ") "
+        "AND status IN ('pending','claimed','in_progress') "
+        "AND (agent=? OR assignee=? OR claimed_by=?) "
         "ORDER BY id DESC LIMIT ?",
-        (agent, *scopes, config.AGENT_CTX_ACTIONS),
+        (*scopes, agent, agent, agent, config.AGENT_CTX_ACTIONS),
     ).fetchall()
     if actions:
         sections.append(

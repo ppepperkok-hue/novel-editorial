@@ -246,7 +246,12 @@ CREATE TABLE IF NOT EXISTS agent_actions (
     status TEXT NOT NULL DEFAULT 'pending',
     created_at TEXT DEFAULT '',
     completed_at TEXT DEFAULT '',
-    result TEXT DEFAULT ''
+    result TEXT DEFAULT '',
+    assignee TEXT DEFAULT '',
+    claimed_by TEXT DEFAULT '',
+    priority TEXT DEFAULT 'medium',
+    due_at TEXT DEFAULT '',
+    blocked_by TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS agent_activity (
@@ -412,6 +417,16 @@ def _migrate(conn):
     run_cols = {r["name"] for r in conn.execute("PRAGMA table_info(daily_runs)")}
     if "source" not in run_cols:
         conn.execute("ALTER TABLE daily_runs ADD COLUMN source TEXT DEFAULT 'scheduler'")
+    action_cols = {r["name"] for r in conn.execute("PRAGMA table_info(agent_actions)")}
+    for col, ddl in {
+        "assignee": "TEXT DEFAULT ''",
+        "claimed_by": "TEXT DEFAULT ''",
+        "priority": "TEXT DEFAULT 'medium'",
+        "due_at": "TEXT DEFAULT ''",
+        "blocked_by": "TEXT DEFAULT ''",
+    }.items():
+        if col not in action_cols:
+            conn.execute(f"ALTER TABLE agent_actions ADD COLUMN {col} {ddl}")
     conn.executescript(
         """
         CREATE INDEX IF NOT EXISTS idx_chapters_novel_seq ON chapters(novel_id, seq);

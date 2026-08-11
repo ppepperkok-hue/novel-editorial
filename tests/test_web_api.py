@@ -3,6 +3,7 @@ import os
 import tempfile
 import threading
 import unittest
+import urllib.request
 from http.server import ThreadingHTTPServer
 from unittest import mock
 from urllib.error import HTTPError
@@ -90,6 +91,27 @@ class WebApiTests(unittest.TestCase):
                 data = json.loads(resp.read().decode("utf-8"))
             self.assertTrue(data["ok"], path)
             self.assertIn("items", data)
+
+    def test_claim_action_endpoint(self):
+        from novel_pipeline.services import activity
+
+        conn = db.connect(self.db_path)
+        try:
+            action_id = activity.create_action(
+                conn, "writer", "把规则台账模板定死", novel_id=1
+            )["id"]
+        finally:
+            conn.close()
+        req = urllib.request.Request(
+            f"{self.base}/api/agent_actions/claim",
+            data=json.dumps({"id": action_id, "agent": "writer", "novel_id": 1}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["status"], "claimed")
 
     def test_index_served(self):
         with urlopen(self.base + "/", timeout=10) as resp:

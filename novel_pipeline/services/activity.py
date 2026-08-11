@@ -14,7 +14,7 @@ from pathlib import Path
 
 from novel_pipeline.llm_client import chat_deepseek
 
-ACTION_STATUSES = ("pending", "done", "skipped")
+ACTION_STATUSES = ("pending", "claimed", "in_progress", "done", "skipped")
 AGENTS_DIR = Path(__file__).resolve().parent.parent.parent / "prompts" / "agents"
 
 
@@ -85,13 +85,15 @@ def activity_days(conn, agent=None, days=30):
 
 
 def create_action(conn, agent, task, novel_id=0, session_id=0, meeting_id=0,
-                  detail=None):
+                  detail=None, assignee="", priority="medium", due_at="",
+                  blocked_by=""):
     """Create one pending action item for an agent."""
     if not agent or not str(task).strip():
         return {"ok": False, "error": "agent and task required"}
     cur = conn.execute(
-        "INSERT INTO agent_actions(session_id,meeting_id,agent,novel_id,task,detail,status,created_at) "
-        "VALUES(?,?,?,?,?,?,?,?)",
+        "INSERT INTO agent_actions(session_id,meeting_id,agent,novel_id,task,detail,status,"
+        "assignee,priority,due_at,blocked_by,created_at) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             int(session_id or 0),
             int(meeting_id or 0),
@@ -100,6 +102,10 @@ def create_action(conn, agent, task, novel_id=0, session_id=0, meeting_id=0,
             str(task).strip(),
             json.dumps(detail or {}, ensure_ascii=False),
             "pending",
+            str(assignee or ""),
+            str(priority or "medium"),
+            str(due_at or ""),
+            str(blocked_by or ""),
             _now(),
         ),
     )
@@ -114,6 +120,38 @@ def create_action(conn, agent, task, novel_id=0, session_id=0, meeting_id=0,
         {"action_id": action_id, "task": str(task).strip()[:200]},
     )
     return {"ok": True, "id": action_id}
+
+
+def claim_action(conn, action_id, agent, novel_id=0):
+    """An agent claims a pending task; only pending unclaimed tasks qualify."""
+    agent = str(agent or "").strip()
+    if not agent:
+        return {"ok": False, "error": "agent required"}
+    row = conn.execute(
+        "SELECT * FROM agent_actions WHERE id=?", (int(action_id),)
+    ).fetchone()
+    if row is None:
+        return {"ok": False, "error": "action not found"}
+    if row["claimed_by"]:
+        return {"ok": False, "error": f"already claimed by {row['claimed_by']}"}
+    if row["status"] != "pending":
+        return {"ok": False, "error": f"only pending actions can be claimed (status={row['status']})"}
+    if int(novel_id or 0) and int(row["novel_id"] or 0) not in (0, int(novel_id)):
+        return {"ok": False, "error": "action belongs to another novel"}
+    conn.execute(
+        "UPDATE agent_actions SET claimed_by=?, status='claimed' WHERE id=?",
+        (agent, int(action_id)),
+    )
+    conn.commit()
+    log_activity(
+        conn,
+        agent,
+        row["novel_id"] or 0,
+        "action_claimed",
+        "认领行动项",
+        {"action_id": int(action_id), "task": row["task"][:200]},
+    )
+    return {"ok": True, "status": "claimed", "claimed_by": agent}
 
 
 def list_actions(conn, agent=None, status=None, limit=200):
@@ -139,10 +177,14 @@ def list_actions(conn, agent=None, status=None, limit=200):
     return out
 
 
-def update_action(conn, action_id, status=None, result=None, task=None):
+def update_action(conn, action_id, status=None, result=None, task=None, agent=None):
     row = conn.execute("SELECT * FROM agent_actions WHERE id=?", (action_id,)).fetchone()
     if row is None:
         return {"ok": False, "error": "action not found"}
+    if agent:
+        allowed = {row["agent"], row["assignee"], row["claimed_by"]}
+        if str(agent) not in allowed:
+            return {"ok": False, "error": f"agent {agent} is not the assignee/claimant of this action"}
     new_status = status or row["status"]
     if new_status not in ACTION_STATUSES:
         return {"ok": False, "error": f"invalid status {new_status}"}
