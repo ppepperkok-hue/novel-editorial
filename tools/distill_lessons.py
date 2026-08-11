@@ -26,9 +26,42 @@ from novel_editorial.services import knowledge  # noqa: E402
 def _parse_json(text):
     if not text:
         return None
+    text = str(text).strip()
     try:
-        return json.loads(text[text.find("{") : text.rfind("}") + 1])
-    except (ValueError, IndexError):
+        return json.loads(text)
+    except (ValueError, TypeError):
+        pass
+    start = text.find("{")
+    if start < 0:
+        return None
+    depth = 0
+    in_string = False
+    escaped = False
+    end = -1
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                end = i
+                break
+    if end < 0:
+        return None
+    try:
+        return json.loads(text[start : end + 1])
+    except (ValueError, TypeError):
         return None
 
 

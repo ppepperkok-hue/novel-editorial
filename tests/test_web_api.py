@@ -329,7 +329,7 @@ class WebApiTests(unittest.TestCase):
         ):
             with self.assertRaises(HTTPError) as ctx:
                 urlopen(req, timeout=10)
-            self.assertEqual(ctx.exception.code, 500)
+            self.assertEqual(ctx.exception.code, 400)
         from novel_editorial import config
 
         self.assertFalse((config.ROOT / "escape.md").exists())

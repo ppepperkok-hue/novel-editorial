@@ -1,7 +1,8 @@
 """Fetch per-chapter read completion / follow rates from Fanqie author API.
 
 Writes demo_data/reader_stats.csv in the format data_feedback expects:
-chapter,finish_rate,follow_rate (0-1 floats).
+chapter,finish_rate,follow_rate (0-1 floats; empty field = missing data,
+so consumers must not treat it as a 0.0 rate).
 """
 
 import argparse
@@ -139,8 +140,8 @@ def run(db_path, env_file=None, out_csv=None):
         rows.append(
             {
                 "chapter": seq,
-                "finish_rate": finish if finish is not None else 0.0,
-                "follow_rate": follow if follow is not None else 0.0,
+                "finish_rate": finish if finish is not None else "",
+                "follow_rate": follow if follow is not None else "",
             }
         )
 

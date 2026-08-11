@@ -74,14 +74,25 @@ def main():
         if hot_file.exists():
             try:
                 hot_data = json.loads(hot_file.read_text(encoding="utf-8"))
-                all_titles = []
-                for src in hot_data.get("sources") or []:
-                    all_titles.extend(src.get("titles") or [])
-                hot = {
-                    "updated_at": hot_data.get("updated_at") or "",
-                    "top_keywords": hot_data.get("top_keywords") or [],
-                    "titles": all_titles[:30],
-                }
+                if not isinstance(hot_data, dict):
+                    hot_data = None
+                    try:
+                        with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+                            f.write(
+                                f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
+                                "get_meta: hot_topics.json 非法结构（非对象），使用默认值\n"
+                            )
+                    except OSError:
+                        pass
+                if hot_data is not None:
+                    all_titles = []
+                    for src in hot_data.get("sources") or []:
+                        all_titles.extend(src.get("titles") or [])
+                    hot = {
+                        "updated_at": hot_data.get("updated_at") or "",
+                        "top_keywords": hot_data.get("top_keywords") or [],
+                        "titles": all_titles[:30],
+                    }
             except (OSError, ValueError):
                 hot = {}
 

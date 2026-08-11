@@ -8,7 +8,7 @@ overwrite the past (old values move to novel_knowledge_history).
 
 CLI:
     python tools/novel_knowledge.py --sync-latest --db demo.db
-    python tools/novel_knowledge.py --snapshot --novel-id 1 --db demo.db
+    python tools/novel_knowledge.py --snapshot 1 --db demo.db
 """
 
 import argparse
@@ -362,15 +362,27 @@ def graph(conn, novel_id, limit=80):
     return {"nodes": nodes, "edges": edges_out}
 
 
+def _like_escape(value):
+    """Escape LIKE wildcards so a literal % or _ is searched as-is."""
+    return (
+        (value or "")
+        .replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
+
+
 def resolve(conn, novel_id, topic, limit=8):
     """Keyword search over entity and content for the agent tool."""
     topic = (topic or "").strip()
     if not topic:
         return []
+    pattern = f"%{_like_escape(topic)}%"
     rows = conn.execute(
         "SELECT * FROM novel_knowledge WHERE novel_id=? "
-        "AND (entity LIKE ? OR content LIKE ?) ORDER BY category, updated_at DESC LIMIT ?",
-        (novel_id, f"%{topic}%", f"%{topic}%", limit),
+        "AND (entity LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\') "
+        "ORDER BY category, updated_at DESC LIMIT ?",
+        (novel_id, pattern, pattern, limit),
     ).fetchall()
     return [dict(r) for r in rows]
 
@@ -399,7 +411,7 @@ def snapshot(conn, novel_id, per_category=6, max_len=180):
 def sync_from_chapters(conn, novel_id, limit=3):
     """Extract facts from recent chapter_summaries into the knowledge store.
 
-    CLI: python tools/novel_knowledge.py --sync N --snapshot N（N 为 novel_id）
+    CLI: python tools/novel_knowledge.py --sync N（N 为 novel_id）
     """
     rows = conn.execute(
         "SELECT cs.chapter_id, cs.summary, cs.character_states, cs.world_events, c.seq "

@@ -300,6 +300,22 @@ def _handle_meeting_actions(conn, agent, novel_id, speech):
         for item in outbox:
             if not isinstance(item, dict):
                 continue
+            try:
+                chapter_id = int(item.get("chapter_id") or 0)
+                reply_to = int(item.get("reply_to") or 0)
+            except (TypeError, ValueError) as exc:
+                audit.log(
+                    conn,
+                    "meeting",
+                    "outbox_skip",
+                    target_type="agent",
+                    target_id=agent,
+                    detail={
+                        "subject": str(item.get("subject") or "")[:200],
+                        "reason": f"invalid chapter_id/reply_to: {exc}",
+                    },
+                )
+                continue
             mailroom.send(
                 conn,
                 agent,
@@ -308,8 +324,8 @@ def _handle_meeting_actions(conn, agent, novel_id, speech):
                 subject=str(item.get("subject") or ""),
                 kind=str(item.get("kind") or "note"),
                 novel_id=novel_id or 0,
-                chapter_id=int(item.get("chapter_id") or 0),
-                reply_to=int(item.get("reply_to") or 0),
+                chapter_id=chapter_id,
+                reply_to=reply_to,
             )
     used = speech.get("memory_used")
     if isinstance(used, list):

@@ -1,6 +1,7 @@
 import http.cookiejar
 import json
 import sys
+import time
 import urllib.request
 from pathlib import Path
 
@@ -16,7 +17,9 @@ BASE = (
 cj = http.cookiejar.CookieJar()
 opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
 
-_token_cache = None
+# Sessions expire server-side; re-login once the cached login is this old.
+_LOGIN_TTL_SECONDS = 1800
+_login_at = None
 
 
 def _credentials():
@@ -32,10 +35,8 @@ def _credentials():
     return email, password
 
 
-def auth_token():
-    global _token_cache
-    if _token_cache is not None:
-        return _token_cache
+def _login():
+    global _login_at
     email, password = _credentials()
     req = urllib.request.Request(
         BASE + "/rest/login",
@@ -44,15 +45,23 @@ def auth_token():
         method="POST",
     )
     r = opener.open(req, timeout=10)
-    for h in (r.headers.get_all("Set-Cookie") or []):
-        if h.startswith("n8n-auth="):
-            _token_cache = h.split(";", 1)[0].split("=", 1)[1]
-            return _token_cache
-    raise RuntimeError("no n8n-auth cookie")
+    if not any(
+        h.startswith("n8n-auth=")
+        for h in (r.headers.get_all("Set-Cookie") or [])
+    ):
+        raise RuntimeError("no n8n-auth cookie")
+    _login_at = time.monotonic()
 
 
-def _open(method, path, body, token):
-    headers = {"Cookie": "n8n-auth=" + token}
+def _ensure_session():
+    """Log in unless the cached session is still within its TTL."""
+    global _login_at
+    if _login_at is None or time.monotonic() - _login_at >= _LOGIN_TTL_SECONDS:
+        _login()
+
+
+def _open(method, path, body):
+    headers = {}
     data = None
     if body is not None:
         data = json.dumps(body).encode()
@@ -64,17 +73,19 @@ def _open(method, path, body, token):
 
 
 def request(method, path, body=None):
-    """Send one request, reusing the session token; on auth failure
-    re-login exactly once and retry."""
+    """Send one request through the CookieJar; on auth failure
+    discard the stale session, re-login exactly once and retry."""
+    _ensure_session()
     try:
-        return _open(method, path, body, auth_token())
+        return _open(method, path, body)
     except urllib.error.HTTPError as e:
         if e.code in (401, 403):
-            global _token_cache
-            _token_cache = None
+            global _login_at
+            _login_at = None
             cj.clear()
             try:
-                return _open(method, path, body, auth_token())
+                _ensure_session()
+                return _open(method, path, body)
             except urllib.error.HTTPError as retry_err:
                 e = retry_err
         raw = e.read().decode()

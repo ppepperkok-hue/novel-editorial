@@ -66,6 +66,10 @@ def density_per_window(hits, total, window=500):
 
 
 def detect(text):
+    if not isinstance(text, str):
+        if text:
+            raise ValueError(f"detect() 需要字符串输入，收到 {type(text).__name__}")
+        text = ""
     if not text:
         return {"score": 0, "flowery": {}, "filler": {}, "density": 0, "notes": [], "chars": 0}
     total = len(text)

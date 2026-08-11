@@ -337,7 +337,17 @@ def _upsert_summary(conn, novel_id, chapter_id, seq, ch, run_id=""):
 
 
 def upsert_chapters(conn, novel_id, chapters, run_id=""):
-    for ch in chapters or []:
+    for idx, ch in enumerate(chapters or []):
+        if not isinstance(ch, dict):
+            try:
+                with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+                    f.write(
+                        f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
+                        f"record_work: chapters[{idx}] ({type(ch).__name__}) 非 dict，已跳过\n"
+                    )
+            except OSError:
+                pass
+            continue
         seq = _to_int(ch.get("seq") or 0, 0, "seq")
         if not seq:
             continue

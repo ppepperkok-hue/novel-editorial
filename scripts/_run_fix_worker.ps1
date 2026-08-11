@@ -28,26 +28,35 @@ if (-not (Test-Path -LiteralPath $codexJs)) {
     throw "codex.js not found: $codexJs"
 }
 
-# Same invocation style as run_review.ps1: the prompt goes in as a
-# command-line argument (single line), node is launched via Start-Process
-# hidden, and stdout/stderr are redirected to files. No console window.
+# The task prompt is written to a temp file and fed to codex through stdin
+# (`-`), so embedded quotes/newlines/length can never break the node command
+# line. Node is launched via Start-Process hidden, and stdout/stderr are
+# redirected to files. No console window.
 $taskText = Get-Content -LiteralPath $Task -Raw -Encoding UTF8
-$taskText = $taskText -replace "`r?`n", " "
-if ($taskText.Length -gt 15000) {
-    throw "task text is $($taskText.Length) chars (> 15000); split the task file into smaller tasks"
+$tmpTask = [System.IO.Path]::GetTempFileName()
+try {
+    [System.IO.File]::WriteAllText(
+        $tmpTask,
+        $taskText,
+        [System.Text.UTF8Encoding]::new($false)
+    )
+    $parts = @(
+        '"' + $codexJs + '"',
+        "exec",
+        "--ephemeral"
+    )
+    if ($Model) {
+        $parts += "-m"
+        $parts += '"' + $Model + '"'
+    }
+    $parts += "-"
+    $cmdLine = $parts -join " "
+    $p = Start-Process -FilePath "node" -ArgumentList $cmdLine `
+        -WorkingDirectory $root -RedirectStandardInput $tmpTask `
+        -RedirectStandardOutput $Out -RedirectStandardError $Err `
+        -WindowStyle Hidden -Wait -PassThru
 }
-$parts = @(
-    '"' + $codexJs + '"',
-    "exec",
-    "--ephemeral"
-)
-if ($Model) {
-    $parts += "-m"
-    $parts += '"' + $Model + '"'
+finally {
+    Remove-Item -LiteralPath $tmpTask -Force -ErrorAction SilentlyContinue
 }
-$parts += '"' + $taskText + '"'
-$cmdLine = $parts -join " "
-$p = Start-Process -FilePath "node" -ArgumentList $cmdLine `
-    -WorkingDirectory $root -RedirectStandardOutput $Out `
-    -RedirectStandardError $Err -WindowStyle Hidden -Wait -PassThru
 exit $p.ExitCode

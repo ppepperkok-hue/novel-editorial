@@ -79,10 +79,18 @@ def write_knowledge(file, meta, body):
     meta.setdefault("type", "craft")
     meta.setdefault("agents", [])
     meta.setdefault("keywords", [])
-    for key in ("title", "source", "updated_at"):
-        value = str(meta.get(key) or "")
-        if "\n" in value or "\r" in value:
-            raise ValueError(f"knowledge frontmatter field '{key}' must not contain newlines")
+    for key in ("title", "type", "source", "updated_at", "agents", "keywords"):
+        value = meta.get(key)
+        values = (
+            [str(v) for v in value]
+            if isinstance(value, (list, tuple))
+            else [str(value or "")]
+        )
+        if any(re.search(r"[\x00-\x1f\x7f]", v) for v in values):
+            raise ValueError(
+                f"knowledge frontmatter field '{key}' must not contain "
+                "newlines or control characters"
+            )
     head = (
         f"---\ntitle: {meta['title']}\ntype: {meta['type']}\n"
         f"agents: {json.dumps(meta['agents'], ensure_ascii=False)}\n"

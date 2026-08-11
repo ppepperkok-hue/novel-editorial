@@ -539,7 +539,8 @@ def chair_summary(conn, novel_id, attendees, topics, transcript, dry_run, materi
         "volume_goal_adjust(字符串,可空), reader_persona({age_range,preference,avoid},可空), "
         "finish_decision({should_finish(bool), remaining_chapters(5-30,不收尾则为0), reasons(数组)},可空), "
         "next_book({book_name, genre, abstract, selling_point, protagonist},仅当作品已完结时输出)}, "
-        "disagreements(数组), action_items(数组)}"
+        "disagreements(数组), action_items(数组), "
+        "writing_directives(数组，编辑部下一步写作应遵循的最新指令，一句话一条，可空)}"
         + decision_note
     )
     if planning:
@@ -548,8 +549,9 @@ def chair_summary(conn, novel_id, attendees, topics, transcript, dry_run, materi
             "本次新书选题会必须输出",
         )
         user = user.replace(
-            "action_items(数组)}",
-            "action_items(数组，必须包含散会后的具体执行项，至少3条，每条带负责人与期限)}",
+            "action_items(数组), writing_directives(数组，编辑部下一步写作应遵循的最新指令，一句话一条，可空)}",
+            "action_items(数组，必须包含散会后的具体执行项，至少3条，每条带负责人与期限), "
+            "writing_directives(数组，编辑部下一步写作应遵循的最新指令，一句话一条，可空)}",
         )
     text, _, _, _ = ask(
         conn, novel_id, "eic", user, temperature=0.2, dry_run=dry_run,
@@ -558,7 +560,7 @@ def chair_summary(conn, novel_id, attendees, topics, transcript, dry_run, materi
              "attendees": attendees, "topics": topics,
              "discussion_summary": "dry-run 会议", "decisions": {"blueprint_updates": [], "volume_goal_adjust": ""},
              "cover_prompt": "",
-             "disagreements": [], "action_items": []}
+             "disagreements": [], "action_items": [], "writing_directives": []}
         ),
         max_tokens=4000,
     )
@@ -655,31 +657,33 @@ def main():
                         "priority": "低",
                         "_error": str(exc)[:200],
                     }
-                    try:
-                        activity.log_activity(
-                            conn,
-                            agent,
-                            novel_id,
-                            "meeting_speech_failed",
-                            f"会议第 {round_no} 轮发言失败",
-                            {"round": round_no, "error": str(exc)[:300]},
-                        )
-                    except Exception:  # noqa: BLE001
-                        pass
+                    if not args.dry_run:
+                        try:
+                            activity.log_activity(
+                                conn,
+                                agent,
+                                novel_id,
+                                "meeting_speech_failed",
+                                f"会议第 {round_no} 轮发言失败",
+                                {"round": round_no, "error": str(exc)[:300]},
+                            )
+                        except Exception:  # noqa: BLE001
+                            pass
                 transcript.append({"round": round_no, "agent": agent, "speech": speech})
-                activity.log_activity(
-                    conn,
-                    agent,
-                    novel_id,
-                    "meeting_speech",
-                    f"会议第 {round_no} 轮发言",
-                    {
-                        "round": round_no,
-                        "kind": args.kind,
-                        "speech": str(speech.get("speech") or "")[:500],
-                        "proposals": speech.get("proposals") or [],
-                    },
-                )
+                if not args.dry_run:
+                    activity.log_activity(
+                        conn,
+                        agent,
+                        novel_id,
+                        "meeting_speech",
+                        f"会议第 {round_no} 轮发言",
+                        {
+                            "round": round_no,
+                            "kind": args.kind,
+                            "speech": str(speech.get("speech") or "")[:500],
+                            "proposals": speech.get("proposals") or [],
+                        },
+                    )
         report = chair_summary(
             conn, novel_id, attendees, topics, transcript, args.dry_run, materials
         )
@@ -690,6 +694,7 @@ def main():
         report.setdefault("disagreements", [])
         report.setdefault("action_items", [])
         report.setdefault("discussion_summary", "")
+        report.setdefault("writing_directives", [])
         report["kind"] = args.kind
 
         # archive
@@ -719,42 +724,51 @@ def main():
             ),
         )
         conn.commit()
-        activity.log_activity(
-            conn,
-            "eic",
-            novel_id,
-            "meeting_summary",
-            "主席总结会议",
-            {
-                "meeting_id": weekly_id,
-                "kind": args.kind,
-                "summary": str(report.get("discussion_summary") or "")[:400],
-                "action_items": len(report.get("action_items") or []),
-            },
-        )
-        try:
-            action_result = activity.generate_post_meeting_actions(
+        if not args.dry_run:
+            activity.log_activity(
                 conn,
-                session_id,
-                weekly_id,
+                "eic",
                 novel_id,
-                attendees,
-                report,
-                transcript,
-                dry_run=args.dry_run,
+                "meeting_summary",
+                "主席总结会议",
+                {
+                    "meeting_id": weekly_id,
+                    "kind": args.kind,
+                    "summary": str(report.get("discussion_summary") or "")[:400],
+                    "action_items": len(report.get("action_items") or []),
+                },
             )
+        if args.dry_run:
             print(
                 json.dumps(
-                    {"ok": True, "post_meeting_actions": action_result.get("created", 0)},
+                    {"ok": True, "post_meeting_actions": 0, "dry_run": True},
                     ensure_ascii=False,
                 )
             )
-        except Exception as exc:  # noqa: BLE001
-            print(f"note: post-meeting actions skipped: {exc}", file=sys.stderr)
-            conn.commit()
+        else:
+            try:
+                action_result = activity.generate_post_meeting_actions(
+                    conn,
+                    session_id,
+                    weekly_id,
+                    novel_id,
+                    attendees,
+                    report,
+                    transcript,
+                    dry_run=False,
+                )
+                print(
+                    json.dumps(
+                        {"ok": True, "post_meeting_actions": action_result.get("created", 0)},
+                        ensure_ascii=False,
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001
+                print(f"note: post-meeting actions skipped: {exc}", file=sys.stderr)
+                conn.commit()
 
         # topic meetings write a meeting memory per attendee
-        if args.kind == "topic":
+        if args.kind == "topic" and not args.dry_run:
             for agent in attendees:
                 speech = next(
                     (s["speech"] for s in transcript if s["agent"] == agent),
@@ -773,37 +787,38 @@ def main():
                 )
             conn.commit()
 
-        # persist decisions
-        try:
-            from tools.apply_architect import apply_report  # noqa: PLC0415
-            from tools.apply_architect import create_planning_from_next_book  # noqa: PLC0415
-
-            if planning:
-                book_result = create_planning_from_next_book(
-                    conn, report, cover_prompt=report.get("cover_prompt", "")
-                )
-                if not book_result.get("ok"):
-                    print(
-                        f"note: planning book not created: {book_result.get('reason')}",
-                        file=sys.stderr,
-                    )
-            else:
-                apply_report(conn, novel_id, report)
-        except ImportError:
-            print("note: apply_report not available yet", file=sys.stderr)
-        except Exception as exc:  # noqa: BLE001
-            print(f"note: 会议结论落盘失败: {exc}", file=sys.stderr)
+        # persist decisions (dry-run 不落盘，避免 apply_report 重写 novels)
+        if not args.dry_run:
             try:
-                activity.log_activity(
-                    conn,
-                    "eic",
-                    novel_id,
-                    "meeting_apply_skipped",
-                    "会议结论落盘失败",
-                    {"kind": args.kind, "error": str(exc)[:300]},
-                )
-            except Exception:  # noqa: BLE001
-                pass
+                from tools.apply_architect import apply_report  # noqa: PLC0415
+                from tools.apply_architect import create_planning_from_next_book  # noqa: PLC0415
+
+                if planning:
+                    book_result = create_planning_from_next_book(
+                        conn, report, cover_prompt=report.get("cover_prompt", "")
+                    )
+                    if not book_result.get("ok"):
+                        print(
+                            f"note: planning book not created: {book_result.get('reason')}",
+                            file=sys.stderr,
+                        )
+                else:
+                    apply_report(conn, novel_id, report)
+            except ImportError:
+                print("note: apply_report not available yet", file=sys.stderr)
+            except Exception as exc:  # noqa: BLE001
+                print(f"note: 会议结论落盘失败: {exc}", file=sys.stderr)
+                try:
+                    activity.log_activity(
+                        conn,
+                        "eic",
+                        novel_id,
+                        "meeting_apply_skipped",
+                        "会议结论落盘失败",
+                        {"kind": args.kind, "error": str(exc)[:300]},
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
 
         out = Path(args.out) if args.out else ROOT / "n8n_tmp"
         if out.is_dir():
@@ -840,14 +855,15 @@ def main():
                     (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), session_id),
                 )
                 conn.commit()
-                activity.log_activity(
-                    conn,
-                    "system",
-                    novel_id,
-                    "meeting_failed",
-                    "会议异常终止",
-                    {"session_id": session_id, "error": str(exc)[:300]},
-                )
+                if not args.dry_run:
+                    activity.log_activity(
+                        conn,
+                        "system",
+                        novel_id,
+                        "meeting_failed",
+                        "会议异常终止",
+                        {"session_id": session_id, "error": str(exc)[:300]},
+                    )
             except Exception:  # noqa: BLE001
                 pass
         raise

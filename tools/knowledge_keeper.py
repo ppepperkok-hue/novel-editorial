@@ -94,6 +94,16 @@ def _input_payload(conn):
                     f"hot topics JSON 不是对象（{type(hot).__name__}），已回退空结构"
                 )
                 hot = {}
+    raw_sources = hot.get("sources")
+    if raw_sources is None:
+        sources = []
+    elif not isinstance(raw_sources, list):
+        hot_topics_warning = (
+            f"hot topics sources 不是列表（{type(raw_sources).__name__}），已回退空结果"
+        )
+        sources = []
+    else:
+        sources = [s for s in raw_sources if isinstance(s, dict)]
     drafts = knowledge.list_drafts(conn, status="draft")[:30]
     quality = conn.execute(
         "SELECT COUNT(*) total, COALESCE(SUM(passed),0) passed "
@@ -115,11 +125,11 @@ def _input_payload(conn):
                     "count": s.get("count", 0),
                     "error": s.get("error", ""),
                 }
-                for s in (hot.get("sources") or [])
+                for s in sources
             ],
             "titles": [
                 t
-                for s in (hot.get("sources") or [])
+                for s in sources
                 for t in (s.get("titles") or [])
             ][:60],
         },

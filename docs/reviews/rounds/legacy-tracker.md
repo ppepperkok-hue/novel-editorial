@@ -55,6 +55,28 @@
 | L-056 | R9 | ai_taste_check detect 非字符串输入 TypeError | tools/ai_taste_check.py | 待处理 |
 | L-057 | R9 | 测试普遍不清理 mkdtemp 目录 | tests/ | 待处理 |
 | L-058 | R9 | 预检失败不写 failed_nodes（链路图精度） | editorial_daily/preflight | 待处理 |
+
+## 第十轮遗留更新（20260812）
+
+| 编号 | 来源 | 遗留项 | 文件 | 状态 |
+| --- | --- | --- | --- | --- |
+| L-048 | R9 | topics 解析 / report 留痕 | services/misc.py | 已修（R10-A1-02） |
+| L-049 | R9 | distill 花括号截取 | distill_lessons.py | 已修（R10-C1-01） |
+| L-050 | R9 | 热点 sources 非 list | knowledge_keeper.py | 已修（R10-C1-02） |
+| L-051 | R9 | resolve LIKE 转义 + docstring | novel_knowledge.py | 已修（R10-C1-03） |
+| L-052 | R9 | upsert_chapters dict 防线 | record_work.py | 已修（R10-C1-05） |
+| L-053 | R9 | n8n Cookie 重复 / token 陈旧 | n8n_api.py | 已修（R10-C2-02） |
+| L-054 | R9 | worker stdin 传任务 | _run_fix_worker.ps1 | 已修（R10-C2-01） |
+| L-055 | R9 | delete_book reply 链残留 | delete_book.py | 已修（R10-C2-03） |
+| L-056 | R9 | ai_taste 非字符串 TypeError | ai_taste_check.py | 已修（R10-C1-04） |
+| L-057 | R9 | 测试 mkdtemp 清理 | tests/ | 待处理 |
+| L-058 | R9 | 预检失败不写 failed_nodes | editorial_daily | 已修（R10-A2-07） |
+| L-059 | R10 | knowledge_drafts accept 分支 ValueError 未捕获 | web_api.py | 待处理 |
+| L-060 | R10 | /api/knowledge 等 conn 未关闭（请求泄漏） | web_api.py | 待处理 |
+| L-061 | R10 | workday resume 可能重复写日记 | workday.py | 待处理 |
+| L-062 | R10 | novel_knowledge.get() entity LIKE 未转义 | novel_knowledge.py | 待处理 |
+| L-063 | R10 | record_work 活动统计 c.get 裸调 / upsert_characters 无防线 | record_work.py | 待处理 |
+| L-064 | R10 | get_meta sources dict 崩溃 / top_keywords 非 list | get_meta.py | 待处理 |
 | L-036 | R6 | config.load_env 只 strip 不剥行内注释 | config.py | 已修（R7-A1-08） |
 | L-037 | R5 | bind_book env 写成功后 DB 提交异常的小概率半更新 | ending.py | 不处理（小概率，方向已修正） |
 | L-038 | R5 | _normalize_action_items 不含全角逗号 | activity.py | 不处理（既有行为） |

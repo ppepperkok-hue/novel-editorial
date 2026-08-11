@@ -16,17 +16,32 @@ def check_stock(conn, novel_id=0):
 
     Mirrors the n8n `查存稿` node: reads the active book from the database and
     the pending/daily chapter target from settings. When `novel_id` is given,
-    stock and metadata are scoped to that novel only (multi-book isolation).
+    stock and metadata are scoped to that novel only (multi-book isolation);
+    otherwise the default scope is the newest active (publishing/finishing)
+    novel, matching publish_stock's publish range rather than the whole library.
     """
     settings = {
         r["key"]: r["value"]
         for r in conn.execute("SELECT key, value FROM settings").fetchall()
     }
+    if novel_id:
+        book = conn.execute(
+            "SELECT id, book_id, title, genre, premise, tags FROM novels WHERE id=?",
+            (int(novel_id),),
+        ).fetchone()
+    else:
+        book = conn.execute(
+            "SELECT id, book_id, title, genre, premise, tags FROM novels "
+            "WHERE status IN ('publishing','finishing') ORDER BY id DESC LIMIT 1"
+        ).fetchone()
     stock_sql = "SELECT COUNT(*) c FROM chapters WHERE status='reviewed'"
     params = ()
     if novel_id:
         stock_sql += " AND novel_id=?"
         params = (int(novel_id),)
+    elif book:
+        stock_sql += " AND novel_id=?"
+        params = (book["id"],)
     stock = conn.execute(stock_sql, params).fetchone()["c"]
     def _parse_int(raw, fallback):
         if raw in (None, ""):
@@ -40,16 +55,6 @@ def check_stock(conn, novel_id=0):
     target = pending if pending else _parse_int(settings.get("daily_chapters"), 2)
     target = min(max(target, 0), 10)
     need = max(0, target - stock)
-    if novel_id:
-        book = conn.execute(
-            "SELECT id, book_id, title, genre, premise, tags FROM novels WHERE id=?",
-            (int(novel_id),),
-        ).fetchone()
-    else:
-        book = conn.execute(
-            "SELECT id, book_id, title, genre, premise, tags FROM novels "
-            "WHERE status IN ('publishing','finishing') ORDER BY id DESC LIMIT 1"
-        ).fetchone()
     book_id = str(book["book_id"] or "") if book else ""
     premise = str(book["premise"] or "").strip() if book else ""
     genre = str(book["genre"] or "").strip() if book else ""
@@ -67,6 +72,7 @@ def check_stock(conn, novel_id=0):
     if not keywords:
         keywords = settings.get("novel_keywords", "")
     return {
+        "scope": "novel" if novel_id else ("active_book" if book else "none"),
         "stock": stock,
         "target": target,
         "need": need,

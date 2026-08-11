@@ -1,6 +1,7 @@
 """Ending lifecycle: status, next-book confirmation, book binding."""
 
 import json
+import re
 
 from novel_editorial import config
 from novel_editorial.services import audit
@@ -42,6 +43,8 @@ def bind_book(conn, novel_id, book_id, volume_id=""):
     book_id = str(book_id or "").strip()
     if not book_id:
         return {"ok": False, "error": "book_id 不能为空"}
+    if re.search(r"[\x00-\x1f\x7f]", book_id):
+        return {"ok": False, "error": "book_id 不能包含换行或控制字符"}
     env_file = config.N8N_ENV_FILE
     lines = []
     book_id_replaced = False

@@ -65,6 +65,8 @@ def _safe_json(value, default):
 
 
 def _safe_int(value, default):
+    if value is None or str(value).strip() == "":
+        return default
     try:
         return int(value)
     except (TypeError, ValueError) as exc:

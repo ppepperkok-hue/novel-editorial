@@ -271,16 +271,30 @@ def _close_locked(conn, run_id, dry_run, row):
     if not dry_run:
         _update(conn, run_id, collab_summary=_j(collab))
     if not dry_run:
-        try:
-            from tools import write_diaries  # noqa: PLC0415
-
-            write_diaries.write(conn, row["novel_id"] or 0, "daily")
-        except Exception as exc:  # noqa: BLE001
+        # R10-A2-01: daily() 的 _wrapup 已在 produce 日写过 daily 日记，
+        # close 只补写非产出日（org/meeting 等），避免同一工作日双写。
+        already_diaries = conn.execute(
+            "SELECT COUNT(*) c FROM agent_diaries "
+            "WHERE novel_id=? AND diary_type='daily' AND created_at>=?",
+            (row["novel_id"] or 0, str(row["started_at"] or "")),
+        ).fetchone()["c"]
+        if already_diaries:
             audit.log(
-                conn, "workday", "diaries_failed",
+                conn, "workday", "diaries_skipped",
                 target_type="run", target_id=run_id,
-                detail={"error": str(exc)[:200]},
+                detail={"reason": "daily diaries already written by the produce chain"},
             )
+        else:
+            try:
+                from tools import write_diaries  # noqa: PLC0415
+
+                write_diaries.write(conn, row["novel_id"] or 0, "daily")
+            except Exception as exc:  # noqa: BLE001
+                audit.log(
+                    conn, "workday", "diaries_failed",
+                    target_type="run", target_id=run_id,
+                    detail={"error": str(exc)[:200]},
+                )
     published = int(row["published"] or 0)
     produce_status = str(row["status"] or "running")
     legacy = {}

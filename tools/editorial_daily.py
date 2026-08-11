@@ -204,6 +204,14 @@ def _handle_agency(ctx, node, text):
             )
     finally:
         conn.close()
+    # R10-A2-03: 散文 Agent 若把正文包在 JSON 信封里（{text, agency}），
+    # 弹出 agency 后要解出正文，和 _handle_outbox 保持一致，避免写稿被信封污染。
+    if (
+        isinstance(obj, dict)
+        and isinstance(obj.get("text"), str)
+        and set(obj.keys()) == {"text"}
+    ):
+        return obj["text"]
     return json.dumps(obj, ensure_ascii=False)
 
 
@@ -557,6 +565,9 @@ def _preflight(ctx, conn, env, trigger, skip_lock=False):
             ok = False
         else:
             ctx.lock_path = lock_path
+    if not ok:
+        # L-058: 预检失败也要进 failed_nodes，链路图才能高亮预检节点。
+        ctx.failed_nodes.append("preflight")
     if ok and manual_requested and not ctx.dry_run:
         set_many(conn, {"manual_run_requested": "0"})
     if not ctx.dry_run:
@@ -1268,7 +1279,7 @@ def _run_track(ctx, conn, idx, outline, guard, meta, target_words, env, prev_tra
             extra_reason=str(track_req.get("body") or ""),
         )
         ctx.rework_applied.add(_rework_key(track_req))
-        _settle_rework(conn, track_req)
+        _settle_rework(conn, track_req, ok=bool(gate.get("passed")))
     elif not gate.get("passed"):
         gate, editor_text, review_text = _review_retry(
             ctx, conn, idx, outline, guard, meta, target_words, prev_track,
@@ -1284,9 +1295,10 @@ def _run_track(ctx, conn, idx, outline, guard, meta, target_words, env, prev_tra
     }
 
 
-def _settle_rework(conn, rework):
+def _settle_rework(conn, rework, ok=False):
     """Close the loop of an instant rework: resolve the source message and
-    mark the fallback action done. Failures are traced explicitly."""
+    settle the fallback action. Failures are traced explicitly; a rework
+    that still fails the gate keeps the action non-done (pending)."""
     problems = []
     try:
         from tools import mailroom  # noqa: PLC0415
@@ -1299,9 +1311,12 @@ def _settle_rework(conn, rework):
                     "resolve message: " + str(resolved.get("error") or "unknown")
                 )
         if rework.get("action_id"):
+            if ok:
+                status, result = "done", "即时重写已完成"
+            else:
+                status, result = "pending", "即时重写未通过质量门，等待人工跟进"
             updated = activity.update_action(
-                conn, rework["action_id"], status="done",
-                result="即时重写已完成",
+                conn, rework["action_id"], status=status, result=result,
             )
             if not updated.get("ok"):
                 problems.append(
@@ -1314,6 +1329,12 @@ def _settle_rework(conn, rework):
             conn, "editorial", "settle_rework_failed",
             target_type="action", target_id=str(rework.get("action_id") or ""),
             detail={"error": "；".join(problems)[:400]},
+        )
+    elif not ok and rework.get("action_id"):
+        audit.log(
+            conn, "editorial", "settle_rework_failed",
+            target_type="action", target_id=str(rework.get("action_id") or ""),
+            detail={"error": "即时重写未通过质量门，行动项保持 pending 等待跟进"},
         )
 
 

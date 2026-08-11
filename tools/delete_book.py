@@ -70,6 +70,36 @@ def _purge_novel(conn, novel_id):
                 "(SELECT id FROM chapters WHERE novel_id=?)",
                 (novel_id,),
             )
+    # Reply chains: an outbox reply may carry ref_novel_id/ref_chapter_id = 0
+    # while answering a message owned by this novel, so it is not caught by
+    # the ref_novel_id delete below. Walk reply_to from the novel-owned rows
+    # and purge those ref-less descendants as well.
+    for t in tables:
+        cols = [r[1] for r in conn.execute(f'PRAGMA table_info("{t}")')]
+        if not {"reply_to", "ref_novel_id", "ref_chapter_id"}.issubset(cols):
+            continue
+        owned = {
+            r[0]
+            for r in conn.execute(
+                f'SELECT id FROM "{t}" WHERE ref_novel_id=?', (novel_id,)
+            ).fetchall()
+        }
+        changed = bool(owned)
+        while changed:
+            changed = False
+            marks = ",".join("?" * len(owned))
+            rows = conn.execute(
+                f'SELECT id FROM "{t}" WHERE reply_to IN ({marks}) '
+                "AND ref_novel_id=0 AND ref_chapter_id=0",
+                tuple(owned),
+            ).fetchall()
+            for row in rows:
+                if row["id"] not in owned:
+                    owned.add(row["id"])
+                    changed = True
+        if owned:
+            marks = ",".join("?" * len(owned))
+            conn.execute(f'DELETE FROM "{t}" WHERE id IN ({marks})', tuple(owned))
     for t in tables:
         cols = [r[1] for r in conn.execute(f'PRAGMA table_info("{t}")')]
         if "ref_novel_id" in cols:

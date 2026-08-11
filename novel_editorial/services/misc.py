@@ -111,8 +111,17 @@ def load_meetings(conn, limit=20):
     for r in rows:
         try:
             report = json.loads(r["report"] or "{}")
-        except (TypeError, json.JSONDecodeError):
+        except (TypeError, json.JSONDecodeError) as exc:
             report = {}
+            try:
+                config.ALERTS_LOG.parent.mkdir(parents=True, exist_ok=True)
+                with config.ALERTS_LOG.open("a", encoding="utf-8") as f:
+                    f.write(
+                        f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
+                        f"weekly_meetings {r['id']} report 解析失败: {exc}\n"
+                    )
+            except Exception:  # noqa: BLE001 - failure logging must never break the API
+                pass
         decisions = report.get("decisions") or {}
         try:
             attendees = json.loads(r["attendees"] or "[]")
@@ -127,13 +136,26 @@ def load_meetings(conn, limit=20):
                     )
             except Exception:  # noqa: BLE001 - failure logging must never break the API
                 pass
+        try:
+            topics = json.loads(r["topics"] or "[]")
+        except (TypeError, json.JSONDecodeError) as exc:
+            topics = []
+            try:
+                config.ALERTS_LOG.parent.mkdir(parents=True, exist_ok=True)
+                with config.ALERTS_LOG.open("a", encoding="utf-8") as f:
+                    f.write(
+                        f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
+                        f"weekly_meetings {r['id']} topics 解析失败: {exc}\n"
+                    )
+            except Exception:  # noqa: BLE001 - failure logging must never break the API
+                pass
         out.append(
             {
                 "id": r["id"],
                 "held_at": r["held_at"],
                 "novel_id": r["novel_id"],
                 "attendees": attendees,
-                "topics": json.loads(r["topics"] or "[]"),
+                "topics": topics,
                 "status": r["status"],
                 "summary": report.get("discussion_summary", ""),
                 "blueprint_count": len(decisions.get("blueprint_updates") or []),

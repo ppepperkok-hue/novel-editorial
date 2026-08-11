@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 from datetime import datetime
@@ -284,11 +285,27 @@ def refresh(out_path="hot_topics.json", sources=None, fetcher=None, browser_fall
         ),
     }
     target = Path(out_path)
-    tmp = target.with_suffix(".tmp")
-    tmp.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    fd, tmp_name = tempfile.mkstemp(
+        dir=target.parent, prefix=f".{target.name}.", suffix=".tmp"
     )
-    os.replace(tmp, target)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=False, indent=2))
+        for attempt in range(5):
+            try:
+                os.replace(tmp_name, target)
+                break
+            except PermissionError as exc:
+                # Windows briefly locks the destination during a concurrent
+                # replace; retry instead of failing the whole refresh.
+                if attempt == 4:
+                    raise
+                time.sleep(0.01 * (attempt + 1))
+    finally:
+        try:
+            os.unlink(tmp_name)
+        except FileNotFoundError:
+            pass
     return payload
 
 

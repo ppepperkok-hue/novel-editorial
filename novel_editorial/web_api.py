@@ -677,6 +677,7 @@ def make_handler(db_path):
                     handler(self, parsed, payload)
                     return
                 conn = db.connect(db_path)
+                http_status = 200
                 if parsed.path == "/api/control":
                     try:
                         result = control_service.handle_control(conn, payload)
@@ -908,13 +909,20 @@ def make_handler(db_path):
                         if not file or not body.strip():
                             result = {"ok": False, "error": "file and body required"}
                         else:
-                            item = knowledge_service.write_knowledge(file, dict(meta), body)
-                            audit_service.log(
-                                conn, "knowledge", "save",
-                                target_type="knowledge", target_id=file,
-                                detail={"title": meta.get("title")},
-                            )
-                            result = {"ok": True, "item": item}
+                            try:
+                                item = knowledge_service.write_knowledge(
+                                    file, dict(meta), body
+                                )
+                            except ValueError as exc:
+                                result = {"ok": False, "error": str(exc)}
+                                http_status = 400
+                            else:
+                                audit_service.log(
+                                    conn, "knowledge", "save",
+                                    target_type="knowledge", target_id=file,
+                                    detail={"title": meta.get("title")},
+                                )
+                                result = {"ok": True, "item": item}
                     else:
                         result = {"ok": False, "error": f"unknown action {action}"}
                 elif parsed.path == "/api/knowledge_drafts":
@@ -1025,7 +1033,7 @@ def make_handler(db_path):
                             }
                     else:
                         result = {"ok": False, "error": f"unknown action {action}"}
-                self._json(result)
+                self._json(result, status=http_status)
             except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
                 if conn is not None:
                     try:

@@ -423,12 +423,14 @@ def main():
                 else _safe_int_setting("daily_chapters", settings.get("daily_chapters"), 2)
             )
         else:
+            pending = 0
             target = _safe_int_setting("--chapters", args.chapters, 2)
         target = max(0, min(target, 10))
         summary = publish_batch(conn, novel_id, target, env)
-        if settings.get("pending_publish") and summary.get("published"):
+        if pending and summary.get("published"):
             conn.execute(
-                "UPDATE settings SET value='0' WHERE key='pending_publish'"
+                "UPDATE settings SET value=? WHERE key='pending_publish'",
+                (str(max(0, pending - summary["published"])),),
             )
             conn.commit()
         print(json.dumps({"ok": True, **summary}, ensure_ascii=False))
