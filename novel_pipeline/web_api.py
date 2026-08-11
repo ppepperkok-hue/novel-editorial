@@ -455,7 +455,15 @@ def make_handler(db_path):
                         qs = parse_qs(parsed.query)
                         category = qs["category"][0] if qs.get("category") else None
                         limit = _parse_int(qs["limit"][0], 100) if qs.get("limit") else 100
-                        self._json({"logs": audit_service.list_logs(conn, category, limit)})
+                        date_from = qs["from"][0] if qs.get("from") else ""
+                        date_to = qs["to"][0] if qs.get("to") else ""
+                        self._json(
+                            {
+                                "logs": audit_service.list_logs(
+                                    conn, category, limit, date_from, date_to
+                                )
+                            }
+                        )
                     finally:
                         conn.close()
                 elif path == "/api/characters/evolution":

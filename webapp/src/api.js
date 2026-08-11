@@ -67,8 +67,14 @@ export const createBookOnFanqie = (novelId) =>
   postJSON("/api/ending/create_book", { novel_id: novelId });
 export const deleteBookOnFanqie = (novelId) =>
   postJSON("/api/ending/delete_book", { novel_id: novelId, confirm: true });
-export const getAudit = (category) =>
-  getJSON("/api/audit" + (category ? "?category=" + encodeURIComponent(category) : ""));
+export const getAudit = (category, dateFrom = "", dateTo = "") => {
+  const params = new URLSearchParams();
+  if (category) params.set("category", category);
+  if (dateFrom) params.set("from", dateFrom);
+  if (dateTo) params.set("to", dateTo);
+  const q = params.toString();
+  return getJSON("/api/audit" + (q ? "?" + q : ""));
+};
 export const refreshHotTopics = () =>
   postJSON("/api/control", { action: "refresh_hot_topics" });
 export const getKnowledge = () => postJSON("/api/knowledge", { action: "list" });

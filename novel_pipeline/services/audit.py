@@ -33,15 +33,22 @@ def log(conn, category, action, target_type="", target_id="", detail=None, sourc
             pass
 
 
-def list_logs(conn, category=None, limit=100):
+def list_logs(conn, category=None, limit=100, date_from="", date_to=""):
     sql = (
         "SELECT id, created_at, category, action, target_type, target_id, detail, source "
-        "FROM audit_logs"
+        "FROM audit_logs WHERE 1=1"
     )
     params = []
     if category:
-        sql += " WHERE category=?"
+        sql += " AND category=?"
         params.append(category)
+    if date_from:
+        sql += " AND created_at>=?"
+        params.append(str(date_from).strip()[:10] + " 00:00:00")
+    if date_to:
+        sql += " AND created_at<=?"
+        params.append(str(date_to).strip()[:10] + " 23:59:59")
+    limit = max(1, min(int(limit or 100), 500))
     sql += " ORDER BY id DESC LIMIT ?"
     params.append(limit)
     rows = conn.execute(sql, params).fetchall()

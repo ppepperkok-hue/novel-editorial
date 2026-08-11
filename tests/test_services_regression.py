@@ -221,6 +221,33 @@ class MiscTests(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_audit_list_logs_filters_by_date_range(self):
+        path = make_db()
+        from novel_pipeline.services import audit
+
+        conn = db.connect(path)
+        try:
+            conn.execute(
+                "INSERT INTO audit_logs(created_at,category,action,target_type,target_id,detail,source) "
+                "VALUES('2026-08-01 10:00:00','operation','old','novel',1,'{}','test')"
+            )
+            conn.execute(
+                "INSERT INTO audit_logs(created_at,category,action,target_type,target_id,detail,source) "
+                "VALUES('2026-08-10 10:00:00','operation','new','novel',1,'{}','test')"
+            )
+            conn.commit()
+            rows = audit.list_logs(conn, date_from="2026-08-09", date_to="2026-08-11")
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["action"], "new")
+            rows2 = audit.list_logs(conn, date_from="2026-08-02")
+            self.assertEqual(len(rows2), 1)
+            self.assertEqual(rows2[0]["action"], "new")
+            rows3 = audit.list_logs(conn, date_to="2026-08-02")
+            self.assertEqual(len(rows3), 1)
+            self.assertEqual(rows3[0]["action"], "old")
+        finally:
+            conn.close()
+
 
 class N8nServiceTests(unittest.TestCase):
     def test_api_key_empty_not_cached(self):

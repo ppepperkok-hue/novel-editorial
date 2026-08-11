@@ -20,18 +20,30 @@ const CATEGORY_LABEL = Object.fromEntries(CATEGORIES);
 export default function AuditPage() {
   const [logs, setLogs] = useState([]);
   const [category, setCategory] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [error, setError] = useState("");
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
     let alive = true;
-    getAudit(category)
+    getAudit(category, dateFrom, dateTo)
       .then((r) => alive && setLogs(r.logs || []))
       .catch((e) => alive && setError(String(e)));
     return () => {
       alive = false;
     };
-  }, [category, tick]);
+  }, [category, dateFrom, dateTo, tick]);
+
+  const exportLogs = () => {
+    const blob = new Blob([JSON.stringify(logs, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "audit-logs.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -42,6 +54,21 @@ export default function AuditPage() {
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="date"
+          className="input !h-7 !w-36 !px-2 text-xs"
+          value={dateFrom}
+          onChange={(e) => setDateFrom(e.target.value)}
+          title="开始日期"
+        />
+        <span className="muted text-xs">至</span>
+        <input
+          type="date"
+          className="input !h-7 !w-36 !px-2 text-xs"
+          value={dateTo}
+          onChange={(e) => setDateTo(e.target.value)}
+          title="结束日期"
+        />
         {CATEGORIES.map(([val, label]) => (
           <span
             key={val || "all"}
@@ -53,6 +80,9 @@ export default function AuditPage() {
         ))}
         <button className="btn ml-auto !px-3 !py-1 text-xs" onClick={() => setTick((t) => t + 1)}>
          刷新
+        </button>
+        <button className="btn !px-3 !py-1 text-xs" onClick={exportLogs} disabled={!logs.length}>
+         导出 JSON
         </button>
         <span className="muted text-xs">共 {logs.length} 条</span>
       </div>
