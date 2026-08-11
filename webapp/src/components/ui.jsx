@@ -22,12 +22,6 @@ export function fmtNum(n) {
   return Number(n).toLocaleString("zh-CN");
 }
 
-export function fmtMoney(n) {
-  if (n === null || n === undefined) return "—";
-  const v = Number(n);
-  return v >= 0.01 ? "¥" + v.toFixed(2) : "¥" + v.toFixed(4);
-}
-
 export function ConfirmDialog({ open, title, body, confirmText = "确认", tone = "danger", busy = false, onCancel, onConfirm }) {
   useEffect(() => {
     if (!open) return undefined;

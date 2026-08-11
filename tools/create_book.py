@@ -334,7 +334,10 @@ def main():
     ap.add_argument("--db", default=str(config.DB_PATH))
     ap.add_argument("--novel-id", type=int, required=True)
     args = ap.parse_args()
-    conn = db.connect(Path(args.db))
+    db_path = Path(args.db)
+    if not db_path.is_absolute():
+        db_path = ROOT / db_path
+    conn = db.connect(db_path)
     try:
         result = create_book_on_fanqie(conn, args.novel_id)
     finally:

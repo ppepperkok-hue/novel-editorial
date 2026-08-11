@@ -28,9 +28,15 @@ def check_stock(conn, novel_id=0):
         stock_sql += " AND novel_id=?"
         params = (int(novel_id),)
     stock = conn.execute(stock_sql, params).fetchone()["c"]
-    target = int(settings.get("pending_publish") or 0) or int(
-        settings.get("daily_chapters") or 2
-    )
+    try:
+        target = int(settings.get("pending_publish") or 0)
+    except (TypeError, ValueError):
+        target = 0
+    if not target:
+        try:
+            target = int(settings.get("daily_chapters") or 2)
+        except (TypeError, ValueError):
+            target = 2
     target = max(1, min(target, 10))
     need = max(0, target - stock)
     if novel_id:

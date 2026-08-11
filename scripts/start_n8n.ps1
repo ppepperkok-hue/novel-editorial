@@ -20,8 +20,13 @@ if (Test-Path $EnvFile) {
     }
 }
 
+$nodeExe = (Get-Command node -ErrorAction SilentlyContinue).Source
+if (-not $nodeExe) {
+    Write-Host "node not found on PATH; set NODE_EXE to point at node.exe"
+    exit 1
+}
 $n8nBin = Join-Path $env:APPDATA "npm\node_modules\n8n\bin\n8n"
-Start-Process -FilePath "C:\Program Files\nodejs\node.exe" `
+Start-Process -FilePath $nodeExe `
     -ArgumentList $n8nBin `
     -WorkingDirectory $env:USERPROFILE `
     -WindowStyle Hidden

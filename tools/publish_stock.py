@@ -349,9 +349,6 @@ def main():
         ).fetchone()["c"]:
             print(json.dumps({"ok": True, "published": 0, "note": "仅剩已完结作品的存稿，停止发布"}, ensure_ascii=False))
             return
-        if novel and novel["status"] == "finished":
-            print(json.dumps({"ok": True, "published": 0, "note": "作品已完结，停止发布"}, ensure_ascii=False))
-            return
         settings = {
             r["key"]: r["value"]
             for r in conn.execute("SELECT key, value FROM settings").fetchall()

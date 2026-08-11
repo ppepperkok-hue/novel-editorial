@@ -41,9 +41,18 @@ const asciiExe = `novel-editorial-desktop-setup-${version}.exe`;
 fs.copyFileSync(path.join(releaseDir, setup), path.join(releaseDir, asciiExe));
 fs.copyFileSync(path.join(releaseDir, bmap), path.join(releaseDir, asciiExe + ".blockmap"));
 
-// 3. tag & push
-run(`git tag v${version}`, { cwd: root });
-run(`git push origin v${version}`, { cwd: root });
+// 3. tag & push (idempotent: skip when the tag already exists)
+let tagExists = false;
+try {
+  execSync(`git rev-parse v${version}`, { cwd: root, stdio: "ignore" });
+  tagExists = true;
+} catch {
+  tagExists = false;
+}
+if (!tagExists) {
+  run(`git tag v${version}`, { cwd: root });
+  run(`git push origin v${version}`, { cwd: root });
+}
 
 // 4. create release (replace existing tag release if any)
 let exists = "";

@@ -61,6 +61,10 @@ def _purge_novel(conn, novel_id):
                 "(SELECT id FROM chapters WHERE novel_id=?)",
                 (novel_id,),
             )
+    for t in tables:
+        cols = [r[1] for r in conn.execute(f'PRAGMA table_info("{t}")')]
+        if "ref_novel_id" in cols:
+            conn.execute(f'DELETE FROM "{t}" WHERE ref_novel_id=?', (novel_id,))
     for t in ("chapters", "volumes"):
         if t in tables:
             conn.execute(f'DELETE FROM "{t}" WHERE novel_id=?', (novel_id,))
@@ -133,7 +137,10 @@ def main():
     ap.add_argument("--novel-id", type=int, required=True)
     ap.add_argument("--yes", action="store_true", help="confirm the irreversible delete")
     args = ap.parse_args()
-    conn = db.connect(Path(args.db))
+    db_path = Path(args.db)
+    if not db_path.is_absolute():
+        db_path = ROOT / db_path
+    conn = db.connect(db_path)
     try:
         result = delete_book_on_fanqie(conn, args.novel_id, confirm=args.yes)
     finally:

@@ -918,7 +918,6 @@ def make_handler(db_path):
                             ok = knowledge_service.update_draft_status(conn, draft_id, status)
                             result = {"ok": ok, "error": None if ok else "draft not found or not in draft state"}
                     elif action == "distill":
-                        conn.close()
                         from tools import distill_lessons  # noqa: PLC0415
 
                         result = distill_lessons.distill_latest(
@@ -926,7 +925,6 @@ def make_handler(db_path):
                             payload.get("session_id"),
                             db_path=str(db_path),
                         )
-                        conn = db.connect(db_path)
                     else:
                         result = {"ok": False, "error": f"unknown action {action}"}
                 elif parsed.path == "/api/novel_knowledge":

@@ -7,6 +7,7 @@
 import argparse
 import csv
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -282,9 +283,12 @@ def refresh(out_path="hot_topics.json", sources=None, fetcher=None, browser_fall
             [title for r in results for title in r.get("titles", [])]
         ),
     }
-    Path(out_path).write_text(
+    target = Path(out_path)
+    tmp = target.with_suffix(".tmp")
+    tmp.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    os.replace(tmp, target)
     return payload
 
 

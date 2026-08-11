@@ -199,8 +199,7 @@ def main():
     ap.add_argument(
         "--no-lock",
         action="store_true",
-        help="check-only mode for manual runs: do not acquire the daily lock "
-        "(n8n workflow keeps holding the lock until its final release node)",
+        help="legacy compatibility: manual preflight never acquires the run lock",
     )
     args = ap.parse_args()
 

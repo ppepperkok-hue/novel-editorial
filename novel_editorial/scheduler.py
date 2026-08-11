@@ -101,7 +101,10 @@ def main():
     ap.add_argument("--db", default="demo.db", help="SQLite 数据库路径")
     ap.add_argument("--chapters-per-day", type=int, default=2)
     args = ap.parse_args()
-    conn = db.connect(args.db)
+    db_path = Path(args.db)
+    if not db_path.is_absolute():
+        db_path = ROOT / db_path
+    conn = db.connect(db_path)
     scheduler = Scheduler(adapter=ManualAdapter(), chapters_per_day=args.chapters_per_day)
     print(scheduler.tick(conn))
 

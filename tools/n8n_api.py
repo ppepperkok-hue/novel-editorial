@@ -20,7 +20,7 @@ def auth_token():
         method="POST",
     )
     r = opener.open(req, timeout=10)
-    for h in r.headers.get_all("Set-Cookie"):
+    for h in (r.headers.get_all("Set-Cookie") or []):
         if h.startswith("n8n-auth="):
             return h.split(";", 1)[0].split("=", 1)[1]
     raise RuntimeError("no n8n-auth cookie")

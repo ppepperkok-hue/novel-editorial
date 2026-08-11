@@ -44,7 +44,10 @@ def main():
             print("{}")
             return
 
-        outline = json.loads(row["outline"] or "{}")
+        try:
+            outline = json.loads(row["outline"] or "{}")
+        except (TypeError, ValueError):
+            outline = {}
         bible = outline.get("bible") or {}
         blueprints = outline.get("blueprints") or []
 

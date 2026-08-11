@@ -345,9 +345,9 @@ def upsert_chapters(conn, novel_id, chapters):
             ).fetchone()
             if dup is None:
                 conn.execute(
-                    "INSERT INTO publish_logs(chapter_id,platform,action,result,error,ai_declared) "
-                    "VALUES(?,?,?,?,?,?)",
-                    (chapter_id, "fanqie", "publish", "failed", ch.get("error")[:300], 1),
+                    "INSERT INTO publish_logs(chapter_id,platform,action,result,error,ai_declared,created_at) "
+                    "VALUES(?,?,?,?,?,?,datetime('now','localtime'))",
+                    (chapter_id, "fanqie", "publish", "failed", str(ch.get("error") or "")[:300], 1),
                 )
         _upsert_summary(conn, novel_id, chapter_id, seq, ch)
     conn.commit()

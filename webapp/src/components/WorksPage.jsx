@@ -256,9 +256,17 @@ export default function WorksPage({ data, pushToast }) {
           </div>
           <div className="muted mb-2 text-xs">{nextBook.premise || nextBook.abstract}</div>
           <div className="mb-3 flex flex-wrap gap-1.5">
-            {(JSON.parse(nextBook.tags || "[]") || []).map((t) => (
+            {(() => {
+              let tags = [];
+              try {
+                tags = JSON.parse(nextBook.tags || "[]") || [];
+              } catch {
+                tags = [];
+              }
+              return tags.map((t) => (
               <span key={t} className="chip">{t}</span>
-            ))}
+              ));
+            })()}
             {nextBook.selling_point ? <span className="chip chip-info">卖点：{nextBook.selling_point.slice(0, 40)}</span> : null}
           </div>
           {nextBook.cover_prompt ? (

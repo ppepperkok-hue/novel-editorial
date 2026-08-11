@@ -118,7 +118,12 @@ def latest_weekly(conn, novel_id, agent):
         "AND diary_type='weekly' ORDER BY id DESC LIMIT 1",
         (agent, novel_id),
     ).fetchone()
-    return json.loads(row["content"]) if row and row["content"] else None
+    if not row or not row["content"]:
+        return None
+    try:
+        return json.loads(row["content"])
+    except (TypeError, ValueError):
+        return None
 
 
 def mood_of(conn, novel_id, agent):
@@ -126,7 +131,12 @@ def mood_of(conn, novel_id, agent):
         "SELECT mood FROM agent_states WHERE agent=? AND novel_id=? ORDER BY id DESC LIMIT 1",
         (agent, novel_id),
     ).fetchall()
-    return json.loads(row[0]["mood"]) if row and row[0]["mood"] else None
+    if not row or not row[0]["mood"]:
+        return None
+    try:
+        return json.loads(row[0]["mood"])
+    except (TypeError, ValueError):
+        return None
 
 
 GET_KNOWLEDGE_TOOL = {

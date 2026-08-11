@@ -92,14 +92,6 @@ def main():
     ws.close()
 
 
-def click_select(ws_url, x, y):
-    import websocket as _ws  # noqa: PLC0415
-
-    ws = _ws.create_connection(ws_url, timeout=20, suppress_origin=True)
-    seq = {"n": 0}
-
-    def cmd(method, params=None):
-        seq["n"] += 1
         mid = seq["n"]
         ws.send(json.dumps({"id": mid, "method": method, "params": params or {}}))
         while True:
