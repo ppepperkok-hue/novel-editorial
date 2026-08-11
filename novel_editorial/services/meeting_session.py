@@ -294,6 +294,16 @@ def _handle_meeting_actions(conn, agent, novel_id, speech):
                 chapter_id=int(item.get("chapter_id") or 0),
                 reply_to=int(item.get("reply_to") or 0),
             )
+    used = speech.get("memory_used")
+    if isinstance(used, list):
+        for item in used:
+            text = str(item).strip()
+            if text:
+                activity.log_activity(
+                    conn, agent, novel_id or 0, "memory_used",
+                    "引用了记忆：" + text[:200],
+                    {"memory": text[:300]},
+                )
     conn.commit()
 
 

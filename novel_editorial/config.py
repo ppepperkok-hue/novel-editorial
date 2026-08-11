@@ -64,6 +64,19 @@ TASK_RESPONSE_MODE = os.environ.get("TASK_RESPONSE_MODE", "on")
 RELATION_WEIGHT = os.environ.get("RELATION_WEIGHT", "on") != "off"
 AGENCY_ENABLED = os.environ.get("AGENCY_ENABLED", "on") != "off"
 REWORK_MAX = _env_int("REWORK_MAX", 1)
+MEMORY_CATEGORY_MAP = {
+    "writer": ("plot", "character", "feedback", "opinion"),
+    "reviewer": ("feedback", "quality", "collaboration"),
+    "reader": ("feedback", "quality"),
+    "eic": ("meeting", "decision", "collaboration"),
+    "planner": ("plot", "character", "decision"),
+    "guard": ("world", "character", "feedback"),
+    "editor": ("feedback", "quality"),
+    "memory": (),
+    "work_meta": (),
+    "ending_judge": ("plot", "character"),
+    "knowledge_keeper": (),
+}
 
 
 def load_env():

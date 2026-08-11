@@ -135,6 +135,19 @@ class MeetingSessionTests(unittest.TestCase):
         ).fetchone()["c"]
         self.assertEqual(msg, 1)
 
+    def test_meeting_memory_used_persisted(self):
+        speech = {
+            "speech": "我引用了上周周记的结论",
+            "memory_used": ["上周我说过规则怪谈不能只靠爽点"],
+        }
+        meeting_session._handle_meeting_actions(self.conn, "writer", 1, speech)
+        row = self.conn.execute(
+            "SELECT activity_type, title FROM agent_activity "
+            "WHERE agent='writer' AND activity_type='memory_used'"
+        ).fetchone()
+        self.assertIsNotNone(row)
+        self.assertIn("规则怪谈", row["title"])
+
     def test_planning_meeting_full_chain_without_novel(self):
         import json
 

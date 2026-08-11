@@ -751,6 +751,7 @@ def _writer_task(ctx, idx, meta, outline, guard, target_words, prev_track=None):
         parts.append("同事要求重做：" + str(rework.get("body") or "") + "。请按此重写本章。")
     if ctx.mood_notes:
         parts.append("今日心情：" + ctx.mood_notes)
+    parts.append("写作时体现前情与角色记忆，让本章与全书连贯（不要复述，要承接）。")
     return "；".join(parts)
 
 
@@ -863,6 +864,23 @@ def _review_tone(conn, writer_agent, reviewer_agent, novel_id):
     return "你们关系不错，语气平和些："
 
 
+def _record_memory_used(conn, agent, novel_id, used):
+    """R5-2: persist which memories an agent actually referenced."""
+    if not isinstance(used, list):
+        return
+    from novel_editorial.services import activity  # noqa: PLC0415
+
+    for item in used:
+        text = str(item).strip()
+        if not text:
+            continue
+        activity.log_activity(
+            conn, agent, novel_id, "memory_used",
+            "引用了记忆：" + text[:200],
+            {"memory": text[:300]},
+        )
+
+
 def _reviewer_task(idx, outline, editor_text, prev_track=None, ctx=None, include_relations=False):
     ch = outline["chapter1"] if idx == 0 else outline["chapter2"]
     parts = [
@@ -884,21 +902,24 @@ def _reviewer_task(idx, outline, editor_text, prev_track=None, ctx=None, include
         )
     if ctx and getattr(ctx, "reviewer_mood", ""):
         parts.append("今日心情：" + ctx.reviewer_mood)
+    parts.append("若引用了最近记忆，请在 JSON 中附带 memory_used(可选数组，最多3条一句话引用)。")
     return "；".join(parts)
 
 
 def _eic_task(idx, outline, review_text, reader_text, editor_text):
     ch = outline["chapter1"] if idx == 0 else outline["chapter2"]
+    parts = [
+        "角色卡：" + _j((outline.get("bible") or {}).get("characters") or []),
+        "人物关系：" + _j((outline.get("bible") or {}).get("relationships") or []),
+        "世界观规则：" + _j((outline.get("bible") or {}).get("world_rules") or []),
+        "章纲：" + _j(ch),
+        "逻辑审稿原始输出：" + str(review_text or ""),
+        "读者审稿原始输出：" + str(reader_text or ""),
+        "正文前800字：" + str(editor_text or "")[:800],
+    ]
+    parts.append("若引用了最近记忆，请在 JSON 中附带 memory_used(可选数组，最多3条一句话引用)。")
     return "；".join(
-        [
-            "角色卡：" + _j((outline.get("bible") or {}).get("characters") or []),
-            "人物关系：" + _j((outline.get("bible") or {}).get("relationships") or []),
-            "世界观规则：" + _j((outline.get("bible") or {}).get("world_rules") or []),
-            "章纲：" + _j(ch),
-            "逻辑审稿原始输出：" + str(review_text or ""),
-            "读者审稿原始输出：" + str(reader_text or ""),
-            "正文前800字：" + str(editor_text or "")[:800],
-        ]
+        parts
     )
 
 
@@ -1087,6 +1108,17 @@ def _run_track(ctx, conn, idx, outline, guard, meta, target_words, env, prev_tra
         target_words,
         ROOT,
     )
+    if not ctx.dry_run:
+        for role, agent_name in (
+            ("review", _canonical_agent("审稿" + suffix)),
+            ("reader", _canonical_agent("读者审稿" + suffix)),
+            ("editor", _canonical_agent("主编终审" + suffix)),
+        ):
+            obj = gate.get(role)
+            if isinstance(obj, dict):
+                _record_memory_used(
+                    conn, agent_name, ctx.novel_id, obj.get("memory_used")
+                )
     if gate.get("passed"):
         from novel_editorial import compliance  # noqa: PLC0415
 

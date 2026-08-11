@@ -87,9 +87,22 @@ def build_context_snapshot(conn, agent, novel_id=0):
         if note:
             sections.append("今日心情：" + note)
 
-    memories = editorial_state.list_memories(
-        conn, agent=agent, novel_id=novel_id, limit=config.AGENT_CTX_MEMORIES
-    ).get("items") or []
+    allowed_categories = config.MEMORY_CATEGORY_MAP.get(agent)
+    if allowed_categories:
+        cat_marks = ",".join("?" * len(allowed_categories))
+        rows = conn.execute(
+            "SELECT * FROM agent_memories "
+            "WHERE agent=? AND novel_id IN (" + marks + ") "
+            "AND category IN (" + cat_marks + ") "
+            "ORDER BY importance DESC, id DESC LIMIT ?",
+            (agent, *scopes, *allowed_categories, config.AGENT_CTX_MEMORIES),
+        ).fetchall()
+        memories = [dict(r) for r in rows]
+    else:
+        memories = editorial_state.list_memories(
+            conn, agent=agent, novel_id=novel_id,
+            limit=config.AGENT_CTX_MEMORIES,
+        ).get("items") or []
     memories.sort(
         key=lambda m: 0 if str(m.get("category") or "") == "opinion" else 1
     )

@@ -17,7 +17,7 @@ class AgentContextTests(unittest.TestCase):
         mailroom.send(self.conn, "reviewer", "writer", "第二章逻辑有漏洞", subject="打回", novel_id=1)
         self.conn.execute(
             "INSERT INTO agent_memories(agent,novel_id,category,importance,content,source,created_at) "
-            "VALUES('writer',1,'collaboration',0.9,'审稿打回过我的第二章','review',"
+            "VALUES('writer',1,'plot',0.9,'审稿打回过我的第二章','review',"
             "datetime('now','localtime'))"
         )
         self.conn.execute(
@@ -70,7 +70,7 @@ class AgentContextTests(unittest.TestCase):
     def test_opinion_memories_sort_first(self):
         self.conn.execute(
             "INSERT INTO agent_memories(agent,novel_id,category,importance,content,source,created_at) "
-            "VALUES('writer',1,'collaboration',0.9,'普通协作记忆','review',datetime('now','localtime'))"
+            "VALUES('writer',1,'plot',0.9,'普通剧情记忆','review',datetime('now','localtime'))"
         )
         self.conn.execute(
             "INSERT INTO agent_memories(agent,novel_id,category,importance,content,source,created_at) "
@@ -80,8 +80,22 @@ class AgentContextTests(unittest.TestCase):
         snap = agent_context.build_context_snapshot(self.conn, "writer", novel_id=1)
         self.assertLess(
             snap.index("我对题材的看法变了"),
-            snap.index("普通协作记忆"),
+            snap.index("普通剧情记忆"),
         )
+
+    def test_memory_categories_filtered_by_agent_role(self):
+        self.conn.execute(
+            "INSERT INTO agent_memories(agent,novel_id,category,importance,content,source,created_at) "
+            "VALUES('writer',1,'plot',0.8,'剧情记忆：旧书店的秘密','plot',datetime('now','localtime'))"
+        )
+        self.conn.execute(
+            "INSERT INTO agent_memories(agent,novel_id,category,importance,content,source,created_at) "
+            "VALUES('writer',1,'meeting',0.9,'会议记忆：下周加支线','meeting',datetime('now','localtime'))"
+        )
+        self.conn.commit()
+        snap = agent_context.build_context_snapshot(self.conn, "writer", novel_id=1)
+        self.assertIn("剧情记忆：旧书店的秘密", snap)
+        self.assertNotIn("会议记忆：下周加支线", snap)
         self.assertIn("我与同事的关系", snap)
         self.assertIn("熟悉0.2 信任0.3 摩擦0.4", snap)
         self.assertIn("我未兑现的承诺", snap)

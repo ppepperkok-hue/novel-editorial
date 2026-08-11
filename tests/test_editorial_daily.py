@@ -380,6 +380,26 @@ class EditorialDailyTests(unittest.TestCase):
         ).fetchone()
         self.assertEqual(act["status"], "done")
 
+    def test_memory_used_persisted(self):
+        ctx = editorial_daily._Ctx(self.novel_id, self.db_path, dry_run=False)
+        editorial_daily._record_memory_used(
+            self.conn, "reviewer", self.novel_id,
+            ["记得审稿打回过第二章", "记得主角怕黑"],
+        )
+        rows = self.conn.execute(
+            "SELECT activity_type, title FROM agent_activity "
+            "WHERE agent='reviewer' AND activity_type='memory_used'"
+        ).fetchall()
+        self.assertEqual(len(rows), 2)
+        self.assertIn("审稿打回过第二章", rows[0]["title"])
+
+    def test_writer_task_asks_memory_continuity(self):
+        ctx = editorial_daily._Ctx(self.novel_id, self.db_path, dry_run=True)
+        ctx.writing_context = "前情提要"
+        meta, outline, guard = self._writer_fixture()
+        task = editorial_daily._writer_task(ctx, 0, meta, outline, guard, 2000)
+        self.assertIn("写作时体现前情与角色记忆", task)
+
     def test_two_runs_are_idempotent(self):
         self._ok_preflight()
         r1 = editorial_daily.daily(
