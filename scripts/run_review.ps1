@@ -205,6 +205,7 @@ if ($Scope -eq "slices") {
         $lines += ("| " + $item.Name + " | " + $item.Out + " | " + $size + " bytes |")
     }
     Set-Content -LiteralPath $index -Value $lines -Encoding UTF8
+    python tools/summarize_slices.py --dir docs/reviews --stamp $stamp
     Write-Host "Slice review done. Index: $index"
     exit 0
 }
