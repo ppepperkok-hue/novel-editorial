@@ -23,6 +23,20 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
+# Call codex.js directly via node: the npm PowerShell shim mangles
+# arguments/stdin for the review subcommand.
+$codexCmd = Get-Command codex -ErrorAction SilentlyContinue
+if (-not $codexCmd) {
+    Write-Host "codex CLI not found on PATH"
+    exit 1
+}
+$npmBin = Split-Path -Parent $codexCmd.Source
+$codexJs = Join-Path $npmBin "node_modules\@openai\codex\bin\codex.js"
+if (-not (Test-Path $codexJs)) {
+    Write-Host "codex.js not found: $codexJs"
+    exit 1
+}
+
 if (-not $Out) {
     $stamp = Get-Date -Format "yyyyMMdd-HHmm"
     $Out = Join-Path $root ("docs/reviews/" + $stamp + "-" + $Scope + "-review.md")
@@ -62,10 +76,10 @@ if ($Model) {
 }
 $args += "--ephemeral"
 if ($Scope -ne "uncommitted") {
-    $args += $persona
+    $args += ($persona -replace "`r?`n", " ")
 }
 
 Write-Host "Reviewer: codex exec review ($Scope) -> $Out"
 Write-Host "Note: a full review can take several minutes; do not close the terminal early."
-codex @args 2>&1 | Tee-Object -FilePath $Out
+node $codexJs @args *> $Out
 Write-Host "Report written to: $Out"
