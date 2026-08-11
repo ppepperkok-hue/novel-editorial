@@ -136,39 +136,6 @@ def run_workflow_now(workflow):
     return {"ok": False, "error": "workflow must be daily|weekly"}
 
 
-def load_control(conn):
-    from tools.app_settings import get_all  # noqa: PLC0415
-
-    return {
-        "settings": get_all(conn),
-        "workflows": {
-            "daily": n8n.workflow_status(config.N8N_WORKFLOW_DAILY),
-            "weekly": n8n.workflow_status(config.N8N_WORKFLOW_WEEKLY),
-            "keeper": n8n.workflow_status(config.N8N_WORKFLOW_KEEPER),
-        },
-    }
-
-
-def run_workflow_now(workflow):
-    hook_path = WEBHOOK_PATHS.get(workflow)
-    if not hook_path:
-        return {"ok": False, "error": "workflow must be daily|weekly"}
-    req = urllib.request.Request(
-        config.N8N_BASE + "/webhook/" + hook_path,
-        data=b"{}",
-        method="POST",
-        headers={"Content-Type": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=10) as r:
-            payload = r.read().decode("utf-8", "ignore")
-        return {"ok": True, "response": payload, "workflow": workflow}
-    except urllib.error.HTTPError as e:
-        return {"ok": False, "error": f"webhook trigger failed: HTTP {e.code}"}
-    except (urllib.error.URLError, OSError) as e:
-        return {"ok": False, "error": f"n8n unreachable: {e}"}
-
-
 def apply_schedule(conn):
     row = conn.execute(
         "SELECT value FROM settings WHERE key='daily_run_time'"

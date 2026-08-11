@@ -73,6 +73,20 @@ class CheckStockTests(unittest.TestCase):
 
 
 class ControlTests(unittest.TestCase):
+    def test_load_control_returns_scheduler_state_without_n8n(self):
+        path = make_db()
+        from novel_pipeline.services import control
+
+        conn = db.connect(path)
+        try:
+            payload = control.load_control(conn)
+            self.assertIn("scheduler", payload)
+            self.assertNotIn("workflows", payload)
+            self.assertIn("enabled", payload["scheduler"])
+            self.assertIn("last_run", payload["scheduler"])
+        finally:
+            conn.close()
+
     def test_save_settings_whitelist_and_run_now(self):
         path = make_db()
         from novel_pipeline.services import control
