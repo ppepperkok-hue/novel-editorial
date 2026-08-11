@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import WorksPage from "../components/WorksPage.jsx";
 
@@ -18,6 +18,11 @@ const data = {
       platform: "fanqie",
       chapters: 80,
       published: 78,
+      outline: {
+        bible: {
+          characters: [{ name: "林舟", role: "主角", personality: "冷静" }],
+        },
+      },
     },
     {
       id: 2,
@@ -73,5 +78,26 @@ describe("WorksPage", () => {
     );
     expect(screen.getAllByText("收尾中").length).toBeGreaterThan(0);
     expect(screen.getByText("已完结")).toBeInTheDocument();
+  });
+
+  it("shows weekly character evolution in the timeline", async () => {
+    global.fetch = vi.fn(async (url) => {
+      if (String(url).includes("/api/ending/status")) {
+        return jsonResponse({ novels: [] });
+      }
+      if (String(url).includes("/api/characters/evolution")) {
+        return jsonResponse({
+          evolution: [{ name: "林舟", chapter_id: 0, change_log: "周会固化", arc: "觉醒" }],
+        });
+      }
+      return jsonResponse({ items: [] });
+    });
+    render(<WorksPage data={data} pushToast={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText("收尾书")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("收尾书"));
+    await waitFor(() =>
+      expect(screen.getByText(/周会：周会固化/)).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/\[觉醒\]/)).toBeInTheDocument();
   });
 });

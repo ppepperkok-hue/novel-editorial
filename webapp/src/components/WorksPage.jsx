@@ -22,7 +22,7 @@ function Field({ label, children }) {
 }
 
 function CharacterCard({ c, evolutions }) {
-  const mine = (evolutions || []).filter((e) => e.name === c.name).slice(0, 3);
+  const mine = (evolutions || []).filter((e) => e.name === c.name).slice(0, 5);
   return (
     <div className="rounded-lg border border-[var(--line)] bg-[var(--code-bg)] p-2.5">
       <div className="flex items-baseline gap-2">
@@ -41,7 +41,7 @@ function CharacterCard({ c, evolutions }) {
           <div className="mb-1 text-[11px] text-[var(--accent-text)]">成长轨迹</div>
           {mine.map((e, i) => (
             <div key={i} className="text-[11px] leading-relaxed text-slate-500">
-              · 第 {e.chapter_id ?? "?"} 章：{e.change_log}
+              · {e.chapter_id ? `第 ${e.chapter_id} 章` : "周会"}：{e.change_log}
               {e.arc ? <span className="text-amber-400/80"> [{e.arc}]</span> : null}
             </div>
           ))}
