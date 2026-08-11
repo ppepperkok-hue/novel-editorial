@@ -41,15 +41,37 @@ def _book_detail(env, book_id):
 
 
 def _purge_novel(conn, novel_id):
-    """Delete a novel and every row that references it."""
-    tables = conn.execute(
+    """Delete a novel and every row that references it, in FK-safe order.
+
+    SQLite enforces foreign keys (PRAGMA foreign_keys=ON), so child tables
+    that reference chapters by chapter_id must be deleted before chapters,
+    and tables that reference the novel by novel_id before novels.
+    """
+    tables = [
+        r[0]
+        for r in conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-    ).fetchall()
-    for (t,) in tables:
+        ).fetchall()
+    ]
+    for t in tables:
+        cols = [r[1] for r in conn.execute(f'PRAGMA table_info("{t}")')]
+        if "chapter_id" in cols:
+            conn.execute(
+                f'DELETE FROM "{t}" WHERE chapter_id IN '
+                "(SELECT id FROM chapters WHERE novel_id=?)",
+                (novel_id,),
+            )
+    for t in ("chapters", "volumes"):
+        if t in tables:
+            conn.execute(f'DELETE FROM "{t}" WHERE novel_id=?', (novel_id,))
+    for t in tables:
+        if t in ("novels", "chapters", "volumes"):
+            continue
         cols = [r[1] for r in conn.execute(f'PRAGMA table_info("{t}")')]
         if "novel_id" in cols:
             conn.execute(f'DELETE FROM "{t}" WHERE novel_id=?', (novel_id,))
     conn.execute("DELETE FROM novels WHERE id=?", (novel_id,))
+    conn.commit()
 
 
 def delete_book_on_fanqie(conn, novel_id, confirm=False):

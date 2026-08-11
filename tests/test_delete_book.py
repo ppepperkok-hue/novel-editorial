@@ -37,6 +37,48 @@ def env_ctx():
 
 
 class DeleteBookTests(unittest.TestCase):
+    def test_purge_novel_is_fk_safe(self):
+        path = make_db()
+        conn = db.connect(path)
+        try:
+            conn.execute(
+                "INSERT INTO volumes(novel_id,seq,goal) VALUES(1,1,'第一卷')"
+            )
+            conn.execute(
+                "INSERT INTO chapters(novel_id,volume_id,seq,outline,status,title) "
+                "VALUES(1,1,1,'o','published','第 1 章')"
+            )
+            conn.execute(
+                "INSERT INTO chapter_content(chapter_id,content) VALUES(1,'正文')"
+            )
+            conn.execute(
+                "INSERT INTO quality_reports(chapter_id,scores,passed) VALUES(1,'{}',1)"
+            )
+            conn.execute(
+                "INSERT INTO publish_logs(chapter_id,platform,action,result) "
+                "VALUES(1,'fanqie','publish','success')"
+            )
+            conn.execute(
+                "INSERT INTO chapter_summaries(chapter_id,summary) VALUES(1,'摘要')"
+            )
+            conn.execute(
+                "INSERT INTO agent_diaries(agent,novel_id,diary_type,content) "
+                "VALUES('writer',1,'daily','{}')"
+            )
+            conn.commit()
+            delete_book._purge_novel(conn, 1)
+            for table in (
+                "novels", "volumes", "chapters", "chapter_content",
+                "quality_reports", "publish_logs", "chapter_summaries",
+                "agent_diaries",
+            ):
+                n = conn.execute(
+                    f"SELECT COUNT(*) c FROM {table}"
+                ).fetchone()["c"]
+                self.assertEqual(n, 0, f"{table} must be empty after purge")
+        finally:
+            conn.close()
+
     def test_reject_missing_novel(self):
         path = make_db()
         conn = db.connect(path)

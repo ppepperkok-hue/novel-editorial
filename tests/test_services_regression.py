@@ -107,6 +107,19 @@ class ControlTests(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_collect_reader_stats_cli_env_file_defined(self):
+        import io  # noqa: PLC0415
+        from contextlib import redirect_stdout  # noqa: PLC0415
+        from unittest import mock  # noqa: PLC0415
+
+        import tools.collect_reader_stats as collector
+
+        with mock.patch("sys.argv", ["collect_reader_stats.py", "--help"]):
+            with redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit) as ctx:
+                    collector.main()
+        self.assertIn(ctx.exception.code, (0, None))
+
     def test_run_now_chapters_capped_at_five(self):
         path = make_db()
         from novel_editorial.services import control

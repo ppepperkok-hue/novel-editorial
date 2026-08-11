@@ -130,7 +130,7 @@ def main():
         pass
     ap = argparse.ArgumentParser(description="采集番茄章节完读率/追读率")
     ap.add_argument("--db", default="demo.db")
-    ap.add_argument("--env-file", default=str(ENV_FILE))
+    ap.add_argument("--env-file", default=str(config.N8N_ENV_FILE))
     args = ap.parse_args()
 
     db_path = Path(args.db)
