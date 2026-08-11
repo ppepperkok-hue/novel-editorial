@@ -15,7 +15,7 @@ from novel_editorial import db  # noqa: E402
 from tools import publish_stock  # noqa: E402
 
 
-def make_db(book_id="b1", volume_id="v1", status="ready"):
+def make_db(book_id="b1", volume_id="v1", status="publishing"):
     tmp = tempfile.mkdtemp()
     path = os.path.join(tmp, "t.db")
     conn = db.connect(path)

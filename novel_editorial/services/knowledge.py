@@ -221,9 +221,10 @@ def add_draft(conn, kind, title, content, agent="", source="", agents=None):
 
 def update_draft_status(conn, draft_id, status):
     cur = conn.execute(
-        "UPDATE knowledge_drafts SET status=?, accepted_at=datetime('now','localtime') "
+        "UPDATE knowledge_drafts SET status=?, "
+        "accepted_at=CASE WHEN ?='accepted' THEN datetime('now','localtime') END "
         "WHERE id=? AND status='draft'",
-        (status, draft_id),
+        (status, status, draft_id),
     )
     conn.commit()
     return cur.rowcount > 0

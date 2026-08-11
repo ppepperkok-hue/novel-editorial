@@ -642,7 +642,20 @@ def make_handler(db_path):
                 return
             conn = None
             try:
-                length = int(self.headers.get("Content-Length") or 0)
+                try:
+                    length = int(self.headers.get("Content-Length") or 0)
+                except (TypeError, ValueError):
+                    self._json(
+                        {"ok": False, "error": "invalid Content-Length"},
+                        status=400,
+                    )
+                    return
+                if length < 0:
+                    self._json(
+                        {"ok": False, "error": "invalid Content-Length"},
+                        status=400,
+                    )
+                    return
                 raw = self.rfile.read(length) if length else b"{}"
                 payload = json.loads(raw.decode("utf-8") or "{}")
                 handler = POST_ROUTES.get(parsed.path)
@@ -728,13 +741,23 @@ def make_handler(db_path):
                     from novel_editorial.services import activity as activity_service  # noqa: PLC0415
 
                     try:
+                        session_id = int(payload.get("session_id") or 0)
+                        meeting_id = int(payload.get("meeting_id") or 0)
+                    except (TypeError, ValueError):
+                        conn.close()
+                        self._json(
+                            {"ok": False, "error": "session_id and meeting_id must be integers"},
+                            status=400,
+                        )
+                        return
+                    try:
                         result = activity_service.create_action(
                             conn,
                             payload.get("agent"),
                             payload.get("task"),
                             novel_id=payload.get("novel_id") or 0,
-                            session_id=payload.get("session_id") or 0,
-                            meeting_id=payload.get("meeting_id") or 0,
+                            session_id=session_id,
+                            meeting_id=meeting_id,
                             detail=payload.get("detail") or {},
                         )
                     finally:

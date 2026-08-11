@@ -287,7 +287,7 @@ def apply_schedule(conn):
         "-Time",
         time_str,
         "-DbPath",
-        os.path.relpath(config.DB_PATH, ROOT),
+        os.path.relpath(_db_path(), ROOT),
         "-TaskName",
         DAILY_TASK_NAME,
     ]

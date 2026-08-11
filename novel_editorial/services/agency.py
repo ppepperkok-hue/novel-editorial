@@ -57,8 +57,13 @@ def _dispatch(conn, agent, novel_id, name, item):
         )
         return bool(r.get("ok"))
     if name == "claim_task":
-        action_id = int(item.get("action_id") or 0)
-        if not action_id:
+        raw_id = item.get("action_id")
+        if isinstance(raw_id, bool) or not isinstance(raw_id, (int, str)):
+            return False
+        if isinstance(raw_id, str) and not raw_id.strip().isdigit():
+            return False
+        action_id = int(raw_id)
+        if action_id <= 0:
             return False
         r = activity.claim_action(conn, action_id, agent, novel_id=novel_id)
         return bool(r.get("ok"))
@@ -95,13 +100,28 @@ def apply(conn, agent, novel_id, actions):
             )
             rejected += 1
             continue
-        ok = _dispatch(conn, agent, novel_id, name, item)
+        try:
+            ok = _dispatch(conn, agent, novel_id, name, item)
+        except Exception as exc:  # noqa: BLE001
+            audit.log(
+                conn, "agency", name,
+                target_type="agent", target_id=agent,
+                detail={
+                    "novel_id": novel_id,
+                    "error": f"{exc.__class__.__name__}: {exc}",
+                    **item,
+                },
+            )
+            rejected += 1
+            continue
         audit.log(
             conn, "agency", name,
             target_type="agent", target_id=agent,
-            detail={"novel_id": novel_id, **item},
+            detail={"novel_id": novel_id, **item, "ok": ok},
         )
         if ok:
             applied += 1
+        else:
+            rejected += 1
     conn.commit()
     return {"ok": True, "applied": applied, "rejected": rejected}

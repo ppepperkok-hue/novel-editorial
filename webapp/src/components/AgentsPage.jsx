@@ -124,7 +124,8 @@ export default function AgentsPage({ pushToast }) {
     tempValue >= 0 &&
     tempValue <= 2;
 
-  const moodOf = states.find((s) => s.agent === selected?.file);
+  const moodAgentKey = selected?.file?.replace(/\.md$/, "");
+  const moodOf = states.find((s) => s.agent === moodAgentKey);
   const currentMood = moodDraft || moodOf?.mood || {
     satisfaction: 0.5,
     concern: 0.5,

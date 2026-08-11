@@ -11,11 +11,11 @@ from pathlib import Path
 
 CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 
-# 常见 AI 味模板词（去 AI 味专项治理用）
+# 常见 AI 味模板词（去 AI 味专项治理用；与 ai_words.json、tools/editorial_steps.py 同源）
 AI_FLAVOR_WORDS = [
-    "突然", "顿时", "仿佛", "缓缓", "不由得", "微微一", "嘴角",
-    "眼神一凝", "低沉", "冷哼一声", "心中一动", "不禁", "瞬间",
-    "面无表情", "淡淡",
+    "突然", "顿时", "仿佛", "缓缓", "不由得", "微微一", "嘴角", "眼神一凝", "低沉",
+    "冷哼一声", "心中一动", "不禁", "瞬间", "面无表情", "淡淡", "不由自主", "情不自禁",
+    "微微一愣", "缓缓说道", "与此同时", "一股强大的气息",
 ]
 _WORDS_FILE = Path(__file__).resolve().parent.parent / "ai_words.json"
 try:
@@ -43,11 +43,14 @@ def check_punctuation(text):
 
 
 def ai_flavor_density(text):
-    """每千字中 AI 味模板词出现次数，越高越可疑。"""
+    """每千字中 AI 味模板词出现次数，越高越可疑；重叠词按位置只计一次。"""
     total = count_chinese_chars(text)
     if total == 0:
         return 0.0
-    hits = sum(len(re.findall(re.escape(w), text)) for w in AI_FLAVOR_WORDS)
+    if not AI_FLAVOR_WORDS:
+        return 0.0
+    pattern = re.compile("|".join(re.escape(w) for w in AI_FLAVOR_WORDS))
+    hits = len(pattern.findall(text))
     return hits / total * 1000
 
 

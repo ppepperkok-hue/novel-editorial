@@ -45,23 +45,32 @@ def count_occurrences(text, words):
     return hits
 
 
-def _non_overlap_count(text, words):
+def count_non_overlap(text, words):
+    """Count non-overlapping keyword hits; overlapping words count once.
+
+    Pure helper for `detect()`; safe to unit-test directly.
+    """
     if not words:
         return 0
     pattern = re.compile("|".join(re.escape(w) for w in words))
     return len(pattern.findall(text))
 
 
+def density_per_window(hits, total, window=500):
+    """Normalize hit counts to occurrences per `window` characters."""
+    per_window = max(1, total / window)
+    return round(hits / per_window, 2)
+
+
 def detect(text):
     if not text:
         return {"score": 0, "flowery": {}, "filler": {}, "density": 0, "notes": []}
     total = len(text)
-    per500 = max(1, total / 500)
     flowery = count_occurrences(text, FLOWERY)
     filler = count_occurrences(text, FILLER)
-    flowery_n = _non_overlap_count(text, FLOWERY)
-    filler_n = _non_overlap_count(text, FILLER)
-    density = round(flowery_n / per500, 2)
+    flowery_n = count_non_overlap(text, FLOWERY)
+    filler_n = count_non_overlap(text, FILLER)
+    density = density_per_window(flowery_n, total)
     notes = []
     if density > 2:
         notes.append(f"华丽辞藻密度 {density}/500字，超过阈值 2")

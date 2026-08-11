@@ -83,7 +83,14 @@ def apply_event(conn, agent, other, event_type, novel_id=0):
 
 
 def decay(conn, novel_id=0, days=7):
-    """Weekly decay: trust/familiarity fade 5%, friction fades 10%."""
+    """Decay trust/familiarity 5% and friction 10% per 7 days, scaled by
+    the elapsed `days`; values stay in [0, 1]."""
+    try:
+        scale = max(0.0, float(days or 0)) / 7.0
+    except (TypeError, ValueError):
+        scale = 1.0
+    trust_factor = 0.95 ** scale
+    friction_factor = 0.90 ** scale
     scope = "AND novel_id=?" if novel_id else ""
     params = (int(novel_id),) if novel_id else ()
     rows = conn.execute(
@@ -93,9 +100,9 @@ def decay(conn, novel_id=0, days=7):
     ).fetchall()
     updated = 0
     for row in rows:
-        familiarity = _clamp(float(row["familiarity"] or 0.0) * 0.95)
-        trust = _clamp(float(row["trust"] or 0.0) * 0.95)
-        friction = _clamp(float(row["friction"] or 0.0) * 0.90)
+        familiarity = _clamp(float(row["familiarity"] or 0.0) * trust_factor)
+        trust = _clamp(float(row["trust"] or 0.0) * trust_factor)
+        friction = _clamp(float(row["friction"] or 0.0) * friction_factor)
         if (familiarity, trust, friction) != (
             float(row["familiarity"] or 0.0),
             float(row["trust"] or 0.0),

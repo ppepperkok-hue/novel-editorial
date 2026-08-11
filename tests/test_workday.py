@@ -120,7 +120,8 @@ class WorkdayTests(unittest.TestCase):
         row = self.conn.execute(
             "SELECT phase, status FROM daily_runs WHERE run_id=?", (run_id,)
         ).fetchone()
-        self.assertEqual(row["phase"], "finished")
+        self.assertEqual(row["phase"], "awaiting_close", "dry-run must not persist close")
+        self.assertEqual(row["status"], "completed")
 
     def test_close_completed_with_pending_actions(self):
         run_id = "workday-test-2"
@@ -141,8 +142,8 @@ class WorkdayTests(unittest.TestCase):
         row = self.conn.execute(
             "SELECT status, legacy FROM daily_runs WHERE run_id=?", (run_id,)
         ).fetchone()
-        self.assertEqual(row["status"], "completed_with_pending")
-        self.assertIn("pending_actions", json.loads(row["legacy"]))
+        self.assertEqual(row["status"], "completed", "dry-run must not persist close")
+        self.assertEqual(json.loads(row["legacy"]), {}, "dry-run must not persist close")
 
     def test_close_partial_when_published_some(self):
         run_id = "workday-test-3"

@@ -350,10 +350,15 @@ export default function WorksPage({ data, pushToast }) {
                     disabled={!bindBookId || binding === nextBook.id}
                     onClick={async () => {
                       setBinding(nextBook.id);
-                      const r = await bindBook(nextBook.id, bindBookId.trim(), bindVolumeId.trim());
-                      pushToast(r.ok ? r.note : "绑定失败：" + (r.error || "未知"), r.ok ? "ok" : "bad");
-                      setBinding(null);
-                      getEndingStatus().then((x) => setEnding(x.novels || []));
+                      try {
+                        const r = await bindBook(nextBook.id, bindBookId.trim(), bindVolumeId.trim());
+                        pushToast(r.ok ? r.note : "绑定失败：" + (r.error || "未知"), r.ok ? "ok" : "bad");
+                      } catch (e) {
+                        pushToast("绑定请求失败：" + e, "bad");
+                      } finally {
+                        setBinding(null);
+                        getEndingStatus().then((x) => setEnding(x.novels || []));
+                      }
                     }}
                   >
                     {binding === nextBook.id ? "绑定中…" : "绑定新书"}

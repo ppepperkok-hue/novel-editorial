@@ -227,7 +227,19 @@ def _upsert_summary(conn, novel_id, chapter_id, seq, ch):
         desc = str(p.get("description") or "").strip()
         if not desc:
             continue
-        expected = int(p.get("expected_recover") or 0) or (seq + 10)
+        try:
+            expected = int(p.get("expected_recover") or 0) or (seq + 10)
+        except (TypeError, ValueError):
+            expected = seq + 10
+            try:
+                with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+                    f.write(
+                        f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
+                        f"record_work: 章节 {seq} expected_recover="
+                        f"{p.get('expected_recover')!r} 非整数，使用默认 {expected}\n"
+                    )
+            except OSError:
+                pass
         conn.execute(
             "INSERT INTO plot_threads(novel_id,planted_chapter,expected_recover_chapter,status,description) "
             "VALUES(?,?,?,?,?)",

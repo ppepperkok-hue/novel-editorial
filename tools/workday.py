@@ -93,7 +93,8 @@ def _morning_plan(conn, run_id, mode, boss_instruction, dry_run, db_path):
                 }
         except (ValueError, json.JSONDecodeError):
             pass  # deterministic fallback stays
-    _update(conn, run_id, today_plan=_j(plan), phase="morning")
+    if not dry_run:
+        _update(conn, run_id, today_plan=_j(plan), phase="morning")
     return plan
 
 
@@ -162,7 +163,8 @@ def open(conn, chapters=None, trigger="manual", mode="write", boss_instruction="
                 )
         produce = None
         if plan.get("produce"):
-            _update(conn, run_id, phase="producing")
+            if not dry_run:
+                _update(conn, run_id, phase="producing")
             produce = editorial_daily.daily(
                 conn,
                 chapters=chapters or plan.get("chapters"),
@@ -173,9 +175,11 @@ def open(conn, chapters=None, trigger="manual", mode="write", boss_instruction="
                 lock_held=True,
             )
         else:
-            _update(conn, run_id, published=0, status="skipped")
+            if not dry_run:
+                _update(conn, run_id, published=0, status="skipped")
             produce = {"status": "skipped", "published": 0}
-        _update(conn, run_id, phase="awaiting_close")
+        if not dry_run:
+            _update(conn, run_id, phase="awaiting_close")
         return {
             "ok": True,
             "run_id": run_id,
@@ -210,12 +214,14 @@ def resume(conn, run_id, chapters=None, dry_run=False, db_path=None):
     if not locked:
         return {"ok": False, "error": str(reason), "locked": False}
     try:
-        _update(conn, run_id, phase="producing", status="running")
+        if not dry_run:
+            _update(conn, run_id, phase="producing", status="running")
         result = editorial_daily.daily(
             conn, chapters=chapters, trigger="manual", dry_run=dry_run,
             db_path=db_path, workday_run_id=run_id, lock_held=True,
         )
-        _update(conn, run_id, phase="awaiting_close")
+        if not dry_run:
+            _update(conn, run_id, phase="awaiting_close")
         return {"ok": True, "run_id": run_id, "status": "awaiting_close", "produce": result}
     finally:
         preflight.release_lock(lock_path)
@@ -245,7 +251,8 @@ def close(conn, run_id, dry_run=False, db_path=None):
 
 
 def _close_locked(conn, run_id, dry_run, row):
-    _update(conn, run_id, phase="closing")
+    if not dry_run:
+        _update(conn, run_id, phase="closing")
     unread = conn.execute(
         "SELECT COUNT(*) c FROM agent_messages WHERE status='unread'"
     ).fetchone()["c"]
@@ -261,7 +268,8 @@ def _close_locked(conn, run_id, dry_run, row):
         "open_promises": open_promises,
         "pending_actions": pending_actions,
     }
-    _update(conn, run_id, collab_summary=_j(collab))
+    if not dry_run:
+        _update(conn, run_id, collab_summary=_j(collab))
     if not dry_run:
         try:
             from tools import write_diaries  # noqa: PLC0415
@@ -303,15 +311,16 @@ def _close_locked(conn, run_id, dry_run, row):
                 target_type="run", target_id=run_id,
                 detail={"error": str(exc)[:200]},
             )
-    _update(
-        conn, run_id, status=final_status, phase="finished",
-        legacy=_j(legacy),
-    )
-    audit.log(
-        conn, "workday", "closed",
-        target_type="run", target_id=run_id,
-        detail={"status": final_status, "published": published, "legacy": legacy},
-    )
+    if not dry_run:
+        _update(
+            conn, run_id, status=final_status, phase="finished",
+            legacy=_j(legacy),
+        )
+        audit.log(
+            conn, "workday", "closed",
+            target_type="run", target_id=run_id,
+            detail={"status": final_status, "published": published, "legacy": legacy},
+        )
     return {
         "ok": True, "run_id": run_id, "status": final_status,
         "published": published, "collab": collab, "legacy": legacy,

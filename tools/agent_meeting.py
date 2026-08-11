@@ -27,6 +27,8 @@ ALL_AGENTS = CORE_AGENTS + [
     "editor", "reviewer", "work_meta", "ending_judge", "knowledge_keeper",
 ]
 
+LLM_RETRY_ATTEMPTS = 3
+
 
 def parse_json(text):
     if not text:
@@ -183,6 +185,28 @@ GET_NOVEL_KNOWLEDGE_TOOL = {
 }
 
 
+def _chat_with_retry(agent, model, system, user, temperature, max_tokens,
+                     messages=None, tools=None):
+    """Call chat_deepseek with transient-failure retries, then raise."""
+    last_exc = None
+    for attempt in range(LLM_RETRY_ATTEMPTS):
+        try:
+            cand = chat_deepseek(
+                model, system, user, temperature=temperature,
+                max_tokens=max_tokens, messages=messages, tools=tools,
+            )
+            if (cand.get("text") or "").strip() or cand.get("tool_calls"):
+                return cand
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if attempt < LLM_RETRY_ATTEMPTS - 1:
+                time.sleep(1.0 * (attempt + 1))
+    raise RuntimeError(
+        f"LLM call failed for {agent} after {LLM_RETRY_ATTEMPTS} attempts: "
+        f"{str(last_exc)[:200]}"
+    ) from last_exc
+
+
 def ask(conn, novel_id, agent, user, temperature, dry_run, mock_text, max_tokens=3000,
         tools=None, messages=None, system_override=None):
     if dry_run:
@@ -190,26 +214,10 @@ def ask(conn, novel_id, agent, user, temperature, dry_run, mock_text, max_tokens
     system = system_override if system_override is not None else agent_md(agent)
     model = agent_model(agent)
     # Retry transient failures like the agent tool loop does; a single
-    # network blip must not kill the whole meeting.
-    first = None
-    last_exc = None
-    for attempt in range(3):
-        try:
-            cand = chat_deepseek(
-                model, system, user, temperature=temperature,
-                max_tokens=max_tokens, messages=messages, tools=tools,
-            )
-            if (cand.get("text") or "").strip() or cand.get("tool_calls"):
-                first = cand
-                break
-        except Exception as exc:  # noqa: BLE001
-            last_exc = exc
-            if attempt < 2:
-                time.sleep(1.0 * (attempt + 1))
-    if first is None:
-        raise RuntimeError(
-            f"LLM call failed for {agent} after 3 attempts: {str(last_exc)[:200]}"
-        ) from last_exc
+    # network blip must not kill the whole meeting, in any round.
+    first = _chat_with_retry(
+        agent, model, system, user, temperature, max_tokens, tools=tools
+    )
     tool_calls = first.get("tool_calls") or []
     usage = dict(first.get("usage") or {})
     if not tool_calls:
@@ -249,8 +257,9 @@ def ask(conn, novel_id, agent, user, temperature, dry_run, mock_text, max_tokens
         msgs.append(
             {"role": "tool", "tool_call_id": tc.get("id") or "", "content": content}
         )
-    final = chat_deepseek(
-        model, None, None, temperature=temperature, max_tokens=max_tokens, messages=msgs
+    final = _chat_with_retry(
+        agent, model, None, None, temperature=temperature,
+        max_tokens=max_tokens, messages=msgs,
     )
     final_usage = final.get("usage") or {}
     usage = {

@@ -36,7 +36,19 @@ UA = (
 
 
 def load_env(env_file):
-    for k, v in config.load_env().items():
+    """Load env vars from the given file (default ~/.n8n/.env) into
+    os.environ without overwriting already-set process variables."""
+    if env_file:
+        env = dict(os.environ)
+        path = Path(env_file)
+        if path.exists():
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    env.setdefault(k.strip(), v.strip())
+    else:
+        env = config.load_env()
+    for k, v in env.items():
         os.environ.setdefault(k, v)
 
 

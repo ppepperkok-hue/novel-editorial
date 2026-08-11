@@ -36,14 +36,6 @@ AGENT_DESC = {
 }
 
 
-def _extract_node_system(body):
-    start = body.find("{role:'system',content:'")
-    end = body.find("'},{role:'user'", start)
-    if start < 0 or end < 0:
-        return None
-    return body[start + len("{role:'system',content:'") : end]
-
-
 def _agent_files():
     if not config.AGENTS_DIR.exists():
         return []
@@ -105,7 +97,8 @@ def agent_save(payload, conn=None):
     prompt = str(payload.get("prompt") or "").strip()
     if len(prompt) < 20:
         return {"ok": False, "error": "prompt too short"}
-    old_head = path.read_text(encoding="utf-8").split("---", 2)
+    original = path.read_text(encoding="utf-8")
+    old_head = original.split("---", 2)
     extra = ""
     if len(old_head) >= 3:
         for line in old_head[1].strip().splitlines():
@@ -134,12 +127,24 @@ def agent_save(payload, conn=None):
             errors="replace",
             timeout=60,
         )
-    except OSError as e:
+    except (OSError, subprocess.SubprocessError) as e:
         return {"ok": False, "error": f"render/validate failed: {e}"}
+    if rendered.returncode != 0 or validated.returncode != 0:
+        try:
+            path.write_text(original, encoding="utf-8")
+        except OSError:
+            pass
+        return {
+            "ok": False,
+            "error": "render/validate failed",
+            "render": (rendered.stdout or rendered.stderr).strip()[-300:],
+            "validation": validated.returncode == 0,
+            "validation_output": (validated.stdout or validated.stderr).strip()[-300:],
+        }
     result = {
         "ok": True,
         "render": (rendered.stdout or rendered.stderr).strip()[-300:],
-        "validation": validated.returncode == 0,
+        "validation": True,
         "validation_output": (validated.stdout or validated.stderr).strip()[-300:],
     }
     if conn is not None:

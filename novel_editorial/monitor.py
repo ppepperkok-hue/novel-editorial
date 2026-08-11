@@ -33,8 +33,7 @@ class AlertSink:
 
 def run_checks(conn, env=None, monthly_budget=100.0, spent=0.0):
     env = env if env is not None else os.environ
-    if not env.get("FANQIE_COOKIE") and not env.get("TOMATO_COOKIE"):
-        env = {**env, **_load_n8n_env()}
+    env = {**_load_n8n_env(), **env}
     issues = []
 
     if not (env.get("FANQIE_COOKIE") or env.get("TOMATO_COOKIE")) or not (

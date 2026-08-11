@@ -78,6 +78,27 @@ def to_html(text):
     return "".join("<p>" + esc(p) + "</p>" for p in paras)
 
 
+def _safe_int_setting(key, value, default):
+    """Parse an int setting; dirty config falls back to `default` and leaves
+    a trace in alerts.log instead of crashing the whole CLI."""
+    if value in (None, ""):
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        try:
+            alerts = ROOT / "alerts.log"
+            with alerts.open("a", encoding="utf-8") as f:
+                f.write(
+                    f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
+                    f"publish_stock: settings[{key}]={value!r} 非整数，"
+                    f"使用默认 {default}\n"
+                )
+        except OSError:
+            pass
+        return default
+
+
 def publish_chapter(conn, chapter, env):
     """Publish one chapter; returns (ok, item_id, error)."""
     novel = conn.execute(
@@ -330,31 +351,35 @@ def main():
     conn = db.connect(db_path)
     env = load_env()
     try:
-        novel = None
-        novel_id = None
-        for r in conn.execute(
-            "SELECT DISTINCT novel_id FROM chapters WHERE status='reviewed' "
-            "ORDER BY novel_id"
-        ).fetchall():
-            cand = conn.execute(
-                "SELECT id, status, finish_remaining FROM novels WHERE id=?",
-                (r["novel_id"],),
-            ).fetchone()
-            if cand and cand["status"] != "finished":
-                novel = cand
-                novel_id = cand["id"]
-                break
-        if novel is None and conn.execute(
-            "SELECT COUNT(*) c FROM chapters WHERE status='reviewed'"
-        ).fetchone()["c"]:
-            print(json.dumps({"ok": True, "published": 0, "note": "仅剩已完结作品的存稿，停止发布"}, ensure_ascii=False))
+        # 按活跃书语义选择（与 tools/current_book.py 一致）：只取
+        # publishing/finishing 的最新一本；无活跃书时明确报错，不再从
+        # 存稿书里静默挑最小 novel_id。
+        novel = conn.execute(
+            "SELECT id, status, finish_remaining FROM novels "
+            "WHERE status IN ('publishing','finishing') "
+            "ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if novel is None:
+            print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "published": 0,
+                        "error": "没有活跃连载作品（publishing/finishing），请先开新书并完成建书",
+                    },
+                    ensure_ascii=False,
+                )
+            )
             return
+        novel_id = novel["id"]
         settings = {
             r["key"]: r["value"]
             for r in conn.execute("SELECT key, value FROM settings").fetchall()
         }
-        target = args.chapters or int(settings.get("pending_publish") or 0) or int(
-            settings.get("daily_chapters") or 2
+        target = (
+            args.chapters
+            or _safe_int_setting("pending_publish", settings.get("pending_publish"), 0)
+            or _safe_int_setting("daily_chapters", settings.get("daily_chapters"), 2)
         )
         target = max(1, min(target, 10))
         summary = publish_batch(conn, novel_id, target, env)

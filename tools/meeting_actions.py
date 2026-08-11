@@ -9,6 +9,8 @@ is idempotent per session (an audit marker prevents double application).
 
 from __future__ import annotations
 
+import json
+
 from novel_editorial import config
 from novel_editorial.services import audit
 from tools import meeting_kinds
@@ -29,13 +31,25 @@ def run_post_actions(conn, session_id, meeting_id, novel_id, kind, report,
         str(kind or "topic"), meeting_kinds.MEETING_KINDS["topic"]
     )
     actions = spec.get("post_actions") or ["actions"]
+    # Reserve the idempotency marker atomically: INSERT ... WHERE NOT EXISTS
+    # is one statement, so concurrent runs cannot both pass the check.
     marker = conn.execute(
-        "SELECT id FROM audit_logs WHERE category='meeting' "
-        "AND action='post_actions_applied' AND target_type='session' "
-        "AND target_id=?",
-        (str(session_id),),
-    ).fetchone()
-    if marker:
+        "INSERT INTO audit_logs(created_at,category,action,target_type,target_id,detail) "
+        "SELECT datetime('now','localtime'), 'meeting', 'post_actions_applied', "
+        "'session', ?, ? "
+        "WHERE NOT EXISTS ("
+        "  SELECT 1 FROM audit_logs WHERE category='meeting' "
+        "  AND action='post_actions_applied' AND target_type='session' "
+        "  AND target_id=?"
+        ")",
+        (
+            str(session_id),
+            json.dumps({"kind": kind, "results": "pending"}, ensure_ascii=False),
+            str(session_id),
+        ),
+    )
+    conn.commit()
+    if marker.rowcount == 0:
         return {"ok": True, "skipped": True, "reason": "already applied"}
 
     results = {}
@@ -86,10 +100,14 @@ def run_post_actions(conn, session_id, meeting_id, novel_id, kind, report,
             },
         )
         results["critique"] = True
-    audit.log(
-        conn, "meeting", "post_actions_applied",
-        target_type="session", target_id=str(session_id),
-        detail={"kind": kind, "results": results},
+    conn.execute(
+        "UPDATE audit_logs SET detail=? WHERE category='meeting' "
+        "AND action='post_actions_applied' AND target_type='session' "
+        "AND target_id=?",
+        (
+            json.dumps({"kind": kind, "results": results}, ensure_ascii=False),
+            str(session_id),
+        ),
     )
     conn.commit()
     return {"ok": True, "results": results}

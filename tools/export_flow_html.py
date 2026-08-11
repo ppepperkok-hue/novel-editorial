@@ -71,6 +71,15 @@ def render_html(conn):
         "error": "上次失败",
         "running": "运行中",
     }.get(status, "待命（暂无运行）")
+    status_class = {
+        "completed": "ok",
+        "success": "ok",
+        "partial": "warn",
+        "failed": "bad",
+        "error": "bad",
+        "running": "run",
+        "idle": "idle",
+    }.get(status, "idle")
     summary = (
         f"{last.get('run_id') or '—'} · 发布 {last.get('published') or 0} 章 · "
         f"{last.get('started_at') or '—'} → {last.get('finished_at') or '—'}"
@@ -78,9 +87,6 @@ def render_html(conn):
     error = last.get("error") or ""
     summary = html.escape(summary)
     error = html.escape(error)
-    groups = "".join(
-        f'<span class="chip">{GROUP_LABEL[g]}</span>' for g in GROUP_X
-    )
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return f"""<!doctype html>
 <html lang="zh">
@@ -122,7 +128,7 @@ def render_html(conn):
 <body>
 <header>
   <h1>日更链路报告</h1>
-  <span class="status {status}">{status_text}</span>
+  <span class="status {status_class}">{status_text}</span>
   <span class="muted">{summary}</span>
   {f'<span class="err">{error}</span>' if error else ""}
   <span class="muted" style="margin-left:auto">生成于 {now}</span>

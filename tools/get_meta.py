@@ -6,6 +6,7 @@ Usage:
 
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -15,6 +16,26 @@ sys.path.insert(0, str(ROOT))
 from novel_editorial import data_feedback, db  # noqa: E402
 from tools.app_settings import get_all  # noqa: E402
 from tools import novel_knowledge  # noqa: E402
+
+
+def _safe_json(value, fallback, field):
+    """Parse JSON with a default fallback; dirty JSON (including valid JSON
+    of the wrong shape) is replaced and logged instead of crashing the CLI."""
+    try:
+        parsed = json.loads(value or fallback)
+    except (TypeError, ValueError):
+        parsed = None
+    if not isinstance(parsed, type(fallback)):
+        parsed = fallback
+        try:
+            with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+                f.write(
+                    f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
+                    f"get_meta: {field} 非合法 JSON（或类型不符），使用默认值\n"
+                )
+        except OSError:
+            pass
+    return parsed
 
 
 def main():
@@ -87,7 +108,9 @@ def main():
                     {
                         "chapter_id": s["chapter_id"],
                         "summary": s["summary"],
-                        "character_states": json.loads(s["character_states"] or "{}"),
+                        "character_states": _safe_json(
+                            s["character_states"] or "{}", {}, "character_states"
+                        ),
                         "ending_excerpt": s["ending_excerpt"] or "",
                     }
                 )
@@ -101,9 +124,13 @@ def main():
             "SELECT name, role, traits, goals, state FROM characters WHERE novel_id=? ORDER BY id",
             (row["id"],),
         ).fetchall()
-        protagonists = json.loads(row["protagonists"] or "[]")
+        protagonists = _safe_json(row["protagonists"] or "[]", [], "protagonists")
         char_states = {
-            c["name"]: json.loads(c["state"] or "{}") for c in characters if c["state"]
+            c["name"]: _safe_json(
+                c["state"] or "{}", {}, f"characters[{c['name']}].state"
+            )
+            for c in characters
+            if c["state"]
         }
         if isinstance(bible, dict):
             for c in bible.get("characters") or []:
@@ -148,14 +175,15 @@ def main():
             except (OSError, ValueError):
                 reader_feedback = {}
 
+        tags = _safe_json(row["tags"] or "[]", [], "tags")
         meta = {
             "novel_id": row["id"],
             "book_id": row["book_id"],
             "book_name": row["title"],
             "genre": row["genre"],
             "premise": row["premise"],
-            "tags": json.loads(row["tags"] or "[]"),
-            "keywords": ",".join(json.loads(row["tags"] or "[]")),
+            "tags": tags,
+            "keywords": ",".join(tags),
             "abstract": row["abstract"],
             "protagonists": protagonists,
             "volume_goal": row["volume_goal"],
@@ -168,7 +196,9 @@ def main():
                     "role": c["role"],
                     "traits": c["traits"],
                     "goals": c["goals"],
-                    "state": json.loads(c["state"] or "{}"),
+                    "state": _safe_json(
+                        c["state"] or "{}", {}, f"characters[{c['name']}].state"
+                    ),
                 }
                 for c in characters
             ],

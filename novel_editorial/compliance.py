@@ -7,10 +7,19 @@
    （违禁品/赌博/诈骗/暴恐/色情露骨/代充广告引流）。
 """
 
+import warnings
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 WORDS_FILE = ROOT / "compliance_words.txt"
+
+EMPTY_WORDS_WARNING = (
+    "compliance_words.txt 为空或全为注释，未加载任何自定义词；"
+    "仅使用内置 DEFAULT_SENSITIVE_KEYWORDS"
+)
+MISSING_WORDS_WARNING = (
+    "compliance_words.txt 不存在，仅使用内置 DEFAULT_SENSITIVE_KEYWORDS"
+)
 
 DEFAULT_SENSITIVE_KEYWORDS = [
     # 违禁品 / 涉毒
@@ -50,13 +59,21 @@ DEFAULT_SENSITIVE_KEYWORDS = [
 SENSITIVE_KEYWORDS = DEFAULT_SENSITIVE_KEYWORDS
 
 
+def _read_custom_words():
+    """Return custom words from compliance_words.txt (comments skipped)."""
+    if not WORDS_FILE.exists():
+        return []
+    words = []
+    for line in WORDS_FILE.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            words.append(line)
+    return words
+
+
 def _load_words():
     words = list(DEFAULT_SENSITIVE_KEYWORDS)
-    if WORDS_FILE.exists():
-        for line in WORDS_FILE.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line and not line.startswith("#"):
-                words.append(line)
+    words.extend(_read_custom_words())
     seen = set()
     out = []
     for w in words:
@@ -68,11 +85,20 @@ def _load_words():
 
 def check(text, platform="fanqie", ai_declared=True):
     words = _load_words()
+    custom_words = _read_custom_words()
+    warnings_list = []
+    if not WORDS_FILE.exists():
+        warnings_list.append(MISSING_WORDS_WARNING)
+        warnings.warn(MISSING_WORDS_WARNING, RuntimeWarning, stacklevel=2)
+    elif not custom_words:
+        warnings_list.append(EMPTY_WORDS_WARNING)
+        warnings.warn(EMPTY_WORDS_WARNING, RuntimeWarning, stacklevel=2)
     found = [k for k in words if k in text]
     return {
         "passed": not found,
         "sensitive_hits": found,
         "ai_declared": ai_declared,
         "platform": platform,
+        "warnings": warnings_list,
         "note": "词库 = 内置通用违规词 + compliance_words.txt 自定义项，按平台规则持续补充",
     }

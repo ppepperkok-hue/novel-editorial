@@ -6,6 +6,7 @@
 
 import argparse
 import sys
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -43,7 +44,13 @@ class Scheduler:
 
     def tick(self, conn):
         """执行一次发布计划：检查存稿池、发布当日章节、更新状态、返回报告。"""
-        report = {"published": [], "failures": [], "warnings": [], "date": str(self.now)}
+        now = self.now or datetime.now()
+        report = {
+            "published": [],
+            "failures": [],
+            "warnings": [],
+            "date": now.strftime("%Y-%m-%d") if hasattr(now, "strftime") else str(now),
+        }
         for novel in conn.execute("SELECT id, title FROM novels").fetchall():
             level = backlog_level(conn, novel["id"])
             if level < self.safe_backlog:

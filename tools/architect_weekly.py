@@ -178,7 +178,15 @@ def build_materials(conn, novel_id, allow_empty=False):
     row = conn.execute("SELECT * FROM novels WHERE id=?", (novel_id,)).fetchone()
     if row is None:
         return build_planning_materials(conn) if allow_empty else None
-    outline = json.loads(row["outline"] or "{}")
+    try:
+        outline = json.loads(row["outline"] or "{}")
+    except (TypeError, ValueError) as exc:
+        print(
+            f"note: novels.outline is not valid JSON for novel {row['id']}, "
+            f"falling back to an empty outline: {str(exc)[:120]}",
+            file=sys.stderr,
+        )
+        outline = {}
     bible = outline.get("bible") or {}
     blueprints = outline.get("blueprints") or []
 

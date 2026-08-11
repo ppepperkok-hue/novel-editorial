@@ -1,19 +1,44 @@
-const API_BASE =
+export const API_BASE =
   location.protocol === "file:" || !location.host ? "http://localhost:8000" : "";
 
 async function getJSON(path) {
-  const r = await fetch(API_BASE + path);
+  let r;
+  try {
+    r = await fetch(API_BASE + path);
+  } catch (e) {
+    throw new Error("无法连接后端服务（网络错误）");
+  }
   if (!r.ok) throw new Error(path.split("?")[0] + " " + r.status);
   return r.json();
 }
 
 async function postJSON(path, body) {
-  const r = await fetch(API_BASE + path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body ?? {}),
-  });
-  return r.json();
+  let r;
+  try {
+    r = await fetch(API_BASE + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body ?? {}),
+    });
+  } catch (e) {
+    return { ok: false, error: "无法连接后端服务（网络错误）" };
+  }
+  let data;
+  try {
+    data = await r.json();
+  } catch (e) {
+    return { ok: false, error: path.split("?")[0] + " " + r.status };
+  }
+  if (!r.ok) {
+    return {
+      ok: false,
+      error:
+        data && typeof data === "object" && typeof data.error === "string"
+          ? data.error
+          : path.split("?")[0] + " " + r.status,
+    };
+  }
+  return data;
 }
 
 export const getDashboard = () => getJSON("/api/dashboard");

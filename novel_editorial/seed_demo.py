@@ -18,6 +18,8 @@ DEMO_NOVEL = {
 
 
 def seed(conn, chapters=5, published=2, reviewed=2):
+    published = min(published, chapters)
+    reviewed = min(reviewed, chapters - published)
     draft = chapters - published - reviewed
     nid = db.add_novel(
         conn,

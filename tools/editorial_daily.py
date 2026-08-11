@@ -113,7 +113,12 @@ def _handle_outbox(ctx, node, text):
                 )
                 continue
             if reply_to and decision in ("rework", "clarify", "defer"):
-                mailroom.resolve(conn, reply_to, decision)
+                resolved = mailroom.resolve(conn, reply_to, decision)
+                if not resolved.get("ok"):
+                    ctx.warnings.append(
+                        f"outbox {node}: 留言处理失败 - "
+                        + str(resolved.get("error") or "unknown")
+                    )
                 if decision in ("rework", "defer"):
                     from novel_editorial.services import activity  # noqa: PLC0415
 
@@ -131,12 +136,19 @@ def _handle_outbox(ctx, node, text):
                         },
                         priority="high" if decision == "rework" else "medium",
                     )
-                    if decision == "rework" and created.get("ok"):
+                    if decision == "rework":
+                        if not created.get("ok"):
+                            ctx.warnings.append(
+                                f"outbox {node}: 重做行动项创建失败，仍按重做处理 - "
+                                + str(created.get("error") or "unknown")
+                            )
                         ctx.rework_requests.append(
                             {
                                 "body": str(item.get("body") or "")[:400],
                                 "message_id": reply_to,
-                                "action_id": created.get("id"),
+                                "action_id": (
+                                    created.get("id") if created.get("ok") else None
+                                ),
                             }
                         )
     finally:
@@ -222,7 +234,8 @@ class _Ctx:
         self.dispatch = None
         self.claimed_notes = ""
         self.rework_requests = []
-        self.rework_applied = False
+        # Per-run idempotency keys of rework requests already applied.
+        self.rework_applied = set()
         self.mood_notes = ""
         self.reviewer_mood = ""
         self.lock_path = None
@@ -618,7 +631,7 @@ def _dispatch(ctx, conn, stock):
         assignments = _sort_assignments_by_trust(conn, assignments, ctx.novel_id)
         obj = {**obj, "assignments": assignments}
     if assignments and not ctx.dry_run:
-        mailroom.broadcast(
+        broadcast_result = mailroom.broadcast(
             conn,
             "eic",
             [str(a["agent"]).strip() for a in assignments],
@@ -626,6 +639,11 @@ def _dispatch(ctx, conn, stock):
             body=_j(assignments)[:800],
             novel_id=ctx.novel_id,
         )
+        if not broadcast_result.get("ok"):
+            ctx.warnings.append(
+                "主编分派广播失败: "
+                + str(broadcast_result.get("error") or "unknown")
+            )
     return {"mode": "editorial", "dispatch": obj, "degraded": False}
 
 
@@ -996,7 +1014,7 @@ def _review_retry(ctx, conn, idx, outline, guard, meta, target_words, prev_track
     for attempt in range(max_retries):
         if not ctx.dry_run:
             tone = _review_tone(conn, writer_c, reviewer_c, ctx.novel_id)
-            mailroom.send(
+            sent = mailroom.send(
                 conn,
                 reviewer_c,
                 writer_c,
@@ -1005,6 +1023,10 @@ def _review_retry(ctx, conn, idx, outline, guard, meta, target_words, prev_track
                 kind="review_feedback",
                 novel_id=ctx.novel_id,
             )
+            if not sent.get("ok"):
+                ctx.warnings.append(
+                    f"审稿打回消息发送失败: {sent.get('error', 'unknown')}"
+                )
         reply_task = (
             "审稿打回了你的稿子，理由：" + reason
             + "。请回复 JSON {intent(修改意图一句话), plan(修改要点，2-3条)}。"
@@ -1020,7 +1042,7 @@ def _review_retry(ctx, conn, idx, outline, guard, meta, target_words, prev_track
             else:
                 intent = str(reply)[:200]
             if not ctx.dry_run:
-                mailroom.send(
+                sent = mailroom.send(
                     conn,
                     writer_c,
                     reviewer_c,
@@ -1029,6 +1051,10 @@ def _review_retry(ctx, conn, idx, outline, guard, meta, target_words, prev_track
                     kind="reply",
                     novel_id=ctx.novel_id,
                 )
+                if not sent.get("ok"):
+                    ctx.warnings.append(
+                        f"返工说明消息发送失败: {sent.get('error', 'unknown')}"
+                    )
         rewrite_task = (
             _writer_task(ctx, idx, meta, outline, guard, target_words, prev_track)
             + "；审稿打回理由：" + reason
@@ -1061,6 +1087,20 @@ def _review_retry(ctx, conn, idx, outline, guard, meta, target_words, prev_track
         editor_text = editor_retry
         current_review = review_retry
     return gate, editor_text, current_review
+
+
+def _rework_key(rework):
+    """Stable per-run key for one rework request: action > message > body."""
+    if not isinstance(rework, dict):
+        return None
+    if rework.get("action_id") not in (None, "", 0):
+        return ("action", str(rework["action_id"]))
+    if rework.get("message_id") not in (None, "", 0):
+        return ("message", str(rework["message_id"]))
+    body = str(rework.get("body") or "").strip()
+    if body:
+        return ("body", body)
+    return ("instance", id(rework))
 
 
 def _run_track(ctx, conn, idx, outline, guard, meta, target_words, env, prev_track=None):
@@ -1157,13 +1197,17 @@ def _run_track(ctx, conn, idx, outline, guard, meta, target_words, env, prev_tra
         if idx < len(ctx.rework_requests)
         else None
     )
-    if track_req and config.REWORK_MAX > 0 and not ctx.rework_applied:
+    if (
+        track_req
+        and config.REWORK_MAX > 0
+        and _rework_key(track_req) not in ctx.rework_applied
+    ):
         gate, editor_text, review_text = _review_retry(
             ctx, conn, idx, outline, guard, meta, target_words, prev_track,
             suffix, chapter, editor_text, gate, review_text,
             extra_reason=str(track_req.get("body") or ""),
         )
-        ctx.rework_applied = True
+        ctx.rework_applied.add(_rework_key(track_req))
         _settle_rework(conn, track_req)
     elif not gate.get("passed"):
         gate, editor_text, review_text = _review_retry(
@@ -1182,23 +1226,34 @@ def _run_track(ctx, conn, idx, outline, guard, meta, target_words, env, prev_tra
 
 def _settle_rework(conn, rework):
     """Close the loop of an instant rework: resolve the source message and
-    mark the fallback action done."""
+    mark the fallback action done. Failures are traced explicitly."""
+    problems = []
     try:
         from tools import mailroom  # noqa: PLC0415
         from novel_editorial.services import activity  # noqa: PLC0415
 
         if rework.get("message_id"):
-            mailroom.resolve(conn, rework["message_id"], "rework")
+            resolved = mailroom.resolve(conn, rework["message_id"], "rework")
+            if not resolved.get("ok"):
+                problems.append(
+                    "resolve message: " + str(resolved.get("error") or "unknown")
+                )
         if rework.get("action_id"):
-            activity.update_action(
+            updated = activity.update_action(
                 conn, rework["action_id"], status="done",
                 result="即时重写已完成",
             )
+            if not updated.get("ok"):
+                problems.append(
+                    "update action: " + str(updated.get("error") or "unknown")
+                )
     except Exception as exc:  # noqa: BLE001
+        problems.append(str(exc)[:200])
+    if problems:
         audit.log(
             conn, "editorial", "settle_rework_failed",
             target_type="action", target_id=str(rework.get("action_id") or ""),
-            detail={"error": str(exc)[:200]},
+            detail={"error": "；".join(problems)[:400]},
         )
 
 
@@ -1240,7 +1295,7 @@ def _publish_track(ctx, idx, track, outline, meta, target_words, env):
                 "发布链: 草稿创建失败 - " + str(msg or "new_article 未返回 item_id")[:200]
             )
             return {"draft": None, "pub": None, "verify": None}
-        _fanqie_post(
+        cover_resp = _fanqie_post(
             ctx,
             FANQIE + "/api/author/article/cover_article/v0/",
             {
@@ -1255,6 +1310,18 @@ def _publish_track(ctx, idx, track, outline, meta, target_words, env):
             },
             env,
         )
+        if not (isinstance(cover_resp, dict) and cover_resp.get("code") == 0):
+            msg = (
+                cover_resp.get("message")
+                if isinstance(cover_resp, dict)
+                else "无响应"
+            )
+            ctx.failed_nodes.append("发布" + ("A" if idx == 0 else "B"))
+            ctx.errors.append(
+                "发布链: 存稿失败 - "
+                + str(msg or "cover_article 未返回 code=0")[:200]
+            )
+            return {"draft": None, "pub": None, "verify": None}
         pub_raw = _fanqie_post(
             ctx,
             FANQIE + "/api/author/publish_article/v0/",

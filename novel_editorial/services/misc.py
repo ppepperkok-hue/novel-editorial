@@ -36,7 +36,19 @@ def load_reader_stats():
 def load_hot_topics():
     if not config.HOT_TOPICS_JSON.exists():
         return {"present": False}
-    payload = json.loads(config.HOT_TOPICS_JSON.read_text(encoding="utf-8"))
+    fallback = {"present": True, "updated_at": "", "sources": [], "top_keywords": []}
+    try:
+        payload = json.loads(config.HOT_TOPICS_JSON.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("top-level JSON must be an object")
+    except (OSError, ValueError) as exc:
+        config.ALERTS_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with config.ALERTS_LOG.open("a", encoding="utf-8") as f:
+            f.write(
+                f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
+                f"hot_topics.json 读取/解析失败: {exc}\n"
+            )
+        return fallback
     payload["present"] = True
     return payload
 

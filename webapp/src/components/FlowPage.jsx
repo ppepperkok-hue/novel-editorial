@@ -1,10 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Background, Controls, ReactFlow } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { getFlow } from "../api.js";
-
-const API_BASE =
-  location.protocol === "file:" || !location.host ? "http://localhost:8000" : "";
+import { API_BASE, getFlow } from "../api.js";
 
 const GROUP_X = {
   trigger: 0,
