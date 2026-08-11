@@ -343,6 +343,12 @@ python -m novel_pipeline.web_api --db demo.db --port 8000
 
 # 3. 桌面控制台
 launch_desktop.vbs
+
+# 4. 开机自启（可选）：n8n + web_api:8000 随登录自动拉起
+#    面板自启用系统设置页「开机自动启动」开关
+powershell -ExecutionPolicy Bypass -File scripts/install_autostart.ps1        # 注册
+powershell -ExecutionPolicy Bypass -File scripts/install_autostart.ps1 -DryRun   # 预览
+powershell -ExecutionPolicy Bypass -File scripts/install_autostart.ps1 -Disable  # 卸载
 ```
 
 ### 部署工作流
@@ -419,4 +425,3 @@ novel-pipeline/
 ## 后续路线
 
 - 番茄建书接口签名适配（抓真实请求修复 `create_book.py`）；
-- 定时任务开机自启（n8n / web_api / 面板统一托管）。
