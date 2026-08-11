@@ -36,6 +36,7 @@ from tools import (  # noqa: E402
     mailroom,
     novel_knowledge,
     preflight,
+    relations,
     publish_stock,
     record_work,
     write_diaries,
@@ -572,6 +573,13 @@ def _run_track(ctx, conn, idx, outline, guard, meta, target_words, env, prev_tra
     editor_text = _agent(ctx, "润色" + suffix, editor_task, target_words)
     if editor_text is None:
         return {"gate": None, "summary": {}, "failed": True}
+    relations.apply_event(
+        conn,
+        _canonical_agent("润色" + suffix),
+        _canonical_agent("写手" + suffix),
+        "collaboration",
+        novel_id=ctx.novel_id,
+    )
 
     review_text = _agent(ctx, "审稿" + suffix, _reviewer_task(idx, outline, editor_text, prev_track, ctx))
     if review_text is None:
@@ -588,6 +596,13 @@ def _run_track(ctx, conn, idx, outline, guard, meta, target_words, env, prev_tra
             "summary": {},
             "failed": True,
         }
+    relations.apply_event(
+        conn,
+        _canonical_agent("审稿" + suffix),
+        _canonical_agent("写手" + suffix),
+        "collaboration",
+        novel_id=ctx.novel_id,
+    )
     reader_text = _agent(
         ctx,
         "读者审稿" + suffix,
@@ -615,6 +630,14 @@ def _run_track(ctx, conn, idx, outline, guard, meta, target_words, env, prev_tra
                 "reader": gate.get("reader"),
                 "chars": gate.get("chars"),
             }
+    else:
+        relations.apply_event(
+            conn,
+            _canonical_agent("审稿" + suffix),
+            _canonical_agent("写手" + suffix),
+            "feedback_rejected",
+            novel_id=ctx.novel_id,
+        )
     memory_text = _agent(ctx, "提炼剧情" + suffix, _memory_task(idx, outline, editor_text, ctx))
     summary = steps.parse_summary(memory_text) if memory_text is not None else {}
     return {

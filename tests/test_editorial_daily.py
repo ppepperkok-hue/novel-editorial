@@ -216,6 +216,12 @@ class EditorialDailyTests(unittest.TestCase):
         by_seq = {r["seq"]: r for r in rows}
         self.assertEqual(by_seq[1]["status"], "draft")
         self.assertEqual(by_seq[2]["status"], "published")
+        rel = self.conn.execute(
+            "SELECT friction FROM agent_relations "
+            "WHERE agent='reviewer' AND other='writer' AND novel_id=1"
+        ).fetchone()
+        self.assertIsNotNone(rel, "quality-gate rejection must raise friction")
+        self.assertGreater(rel["friction"], 0.0)
 
     def test_real_chain_records_chapters_and_costs(self):
         self._ok_preflight()

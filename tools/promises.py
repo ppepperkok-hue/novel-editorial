@@ -123,6 +123,9 @@ def _matches_evidence(promise, evidence):
 
 def settle_promises(conn, novel_id=0, days=7):
     """Settle open promises: kept when evidence matches, broken when overdue."""
+    from tools import relations  # noqa: PLC0415
+
+    relations.decay(conn, novel_id, days)
     evidence = build_evidence(conn, novel_id, days)
     today = datetime.now().strftime("%Y-%m-%d")
     scope = "AND novel_id=?" if novel_id else ""
@@ -144,11 +147,25 @@ def settle_promises(conn, novel_id=0, days=7):
                 "UPDATE agent_promises SET status='kept', kept_at=? WHERE id=?",
                 (_now(), pid),
             )
+            row = conn.execute(
+                "SELECT agent FROM agent_promises WHERE id=?", (pid,)
+            ).fetchone()
+            if row:
+                relations.apply_event(
+                    conn, row["agent"], "eic", "promise_kept", novel_id
+                )
         for pid in broken:
             conn.execute(
                 "UPDATE agent_promises SET status='broken' WHERE id=?",
                 (pid,),
             )
+            row = conn.execute(
+                "SELECT agent FROM agent_promises WHERE id=?", (pid,)
+            ).fetchone()
+            if row:
+                relations.apply_event(
+                    conn, row["agent"], "eic", "promise_broken", novel_id
+                )
         conn.commit()
         return {
             "ok": True,
