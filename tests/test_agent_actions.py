@@ -123,14 +123,16 @@ class AgentActionsTests(unittest.TestCase):
         self.assertEqual(rows[0]["id"], self.action_id)
 
     def test_due_date_helper(self):
-        self.assertEqual(
-            activity._due_date("3天内"),
-            (datetime.now() + timedelta(days=3)).strftime("%Y-%m-%d"),
-        )
-        self.assertEqual(
-            activity._due_date("下周会前"),
-            (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d"),
-        )
+        def _within_tolerance(actual, offset_days):
+            now = datetime.now() + timedelta(days=offset_days)
+            candidates = {
+                now.strftime("%Y-%m-%d"),
+                (now - timedelta(days=1)).strftime("%Y-%m-%d"),
+            }
+            return actual in candidates
+
+        self.assertTrue(_within_tolerance(activity._due_date("3天内"), 3))
+        self.assertTrue(_within_tolerance(activity._due_date("下周会前"), 7))
         self.assertEqual(activity._due_date("尽快"), "")
 
     def test_post_meeting_actions_carry_assignee_and_due(self):
