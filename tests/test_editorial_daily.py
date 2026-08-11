@@ -182,6 +182,58 @@ class EditorialDailyTests(unittest.TestCase):
             editorial_daily._load_claimed_writer_notes(ctx, self.conn)
         self.assertEqual(ctx.claimed_notes, "")
 
+    def test_claimed_task_marked_done_when_published(self):
+        self._seed_claim()
+        ctx = editorial_daily._Ctx(self.novel_id, self.db_path, dry_run=True)
+        ctx.published = 2
+        editorial_daily._settle_claimed_tasks(ctx, self.conn)
+        row = self.conn.execute(
+            "SELECT status FROM agent_actions WHERE task='修完第三章伏笔'"
+        ).fetchone()
+        self.assertEqual(row["status"], "done")
+
+    def test_claimed_task_broken_raises_friction_when_no_publish(self):
+        self._seed_claim()
+        ctx = editorial_daily._Ctx(self.novel_id, self.db_path, dry_run=True)
+        ctx.published = 0
+        editorial_daily._settle_claimed_tasks(ctx, self.conn)
+        row = self.conn.execute(
+            "SELECT status FROM agent_actions WHERE task='修完第三章伏笔'"
+        ).fetchone()
+        self.assertEqual(row["status"], "claimed")
+        rel = self.conn.execute(
+            "SELECT friction FROM agent_relations "
+            "WHERE agent='writer' AND other='eic' AND novel_id=?",
+            (self.novel_id,),
+        ).fetchone()
+        self.assertIsNotNone(rel)
+        self.assertGreater(rel["friction"], 0)
+
+    def test_dispatch_input_includes_claimed_tasks(self):
+        self._seed_claim()
+        ctx = editorial_daily._Ctx(self.novel_id, self.db_path, dry_run=False)
+        captured = {}
+
+        def fake_agent(ctx_arg, node, task, target_words=None):
+            captured["task"] = task
+            return json.dumps(
+                {
+                    "chapters": 2,
+                    "focus": "f",
+                    "assignments": [
+                        {"agent": "writer", "task": "写今天两章", "note": ""}
+                    ],
+                },
+                ensure_ascii=False,
+            )
+
+        with mock.patch("tools.editorial_daily.config.DISPATCH_MODE", "editorial"):
+            with mock.patch("tools.editorial_daily._agent", side_effect=fake_agent):
+                editorial_daily._dispatch(
+                    ctx, self.conn, {"stock": 0, "target": 2, "need": 2}
+                )
+        self.assertIn("修完第三章伏笔", captured["task"])
+
     def test_two_runs_are_idempotent(self):
         self._ok_preflight()
         r1 = editorial_daily.daily(

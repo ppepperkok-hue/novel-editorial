@@ -508,6 +508,18 @@ def _dispatch(ctx, conn, stock):
     """
     if config.DISPATCH_MODE != "editorial":
         return {"mode": "fixed", "dispatch": None, "degraded": False}
+    claimed = []
+    if not ctx.dry_run:
+        claimed = [
+            str(r["task"] or "").strip()
+            for r in conn.execute(
+                "SELECT task FROM agent_actions "
+                "WHERE status IN ('claimed','in_progress') "
+                "AND (agent='writer' OR assignee='writer' OR claimed_by='writer') "
+                "ORDER BY id DESC LIMIT 5"
+            ).fetchall()
+            if str(r["task"] or "").strip()
+        ]
     task = (
         "你是主编。今天开工，请根据当前信息分派今日工作。"
         "只输出 JSON：{chapters(今日计划章数), focus(今日重点一句话), "
@@ -517,6 +529,7 @@ def _dispatch(ctx, conn, stock):
             {
                 "stock": stock,
                 "novel_id": ctx.novel_id,
+                "claimed_writer_tasks": claimed,
                 "writing_context_tail": ctx.writing_context[-600:],
             }
         )
@@ -1055,10 +1068,42 @@ def _publish_track(ctx, idx, track, outline, meta, target_words, env):
 
 
 def _wrapup(ctx, conn, db_path, novel_id):
+    _settle_claimed_tasks(ctx, conn)
     _run_tool(ctx, "采集阅读数据", lambda: collect_reader_stats.run(db_path))
     _run_tool(ctx, "全员写日记", lambda: write_diaries.write(conn, novel_id, "daily"))
     _run_tool(ctx, "同步设定知识库", lambda: novel_knowledge.sync_latest(conn))
     _run_tool(ctx, "回填行动项", lambda: auto_fill_actions.run(db_path, novel_id=novel_id))
+
+
+def _settle_claimed_tasks(ctx, conn):
+    """R1-3: settle writer's claimed tasks at wrap-up.
+
+    When at least one chapter was published today the claimed/in-progress
+    writer tasks are marked done (the promise was kept); otherwise the broken
+    promise raises friction and lowers trust. No claims means no-op.
+    """
+    rows = conn.execute(
+        "SELECT id FROM agent_actions "
+        "WHERE status IN ('claimed','in_progress') "
+        "AND (agent=? OR assignee=? OR claimed_by=?)",
+        ("writer", "writer", "writer"),
+    ).fetchall()
+    if not rows:
+        return
+    ids = tuple(r["id"] for r in rows)
+    if ctx.published > 0:
+        conn.execute(
+            "UPDATE agent_actions SET status='done' "
+            "WHERE id IN (%s)" % ",".join("?" * len(ids)),
+            ids,
+        )
+        conn.commit()
+        return
+    for r in rows:
+        relations.apply_event(
+            conn, "writer", "eic", "promise_broken", novel_id=ctx.novel_id
+        )
+    conn.commit()
 
 
 def _generate(ctx, conn, stock, env, run_id, out_file):
