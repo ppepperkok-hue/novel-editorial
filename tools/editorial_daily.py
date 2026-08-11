@@ -523,6 +523,66 @@ def _dispatch(ctx, conn, stock):
     return {"mode": "editorial", "dispatch": obj, "degraded": False}
 
 
+def _apply_writer_responses(ctx, conn, dispatch):
+    """R1-1: writers may accept, reject or counter today's dispatch.
+
+    Called right after `_dispatch` in editorial mode. Each writer assignment
+    gets one lightweight response round: accept keeps the task, counter
+    replaces it with the writer's alternative (approved by default), reject
+    clears the assignment so the track falls back to the plain writer task.
+    Any parse failure or missing output degrades to accept. The whole feature
+    is gated by TASK_RESPONSE_MODE=on.
+    """
+    if config.TASK_RESPONSE_MODE != "on":
+        return dispatch
+    if not isinstance(dispatch, dict):
+        return dispatch
+    assignments = dispatch.get("assignments") or []
+    if not assignments:
+        return dispatch
+    resolved = []
+    for a in assignments:
+        if not isinstance(a, dict) or str(a.get("agent") or "").strip() != "writer":
+            resolved.append(a)
+            continue
+        user = (
+            "你是被分派的写手。主编今日分派："
+            + str(a.get("task") or "")
+            + "；补充：" + str(a.get("note") or "")
+            + "。请只输出 JSON：{decision: accept|reject|counter, reason(字符串), "
+            "alternative(仅 counter 时给一句可执行方案)}。拒绝必须给理由，"
+            "counter 必须给可执行的替代方案。"
+        )
+        text = _agent(ctx, "写手A", user)
+        obj = steps.robust_json(text) if text else None
+        decision = "accept"
+        reason = ""
+        alternative = ""
+        if isinstance(obj, dict):
+            decision = str(obj.get("decision") or "accept").strip().lower()
+            if decision not in ("accept", "reject", "counter"):
+                decision = "accept"
+            reason = str(obj.get("reason") or "").strip()[:300]
+            alternative = str(obj.get("alternative") or "").strip()[:300]
+        detail = {"agent": "writer", "decision": decision, "reason": reason,
+                  "alternative": alternative, "task": str(a.get("task") or "")[:200]}
+        if not ctx.dry_run:
+            audit.log(
+                conn, "dispatch", "writer_response",
+                target_type="novel", target_id=ctx.novel_id, detail=detail,
+            )
+        if decision == "counter" and alternative:
+            a = {
+                **a,
+                "task": alternative,
+                "note": str(a.get("note") or "") + "（写手提议，主编采纳）",
+            }
+        elif decision == "reject":
+            a = {**a, "task": "", "note": ""}
+        resolved.append(a)
+    return {**dispatch, "assignments": resolved}
+
+
 def _writer_task(ctx, idx, meta, outline, guard, target_words, prev_track=None):
     node = "写手A" if idx == 0 else "写手B"
     ch = outline["chapter1"] if idx == 0 else outline["chapter2"]
@@ -1231,6 +1291,8 @@ def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, en
                 ctx.failed_nodes.append("发布存稿")
         else:
             ctx.dispatch = _dispatch(ctx, conn, stock)
+            if ctx.dispatch:
+                ctx.dispatch = _apply_writer_responses(ctx, conn, ctx.dispatch)
             payload, published, _target = _generate(ctx, conn, stock, env, run_id, out_file)
             ctx.published = published
 

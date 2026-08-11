@@ -138,5 +138,69 @@ class DispatchTests(unittest.TestCase):
         task = editorial_daily._writer_task(ctx, 0, meta, outline, guard, 2000)
         self.assertNotIn("主编今日分派", task)
 
+    def _dispatch_for_response(self):
+        return {
+            "chapters": 2,
+            "focus": "强化章末钩子",
+            "assignments": [
+                {"agent": "writer", "task": "写今天两章", "note": "钩子要够"},
+                {"agent": "reviewer", "task": "重点查逻辑承接", "note": ""},
+            ],
+        }
+
+    def _apply(self, response_text):
+        ctx = editorial_daily._Ctx(1, self.db_path, dry_run=True)
+        with mock.patch("tools.editorial_daily.config.TASK_RESPONSE_MODE", "on"):
+            with mock.patch(
+                "tools.editorial_daily._agent", return_value=response_text
+            ):
+                return editorial_daily._apply_writer_responses(
+                    ctx, self.conn, self._dispatch_for_response()
+                )
+
+    def test_response_accept_keeps_assignment(self):
+        result = self._apply('{"decision": "accept", "reason": "没问题"}')
+        writer = [a for a in result["assignments"] if a["agent"] == "writer"][0]
+        self.assertEqual(writer["task"], "写今天两章")
+        self.assertEqual(writer["note"], "钩子要够")
+
+    def test_response_counter_replaces_assignment(self):
+        result = self._apply(
+            '{"decision": "counter", "reason": "B章更适合埋伏笔", '
+            '"alternative": "B章改写伏笔回收"}'
+        )
+        writer = [a for a in result["assignments"] if a["agent"] == "writer"][0]
+        self.assertEqual(writer["task"], "B章改写伏笔回收")
+        self.assertIn("写手提议，主编采纳", writer["note"])
+
+    def test_response_reject_clears_assignment(self):
+        result = self._apply('{"decision": "reject", "reason": "今天手感不对"}')
+        writer = [a for a in result["assignments"] if a["agent"] == "writer"][0]
+        self.assertEqual(writer["task"], "")
+        self.assertEqual(writer["note"], "")
+        ctx = editorial_daily._Ctx(1, self.db_path, dry_run=True)
+        ctx.writing_context = "前情"
+        ctx.dispatch = result
+        meta, outline, guard = self._writer_fixture()
+        task = editorial_daily._writer_task(ctx, 0, meta, outline, guard, 2000)
+        self.assertNotIn("主编今日分派", task)
+
+    def test_response_unparseable_degrades_to_accept(self):
+        result = self._apply("我不是 JSON")
+        writer = [a for a in result["assignments"] if a["agent"] == "writer"][0]
+        self.assertEqual(writer["task"], "写今天两章")
+
+    def test_response_mode_off_never_calls_agent(self):
+        ctx = editorial_daily._Ctx(1, self.db_path, dry_run=True)
+        with mock.patch("tools.editorial_daily.config.TASK_RESPONSE_MODE", "off"):
+            with mock.patch(
+                "tools.editorial_daily._agent",
+                side_effect=AssertionError("off mode must not call agents"),
+            ):
+                result = editorial_daily._apply_writer_responses(
+                    ctx, self.conn, self._dispatch_for_response()
+                )
+        self.assertEqual(result["assignments"][0]["task"], "写今天两章")
+
 if __name__ == "__main__":
     unittest.main()

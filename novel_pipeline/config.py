@@ -60,6 +60,7 @@ REVIEW_RETRY_MAX = _env_int("REVIEW_RETRY_MAX", 1)
 MEETING_MODE = os.environ.get("MEETING_MODE", "rounds")
 CLAIM_INJECT = os.environ.get("CLAIM_INJECT", "on") != "off"
 TOPIC_REQUEST_ACTIONS = os.environ.get("TOPIC_REQUEST_ACTIONS", "on") != "off"
+TASK_RESPONSE_MODE = os.environ.get("TASK_RESPONSE_MODE", "off")
 
 
 def load_env():
