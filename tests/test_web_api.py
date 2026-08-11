@@ -113,6 +113,14 @@ class WebApiTests(unittest.TestCase):
         self.assertTrue(data["ok"])
         self.assertEqual(data["status"], "claimed")
 
+    def test_editorial_overview_endpoint(self):
+        with urlopen(f"{self.base}/api/editorial/overview", timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        for key in ("agents", "relations", "unread", "actions", "today_activity", "updated_at"):
+            self.assertIn(key, data)
+        self.assertIsInstance(data["agents"], list)
+        self.assertIsInstance(data["actions"], list)
+
     def test_index_served(self):
         with urlopen(self.base + "/", timeout=10) as resp:
             html = resp.read().decode("utf-8")

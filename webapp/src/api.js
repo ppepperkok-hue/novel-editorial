@@ -20,6 +20,9 @@ export const getDashboard = () => getJSON("/api/dashboard");
 export const getControl = () => getJSON("/api/control");
 export const postControl = (payload) => postJSON("/api/control", payload);
 export const getFlow = () => getJSON("/api/flow");
+export const getEditorialOverview = () => getJSON("/api/editorial/overview");
+export const getMailbox = (agent) =>
+  getJSON("/api/agents/mailbox" + (agent ? "?agent=" + encodeURIComponent(agent) : "?limit=20"));
 export const getAgents = () => getJSON("/api/agents");
 export const postAgents = (payload) => postJSON("/api/agents", payload);
 export const getCost = () => getJSON("/api/cost");

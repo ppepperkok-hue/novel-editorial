@@ -264,6 +264,15 @@ def make_handler(db_path):
             conn.close()
         self._json(result)
 
+    def _get_editorial_overview(self, parsed):
+        from novel_pipeline.services import editorial as editorial_service  # noqa: PLC0415
+
+        conn = db.connect(db_path)
+        try:
+            self._json(editorial_service.build_overview(conn))
+        finally:
+            conn.close()
+
     def _post_claim_action(self, parsed, payload):
         from novel_pipeline.services import activity as activity_service  # noqa: PLC0415
 
@@ -290,6 +299,7 @@ def make_handler(db_path):
         "/api/agents/relations": _get_relations,
         "/api/agents/memories": _get_memories,
         "/api/agents/promises": _get_promises,
+        "/api/editorial/overview": _get_editorial_overview,
     }
     POST_ROUTES = {
         "/api/agent_actions/claim": _post_claim_action,

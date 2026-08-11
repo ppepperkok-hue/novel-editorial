@@ -8,6 +8,7 @@ import AgentsPage from "./components/AgentsPage.jsx";
 import CostPage from "./components/CostPage.jsx";
 import ExecutionsPage from "./components/ExecutionsPage.jsx";
 import FlowPage from "./components/FlowPage.jsx";
+import EditorialPage from "./components/EditorialPage.jsx";
 import ReaderPage from "./components/ReaderPage.jsx";
 import SettingsPage from "./components/SettingsPage.jsx";
 import CommandPalette from "./components/CommandPalette.jsx";
@@ -211,6 +212,7 @@ export default function App() {
             {page === "cost" && <CostPage data={data} />}
             {page === "executions" && <ExecutionsPage snapshot={liveSnapshot} />}
             {page === "flow" && <FlowPage />}
+            {page === "editorial" && <EditorialPage />}
             {page === "reader" && <ReaderPage data={data} />}
             {page === "settings" && <SettingsPage data={data} onRefresh={refresh} pushToast={pushToast} theme={theme} onThemeChange={changeTheme} />}
             {page === "meetings" && <MeetingsPage />}
