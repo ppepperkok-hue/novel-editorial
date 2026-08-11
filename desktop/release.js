@@ -37,7 +37,7 @@ const files = fs.readdirSync(releaseDir);
 const setup = files.find((f) => f.endsWith(".exe") && f.includes("Setup") && !f.includes("__uninstaller"));
 const bmap = files.find((f) => f.endsWith(".exe.blockmap"));
 if (!setup || !bmap) throw new Error("installer artifacts missing after build");
-const asciiExe = `novel-pipeline-desktop-setup-${version}.exe`;
+const asciiExe = `novel-editorial-desktop-setup-${version}.exe`;
 fs.copyFileSync(path.join(releaseDir, setup), path.join(releaseDir, asciiExe));
 fs.copyFileSync(path.join(releaseDir, bmap), path.join(releaseDir, asciiExe + ".blockmap"));
 
@@ -46,7 +46,13 @@ run(`git tag v${version}`, { cwd: root });
 run(`git push origin v${version}`, { cwd: root });
 
 // 4. create release (replace existing tag release if any)
-const exists = gh(`release view v${version} --json tagName --jq .tagName`);
+let exists = "";
+try {
+  exists = gh(`release view v${version} --json tagName --jq .tagName`);
+} catch {
+  // release does not exist yet; create below
+  exists = "";
+}
 if (exists) {
   try {
     gh(`release delete v${version} --yes`);
@@ -54,7 +60,7 @@ if (exists) {
     // release may not exist yet; create below
   }
 }
-gh(`release create v${version} --title "v${version}" --notes "Novel Pipeline Desktop v${version}"`);
+gh(`release create v${version} --title "v${version}" --notes "Novel Editorial Desktop v${version}"`);
 
 // 5. upload assets (clobber so re-runs are idempotent)
 gh(
