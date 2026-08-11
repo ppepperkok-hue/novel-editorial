@@ -112,6 +112,31 @@ class CleanKnowledgeTests(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_plan_drops_misclassified_rows(self):
+        conn, nid = make_db()
+        try:
+            conn.execute(
+                "INSERT INTO novel_knowledge(novel_id,category,entity,content,version,updated_at) "
+                "VALUES(?,?,?,?,1,'2026-01-01 00:00:00')",
+                (nid, "plot", "人物关系", "旧格式"),
+            )
+            conn.execute(
+                "INSERT INTO novel_knowledge(novel_id,category,entity,content,version,updated_at) "
+                "VALUES(?,?,?,?,1,'2026-01-01 00:00:00')",
+                (nid, "world_rule", "文风", "旧格式"),
+            )
+            conn.commit()
+            plan = clean_novel_knowledge.plan_clean(conn)
+            self.assertEqual(len(plan["misclassified"]), 2)
+            clean_novel_knowledge.apply_clean(conn, plan)
+            rows = conn.execute(
+                "SELECT COUNT(*) c FROM novel_knowledge WHERE novel_id=?",
+                (nid,),
+            ).fetchone()["c"]
+            self.assertEqual(rows, 0)
+        finally:
+            conn.close()
+
 
 if __name__ == "__main__":
     unittest.main()

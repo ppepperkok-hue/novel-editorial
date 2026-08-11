@@ -147,12 +147,37 @@ def _plan_similar_rules(conn):
     return out
 
 
+def _plan_misclassified(conn):
+    """Drop legacy rows that no longer belong in the knowledge store.
+
+    - plot/人物关系 now lives in bible.relationships (graph explicit edges);
+    - world_rule/文风 lives in bible.style_guide.
+    """
+    out = []
+    for r in conn.execute(
+        "SELECT id, novel_id, category, entity FROM novel_knowledge "
+        "WHERE (category='plot' AND entity='人物关系') "
+        "OR (category='world_rule' AND entity='文风')"
+    ).fetchall():
+        out.append(
+            {
+                "kind": "drop_misclassified",
+                "id": r["id"],
+                "novel_id": r["novel_id"],
+                "category": r["category"],
+                "entity": r["entity"],
+            }
+        )
+    return out
+
+
 def plan_clean(conn):
     return {
         "renames": _plan_renames(conn),
         "state_rows": _plan_state_rows(conn),
         "golden_finger_dups": _plan_dup_golden_finger(conn),
         "similar_rules": _plan_similar_rules(conn),
+        "misclassified": _plan_misclassified(conn),
     }
 
 
@@ -188,6 +213,12 @@ def apply_clean(conn, plan):
             conn.execute("DELETE FROM novel_knowledge WHERE id=?", (item["id"],))
     for item in plan["similar_rules"]:
         _merge_history(conn, item["keep_id"], item["drop_id"])
+    for item in plan["misclassified"]:
+        conn.execute(
+            "DELETE FROM novel_knowledge_history WHERE knowledge_id=?",
+            (item["id"],),
+        )
+        conn.execute("DELETE FROM novel_knowledge WHERE id=?", (item["id"],))
     conn.commit()
 
 
