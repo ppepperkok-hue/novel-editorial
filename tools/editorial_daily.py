@@ -518,7 +518,7 @@ def _preflight(ctx, conn, env, trigger, skip_lock=False):
             ok = False
         else:
             ctx.lock_path = lock_path
-    if ok and manual_requested:
+    if ok and manual_requested and not ctx.dry_run:
         set_many(conn, {"manual_run_requested": "0"})
     audit.log(
         conn,
@@ -694,13 +694,11 @@ def _apply_writer_responses(ctx, conn, dispatch):
                 target_type="novel", target_id=ctx.novel_id, detail=detail,
             )
             if decision == "reject":
-                relations.apply_event(
-                    conn, "writer", "eic", "feedback_rejected",
+                _rel(ctx, conn, "writer", "eic", "feedback_rejected",
                     novel_id=ctx.novel_id,
                 )
             elif decision == "counter" and alternative:
-                relations.apply_event(
-                    conn, "writer", "eic", "proposal_accepted",
+                _rel(ctx, conn, "writer", "eic", "proposal_accepted",
                     novel_id=ctx.novel_id,
                 )
         if decision == "counter" and alternative:
@@ -862,6 +860,13 @@ def _review_tone(conn, writer_agent, reviewer_agent, novel_id):
     if friction >= 0.1:
         return "你们最近有些摩擦，措辞直接一点："
     return "你们关系不错，语气平和些："
+
+
+def _rel(ctx, conn, *args, **kwargs):
+    """Relationship events are side effects: skip them in dry-run."""
+    if ctx.dry_run:
+        return
+    relations.apply_event(conn, *args, **kwargs)
 
 
 def _record_memory_used(conn, agent, novel_id, used):
@@ -1035,8 +1040,7 @@ def _review_retry(ctx, conn, idx, outline, guard, meta, target_words, prev_track
         gate_retry = steps.quality_gate(
             editor_retry, review_retry, None, None, chapter, target_words, ROOT
         )
-        relations.apply_event(
-            conn, reviewer_c, writer_c, "feedback_rejected",
+        _rel(ctx, conn, reviewer_c, writer_c, "feedback_rejected",
             novel_id=ctx.novel_id,
         )
         if gate_retry.get("passed"):
@@ -1063,8 +1067,7 @@ def _run_track(ctx, conn, idx, outline, guard, meta, target_words, env, prev_tra
     )
     if editor_text is None:
         return {"gate": None, "summary": {}, "failed": True}
-    relations.apply_event(
-        conn,
+    _rel(ctx, conn,
         _canonical_agent("润色" + suffix),
         _canonical_agent("写手" + suffix),
         "collaboration",
@@ -1086,8 +1089,7 @@ def _run_track(ctx, conn, idx, outline, guard, meta, target_words, env, prev_tra
             "summary": {},
             "failed": True,
         }
-    relations.apply_event(
-        conn,
+    _rel(ctx, conn,
         _canonical_agent("审稿" + suffix),
         _canonical_agent("写手" + suffix),
         "collaboration",
@@ -1132,8 +1134,7 @@ def _run_track(ctx, conn, idx, outline, guard, meta, target_words, env, prev_tra
                 "chars": gate.get("chars"),
             }
     else:
-        relations.apply_event(
-            conn,
+        _rel(ctx, conn,
             _canonical_agent("审稿" + suffix),
             _canonical_agent("写手" + suffix),
             "feedback_rejected",
@@ -1312,6 +1313,8 @@ def _settle_claimed_tasks(ctx, conn):
     writer tasks are marked done (the promise was kept); otherwise the broken
     promise raises friction and lowers trust. No claims means no-op.
     """
+    if ctx.dry_run:
+        return
     rows = conn.execute(
         "SELECT id FROM agent_actions "
         "WHERE status IN ('claimed','in_progress') "
@@ -1330,8 +1333,7 @@ def _settle_claimed_tasks(ctx, conn):
         conn.commit()
         return
     for r in rows:
-        relations.apply_event(
-            conn, "writer", "eic", "promise_broken", novel_id=ctx.novel_id
+        _rel(ctx, conn, "writer", "eic", "promise_broken", novel_id=ctx.novel_id
         )
     conn.commit()
 
@@ -1522,7 +1524,7 @@ def _finish_run(conn, ctx, run_id, status, published=0, error="", detail=None):
 
 def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, env=None, out_file=None, workday_run_id=None, lock_held=False):
     """Run one daily shift. Returns the run summary with an explicit status."""
-    if chapters:
+    if chapters and not dry_run:
         try:
             n = max(1, min(int(chapters), 10))
         except (TypeError, ValueError):
@@ -1586,7 +1588,8 @@ def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, en
         stock = check_stock.check_stock(conn, novel_id=ctx.novel_id)
         # A manual chapter override is a one-shot target: consume it so the
         # next scheduled run falls back to daily_chapters.
-        set_many(conn, {"pending_publish": "0"})
+        if not dry_run:
+            set_many(conn, {"pending_publish": "0"})
         payload = None
         published = 0
         if stock["need"] <= 0:

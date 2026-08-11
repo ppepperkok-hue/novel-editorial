@@ -184,7 +184,7 @@ class EditorialDailyTests(unittest.TestCase):
 
     def test_claimed_task_marked_done_when_published(self):
         self._seed_claim()
-        ctx = editorial_daily._Ctx(self.novel_id, self.db_path, dry_run=True)
+        ctx = editorial_daily._Ctx(self.novel_id, self.db_path, dry_run=False)
         ctx.published = 2
         editorial_daily._settle_claimed_tasks(ctx, self.conn)
         row = self.conn.execute(
@@ -194,7 +194,7 @@ class EditorialDailyTests(unittest.TestCase):
 
     def test_claimed_task_broken_raises_friction_when_no_publish(self):
         self._seed_claim()
-        ctx = editorial_daily._Ctx(self.novel_id, self.db_path, dry_run=True)
+        ctx = editorial_daily._Ctx(self.novel_id, self.db_path, dry_run=False)
         ctx.published = 0
         editorial_daily._settle_claimed_tasks(ctx, self.conn)
         row = self.conn.execute(
@@ -379,6 +379,36 @@ class EditorialDailyTests(unittest.TestCase):
             "SELECT status FROM agent_actions WHERE id=?", (created["id"],)
         ).fetchone()
         self.assertEqual(act["status"], "done")
+
+    def test_dry_run_has_no_db_side_effects(self):
+        self._ok_preflight()
+        self._seed_claim()
+        self.conn.execute(
+            "INSERT INTO agent_relations(agent,other,novel_id,familiarity,trust,friction,updated_at) "
+            "VALUES('writer','eic',?,0,0,0,datetime('now','localtime'))",
+            (self.novel_id,),
+        )
+        self.conn.execute(
+            "INSERT OR REPLACE INTO settings(key,value) VALUES('pending_publish','7')"
+        )
+        self.conn.commit()
+        result = editorial_daily.daily(
+            self.conn, chapters=2, trigger="manual",
+            dry_run=True, db_path=self.db_path,
+        )
+        self.assertEqual(result["published"], 2, result)
+        row = self.conn.execute(
+            "SELECT status FROM agent_actions WHERE task='修完第三章伏笔'"
+        ).fetchone()
+        self.assertEqual(row["status"], "claimed", "dry-run must not settle claimed tasks")
+        rel_count = self.conn.execute(
+            "SELECT COUNT(*) c FROM agent_relations"
+        ).fetchone()["c"]
+        self.assertEqual(rel_count, 1, "dry-run must not write relationship events")
+        pending = self.conn.execute(
+            "SELECT value FROM settings WHERE key='pending_publish'"
+        ).fetchone()["value"]
+        self.assertEqual(pending, "7", "dry-run must not touch pending_publish")
 
     def test_memory_used_persisted(self):
         ctx = editorial_daily._Ctx(self.novel_id, self.db_path, dry_run=False)
