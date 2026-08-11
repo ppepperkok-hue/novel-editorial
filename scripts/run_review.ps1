@@ -174,14 +174,14 @@ if ($Scope -eq "slices") {
         $errFile = $outFile + ".err"
         $a = Get-ReviewArgs -Focus $focus -Mode $name -ExcludeNote $excludeNote
         $quoted = $a | ForEach-Object { '"' + $_ + '"' }
-        $cmdLine = "node `"$codexJs`" " + ($quoted -join " ")
+        $cmdLine = '"' + $codexJs + '" ' + ($quoted -join " ")
         if ($DryRun) {
             Write-Host "[DryRun] $name -> $outFile"
             Write-Host "  $cmdLine"
             continue
         }
         Write-Host "Starting slice review: $name (parallel)"
-        $p = Start-Process -FilePath "node" -ArgumentList $quoted -WorkingDirectory $root `
+        $p = Start-Process -FilePath "node" -ArgumentList $cmdLine -WorkingDirectory $root `
             -RedirectStandardOutput $outFile -RedirectStandardError $errFile `
             -WindowStyle Hidden -PassThru
         $procs += @{ Name = $name; Process = $p; Out = $outFile; Err = $errFile }
@@ -190,8 +190,13 @@ if ($Scope -eq "slices") {
         exit 0
     }
     foreach ($item in $procs) {
-        Wait-Process -Id $item.Process.Id
-        Write-Host ("Finished slice: " + $item.Name + " (exit " + $item.Process.ExitCode + ")")
+        try {
+            Wait-Process -Id $item.Process.Id -ErrorAction Stop
+        }
+        catch {
+            # Process already exited between Start-Process and Wait-Process.
+        }
+        Write-Host ("Finished slice: " + $item.Name)
     }
     $lines = @("# 并行分片审查索引", "", "生成时间：$stamp", "", "| 分片 | 报告 | 状态 |", "| --- | --- | --- |")
     foreach ($item in $procs) {
