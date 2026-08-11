@@ -1,0 +1,2938 @@
+{
+  "name": "番茄自动日更（副业）",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 8,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "n-schedule",
+      "name": "每日触发",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "premise",
+              "value": "={{ (JSON.parse(($json.stdout||'{}')).novel_premise) || $env.NOVEL_PREMISE || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "platform",
+              "value": "fanqie",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "daily",
+              "value": 2,
+              "type": "number"
+            },
+            {
+              "id": "a4",
+              "name": "keywords",
+              "value": "={{ (JSON.parse(($json.stdout||'{}')).novel_keywords) || $env.NOVEL_KEYWORDS || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "a5",
+              "name": "genre",
+              "value": "={{ (JSON.parse(($json.stdout||'{}')).novel_genre) || $env.NOVEL_GENRE || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "a6",
+              "name": "book_id",
+              "value": "={{ JSON.parse(($('读当前书').first().json.stdout || '{}')).book_id || $env.FANQIE_BOOK_ID }}",
+              "type": "string"
+            },
+            {
+              "id": "a7",
+              "name": "novel_title",
+              "value": "={{ JSON.parse(($json.stdout||'{}')).book_name || '' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n-set",
+      "name": "设定题材",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/agent/run",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({agent:'Planner出大纲', model:'deepseek-v4-pro', temperature:0.7, max_tokens:8000, novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'premise：'+$json.premise+'；主角：'+$json.protagonist+'；日更两章，章纲要有钩子'+(($json.prev_meta&&$json.prev_meta.last_chapter)?'；上一章：'+JSON.stringify($json.prev_meta.last_chapter)+'，请接着剧情往后写两章；前情提要：'+$json.writing_context+'；已有圣经：'+JSON.stringify(($json.prev_meta&&$json.prev_meta.bible)||null)+'。已有圣经非空时必须沿用其角色/世界观/关系/风格，只做增量补充，不得另起炉灶；可用蓝图：'+JSON.stringify((($json.prev_meta&&$json.prev_meta.blueprints)||[]).filter(b=>Number(b.seq)>=$json.start_num&&Number(b.seq)<$json.start_num+2))+'，若对应章节蓝图存在，必须优先采用其标题/大纲/钩子，不得另起炉灶':'' )}) }}",
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "id": "n-planner",
+      "name": "Planner出大纲",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst data = typeof raw === 'string' ? JSON.parse(raw) : raw;\nconst msg = data.choices[0].message;\nconst content = (typeof msg.content === 'string' && msg.content.trim())\n  ? msg.content\n  : (typeof msg.reasoning_content === 'string' ? msg.reasoning_content : '');\nconst tryParse = (s) => {\n  let t = String(s).replace(/```json/g, '').replace(/```/g, '').trim();\n  const clean = (x) => x.replace(/,\\s*([}\\]])/g, '$1').trim();\n  try { return JSON.parse(t); } catch (e1) {\n    for (let pass = 0; pass < 8; pass++) {\n      const m1 = t.match(/,\\s*\"[^\"]*\"?\\s*:\\s*\"[^\"]*$/);\n      if (m1) { t = t.slice(0, m1.index); continue; }\n      const m2 = t.match(/,\\s*\"[^\"]*\"$/);\n      if (m2) { t = t.slice(0, m2.index); continue; }\n      break;\n    }\n    t = clean(t);\n    const stack = [];\n    let inStr = false, esc = false;\n    for (const ch of t) {\n      if (inStr) {\n        if (esc) esc = false;\n        else if (ch === '\\\\') esc = true;\n        else if (ch === '\"') inStr = false;\n        continue;\n      }\n      if (ch === '\"') { inStr = true; continue; }\n      if (ch === '{' || ch === '[') stack.push(ch);\n      else if (ch === '}' || ch === ']') stack.pop();\n    }\n    while (stack.length) t += stack.pop() === '{' ? '}' : ']';\n    try { return JSON.parse(t); } catch (e2) { throw new Error('JSON解析失败: ' + t.slice(0, 200)); }\n  }\n};const outline = tryParse(content);\nconst norm = (ch, i) => {\n  if (ch && typeof ch === 'object') {\n    const t = String(ch.title || ch.chapter_title || ('第' + (i + 1) + '章 开局'));\n    return { title: t, outline: String(ch.outline || ch.content || ch.summary || JSON.stringify(ch)), hook: String(ch.hook || ''), hook_type: String(ch.hook_type || ''), emotion: String(ch.emotion || ''), position: String(ch.position || ''), pacing: String(ch.pacing || ''), scenes: Array.isArray(ch.scenes) ? ch.scenes : [], plant_foreshadow: String(ch.plant_foreshadow || ''), recover_foreshadow: String(ch.recover_foreshadow || ''), character_arc: (ch.character_arc && typeof ch.character_arc === 'object') ? ch.character_arc : {} };\n  }\n  const s = String(ch || ('第' + (i + 1) + '章 开局'));\n  return { title: s, outline: s, hook: '' };\n};\nif (!Array.isArray(outline.chapter_outlines) || outline.chapter_outlines.length < 2) throw new Error('Planner输出缺少两章章纲，拒绝静默兜底');\nconst arr = outline.chapter_outlines.map(norm);\nconst meta = $('解析作品资料').first().json || {};\nconst prev = meta.prev_meta || {};\nconst mergeBible = (prevBible, nextBible) => {\n  if (!nextBible || typeof nextBible !== 'object') return prevBible || null;\n  const out = { ...(prevBible || {}), ...nextBible };\n  const byName = {};\n  const chars = [];\n  for (const c of (prevBible && prevBible.characters) || []) { if (c && c.name) { byName[c.name] = { ...c }; chars.push(byName[c.name]); } }\n  for (const c of (nextBible.characters || [])) { if (c && c.name) { if (byName[c.name]) { Object.assign(byName[c.name], c); } else { byName[c.name] = { ...c }; chars.push(byName[c.name]); } } }\n  if (chars.length) out.characters = chars;\n  const rel = [];\n  const seen = new Set();\n  for (const r of [...((prevBible && prevBible.relationships) || []), ...(nextBible.relationships || [])]) {\n    if (!r || !r.from || !r.to) continue;\n    const k = String(r.from) + '|' + String(r.to) + '|' + String(r.relation || '');\n    if (seen.has(k)) continue;\n    seen.add(k); rel.push(r);\n  }\n  if (rel.length) out.relationships = rel;\n  const wr = [...new Set([...((prevBible && prevBible.world_rules) || []), ...(nextBible.world_rules || [])].filter(Boolean))];\n  if (wr.length) out.world_rules = wr;\n  return out;\n};\nconst bible = mergeBible(prev.bible, outline.bible);\nconst fs = require('fs');\nconst p = require('path');\nconst root = $env.PIPELINE_ROOT || '';\nconst bibleFile = root ? p.join(root, 'n8n_tmp', 'bible.json') : 'n8n_tmp/bible.json';\ntry { fs.mkdirSync(p.dirname(bibleFile), { recursive: true }); fs.writeFileSync(bibleFile, JSON.stringify({ book_id: meta.book_id || '', bible })); } catch (e) {}\n\nreturn [{ json: { premise: outline.premise || meta.premise, genre: outline.genre || '', title: outline.title || '', keywords: (outline.keywords || []).join(','), bible: bible, chapter1: arr[0], chapter2: arr[1] } }];\n"
+      },
+      "id": "n-parse",
+      "name": "解析大纲",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/agent/run",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({agent:'写手A', model:'deepseek-v4-pro', temperature:0.85, max_tokens:4000, target_words:(($('解析本地资料').first().json.target_words)||2000), novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'主角：'+$('解析作品资料').first().json.protagonist+'；本章情绪目标：'+(($('解析大纲').item.json.chapter1||{}).emotion||'')+'；章节定位：'+(($('解析大纲').item.json.chapter1||{}).position||'')+'；章纲：'+JSON.stringify($('解析大纲').item.json.chapter1)+'；出场角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；世界观守护约束：'+JSON.stringify((($('解析守护').item.json.constraints)||[]))+'；本轮角色言行要点：'+JSON.stringify((($('解析守护').item.json.character_beats)||{}))+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；题材：'+$('解析大纲').item.json.genre+'；关键词：'+$('解析大纲').item.json.keywords}) }}",
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "id": "n-writer-a",
+      "name": "写手A",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        -200
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/agent/run",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({agent:'润色A', model:'deepseek-v4-flash', temperature:0.5, max_tokens:8000, target_words:(($('解析本地资料').first().json.target_words)||2000), novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'初稿：'+(((($('写手A').item.json.choices||[])[0]||{}).message||{}).content||'')+'；角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；文风指南：'+((($('解析大纲').item.json.bible||{}).style_guide)||'')}) }}",
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "id": "n-editor-a",
+      "name": "润色A",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        -200
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/agent/run",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({agent:'审稿A', model:'deepseek-v4-flash', temperature:0.2, max_tokens:2000, novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'章纲：'+JSON.stringify($('解析大纲').item.json.chapter1)+'；角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+(((($('润色A').item.json.choices||[])[0]||{}).message||{}).content||'')}) }}",
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "id": "n-reviewer-a",
+      "name": "审稿A",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        -200
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ref = $('审稿A').first().json;\nconst data = (typeof ref === 'string' ? JSON.parse(ref) : ref) || {};\nconst msg = ((data.choices || [])[0] || {}).message || {};\nconst reviewText = (typeof msg.content === 'string' && msg.content.trim())\n  ? msg.content\n  : (typeof msg.reasoning_content === 'string' ? msg.reasoning_content : '');\nconst extract = (s) => {\n  let t = String(s).replace(/```json/g, '').replace(/```/g, '').trim();\n  const clean = (x) => x.replace(/,\\s*([}\\]])/g, '$1').trim();\n  try { return JSON.parse(t); } catch (e1) {\n    for (let pass = 0; pass < 8; pass++) {\n      const m1 = t.match(/,\\s*\"[^\"]*\"?\\s*:\\s*\"[^\"]*$/);\n      if (m1) { t = t.slice(0, m1.index); continue; }\n      const m2 = t.match(/,\\s*\"[^\"]*\"$/);\n      if (m2) { t = t.slice(0, m2.index); continue; }\n      break;\n    }\n    t = clean(t);\n    const stack = [];\n    let inStr = false, esc = false;\n    for (const ch of t) {\n      if (inStr) {\n        if (esc) esc = false;\n        else if (ch === '\\\\') esc = true;\n        else if (ch === '\"') inStr = false;\n        continue;\n      }\n      if (ch === '\"') { inStr = true; continue; }\n      if (ch === '{' || ch === '[') stack.push(ch);\n      else if (ch === '}' || ch === ']') stack.pop();\n    }\n    while (stack.length) t += stack.pop() === '{' ? '}' : ']';\n    try { return JSON.parse(t); } catch (e2) { return null; }\n  }\n};let review = extract(reviewText);\nif (!review) { review = null; }\nlet reader = null;\ntry { const rr = $('读者审稿A').first().json; const rmsg = rr && rr.choices && rr.choices[0] && rr.choices[0].message; const rtext = (rmsg && typeof rmsg.content === 'string' && rmsg.content.trim()) ? rmsg.content : (rmsg && typeof rmsg.reasoning_content === 'string' ? rmsg.reasoning_content : ''); if (rtext) reader = extract(rtext); } catch {}\nlet editor = null;\ntry { const er = $('主编终审A').first().json; const ems = er && er.choices && er.choices[0] && er.choices[0].message; const et = (ems && typeof ems.content === 'string' && ems.content.trim()) ? ems.content : (ems && typeof ems.reasoning_content === 'string' ? ems.reasoning_content : ''); if (et) editor = extract(et); } catch {}\nconst editedRef = $('润色A').first().json;\nconst editedData = (typeof editedRef === 'string' ? JSON.parse(editedRef) : editedRef) || {};\nconst emsg = ((editedData.choices || [])[0] || {}).message || {};\nconst editedText = (typeof emsg.content === 'string' && emsg.content.trim())\n  ? emsg.content\n  : (typeof emsg.reasoning_content === 'string' ? emsg.reasoning_content : '');\nif (!editedText) { return [{ json: { passed: false, errors: ['润色A正文为空'], review, reader } }]; }\nconst chars = (editedText.match(/[\\u4e00-\\u9fff]/g) || []).length;\nconst targetWords = Number(($('解析本地资料').first().json.target_words)||2000);\nconst path = require('path');\nconst fs = require('fs');\nconst root = $env.PIPELINE_ROOT || '';\nlet flavorWords = ['突然','顿时','仿佛','缓缓','不由得','微微一','嘴角','眼神一凝','低沉','冷哼一声','心中一动','不禁','瞬间','面无表情','淡淡','不由自主','情不自禁','微微一愣','缓缓说道','与此同时','一股强大的气息'];\nif (root) { try { flavorWords = JSON.parse(fs.readFileSync(path.join(root, 'ai_words.json'), 'utf-8')).ai_flavor || flavorWords; } catch (e) {} }\nconst escRe = (w) => w.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\nconst cnt = (re) => (editedText.match(re) || []).length;\nconst mech = [];\nconst sudden = cnt(/突然/g);\nconst banned = cnt(new RegExp(flavorWords.map(escRe).join('|'), 'g'));\nconst exclaim = cnt(/！/g);\nconst ellipsis = cnt(/……/g);\nconst doubleQ = cnt(/[！？]{2,}/g);\nif (sudden > 1) mech.push('突然×' + sudden + '（限1）');\nif (banned > 3) mech.push('AI高频词×' + banned);\nif (doubleQ > 0) mech.push('连续问号/感叹号');\nif (exclaim > 8) mech.push('感叹号×' + exclaim + '（限8）');\nif (ellipsis > 5) mech.push('省略号×' + ellipsis + '（限5）');\nif (chars < Math.floor(targetWords * 0.75)) mech.push('字数不足 ' + chars + '（目标' + targetWords + '）');\nif (mech.length) { return [{ json: { passed: false, errors: mech, review, reader, chars } }]; }\nconst readerPassed = reader ? (reader.would_read_next === true && Number(reader.score || 0) >= 7 && Number(reader.hook_rating || 0) >= 7) : true;\nconst readerNote = reader ? '' : '读者审稿缺失，已降级';\nlet editorPassed = editor ? editor.verdict === 'pass' : (review ? (review.passed && readerPassed) : true);\nconst editorNote = editor ? '' : '主编终审缺失，按双审降级';\nif (!editorPassed) { return [{ json: { passed: false, errors: ['主编终审未过'], review, reader, editor, chars, readerNote, editorNote } }]; }\nreturn [{ json: { passed: true, review, reader, editor, chars, editedText, title: $('解析大纲').item.json.chapter1, mechanical_issues: mech, readerNote, editorNote } }];"
+      },
+      "id": "n-gate-a",
+      "name": "质量门A",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        -200
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst draft = (() => { try { return $('润色A').first().json; } catch { return null; } })();\nconst msg = draft && draft.choices && draft.choices[0] && draft.choices[0].message;\nconst editedText = (msg && typeof msg.content === 'string') ? msg.content : '';\nif (!editedText) return [];\nconst esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nlet paras = editedText.split(/\\n+/).map(s => s.trim()).filter(Boolean);\nif (paras.length <= 1) {\n  const t = (paras[0] || '').trim();\n  paras = [];\n  let buf = '';\n  for (const ch of t) {\n    buf += ch;\n    if (buf.length >= 80 && '。！？；'.includes(ch)) {\n      paras.push(buf.trim());\n      buf = '';\n    }\n  }\n  if (buf.trim()) paras.push(buf.trim());\n}\nconst contentHtml = paras.map(p => '<p>' + esc(p) + '</p>').join('');\nconst cfg = $('设定题材').first().json;\nreturn [{ json: { content_html: contentHtml, title: item.title, book_id: String(cfg.book_id || '') } }];"
+      },
+      "id": "n-format-a",
+      "name": "排版A",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/agent/run",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({agent:'写手B', model:'deepseek-v4-pro', temperature:0.85, max_tokens:4000, target_words:(($('解析本地资料').first().json.target_words)||2000), novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'主角：'+$('解析作品资料').first().json.protagonist+'；本章情绪目标：'+(($('解析大纲').item.json.chapter2||{}).emotion||'')+'；章节定位：'+(($('解析大纲').item.json.chapter2||{}).position||'')+'；章纲：'+JSON.stringify($('解析大纲').item.json.chapter2)+'；出场角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；世界观守护约束：'+JSON.stringify((($('解析守护').item.json.constraints)||[]))+'；本轮角色言行要点：'+JSON.stringify((($('解析守护').item.json.character_beats)||{}))+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；题材：'+$('解析大纲').item.json.genre+'；关键词：'+$('解析大纲').item.json.keywords+'；上一章（A章）结尾：'+(($('质量门A').first().json.editedText)||'').slice(-300)+'；A章提炼：'+JSON.stringify((($('整理剧情A').first().json.summary)||{}))+'；本章开篇必须自然承接A章结尾并回应其悬念，不得重复A章内容'}) }}",
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "id": "n-writer-b",
+      "name": "写手B",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        220
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/agent/run",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({agent:'润色B', model:'deepseek-v4-flash', temperature:0.5, max_tokens:8000, target_words:(($('解析本地资料').first().json.target_words)||2000), novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'初稿：'+(((($('写手B').item.json.choices||[])[0]||{}).message||{}).content||'')+'；角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；文风指南：'+((($('解析大纲').item.json.bible||{}).style_guide)||'')}) }}",
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "id": "n-editor-b",
+      "name": "润色B",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        220
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/agent/run",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({agent:'审稿B', model:'deepseek-v4-flash', temperature:0.2, max_tokens:2000, novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'章纲：'+JSON.stringify($('解析大纲').item.json.chapter2)+'；角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+(((($('润色B').item.json.choices||[])[0]||{}).message||{}).content||'')+'；上一章（A章）结尾：'+(($('质量门A').first().json.editedText)||'').slice(-300)+'；核对本章开头是否自然承接A章结尾'}) }}",
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "id": "n-reviewer-b",
+      "name": "审稿B",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        220
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ref = $('审稿B').first().json;\nconst data = (typeof ref === 'string' ? JSON.parse(ref) : ref) || {};\nconst msg = ((data.choices || [])[0] || {}).message || {};\nconst reviewText = (typeof msg.content === 'string' && msg.content.trim())\n  ? msg.content\n  : (typeof msg.reasoning_content === 'string' ? msg.reasoning_content : '');\nconst extract = (s) => {\n  let t = String(s).replace(/```json/g, '').replace(/```/g, '').trim();\n  const clean = (x) => x.replace(/,\\s*([}\\]])/g, '$1').trim();\n  try { return JSON.parse(t); } catch (e1) {\n    for (let pass = 0; pass < 8; pass++) {\n      const m1 = t.match(/,\\s*\"[^\"]*\"?\\s*:\\s*\"[^\"]*$/);\n      if (m1) { t = t.slice(0, m1.index); continue; }\n      const m2 = t.match(/,\\s*\"[^\"]*\"$/);\n      if (m2) { t = t.slice(0, m2.index); continue; }\n      break;\n    }\n    t = clean(t);\n    const stack = [];\n    let inStr = false, esc = false;\n    for (const ch of t) {\n      if (inStr) {\n        if (esc) esc = false;\n        else if (ch === '\\\\') esc = true;\n        else if (ch === '\"') inStr = false;\n        continue;\n      }\n      if (ch === '\"') { inStr = true; continue; }\n      if (ch === '{' || ch === '[') stack.push(ch);\n      else if (ch === '}' || ch === ']') stack.pop();\n    }\n    while (stack.length) t += stack.pop() === '{' ? '}' : ']';\n    try { return JSON.parse(t); } catch (e2) { return null; }\n  }\n};let review = extract(reviewText);\nif (!review) { review = null; }\nlet reader = null;\ntry { const rr = $('读者审稿B').first().json; const rmsg = rr && rr.choices && rr.choices[0] && rr.choices[0].message; const rtext = (rmsg && typeof rmsg.content === 'string' && rmsg.content.trim()) ? rmsg.content : (rmsg && typeof rmsg.reasoning_content === 'string' ? rmsg.reasoning_content : ''); if (rtext) reader = extract(rtext); } catch {}\nlet editor = null;\ntry { const er = $('主编终审B').first().json; const ems = er && er.choices && er.choices[0] && er.choices[0].message; const et = (ems && typeof ems.content === 'string' && ems.content.trim()) ? ems.content : (ems && typeof ems.reasoning_content === 'string' ? ems.reasoning_content : ''); if (et) editor = extract(et); } catch {}\nconst editedRef = $('润色B').first().json;\nconst editedData = (typeof editedRef === 'string' ? JSON.parse(editedRef) : editedRef) || {};\nconst emsg = ((editedData.choices || [])[0] || {}).message || {};\nconst editedText = (typeof emsg.content === 'string' && emsg.content.trim())\n  ? emsg.content\n  : (typeof emsg.reasoning_content === 'string' ? emsg.reasoning_content : '');\nif (!editedText) { return [{ json: { passed: false, errors: ['润色B正文为空'], review, reader } }]; }\nconst chars = (editedText.match(/[\\u4e00-\\u9fff]/g) || []).length;\nconst targetWords = Number(($('解析本地资料').first().json.target_words)||2000);\nconst path = require('path');\nconst fs = require('fs');\nconst root = $env.PIPELINE_ROOT || '';\nlet flavorWords = ['突然','顿时','仿佛','缓缓','不由得','微微一','嘴角','眼神一凝','低沉','冷哼一声','心中一动','不禁','瞬间','面无表情','淡淡','不由自主','情不自禁','微微一愣','缓缓说道','与此同时','一股强大的气息'];\nif (root) { try { flavorWords = JSON.parse(fs.readFileSync(path.join(root, 'ai_words.json'), 'utf-8')).ai_flavor || flavorWords; } catch (e) {} }\nconst escRe = (w) => w.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\nconst cnt = (re) => (editedText.match(re) || []).length;\nconst mech = [];\nconst sudden = cnt(/突然/g);\nconst banned = cnt(new RegExp(flavorWords.map(escRe).join('|'), 'g'));\nconst exclaim = cnt(/！/g);\nconst ellipsis = cnt(/……/g);\nconst doubleQ = cnt(/[！？]{2,}/g);\nif (sudden > 1) mech.push('突然×' + sudden + '（限1）');\nif (banned > 3) mech.push('AI高频词×' + banned);\nif (doubleQ > 0) mech.push('连续问号/感叹号');\nif (exclaim > 8) mech.push('感叹号×' + exclaim + '（限8）');\nif (ellipsis > 5) mech.push('省略号×' + ellipsis + '（限5）');\nif (chars < Math.floor(targetWords * 0.75)) mech.push('字数不足 ' + chars + '（目标' + targetWords + '）');\nif (mech.length) { return [{ json: { passed: false, errors: mech, review, reader, chars } }]; }\nconst readerPassed = reader ? (reader.would_read_next === true && Number(reader.score || 0) >= 7 && Number(reader.hook_rating || 0) >= 7) : true;\nconst readerNote = reader ? '' : '读者审稿缺失，已降级';\nlet editorPassed = editor ? editor.verdict === 'pass' : (review ? (review.passed && readerPassed) : true);\nconst editorNote = editor ? '' : '主编终审缺失，按双审降级';\nif (!editorPassed) { return [{ json: { passed: false, errors: ['主编终审未过'], review, reader, editor, chars, readerNote, editorNote } }]; }\nreturn [{ json: { passed: true, review, reader, editor, chars, editedText, title: $('解析大纲').item.json.chapter2, mechanical_issues: mech, readerNote, editorNote } }];"
+      },
+      "id": "n-gate-b",
+      "name": "质量门B",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        220
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst draft = (() => { try { return $('润色B').first().json; } catch { return null; } })();\nconst msg = draft && draft.choices && draft.choices[0] && draft.choices[0].message;\nconst editedText = (msg && typeof msg.content === 'string') ? msg.content : '';\nif (!editedText) return [];\nconst esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nlet paras = editedText.split(/\\n+/).map(s => s.trim()).filter(Boolean);\nif (paras.length <= 1) {\n  const t = (paras[0] || '').trim();\n  paras = [];\n  let buf = '';\n  for (const ch of t) {\n    buf += ch;\n    if (buf.length >= 80 && '。！？；'.includes(ch)) {\n      paras.push(buf.trim());\n      buf = '';\n    }\n  }\n  if (buf.trim()) paras.push(buf.trim());\n}\nconst contentHtml = paras.map(p => '<p>' + esc(p) + '</p>').join('');\nconst cfg = $('设定题材').first().json;\nreturn [{ json: { content_html: contentHtml, title: item.title, book_id: String(cfg.book_id || '') } }];"
+      },
+      "id": "n-format-b",
+      "name": "排版B",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://fanqienovel.com/api/author/article/new_article/v0/",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded;charset=UTF-8"
+            },
+            {
+              "name": "Cookie",
+              "value": "={{ $env.FANQIE_COOKIE }}"
+            },
+            {
+              "name": "X-Secsdk-Csrf-Token",
+              "value": "={{ $env.FANQIE_CSRF_TOKEN }}"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
+            },
+            {
+              "name": "Origin",
+              "value": "https://fanqienovel.com"
+            },
+            {
+              "name": "Referer",
+              "value": "https://fanqienovel.com/main/writer/"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json, text/plain, */*"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "book_id",
+              "value": "={{ $json.book_id }}"
+            },
+            {
+              "name": "need_reuse",
+              "value": "0"
+            },
+            {
+              "name": "aid",
+              "value": "2503"
+            },
+            {
+              "name": "app_name",
+              "value": "muye_novel"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n-newdraft-a",
+      "name": "新建草稿A",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        -200
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst resp = typeof raw === 'string' ? JSON.parse(raw) : raw;\nconst data = resp && typeof resp.data === 'object' && resp.data !== null ? resp.data : resp;\nconst src = $('排版A').first().json;\nconst ch = src.title;\nconst rawTitle = typeof ch === 'string' ? ch : (ch && typeof ch === 'object' ? (ch.title || ch.chapter_title || '') : '');\nconst cleanTitle = String(rawTitle).replace(/^\\s*第\\s*\\d+\\s*章[：:\\s]*/, '');\nconst startNum = Number($('算章节号').first().json.start_num || 1);\nconst n = startNum + 0;\nconst title = '第 ' + n + ' 章 ' + cleanTitle;\nlet volumeId = String(data.volume_id ?? '');\nlet volumeName = '正文';\nlet vd = data.volume_data;\nif (typeof vd === 'string') { try { vd = JSON.parse(vd); } catch { vd = null; } }\nif (Array.isArray(vd)) {\n  const hit = vd.find(v => String(v.volume_id) === volumeId) || vd[0];\n  if (hit && hit.volume_name) volumeName = hit.volume_name;\n}\nif (!data.item_id) return [];\nreturn [{ json: {\n  item_id: String(data.item_id),\n  book_id: src.book_id,\n  volume_id: volumeId,\n  volume_name: volumeName,\n  title: title,\n  content_html: src.content_html\n} }];"
+      },
+      "id": "n-parsedraft-a",
+      "name": "解析草稿A",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://fanqienovel.com/api/author/publish_article/v0/",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded;charset=UTF-8"
+            },
+            {
+              "name": "Cookie",
+              "value": "={{ $env.FANQIE_COOKIE }}"
+            },
+            {
+              "name": "X-Secsdk-Csrf-Token",
+              "value": "={{ $env.FANQIE_CSRF_TOKEN }}"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
+            },
+            {
+              "name": "Origin",
+              "value": "https://fanqienovel.com"
+            },
+            {
+              "name": "Referer",
+              "value": "https://fanqienovel.com/main/writer/"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json, text/plain, */*"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "item_id",
+              "value": "={{ $('解析草稿A').first().json.item_id }}"
+            },
+            {
+              "name": "book_id",
+              "value": "={{ $('解析草稿A').first().json.book_id }}"
+            },
+            {
+              "name": "content",
+              "value": "={{ $('解析草稿A').first().json.content_html }}"
+            },
+            {
+              "name": "title",
+              "value": "={{ $('解析草稿A').first().json.title }}"
+            },
+            {
+              "name": "volume_id",
+              "value": "={{ $('解析草稿A').first().json.volume_id }}"
+            },
+            {
+              "name": "volume_name",
+              "value": "={{ $('解析草稿A').first().json.volume_name }}"
+            },
+            {
+              "name": "timer_status",
+              "value": "0"
+            },
+            {
+              "name": "timer_time",
+              "value": "0"
+            },
+            {
+              "name": "publish_status",
+              "value": "1"
+            },
+            {
+              "name": "need_pay",
+              "value": "0"
+            },
+            {
+              "name": "use_ai",
+              "value": "2"
+            },
+            {
+              "name": "device_platform",
+              "value": "pc"
+            },
+            {
+              "name": "speak_type",
+              "value": "0"
+            },
+            {
+              "name": "timer_chapter_preview",
+              "value": "[]"
+            },
+            {
+              "name": "has_chapter_ad",
+              "value": "false"
+            },
+            {
+              "name": "chapter_ad_types",
+              "value": ""
+            },
+            {
+              "name": "aid",
+              "value": "2503"
+            },
+            {
+              "name": "app_name",
+              "value": "muye_novel"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n-submit-a",
+      "name": "提交发布A",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        -200
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://fanqienovel.com/api/author/article/new_article/v0/",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded;charset=UTF-8"
+            },
+            {
+              "name": "Cookie",
+              "value": "={{ $env.FANQIE_COOKIE }}"
+            },
+            {
+              "name": "X-Secsdk-Csrf-Token",
+              "value": "={{ $env.FANQIE_CSRF_TOKEN }}"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
+            },
+            {
+              "name": "Origin",
+              "value": "https://fanqienovel.com"
+            },
+            {
+              "name": "Referer",
+              "value": "https://fanqienovel.com/main/writer/"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json, text/plain, */*"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "book_id",
+              "value": "={{ $json.book_id }}"
+            },
+            {
+              "name": "need_reuse",
+              "value": "0"
+            },
+            {
+              "name": "aid",
+              "value": "2503"
+            },
+            {
+              "name": "app_name",
+              "value": "muye_novel"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n-newdraft-b",
+      "name": "新建草稿B",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        220
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst resp = typeof raw === 'string' ? JSON.parse(raw) : raw;\nconst data = resp && typeof resp.data === 'object' && resp.data !== null ? resp.data : resp;\nconst src = $('排版B').first().json;\nconst ch = src.title;\nconst rawTitle = typeof ch === 'string' ? ch : (ch && typeof ch === 'object' ? (ch.title || ch.chapter_title || '') : '');\nconst cleanTitle = String(rawTitle).replace(/^\\s*第\\s*\\d+\\s*章[：:\\s]*/, '');\nconst startNum = Number($('算章节号').first().json.start_num || 1);\nconst n = startNum + 1;\nconst title = '第 ' + n + ' 章 ' + cleanTitle;\nlet volumeId = String(data.volume_id ?? '');\nlet volumeName = '正文';\nlet vd = data.volume_data;\nif (typeof vd === 'string') { try { vd = JSON.parse(vd); } catch { vd = null; } }\nif (Array.isArray(vd)) {\n  const hit = vd.find(v => String(v.volume_id) === volumeId) || vd[0];\n  if (hit && hit.volume_name) volumeName = hit.volume_name;\n}\nif (!data.item_id) return [];\nreturn [{ json: {\n  item_id: String(data.item_id),\n  book_id: src.book_id,\n  volume_id: volumeId,\n  volume_name: volumeName,\n  title: title,\n  content_html: src.content_html\n} }];"
+      },
+      "id": "n-parsedraft-b",
+      "name": "解析草稿B",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://fanqienovel.com/api/author/publish_article/v0/",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded;charset=UTF-8"
+            },
+            {
+              "name": "Cookie",
+              "value": "={{ $env.FANQIE_COOKIE }}"
+            },
+            {
+              "name": "X-Secsdk-Csrf-Token",
+              "value": "={{ $env.FANQIE_CSRF_TOKEN }}"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
+            },
+            {
+              "name": "Origin",
+              "value": "https://fanqienovel.com"
+            },
+            {
+              "name": "Referer",
+              "value": "https://fanqienovel.com/main/writer/"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json, text/plain, */*"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "item_id",
+              "value": "={{ $('解析草稿B').first().json.item_id }}"
+            },
+            {
+              "name": "book_id",
+              "value": "={{ $('解析草稿B').first().json.book_id }}"
+            },
+            {
+              "name": "content",
+              "value": "={{ $('解析草稿B').first().json.content_html }}"
+            },
+            {
+              "name": "title",
+              "value": "={{ $('解析草稿B').first().json.title }}"
+            },
+            {
+              "name": "volume_id",
+              "value": "={{ $('解析草稿B').first().json.volume_id }}"
+            },
+            {
+              "name": "volume_name",
+              "value": "={{ $('解析草稿B').first().json.volume_name }}"
+            },
+            {
+              "name": "timer_status",
+              "value": "0"
+            },
+            {
+              "name": "timer_time",
+              "value": "0"
+            },
+            {
+              "name": "publish_status",
+              "value": "1"
+            },
+            {
+              "name": "need_pay",
+              "value": "0"
+            },
+            {
+              "name": "use_ai",
+              "value": "2"
+            },
+            {
+              "name": "device_platform",
+              "value": "pc"
+            },
+            {
+              "name": "speak_type",
+              "value": "0"
+            },
+            {
+              "name": "timer_chapter_preview",
+              "value": "[]"
+            },
+            {
+              "name": "has_chapter_ad",
+              "value": "false"
+            },
+            {
+              "name": "chapter_ad_types",
+              "value": ""
+            },
+            {
+              "name": "aid",
+              "value": "2503"
+            },
+            {
+              "name": "app_name",
+              "value": "muye_novel"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n-submit-b",
+      "name": "提交发布B",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        220
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst bodyText = typeof raw.body === 'string' ? raw.body : JSON.stringify(raw);\nlet parsed = null;\ntry { parsed = JSON.parse(bodyText); } catch {}\nif (!parsed || parsed.code !== 0) {\n  return [{ json: { published: false, item_id: null, error: ((parsed && parsed.message) || bodyText.slice(0, 300)) } }];\n}\nreturn [{ json: { published: true, item_id: (parsed.data && (parsed.data.item_id || parsed.data.article_id)) || null, message: parsed.message } }];\n"
+      },
+      "id": "n-checkpub-a",
+      "name": "校验发布A",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        -200
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst bodyText = typeof raw.body === 'string' ? raw.body : JSON.stringify(raw);\nlet parsed = null;\ntry { parsed = JSON.parse(bodyText); } catch {}\nif (!parsed || parsed.code !== 0) {\n  return [{ json: { published: false, item_id: null, error: ((parsed && parsed.message) || bodyText.slice(0, 300)) } }];\n}\nreturn [{ json: { published: true, item_id: (parsed.data && (parsed.data.item_id || parsed.data.article_id)) || null, message: parsed.message } }];\n"
+      },
+      "id": "n-checkpub-b",
+      "name": "校验发布B",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        220
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://fanqienovel.com/api/author/article/cover_article/v0/",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded;charset=UTF-8"
+            },
+            {
+              "name": "Cookie",
+              "value": "={{ $env.FANQIE_COOKIE }}"
+            },
+            {
+              "name": "X-Secsdk-Csrf-Token",
+              "value": "={{ $env.FANQIE_CSRF_TOKEN }}"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
+            },
+            {
+              "name": "Origin",
+              "value": "https://fanqienovel.com"
+            },
+            {
+              "name": "Referer",
+              "value": "https://fanqienovel.com/main/writer/"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json, text/plain, */*"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "book_id",
+              "value": "={{ $json.book_id }}"
+            },
+            {
+              "name": "item_id",
+              "value": "={{ $json.item_id }}"
+            },
+            {
+              "name": "title",
+              "value": "={{ $json.title }}"
+            },
+            {
+              "name": "content",
+              "value": "={{ $json.content_html }}"
+            },
+            {
+              "name": "volume_id",
+              "value": "={{ $json.volume_id }}"
+            },
+            {
+              "name": "volume_name",
+              "value": "={{ $json.volume_name }}"
+            },
+            {
+              "name": "aid",
+              "value": "2503"
+            },
+            {
+              "name": "app_name",
+              "value": "muye_novel"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n-cover-a",
+      "name": "保存内容A",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        -200
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://fanqienovel.com/api/author/article/cover_article/v0/",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded;charset=UTF-8"
+            },
+            {
+              "name": "Cookie",
+              "value": "={{ $env.FANQIE_COOKIE }}"
+            },
+            {
+              "name": "X-Secsdk-Csrf-Token",
+              "value": "={{ $env.FANQIE_CSRF_TOKEN }}"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
+            },
+            {
+              "name": "Origin",
+              "value": "https://fanqienovel.com"
+            },
+            {
+              "name": "Referer",
+              "value": "https://fanqienovel.com/main/writer/"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json, text/plain, */*"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "book_id",
+              "value": "={{ $json.book_id }}"
+            },
+            {
+              "name": "item_id",
+              "value": "={{ $json.item_id }}"
+            },
+            {
+              "name": "title",
+              "value": "={{ $json.title }}"
+            },
+            {
+              "name": "content",
+              "value": "={{ $json.content_html }}"
+            },
+            {
+              "name": "volume_id",
+              "value": "={{ $json.volume_id }}"
+            },
+            {
+              "name": "volume_name",
+              "value": "={{ $json.volume_name }}"
+            },
+            {
+              "name": "aid",
+              "value": "2503"
+            },
+            {
+              "name": "app_name",
+              "value": "muye_novel"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n-cover-b",
+      "name": "保存内容B",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        220
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://fanqienovel.com/api/author/book/book_list/v0",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded;charset=UTF-8"
+            },
+            {
+              "name": "Cookie",
+              "value": "={{ $env.FANQIE_COOKIE }}"
+            },
+            {
+              "name": "X-Secsdk-Csrf-Token",
+              "value": "={{ $env.FANQIE_CSRF_TOKEN }}"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
+            },
+            {
+              "name": "Origin",
+              "value": "https://fanqienovel.com"
+            },
+            {
+              "name": "Referer",
+              "value": "https://fanqienovel.com/main/writer/"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json, text/plain, */*"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "aid",
+              "value": "2503"
+            },
+            {
+              "name": "app_name",
+              "value": "muye_novel"
+            },
+            {
+              "name": "page_index",
+              "value": "0"
+            },
+            {
+              "name": "page_count",
+              "value": "20"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n-chapter-count",
+      "name": "查章节号",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst resp = typeof input.body === 'string' ? JSON.parse(input.body) : (input.body || input);\nconst list = resp && resp.data && Array.isArray(resp.data.book_list) ? resp.data.book_list : [];\nconst cfg = $('设定题材').first().json;\nif (!cfg.book_id) { throw new Error('未找到活跃作品：请先确认创意并自动建书'); }\nconst target = list.find(b => String(b.book_id) === String(cfg.book_id));\nif (!target) { throw new Error('番茄账号中未找到 book_id=' + cfg.book_id + ' 的书籍，请检查绑定'); }\nconst startNum = (Number(target.chapter_number) || 0) + 1;\nconst bookName = String(target.book_name || '');\nconst abstract = String(target.abstract || '');\nconst localTitle = String(cfg.novel_title || '').trim();\nconst titleMismatch = localTitle && bookName.trim() !== localTitle;\nconst metaNeeded = bookName.indexOf('用户') === 0 || abstract.length < 50 || titleMismatch;\nreturn [{ json: { premise: cfg.premise, platform: cfg.platform, daily: cfg.daily, novel_title: localTitle, keywords: cfg.keywords, genre: cfg.genre || '', book_id: cfg.book_id, start_num: startNum, book_name: bookName, abstract: abstract, meta_needed: metaNeeded } }];"
+      },
+      "id": "n-chapter-count-code",
+      "name": "算章节号",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "command": "={{ 'cd /d ' + $env.PIPELINE_ROOT + ' && ' + $env.PYTHON_EXE + ' ' + ($json.book_id ? ['tools/get_meta.py', $json.book_id] : ['tools/get_meta.py']).join(' ') }}",
+        "executeOnce": true
+      },
+      "id": "n-read-meta",
+      "name": "读本地资料",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        660,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nlet prev = null;\ntry { prev = JSON.parse(raw.stdout || '{}'); } catch { prev = null; }\nif (!prev || typeof prev !== 'object' || !prev.book_name) prev = null;\nconst src = $('算章节号').first().json;\nconst pm = prev || {};\nconst bible = pm.bible || {};\nconst writingContext = [\n  '上一章结尾：' + (pm.prev_ending ? pm.prev_ending.slice(-800) : '本书第1章，无需承接前文'),\n  '最近摘要：' + JSON.stringify(pm.recent_summaries || []).slice(0, 1200),\n  '角色状态：' + JSON.stringify(pm.character_states || {}),\n  '活跃伏笔：' + JSON.stringify(pm.plot_threads || []),\n  '角色卡：' + JSON.stringify(bible.characters || []).slice(0, 1400),\n  '人物关系：' + JSON.stringify(bible.relationships || []).slice(0, 900),\n  '世界观规则：' + JSON.stringify(bible.world_rules || []).slice(0, 700),\n  '已有标题（不能重复）：' + JSON.stringify(pm.existing_titles || []),\n  '风格指南：' + (bible.style_guide || ''),\n  '卷目标：' + (pm.volume_goal || ''),\n  '角色成长轨迹：' + JSON.stringify((pm.character_evolution || []).slice(-6)),\n  '完结状态：' + ((pm.finish_status === 'finishing') ? ('收尾模式：剩余 ' + (pm.finish_remaining || 0) + ' 章，本批需推进结局、回收伏笔、给出角色归宿') : (pm.finish_status === 'finished' ? '已完结，停止日更' : '连载中')),\n  '阅读反馈：' + JSON.stringify(pm.reader_feedback || {}),\n  '目标字数：' + (pm.target_words || 2000),\n  '风格微调：' + (pm.style_tweak || '无'),\n  '近期热点：' + JSON.stringify(pm.hot_topics || {}).slice(0, 1000),\n  '设定知识库：' + JSON.stringify(pm.novel_knowledge || []).slice(0, 1200)\n].join('；');\nreturn [{ json: { ...src, prev_meta: prev, novel_id: (prev && prev.novel_id) || 0, target_words: (pm.target_words || 2000), writing_context: writingContext } }];\n"
+      },
+      "id": "n-parse-local",
+      "name": "解析本地资料",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/agent/run",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "options": {
+          "timeout": 900000
+        },
+        "jsonBody": "={{ JSON.stringify({agent:'生成作品资料', model:'deepseek-v4-flash', temperature:0.7, max_tokens:4000, novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'premise：'+$json.premise+'；题材：'+($json.genre || ($json.prev_meta && $json.prev_meta.genre) || '')+'；关键词：'+$json.keywords+'；现有书名：'+$json.book_name+'；现有主角：'+JSON.stringify(($json.prev_meta&&$json.prev_meta.protagonists)||[])+'；上一章：'+JSON.stringify(($json.prev_meta&&$json.prev_meta.last_chapter)||null)+'。已有主角/书名请沿用，只补全缺的字段；上一章不为空时卷目标要衔接剧情。'}) }}"
+      },
+      "id": "n-meta-llm",
+      "name": "生成作品资料",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst resp = typeof raw === 'string' ? JSON.parse(raw) : raw;\nconst msg = resp.choices[0].message;\nconst content = (typeof msg.content === 'string' && msg.content.trim())\n  ? msg.content\n  : (typeof msg.reasoning_content === 'string' ? msg.reasoning_content : '');\nconst tryParse = (s) => {\n  let t = String(s).replace(/```json/g, '').replace(/```/g, '').trim();\n  const clean = (x) => x.replace(/,\\s*([}\\]])/g, '$1').trim();\n  try { return JSON.parse(t); } catch (e1) {\n    for (let pass = 0; pass < 8; pass++) {\n      const m1 = t.match(/,\\s*\"[^\"]*\"?\\s*:\\s*\"[^\"]*$/);\n      if (m1) { t = t.slice(0, m1.index); continue; }\n      const m2 = t.match(/,\\s*\"[^\"]*\"$/);\n      if (m2) { t = t.slice(0, m2.index); continue; }\n      break;\n    }\n    t = clean(t);\n    const stack = [];\n    let inStr = false, esc = false;\n    for (const ch of t) {\n      if (inStr) {\n        if (esc) esc = false;\n        else if (ch === '\\\\') esc = true;\n        else if (ch === '\"') inStr = false;\n        continue;\n      }\n      if (ch === '\"') { inStr = true; continue; }\n      if (ch === '{' || ch === '[') stack.push(ch);\n      else if (ch === '}' || ch === ']') stack.pop();\n    }\n    while (stack.length) t += stack.pop() === '{' ? '}' : ']';\n    try { return JSON.parse(t); } catch (e2) { throw new Error('JSON解析失败: ' + t.slice(0, 200)); }\n  }\n};const meta = tryParse(content);\nconst src = $('算章节号').first().json;\nconst prev = src.prev_meta || {};\nconst genre = String(meta.genre || src.genre || '');\nlet categoryId = '259';\nlet labels = ['259', '257'];\nconst g = genre;\nif (/都市|赘婿|神医|战神/.test(g)) { categoryId = '124'; labels = ['124', '262']; }\nelse if (/玄幻/.test(g)) { categoryId = '258'; labels = ['258', '257']; }\nelse if (/科幻|末世/.test(g)) { categoryId = '8'; labels = ['8', '57']; }\nelse if (/悬疑|灵异|盗墓/.test(g)) { categoryId = '10'; labels = ['10', '539']; }\nelse if (/历史/.test(g)) { categoryId = '273'; labels = ['273', '272']; }\nconst oldProt = prev.protagonists && prev.protagonists[0];\nconst prot = meta.protagonist || {};\nconst protName = String(prot.name || (oldProt && oldProt.name) || '主角');\nconst protagonists = [{ name: protName, role: '主角', traits: String(prot.traits || (oldProt && oldProt.traits) || ''), goals: String(prot.goals || (oldProt && oldProt.goals) || '') }];\nconst secondary = String(meta.secondary_name || '');\nif (secondary) protagonists.push({ name: secondary, role: '配角', traits: '', goals: '' });\nconst abstract = String(meta.abstract || src.abstract || '').replace(/\\s+/g, ' ');\nconst bookName = String(meta.book_name || src.book_name || '未命名');\nconst tags = Array.isArray(meta.tags) && meta.tags.length ? meta.tags.map(String) : [];\nconst gender = (meta.gender === 0 || meta.gender === '0') ? '0' : '1';\nreturn [{ json: {\n  premise: src.premise, platform: src.platform, daily: src.daily, keywords: src.keywords,\n  book_id: src.book_id, start_num: src.start_num,\n  book_name: bookName, abstract: abstract, tags: tags, gender: gender,\n  category_id: categoryId, label_id_list: labels.join(','),\n  protagonists: protagonists, protagonist: protName, secondary_name: secondary,\n  volume_goal: String(meta.volume_goal || ''), prev_meta: prev,\n  meta_needed: src.meta_needed,\n  writing_context: ($('解析本地资料').first().json.writing_context || '')\n} }];"
+      },
+      "id": "n-parse-meta",
+      "name": "解析作品资料",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 2,
+        "output": "={{ $json.meta_needed ? 0 : 1 }}",
+        "options": {}
+      },
+      "id": "n-meta-if",
+      "name": "需要更新作品资料?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1540,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://fanqienovel.com/api/author/book/modify_book/v0/",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded;charset=UTF-8"
+            },
+            {
+              "name": "Cookie",
+              "value": "={{ $env.FANQIE_COOKIE }}"
+            },
+            {
+              "name": "X-Secsdk-Csrf-Token",
+              "value": "={{ $env.FANQIE_CSRF_TOKEN }}"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
+            },
+            {
+              "name": "Origin",
+              "value": "https://fanqienovel.com"
+            },
+            {
+              "name": "Referer",
+              "value": "https://fanqienovel.com/main/writer/"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json, text/plain, */*"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "aid",
+              "value": "2503"
+            },
+            {
+              "name": "app_name",
+              "value": "muye_novel"
+            },
+            {
+              "name": "book_id",
+              "value": "={{ $json.book_id }}"
+            },
+            {
+              "name": "book_name",
+              "value": "={{ $json.book_name }}"
+            },
+            {
+              "name": "gender",
+              "value": "={{ $json.gender }}"
+            },
+            {
+              "name": "abstract",
+              "value": "={{ $json.abstract }}"
+            },
+            {
+              "name": "category_id",
+              "value": "={{ $json.category_id }}"
+            },
+            {
+              "name": "original_type",
+              "value": "1"
+            },
+            {
+              "name": "label_id_list",
+              "value": "={{ $json.label_id_list }}"
+            },
+            {
+              "name": "protagonist_name_1",
+              "value": "={{ $json.protagonist }}"
+            },
+            {
+              "name": "protagonist_name_2",
+              "value": "={{ $json.secondary_name }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n-modify-book",
+      "name": "提交作品资料",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const meta = $('解析作品资料').first().json;\nconst raw = $input.first().json;\nconst body = raw && typeof raw.body === 'string' ? JSON.parse(raw.body) : (raw && raw.body) || null;\nconst modifyResult = body && body.code === 0 ? 'ok' : JSON.stringify(body || raw).slice(0, 300);\nreturn [{ json: { ...meta, modify_result: modifyResult } }];"
+      },
+      "id": "n-bridge",
+      "name": "过桥",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const safe = (name) => { try { const d = $(name).first(); return d ? d.json : null; } catch { return null; } };\nconst meta = safe('解析作品资料') || {};\nconst outline = safe('解析大纲') || { chapter1: {}, chapter2: {} };\nconst ch1 = outline.chapter1 || {};\nconst ch2 = outline.chapter2 || {};\nconst now = new Date().toISOString().slice(0, 19).replace('T', ' ');\nconst runId = String($execution.id) + '-' + (meta.book_id || 'unknown');\nconst chapters = [];\nconst pubA = safe('校验发布A');\nconst pubB = safe('校验发布B');\nconst draftA = safe('解析草稿A');\nconst draftB = safe('解析草稿B');\nconst qa = safe('质量门A');\nconst qb = safe('质量门B');\nconst sumA = (safe('整理剧情A') || {}).summary || {};\nconst verifyA = safe('解析复核A');\nconst verifyB = safe('解析复核B');\nconst sumB = (safe('整理剧情B') || {}).summary || {};\nconst aOk = !!(pubA && pubA.published);\nconst bOk = !!(pubB && pubB.published);\nif (qa && qa.passed === false) {\n  chapters.push({ seq: meta.start_num, title: (ch1 && ch1.title) || '', outline: (ch1 && ch1.outline) || '', status: 'draft', words: Number(qa.chars || 0), fanqie_item_id: '', published_at: '', error: '质量门未通过：' + ((qa.errors || []).join(';') || 'unknown'), summary: sumA || {}, ending_excerpt: '', quality_passed: false, content: qa.editedText || '' });\n} else if (draftA && draftA.item_id) {\n  chapters.push({ seq: meta.start_num, title: draftA.title, outline: ch1.outline || '', status: aOk ? 'published' : 'reviewed', words: Number(qa.chars || 0), fanqie_item_id: draftA.item_id, published_at: aOk ? now : '', error: aOk ? '' : ((pubA && pubA.error) || JSON.stringify(pubA || {}).slice(0, 200)), summary: sumA, ending_excerpt: qa.editedText ? String(qa.editedText).slice(-220) : '', quality_passed: true, content: qa.editedText ? String(qa.editedText) : '' });\n}\nif (qb && qb.passed === false) {\n  chapters.push({ seq: meta.start_num + 1, title: (ch2 && ch2.title) || '', outline: (ch2 && ch2.outline) || '', status: 'draft', words: Number(qb.chars || 0), fanqie_item_id: '', published_at: '', error: '质量门未通过：' + ((qb.errors || []).join(';') || 'unknown'), summary: sumB || {}, ending_excerpt: '', quality_passed: false, content: qb.editedText || '' });\n} else if (draftB && draftB.item_id) {\n  chapters.push({ seq: meta.start_num + 1, title: draftB.title, outline: ch2.outline || '', status: bOk ? 'published' : 'reviewed', words: Number(qb.chars || 0), fanqie_item_id: draftB.item_id, published_at: bOk ? now : '', error: bOk ? '' : ((pubB && pubB.error) || JSON.stringify(pubB || {}).slice(0, 200)), summary: sumB, ending_excerpt: qb.editedText ? String(qb.editedText).slice(-220) : '', quality_passed: true, content: qb.editedText ? String(qb.editedText) : '' });\n}\n\nconst llmFail = safe('失败留痕');\nconst failNames = (llmFail && llmFail.llm_failure && Array.isArray(llmFail.nodes))\n  ? llmFail.nodes.map(String).join(',') : (llmFail && llmFail.node ? String(llmFail.node) : '');\nconst aCovered = (qa && qa.passed === false) || (draftA && draftA.item_id) || aOk;\nconst bCovered = (qb && qb.passed === false) || (draftB && draftB.item_id) || bOk;\n// K5: gate passed but the draft/publish chain never produced a record.\nif (qa && qa.passed === true && !draftA && !aCovered) {\n  chapters.push({ seq: meta.start_num, title: (ch1 && ch1.title) || '', outline: (ch1 && ch1.outline) || '', status: 'draft', words: Number(qa.chars || 0), fanqie_item_id: '', published_at: '', error: '质量门通过但草稿创建/发布链中断', summary: sumA || {}, ending_excerpt: '', quality_passed: true, content: qa.editedText || '' });\n}\nif (qb && qb.passed === true && !draftB && !bCovered) {\n  chapters.push({ seq: meta.start_num + 1, title: (ch2 && ch2.title) || '', outline: (ch2 && ch2.outline) || '', status: 'draft', words: Number(qb.chars || 0), fanqie_item_id: '', published_at: '', error: '质量门通过但草稿创建/发布链中断', summary: sumB || {}, ending_excerpt: '', quality_passed: true, content: qb.editedText || '' });\n}\nif (failNames) {\n  // K2: any LLM/chain failure fills every uncovered track so no\n  // chapter silently disappears (dependencies may never have run).\n  if (!aCovered && !(qa && qa.passed === false)) {\n    chapters.push({ seq: meta.start_num, title: (ch1 && ch1.title) || '', outline: (ch1 && ch1.outline) || '', status: 'draft', words: 0, fanqie_item_id: '', published_at: '', error: 'LLM链路失败：' + failNames, summary: {}, ending_excerpt: '', quality_passed: false, content: '' });\n  }\n  if (!bCovered && !(qb && qb.passed === false)) {\n    chapters.push({ seq: meta.start_num + 1, title: (ch2 && ch2.title) || '', outline: (ch2 && ch2.outline) || '', status: 'draft', words: 0, fanqie_item_id: '', published_at: '', error: 'LLM链路失败：' + failNames, summary: {}, ending_excerpt: '', quality_passed: false, content: '' });\n  }\n}\n\nconst payload = {\n  run_id: runId,\n  book_id: meta.book_id,\n  book_name: meta.book_name,\n  genre: outline.genre || '',\n  premise: outline.premise || meta.premise,\n  selling_point: '',\n  platform: meta.platform || 'fanqie',\n  tags: meta.tags || [],\n  abstract: meta.abstract || '',\n  protagonists: meta.protagonists || [],\n  volume_goal: meta.volume_goal || '',\n  outline: { premise: outline.premise, genre: outline.genre, title: outline.title, keywords: outline.keywords, bible: outline.bible || null, chapter1: ch1, chapter2: ch2 },\n  chapters: chapters,\n  costs: (() => {\n    const llmNodes = ['Planner出大纲','守护细纲','生成作品资料','写手A','写手B','润色A','润色B','审稿A','审稿B','读者审稿A','读者审稿B','主编终审A','主编终审B','提炼剧情A','提炼剧情B'];\n    const costs = [];\n    for (const nm of llmNodes) {\n      const d = safe(nm);\n      if (d && d.usage) costs.push({ node: nm, model: String(d.model || ''), prompt_tokens: Number(d.usage.prompt_tokens || 0), completion_tokens: Number(d.usage.completion_tokens || 0) });\n    }\n    return costs;\n  })()\n};\nconst fs = require('fs');\nconst p = require('path');\nconst root = $env.PIPELINE_ROOT || '';\nconst resultFile = root ? p.join(root, 'n8n_tmp', 'daily_result.json') : 'n8n_tmp/daily_result.json';\nfs.mkdirSync(p.dirname(resultFile), { recursive: true });\nfs.writeFileSync(resultFile, JSON.stringify(payload));\nreturn [{ json: { payload_b64: Buffer.from(JSON.stringify(payload)).toString('base64'), result_file: resultFile } }];"
+      },
+      "id": "n-summary",
+      "name": "汇总运行结果",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "command": "={{ 'cd /d ' + $env.PIPELINE_ROOT + ' && ' + $env.PYTHON_EXE + ' ' + (['tools/record_work.py', '--file', 'n8n_tmp/daily_result.json']).join(' ') }}",
+        "executeOnce": true
+      },
+      "id": "n-record",
+      "name": "记录作品资料",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        1980,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/agent/run",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({agent:'提炼剧情A', model:'deepseek-v4-flash', temperature:0.3, max_tokens:2400, novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；章纲：'+JSON.stringify($('解析大纲').item.json.chapter1)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+(((((($('润色A').item.json.choices||[])[0]||{}).message||{}).content||''))||'')}) }}",
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "id": "n-extract-a",
+      "name": "提炼剧情A",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        -360
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst resp = typeof raw === 'string' ? JSON.parse(raw) : raw;\nconst msg = resp && resp.choices && resp.choices[0] && resp.choices[0].message;\nconst text = (msg && typeof msg.content === 'string' && msg.content.trim())\n  ? msg.content\n  : (msg && typeof msg.reasoning_content === 'string' ? msg.reasoning_content : '');\nconst t = String(text).replace(/```json/g, '').replace(/```/g, '').trim();\nlet summary = null;\ntry { summary = JSON.parse(t); } catch {\n  const m = t.match(/\\{[\\s\\S]*\\}/);\n  if (m) { try { summary = JSON.parse(m[0]); } catch {} }\n}\nconst gate = $('质量门A').first().json;\nreturn [{ json: { ...gate, summary: summary || { summary: '', character_updates: {}, plot_events: [], foreshadowing_planted: [], foreshadowing_recovered: [] } } }];\n"
+      },
+      "id": "n-tidy-a",
+      "name": "整理剧情A",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1820,
+        -360
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/agent/run",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({agent:'提炼剧情B', model:'deepseek-v4-flash', temperature:0.3, max_tokens:2400, novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；章纲：'+JSON.stringify($('解析大纲').item.json.chapter2)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+(((((($('润色B').item.json.choices||[])[0]||{}).message||{}).content||''))||'')}) }}",
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "id": "n-extract-b",
+      "name": "提炼剧情B",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        40
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst resp = typeof raw === 'string' ? JSON.parse(raw) : raw;\nconst msg = resp && resp.choices && resp.choices[0] && resp.choices[0].message;\nconst text = (msg && typeof msg.content === 'string' && msg.content.trim())\n  ? msg.content\n  : (msg && typeof msg.reasoning_content === 'string' ? msg.reasoning_content : '');\nconst t = String(text).replace(/```json/g, '').replace(/```/g, '').trim();\nlet summary = null;\ntry { summary = JSON.parse(t); } catch {\n  const m = t.match(/\\{[\\s\\S]*\\}/);\n  if (m) { try { summary = JSON.parse(m[0]); } catch {} }\n}\nconst gate = $('质量门B').first().json;\nreturn [{ json: { ...gate, summary: summary || { summary: '', character_updates: {}, plot_events: [], foreshadowing_planted: [], foreshadowing_recovered: [] } } }];\n"
+      },
+      "id": "n-tidy-b",
+      "name": "整理剧情B",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1820,
+        40
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "command": "={{ 'cd /d ' + $env.PIPELINE_ROOT + ' && ' + $env.PYTHON_EXE + ' ' + (['novel_pipeline/backup.py', '--db', 'demo.db', '--backup-dir', 'backups']).join(' ') }}",
+        "executeOnce": true
+      },
+      "id": "n-backup",
+      "name": "备份数据库",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        120,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/agent/run",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({agent:'守护细纲', model:'deepseek-v4-flash', temperature:0.3, max_tokens:2000, novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'故事圣经：'+JSON.stringify((($('解析大纲').item.json.bible)||{}))+'；两章细纲：'+JSON.stringify({chapter1:$('解析大纲').item.json.chapter1,chapter2:$('解析大纲').item.json.chapter2})+'；记忆包：'+$('解析本地资料').first().json.writing_context}) }}",
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "onError": "continueErrorOutput",
+      "id": "n-guard",
+      "name": "守护细纲",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nconst out = { bible: ($('解析大纲').item.json.bible) || null, chapter1: $('解析大纲').item.json.chapter1, chapter2: $('解析大纲').item.json.chapter2, constraints: [], character_beats: {}, guard_passed: null, guard_issues: [] };\ntry {\n  const resp = (raw && raw.choices && raw.choices[0]) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : raw);\n  const msg = resp.choices && resp.choices[0] && resp.choices[0].message;\n  const text = (msg && typeof msg.content === 'string' && msg.content.trim()) ? msg.content : (msg && typeof msg.reasoning_content === 'string' ? msg.reasoning_content : '');\n  const t = String(text).replace(/```json/g, '').replace(/```/g, '').trim();\n  let g = null;\n  try { g = JSON.parse(t); } catch { const m = t.match(/\\{[\\s\\S]*\\}/); if (m) { try { g = JSON.parse(m[0]); } catch {} } }\n  if (g) { out.guard_passed = !!g.passed; out.guard_issues = Array.isArray(g.issues) ? g.issues : []; out.constraints = Array.isArray(g.constraints) ? g.constraints.filter(Boolean).slice(0, 8) : []; if (g.character_beats && typeof g.character_beats === 'object') out.character_beats = g.character_beats; }\n} catch {}\nreturn [{ json: out }];\n"
+      },
+      "id": "n-guard-parse",
+      "name": "解析守护",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1020,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/agent/run",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({agent:'读者审稿A', model:'deepseek-v4-flash', temperature:0.3, max_tokens:2000, novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；章纲：'+JSON.stringify($('解析大纲').item.json.chapter1)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+(((($('润色A').item.json.choices||[])[0]||{}).message||{}).content||'')}) }}",
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "onError": "continueErrorOutput",
+      "id": "n-reader-a",
+      "name": "读者审稿A",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/agent/run",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({agent:'读者审稿B', model:'deepseek-v4-flash', temperature:0.3, max_tokens:2000, novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；章纲：'+JSON.stringify($('解析大纲').item.json.chapter2)+'；前情提要：'+$('解析本地资料').first().json.writing_context+'；正文：'+(((($('润色B').item.json.choices||[])[0]||{}).message||{}).content||'')}) }}",
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "onError": "continueErrorOutput",
+      "id": "n-reader-b",
+      "name": "读者审稿B",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "command": "={{ 'cd /d ' + $env.PIPELINE_ROOT + ' && ' + $env.PYTHON_EXE + ' ' + (['tools/preflight.py', '--db', 'demo.db']).join(' ') }}",
+        "executeOnce": true
+      },
+      "onError": "continueRegularOutput",
+      "id": "n-preflight",
+      "name": "预检",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        260,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 2,
+        "output": "={{ (JSON.parse(($json.stdout||'{}')).ok) ? 0 : 1 }}",
+        "options": {}
+      },
+      "id": "n-preflight-if",
+      "name": "预检通过?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        400,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "command": "={{ 'cd /d ' + $env.PIPELINE_ROOT + ' && ' + $env.PYTHON_EXE + ' ' + (['tools/release_lock.py', '--db', 'demo.db']).join(' ') }}",
+        "executeOnce": true
+      },
+      "id": "n-stop",
+      "name": "结束",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        560,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://fanqienovel.com/api/author/chapter/chapter_list/v1",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded;charset=UTF-8"
+            },
+            {
+              "name": "Cookie",
+              "value": "={{ $env.FANQIE_COOKIE }}"
+            },
+            {
+              "name": "X-Secsdk-Csrf-Token",
+              "value": "={{ $env.FANQIE_CSRF_TOKEN }}"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
+            },
+            {
+              "name": "Origin",
+              "value": "https://fanqienovel.com"
+            },
+            {
+              "name": "Referer",
+              "value": "https://fanqienovel.com/main/writer/"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json, text/plain, */*"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "aid",
+              "value": "2503"
+            },
+            {
+              "name": "app_name",
+              "value": "muye_novel"
+            },
+            {
+              "name": "book_id",
+              "value": "={{ $('设定题材').first().json.book_id }}"
+            },
+            {
+              "name": "page_index",
+              "value": "0"
+            },
+            {
+              "name": "page_count",
+              "value": "50"
+            }
+          ]
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "n-verify-a",
+      "name": "复核发布A",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3000,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nlet resp = null;\ntry { resp = typeof raw.body === 'string' ? JSON.parse(raw.body) : (raw.body || raw); } catch { resp = null; }\nif (!resp || typeof resp !== 'object') { return [{ json: { status: 'unknown', item_id: '', found: false, error: '复核响应非JSON' } }]; }\nconst list = (resp && resp.data && Array.isArray(resp.data.item_list)) ? resp.data.item_list : [];\nconst itemId = ($('校验发布A').first().json.item_id) || '';\nconst found = list.find(x => String(x.item_id) === String(itemId));\nlet status = 'pending';\nif (found && Number(found.article_status) === 1) status = 'published';\nreturn [{ json: { status, item_id: itemId, found: !!found, article_status: found ? Number(found.article_status) : null } }];\n"
+      },
+      "id": "n-verify-parse-a",
+      "name": "解析复核A",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3140,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://fanqienovel.com/api/author/chapter/chapter_list/v1",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded;charset=UTF-8"
+            },
+            {
+              "name": "Cookie",
+              "value": "={{ $env.FANQIE_COOKIE }}"
+            },
+            {
+              "name": "X-Secsdk-Csrf-Token",
+              "value": "={{ $env.FANQIE_CSRF_TOKEN }}"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
+            },
+            {
+              "name": "Origin",
+              "value": "https://fanqienovel.com"
+            },
+            {
+              "name": "Referer",
+              "value": "https://fanqienovel.com/main/writer/"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json, text/plain, */*"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "aid",
+              "value": "2503"
+            },
+            {
+              "name": "app_name",
+              "value": "muye_novel"
+            },
+            {
+              "name": "book_id",
+              "value": "={{ $('设定题材').first().json.book_id }}"
+            },
+            {
+              "name": "page_index",
+              "value": "0"
+            },
+            {
+              "name": "page_count",
+              "value": "50"
+            }
+          ]
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "n-verify-b",
+      "name": "复核发布B",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3000,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json;\nlet resp = null;\ntry { resp = typeof raw.body === 'string' ? JSON.parse(raw.body) : (raw.body || raw); } catch { resp = null; }\nif (!resp || typeof resp !== 'object') { return [{ json: { status: 'unknown', item_id: '', found: false, error: '复核响应非JSON' } }]; }\nconst list = (resp && resp.data && Array.isArray(resp.data.item_list)) ? resp.data.item_list : [];\nconst itemId = ($('校验发布B').first().json.item_id) || '';\nconst found = list.find(x => String(x.item_id) === String(itemId));\nlet status = 'pending';\nif (found && Number(found.article_status) === 1) status = 'published';\nreturn [{ json: { status, item_id: itemId, found: !!found, article_status: found ? Number(found.article_status) : null } }];\n"
+      },
+      "id": "n-verify-parse-b",
+      "name": "解析复核B",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3140,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "command": "={{ 'cd /d ' + $env.PIPELINE_ROOT + ' && ' + $env.PYTHON_EXE + ' ' + (['tools/collect_reader_stats.py', '--db', 'demo.db']).join(' ') }}",
+        "executeOnce": true
+      },
+      "onError": "continueRegularOutput",
+      "id": "n-stats",
+      "name": "采集阅读数据",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        2240,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/agent/run",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({agent:'主编终审A', model:'deepseek-v4-flash', temperature:0.2, max_tokens:2000, novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；章纲：'+JSON.stringify($('解析大纲').item.json.chapter1)+'；逻辑审稿原始输出：'+(((($('审稿A').item.json.choices||[])[0]||{}).message||{}).content||'')+'；读者审稿原始输出：'+(((($('读者审稿A').item.json.choices||[])[0]||{}).message||{}).content||'')+'；正文前800字：'+(((((($('润色A').item.json.choices||[])[0]||{}).message||{}).content||''))||'').slice(0,800)}) }}",
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "onError": "continueErrorOutput",
+      "id": "n-eic-a",
+      "name": "主编终审A",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1720,
+        -360
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:8000/api/agent/run",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $env.PANEL_TOKEN ? 'Bearer ' + $env.PANEL_TOKEN : 'none' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({agent:'主编终审B', model:'deepseek-v4-flash', temperature:0.2, max_tokens:2000, novel_id:(($('解析本地资料').first().json.novel_id)||0), task:'角色卡：'+JSON.stringify((($('解析大纲').item.json.bible||{}).characters)||[])+'；人物关系：'+JSON.stringify((($('解析大纲').item.json.bible||{}).relationships)||[])+'；世界观规则：'+JSON.stringify((($('解析大纲').item.json.bible||{}).world_rules)||[])+'；章纲：'+JSON.stringify($('解析大纲').item.json.chapter2)+'；逻辑审稿原始输出：'+(((($('审稿B').item.json.choices||[])[0]||{}).message||{}).content||'')+'；读者审稿原始输出：'+(((($('读者审稿B').item.json.choices||[])[0]||{}).message||{}).content||'')+'；正文前800字：'+(((((($('润色B').item.json.choices||[])[0]||{}).message||{}).content||''))||'').slice(0,800)}) }}",
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "onError": "continueErrorOutput",
+      "id": "n-eic-b",
+      "name": "主编终审B",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1720,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "novel-manual-run",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "n-manual-run",
+      "name": "手动触发",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.2,
+      "position": [
+        -220,
+        0
+      ],
+      "webhookId": "wh-5e47131823fa4e0e"
+    },
+    {
+      "parameters": {
+        "command": "={{ 'cd /d ' + $env.PIPELINE_ROOT + ' && ' + $env.PYTHON_EXE + ' ' + (['tools/check_stock.py', '--db', 'demo.db']).join(' ') }}",
+        "executeOnce": true
+      },
+      "id": "n-check-stock",
+      "name": "查存稿",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        -460,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 2,
+        "output": "={{ (JSON.parse(($json.stdout||'{}')).need || 0) > 0 ? 0 : 1 }}",
+        "options": {}
+      },
+      "id": "n-stock-ok",
+      "name": "存稿充足?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -460,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "command": "={{ 'cd /d ' + $env.PIPELINE_ROOT + ' && ' + $env.PYTHON_EXE + ' ' + (['tools/publish_stock.py', '--db', 'demo.db']).join(' ') }}",
+        "executeOnce": true
+      },
+      "id": "n-publish-stock",
+      "name": "发布存稿",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        -80,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "command": "={{ 'cd /d ' + $env.PIPELINE_ROOT + ' && ' + $env.PYTHON_EXE + ' ' + (['tools/write_diaries.py', '--mode', 'daily', '--db', 'demo.db', '--novel-id', JSON.parse($('读当前书').first().json.stdout || '{}').novel_id || 0]).join(' ') }}",
+        "executeOnce": true
+      },
+      "id": "n-diaries",
+      "name": "全员写日记",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        520,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "command": "={{ 'cd /d ' + $env.PIPELINE_ROOT + ' && ' + $env.PYTHON_EXE + ' ' + (['tools/novel_knowledge.py', '--sync-latest', '--db', 'demo.db']).join(' ') }}",
+        "executeOnce": true
+      },
+      "onError": "continueRegularOutput",
+      "id": "n-knowledge-sync",
+      "name": "同步设定知识库",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        2400,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "command": "={{ 'cd /d ' + $env.PIPELINE_ROOT + ' && ' + $env.PYTHON_EXE + ' ' + (['tools/auto_fill_actions.py', '--db', 'demo.db']).join(' ') }}",
+        "executeOnce": true
+      },
+      "onError": "continueRegularOutput",
+      "id": "n-auto-fill-actions",
+      "name": "回填行动项",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        2520,
+        700
+      ]
+    },
+    {
+      "id": "n-merge-fallback",
+      "name": "合并兜底",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        880,
+        940
+      ],
+      "parameters": {
+        "jsCode": "const grab = (name) => { try { return $('' + name).first().json; } catch { return null; } };\nconst qa = grab('质量门A');\nconst qb = grab('质量门B');\nconst draftA = grab('解析草稿A');\nconst draftB = grab('解析草稿B');\nconst pubA = grab('校验发布A');\nconst pubB = grab('校验发布B');\nconst failed = grab('失败留痕');\nreturn [{ json: {\n  ok: true,\n  a_passed: !!(qa && qa.passed !== false),\n  b_passed: !!(qb && qb.passed !== false),\n  draftA, draftB, pubA, pubB, failed,\n} }];"
+      }
+    },
+    {
+      "id": "n-bible-init",
+      "name": "初始化设定知识库",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        320,
+        700
+      ],
+      "parameters": {
+        "command": "={{ 'cd /d ' + $env.PIPELINE_ROOT + ' && ' + $env.PYTHON_EXE + ' ' + (['tools/novel_knowledge.py', '--sync-bible', 'n8n_tmp/bible.json', '--db', 'demo.db']).join(' ') }}",
+        "executeOnce": true
+      }
+    },
+    {
+      "id": "n-current-book",
+      "name": "读当前书",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        80,
+        460
+      ],
+      "parameters": {
+        "command": "={{ 'cd /d ' + $env.PIPELINE_ROOT + ' && ' + $env.PYTHON_EXE + ' ' + (['tools/current_book.py', '--db', 'demo.db']).join(' ') }}",
+        "executeOnce": true
+      }
+    },
+    {
+      "id": "n-llm-failure-trace",
+      "name": "失败留痕",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        640,
+        980
+      ],
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst names = items.map((it) => {\n  const j = (it && it.json) || {};\n  const direct = (j.node && (j.node.name || j.name)) || j.nodeName;\n  const nested = j.error && j.error.node && j.error.node.name;\n  const raw = (direct || nested || '').toString();\n  return raw || 'unknown';\n}).filter(Boolean);\nreturn [{ json: { llm_failure: true, nodes: names } }];"
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nreturn items.length ? items : [{ json: { empty: true } }];",
+        "alwaysOutputData": true
+      },
+      "id": "n-nonempty-guard",
+      "name": "非空兜底",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1700,
+        480
+      ]
+    }
+  ],
+  "connections": {
+    "每日触发": {
+      "main": [
+        [
+          {
+            "node": "备份数据库",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "设定题材": {
+      "main": [
+        [
+          {
+            "node": "查章节号",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Planner出大纲": {
+      "main": [
+        [
+          {
+            "node": "解析大纲",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析大纲": {
+      "main": [
+        [
+          {
+            "node": "初始化设定知识库",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "写手A": {
+      "main": [
+        [
+          {
+            "node": "润色A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "润色A": {
+      "main": [
+        [
+          {
+            "node": "审稿A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "审稿A": {
+      "main": [
+        [
+          {
+            "node": "读者审稿A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "质量门A": {
+      "main": [
+        [
+          {
+            "node": "提炼剧情A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "排版A": {
+      "main": [
+        [
+          {
+            "node": "新建草稿A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "写手B": {
+      "main": [
+        [
+          {
+            "node": "润色B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "润色B": {
+      "main": [
+        [
+          {
+            "node": "审稿B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "审稿B": {
+      "main": [
+        [
+          {
+            "node": "读者审稿B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "质量门B": {
+      "main": [
+        [
+          {
+            "node": "提炼剧情B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "排版B": {
+      "main": [
+        [
+          {
+            "node": "新建草稿B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "新建草稿A": {
+      "main": [
+        [
+          {
+            "node": "解析草稿A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析草稿A": {
+      "main": [
+        [
+          {
+            "node": "保存内容A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "提交发布A": {
+      "main": [
+        [
+          {
+            "node": "校验发布A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "新建草稿B": {
+      "main": [
+        [
+          {
+            "node": "解析草稿B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析草稿B": {
+      "main": [
+        [
+          {
+            "node": "保存内容B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "提交发布B": {
+      "main": [
+        [
+          {
+            "node": "校验发布B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "校验发布A": {
+      "main": [
+        [
+          {
+            "node": "复核发布A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "校验发布B": {
+      "main": [
+        [
+          {
+            "node": "复核发布B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "保存内容A": {
+      "main": [
+        [
+          {
+            "node": "提交发布A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "保存内容B": {
+      "main": [
+        [
+          {
+            "node": "提交发布B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "查章节号": {
+      "main": [
+        [
+          {
+            "node": "算章节号",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "算章节号": {
+      "main": [
+        [
+          {
+            "node": "读本地资料",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "读本地资料": {
+      "main": [
+        [
+          {
+            "node": "解析本地资料",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析本地资料": {
+      "main": [
+        [
+          {
+            "node": "生成作品资料",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "生成作品资料": {
+      "main": [
+        [
+          {
+            "node": "解析作品资料",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析作品资料": {
+      "main": [
+        [
+          {
+            "node": "需要更新作品资料?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "需要更新作品资料?": {
+      "main": [
+        [
+          {
+            "node": "提交作品资料",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "过桥",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "提交作品资料": {
+      "main": [
+        [
+          {
+            "node": "过桥",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "过桥": {
+      "main": [
+        [
+          {
+            "node": "Planner出大纲",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "汇总运行结果": {
+      "main": [
+        [
+          {
+            "node": "记录作品资料",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "提炼剧情A": {
+      "main": [
+        [
+          {
+            "node": "整理剧情A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "整理剧情A": {
+      "main": [
+        [
+          {
+            "node": "排版A",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "写手B",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "合并兜底",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "提炼剧情B": {
+      "main": [
+        [
+          {
+            "node": "整理剧情B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "整理剧情B": {
+      "main": [
+        [
+          {
+            "node": "排版B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "备份数据库": {
+      "main": [
+        [
+          {
+            "node": "预检",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "守护细纲": {
+      "main": [
+        [
+          {
+            "node": "解析守护",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析守护": {
+      "main": [
+        [
+          {
+            "node": "写手A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "读者审稿A": {
+      "main": [
+        [
+          {
+            "node": "主编终审A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "读者审稿B": {
+      "main": [
+        [
+          {
+            "node": "主编终审B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "预检": {
+      "main": [
+        [
+          {
+            "node": "预检通过?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "预检通过?": {
+      "main": [
+        [
+          {
+            "node": "读当前书",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "结束",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "复核发布A": {
+      "main": [
+        [
+          {
+            "node": "解析复核A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "复核发布B": {
+      "main": [
+        [
+          {
+            "node": "解析复核B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "记录作品资料": {
+      "main": [
+        [
+          {
+            "node": "采集阅读数据",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "主编终审A": {
+      "main": [
+        [
+          {
+            "node": "质量门A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "主编终审B": {
+      "main": [
+        [
+          {
+            "node": "质量门B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "失败留痕",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "手动触发": {
+      "main": [
+        [
+          {
+            "node": "备份数据库",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "查存稿": {
+      "main": [
+        [
+          {
+            "node": "存稿充足?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "存稿充足?": {
+      "main": [
+        [
+          {
+            "node": "设定题材",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "发布存稿",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "采集阅读数据": {
+      "main": [
+        [
+          {
+            "node": "全员写日记",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "发布存稿": {
+      "main": [
+        [
+          {
+            "node": "采集阅读数据",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "全员写日记": {
+      "main": [
+        [
+          {
+            "node": "同步设定知识库",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "同步设定知识库": {
+      "main": [
+        [
+          {
+            "node": "回填行动项",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "回填行动项": {
+      "main": [
+        [
+          {
+            "node": "结束",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "初始化设定知识库": {
+      "main": [
+        [
+          {
+            "node": "守护细纲",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "读当前书": {
+      "main": [
+        [
+          {
+            "node": "查存稿",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "非空兜底": {
+      "main": [
+        [
+          {
+            "node": "汇总运行结果",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "合并兜底": {
+      "main": [
+        [
+          {
+            "node": "非空兜底",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "pinData": {}
+}

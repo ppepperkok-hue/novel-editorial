@@ -19,6 +19,7 @@ async function postJSON(path, body) {
 export const getDashboard = () => getJSON("/api/dashboard");
 export const getControl = () => getJSON("/api/control");
 export const postControl = (payload) => postJSON("/api/control", payload);
+export const getFlow = () => getJSON("/api/flow");
 export const getAgents = () => getJSON("/api/agents");
 export const postAgents = (payload) => postJSON("/api/agents", payload);
 export const getCost = () => getJSON("/api/cost");

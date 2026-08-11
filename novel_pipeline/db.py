@@ -264,6 +264,7 @@ CREATE TABLE IF NOT EXISTS daily_runs (
     run_id TEXT NOT NULL UNIQUE,
     novel_id INTEGER DEFAULT 0,
     trigger TEXT DEFAULT 'scheduled',
+    source TEXT DEFAULT 'scheduler',
     status TEXT NOT NULL DEFAULT 'running',
     started_at TEXT DEFAULT '',
     finished_at TEXT DEFAULT '',
@@ -355,6 +356,9 @@ def _migrate(conn):
     weekly_cols = {r["name"] for r in conn.execute("PRAGMA table_info(weekly_meetings)")}
     if "session_id" not in weekly_cols:
         conn.execute("ALTER TABLE weekly_meetings ADD COLUMN session_id INTEGER DEFAULT 0")
+    run_cols = {r["name"] for r in conn.execute("PRAGMA table_info(daily_runs)")}
+    if "source" not in run_cols:
+        conn.execute("ALTER TABLE daily_runs ADD COLUMN source TEXT DEFAULT 'scheduler'")
     conn.executescript(
         """
         CREATE INDEX IF NOT EXISTS idx_chapters_novel_seq ON chapters(novel_id, seq);

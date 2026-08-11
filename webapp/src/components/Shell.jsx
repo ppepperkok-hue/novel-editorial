@@ -7,6 +7,7 @@ export const NAV = [
   { id: "agents", label: "Agent 管理", icon: "◇" },
   { id: "cost", label: "成本中心", icon: "¥" },
   { id: "executions", label: "执行记录", icon: "⏱" },
+  { id: "flow", label: "链路", icon: "⬡" },
   { id: "reader", label: "阅读数据", icon: "◔" },
   { id: "settings", label: "系统设置", icon: "⚙" },
   { id: "meetings", label: "会议中心", icon: "▦" },
@@ -20,6 +21,7 @@ export const PAGE_META = {
   agents: ["Agent 管理", "编辑每个写作智能体的提示词、模型与温度，保存后一键部署"],
   cost: ["成本中心", "API 花费按日与按节点统计，控制月预算"],
   executions: ["执行记录", "日更与周会工作流的最近执行历史与失败详情"],
+  flow: ["链路视图", "日更调度全链路拓扑：预检、生成、双轨、发布与收尾，不运行也能人工审查"],
   reader: ["阅读数据", "完读率、追读率趋势与读者反馈报告"],
   settings: ["系统设置", "运行开关、预算、目标字数、更新时间与风格微调"],
   meetings: ["会议中心", "发起专题会议、围观 Agent 讨论、历次会议记录与决策"],
@@ -88,7 +90,7 @@ export function Sidebar({ page, go, mini, toggleMini, online, liveSnapshot, data
       <div className="sidebar-foot">
         <div className={`mb-2 flex items-center ${mini ? "justify-center" : ""}`}>
           <span className={`dot ${online ? "ok" : "bad"}`} />
-          {!mini && <>n8n {online ? "在线" : "离线"}</>}
+          {!mini && <>调度器 {online ? "在线" : "离线"}</>}
         </div>
         {!mini && (
           <>

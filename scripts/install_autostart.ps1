@@ -1,12 +1,11 @@
 <#
 Unified startup registration for the pipeline services.
 
-Registers two launch items in the user Startup folder:
-  - NovelPipeline-n8n.vbs   -> scripts/start_n8n.ps1 (loads project env, hidden)
+Registers the pipeline API in the user Startup folder (n8n retired):
   - NovelPipeline-api.vbs   -> pythonw web_api on 127.0.0.1:8000
 
 The Electron panel has its own auto-launch switch (Settings page), so it is
-not registered here. Old ad-hoc launchers (n8n-start.vbs,
+not registered here. Old launchers (NovelPipeline-n8n.vbs, n8n-start.vbs,
 novel-pipeline-8000.vbs, novel-pipeline-8001.vbs) are removed on enable.
 
 Usage:
@@ -30,10 +29,10 @@ $PipelineRoot = (Resolve-Path -LiteralPath $PipelineRoot).Path
 $StartupDir = [Environment]::GetFolderPath("Startup")
 
 $ManagedNames = @(
-    "NovelPipeline-n8n.vbs",
     "NovelPipeline-api.vbs"
 )
 $LegacyNames = @(
+    "NovelPipeline-n8n.vbs",
     "n8n-start.vbs",
     "novel-pipeline-8000.vbs",
     "novel-pipeline-8001.vbs"
@@ -51,15 +50,6 @@ function Resolve-Pythonw {
         throw "pythonw.exe not found next to $exe"
     }
     return $pyw
-}
-
-function New-N8nVbs {
-    $ps1 = Join-Path $PipelineRoot "scripts\start_n8n.ps1"
-    return @"
-Set ws = CreateObject("WScript.Shell")
-ws.CurrentDirectory = "$PipelineRoot"
-ws.Run "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""$ps1""", 0, False
-"@
 }
 
 function New-ApiVbs {
@@ -93,7 +83,6 @@ if ($Disable) {
 }
 
 $targets = @{
-    (Join-Path $StartupDir "NovelPipeline-n8n.vbs") = (New-N8nVbs)
     (Join-Path $StartupDir "NovelPipeline-api.vbs") = (New-ApiVbs)
 }
 
@@ -114,4 +103,4 @@ foreach ($k in $targets.Keys) {
     Set-Content -LiteralPath $k -Value $targets[$k] -Encoding ASCII
     Write-Output "registered: $k"
 }
-Write-Output "autostart enabled (n8n + web_api:8000)"
+Write-Output "autostart enabled (web_api:8000)"

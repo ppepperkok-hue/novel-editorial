@@ -71,33 +71,29 @@ def fetch_stats(book_id):
         return json.loads(r.read().decode("utf-8", "ignore"))
 
 
-def main():
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")
-    except (AttributeError, ValueError):
-        pass
-    ap = argparse.ArgumentParser(description="采集番茄章节完读率/追读率")
-    ap.add_argument("--db", default="demo.db")
-    ap.add_argument("--env-file", default=str(ENV_FILE))
-    args = ap.parse_args()
+def run(db_path, env_file=None, out_csv=None):
+    """Collect per-chapter reader stats into the CSV consumed by data_feedback.
 
-    load_env(args.env_file)
+    Library entry shared by the CLI and the Python scheduler.
+    """
+    if env_file:
+        load_env(env_file)
     book_id = os.environ.get("FANQIE_BOOK_ID", "")
     try:
         payload = fetch_stats(book_id)
     except Exception as e:  # noqa: BLE001
-        print(json.dumps({"ok": False, "error": str(e)[:200]}, ensure_ascii=False))
-        return 0
+        return {"ok": False, "error": str(e)[:200]}
     if payload.get("code") != 0:
-        print(json.dumps({"ok": False, "error": str(payload.get("message") or payload)[:200]}, ensure_ascii=False))
-        return 0
+        return {
+            "ok": False,
+            "error": str(payload.get("message") or payload)[:200],
+        }
 
-    db_path = Path(args.db)
-    if not db_path.is_absolute():
-        db_path = ROOT / db_path
     conn = db.connect(db_path)
     item_to_seq = {}
-    for r in conn.execute("SELECT seq, fanqie_item_id FROM chapters WHERE fanqie_item_id != ''"):
+    for r in conn.execute(
+        "SELECT seq, fanqie_item_id FROM chapters WHERE fanqie_item_id != ''"
+    ):
         item_to_seq[str(r["fanqie_item_id"])] = r["seq"]
     conn.close()
 
@@ -118,18 +114,29 @@ def main():
             }
         )
 
-    OUT_CSV.parent.mkdir(exist_ok=True)
-    with OUT_CSV.open("w", newline="", encoding="utf-8-sig") as f:
+    target = Path(out_csv) if out_csv else OUT_CSV
+    target.parent.mkdir(exist_ok=True)
+    with target.open("w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=["chapter", "finish_rate", "follow_rate"])
         w.writeheader()
         w.writerows(rows)
+    return {"ok": True, "chapters": len(rows), "file": str(target)}
 
-    print(
-        json.dumps(
-            {"ok": True, "chapters": len(rows), "file": str(OUT_CSV)},
-            ensure_ascii=False,
-        )
-    )
+
+def main():
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError):
+        pass
+    ap = argparse.ArgumentParser(description="采集番茄章节完读率/追读率")
+    ap.add_argument("--db", default="demo.db")
+    ap.add_argument("--env-file", default=str(ENV_FILE))
+    args = ap.parse_args()
+
+    db_path = Path(args.db)
+    if not db_path.is_absolute():
+        db_path = ROOT / db_path
+    print(json.dumps(run(db_path, env_file=args.env_file), ensure_ascii=False))
 
 
 if __name__ == "__main__":

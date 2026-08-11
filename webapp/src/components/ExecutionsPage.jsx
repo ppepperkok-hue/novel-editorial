@@ -4,6 +4,8 @@ import { fmtRelative } from "./ui.jsx";
 
 const STATUS = {
   success: ["成功", "chip-ok"],
+  completed: ["成功", "chip-ok"],
+  partial: ["部分成功", "chip-warn"],
   failed: ["失败", "chip-bad"],
   error: ["失败", "chip-bad"],
   running: ["运行中", "chip-warn"],
@@ -14,6 +16,8 @@ const STATUS = {
 
 const RUN_STATUS = {
   success: ["成功", "chip-ok"],
+  completed: ["成功", "chip-ok"],
+  partial: ["部分成功", "chip-warn"],
   failed: ["失败", "chip-bad"],
   error: ["失败", "chip-bad"],
   crashed: ["崩溃", "chip-bad"],
@@ -58,7 +62,7 @@ export default function ExecutionsPage({ snapshot }) {
         const r = await getDailyRuns(20);
         if (alive) setRuns(r.runs || []);
       } catch (e) {
-        /* n8n offline: local records stay visible; ignore here */
+        /* backend offline: local records stay visible; ignore here */
       }
     };
     load();
@@ -100,7 +104,7 @@ export default function ExecutionsPage({ snapshot }) {
     <div className="flex flex-col gap-4">
       {error ? (
         <div className="rounded-lg border border-red-900 bg-red-950/40 px-4 py-2.5 text-sm text-red-400">
-          n8n 执行记录不可达：{error}
+          执行记录不可达：{error}
         </div>
       ) : null}
 
@@ -128,7 +132,10 @@ export default function ExecutionsPage({ snapshot }) {
       <div className="panel p-4">
         <div className="mb-2 flex items-center justify-between">
           <div className="text-sm font-bold">日更运行留痕</div>
-          <span className="muted text-xs">本地持久化，n8n 离线也可回看</span>
+          <div className="flex items-center gap-2">
+            <span className="muted text-xs">本地持久化，离线也可回看</span>
+            <a className="btn !px-3 !py-1 text-xs" href="#flow">⬡ 链路</a>
+          </div>
         </div>
         {runs.length ? (
           <div className="flex flex-col gap-1.5">
@@ -210,7 +217,7 @@ export default function ExecutionsPage({ snapshot }) {
                 );
               })}
               {!rows.length && !error ? (
-                <tr><td colSpan={7} className="empty">暂无执行记录（n8n 可能未运行过工作流）</td></tr>
+                <tr><td colSpan={7} className="empty">暂无执行记录，日更运行后自动写入</td></tr>
               ) : null}
             </tbody>
           </table>

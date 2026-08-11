@@ -201,6 +201,117 @@ def publish_chapter(conn, chapter, env):
     return True, item_id, ""
 
 
+def publish_batch(conn, novel_id, target, env):
+    """Publish up to `target` reviewed chapters of `novel_id` to Fanqie.
+
+    Library entry shared by the CLI and the Python scheduler. Keeps the n8n
+    stock-publish semantics: publish, verify, update status/publish_logs,
+    decrement finish_remaining and stop daily runs when a book ends.
+    """
+    novel = conn.execute(
+        "SELECT id, status, finish_remaining FROM novels WHERE id=?",
+        (novel_id,),
+    ).fetchone()
+    if novel is None or novel["status"] == "finished":
+        return {
+            "target": target,
+            "published": 0,
+            "failures": [],
+            "warnings": ["作品已完结或无此作品，停止发布"],
+        }
+    rows = conn.execute(
+        "SELECT c.id, c.novel_id, c.seq, c.title, c.status, "
+        "COALESCE(cc.content, '') AS content "
+        "FROM chapters c LEFT JOIN chapter_content cc ON cc.chapter_id=c.id "
+        "WHERE c.status='reviewed' AND c.novel_id=? ORDER BY c.seq LIMIT ?",
+        (novel_id, target),
+    ).fetchall()
+    if not rows:
+        return {
+            "target": target,
+            "published": 0,
+            "failures": [],
+            "warnings": ["存稿池为空"],
+        }
+
+    published = 0
+    failures = []
+    warnings = []
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    for ch in rows:
+        try:
+            ok, item_id, error = publish_chapter(conn, ch, env)
+        except urllib.error.HTTPError as e:
+            ok, item_id, error = False, None, f"HTTP {e.code}"
+        except Exception as e:  # noqa: BLE001
+            ok, item_id, error = False, None, str(e)[:200]
+        if ok:
+            if error:
+                warnings.append({"chapter": ch["seq"], "warning": error})
+                alerts = ROOT / "alerts.log"
+                with alerts.open("a", encoding="utf-8") as f:
+                    f.write(
+                        f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
+                        f"章节 {ch['seq']} 发布复核警告：{error}\n"
+                    )
+            conn.execute(
+                "UPDATE chapters SET status='published', fanqie_item_id=?, "
+                "published_at=? WHERE id=?",
+                (item_id, now, ch["id"]),
+            )
+            conn.execute(
+                "INSERT INTO publish_logs(chapter_id,platform,action,result,error,ai_declared,created_at) "
+                "VALUES(?,?,?,?,?,?,datetime('now','localtime'))",
+                (ch["id"], "fanqie", "publish", "success", "", 1),
+            )
+            published += 1
+            if novel["finish_remaining"] and novel["finish_remaining"] > 0:
+                remaining = novel["finish_remaining"] - 1
+                if remaining <= 0:
+                    conn.execute(
+                        "UPDATE novels SET status='finished', finish_remaining=0 WHERE id=?",
+                        (novel["id"],),
+                    )
+                    conn.execute(
+                        "UPDATE settings SET value='false' WHERE key='daily_enabled'"
+                    )
+                    alerts = ROOT / "alerts.log"
+                    with alerts.open("a", encoding="utf-8") as f:
+                        f.write(
+                            f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
+                            "小说已完结：收尾完成，日更已自动停止，请到番茄后台标记完结\n"
+                        )
+                else:
+                    conn.execute(
+                        "UPDATE novels SET finish_remaining=? WHERE id=?",
+                        (remaining, novel["id"]),
+                    )
+        else:
+            conn.execute(
+                "INSERT INTO publish_logs(chapter_id,platform,action,result,error,ai_declared,created_at) "
+                "VALUES(?,?,?,?,?,?,datetime('now','localtime'))",
+                (ch["id"], "fanqie", "publish", "failed", error, 1),
+            )
+            failures.append({"chapter": ch["seq"], "error": error})
+        conn.commit()
+    summary = {
+        "target": target,
+        "published": published,
+        "failures": failures,
+        "warnings": warnings,
+    }
+    audit.log(
+        conn,
+        "publish",
+        "stock_batch",
+        target_type="novel",
+        target_id=novel_id,
+        detail=summary,
+        source="publish",
+    )
+    return summary
+
+
 def main():
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -253,92 +364,7 @@ def main():
             )
             conn.commit()
 
-        rows = conn.execute(
-            "SELECT c.id, c.novel_id, c.seq, c.title, c.status, "
-            "COALESCE(cc.content, '') AS content "
-            "FROM chapters c LEFT JOIN chapter_content cc ON cc.chapter_id=c.id "
-            "WHERE c.status='reviewed' AND c.novel_id=? ORDER BY c.seq LIMIT ?",
-            (novel_id, target),
-        ).fetchall()
-        if not rows:
-            print(json.dumps({"ok": True, "published": 0, "note": "存稿池为空"}, ensure_ascii=False))
-            return
-
-        published = 0
-        failures = []
-        warnings = []
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        for ch in rows:
-            try:
-                ok, item_id, error = publish_chapter(conn, ch, env)
-            except urllib.error.HTTPError as e:
-                ok, item_id, error = False, None, f"HTTP {e.code}"
-            except Exception as e:  # noqa: BLE001
-                ok, item_id, error = False, None, str(e)[:200]
-            if ok:
-                if error:
-                    warnings.append({"chapter": ch["seq"], "warning": error})
-                    alerts = ROOT / "alerts.log"
-                    with alerts.open("a", encoding="utf-8") as f:
-                        f.write(
-                            f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
-                            f"章节 {ch['seq']} 发布复核警告：{error}\n"
-                        )
-                conn.execute(
-                    "UPDATE chapters SET status='published', fanqie_item_id=?, "
-                    "published_at=? WHERE id=?",
-                    (item_id, now, ch["id"]),
-                )
-                conn.execute(
-                    "INSERT INTO publish_logs(chapter_id,platform,action,result,error,ai_declared,created_at) "
-                    "VALUES(?,?,?,?,?,?,datetime('now','localtime'))",
-                    (ch["id"], "fanqie", "publish", "success", "", 1),
-                )
-                published += 1
-                if novel and novel["finish_remaining"] and novel["finish_remaining"] > 0:
-                    remaining = novel["finish_remaining"] - 1
-                    if remaining <= 0:
-                        conn.execute(
-                            "UPDATE novels SET status='finished', finish_remaining=0 WHERE id=?",
-                            (novel["id"],),
-                        )
-                        conn.execute(
-                            "UPDATE settings SET value='false' WHERE key='daily_enabled'"
-                        )
-                        alerts = ROOT / "alerts.log"
-                        with alerts.open("a", encoding="utf-8") as f:
-                            f.write(
-                                f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
-                                "小说已完结：收尾完成，日更已自动停止，请到番茄后台标记完结\n"
-                            )
-                    else:
-                        conn.execute(
-                            "UPDATE novels SET finish_remaining=? WHERE id=?",
-                            (remaining, novel["id"]),
-                        )
-            else:
-                conn.execute(
-                    "INSERT INTO publish_logs(chapter_id,platform,action,result,error,ai_declared,created_at) "
-                    "VALUES(?,?,?,?,?,?,datetime('now','localtime'))",
-                    (ch["id"], "fanqie", "publish", "failed", error, 1),
-                )
-                failures.append({"chapter": ch["seq"], "error": error})
-            conn.commit()
-        summary = {
-            "target": target,
-            "published": published,
-            "failures": failures,
-            "warnings": warnings,
-        }
-        audit.log(
-            conn,
-            "publish",
-            "stock_batch",
-            target_type="novel",
-            target_id=novel_id,
-            detail=summary,
-            source="publish",
-        )
+        summary = publish_batch(conn, novel_id, target, env)
         print(json.dumps({"ok": True, **summary}, ensure_ascii=False))
     finally:
         conn.close()

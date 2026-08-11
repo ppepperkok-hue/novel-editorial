@@ -7,6 +7,7 @@ import ChaptersPage from "./components/ChaptersPage.jsx";
 import AgentsPage from "./components/AgentsPage.jsx";
 import CostPage from "./components/CostPage.jsx";
 import ExecutionsPage from "./components/ExecutionsPage.jsx";
+import FlowPage from "./components/FlowPage.jsx";
 import ReaderPage from "./components/ReaderPage.jsx";
 import SettingsPage from "./components/SettingsPage.jsx";
 import CommandPalette from "./components/CommandPalette.jsx";
@@ -86,7 +87,6 @@ export default function App() {
   useEffect(() => {
     const es = subscribeEvents((snap) => {
       setLiveSnapshot(snap);
-      setControl((prev) => (prev ? { ...prev, workflows: snap.workflows } : prev));
     });
     return () => es.close();
   }, []);
@@ -148,8 +148,7 @@ export default function App() {
     });
   };
 
-  const wf = control?.workflows || {};
-  const online = wf.daily?.online || wf.weekly?.online;
+  const online = Boolean(control?.scheduler);
 
   if (!data) {
     return (
@@ -211,6 +210,7 @@ export default function App() {
             {page === "agents" && <AgentsPage pushToast={pushToast} />}
             {page === "cost" && <CostPage data={data} />}
             {page === "executions" && <ExecutionsPage snapshot={liveSnapshot} />}
+            {page === "flow" && <FlowPage />}
             {page === "reader" && <ReaderPage data={data} />}
             {page === "settings" && <SettingsPage data={data} onRefresh={refresh} pushToast={pushToast} theme={theme} onThemeChange={changeTheme} />}
             {page === "meetings" && <MeetingsPage />}

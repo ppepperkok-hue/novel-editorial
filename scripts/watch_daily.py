@@ -1,46 +1,27 @@
-"""Watch the running daily workflow via n8n executions + local DB."""
+"""Watch the running daily scheduler via local daily_runs + DB (de-n8n)."""
 
-import json
-import os
 import sys
 import time
-import urllib.request
 import sqlite3
 from pathlib import Path
 
-DB = r"E:\code\novel-pipeline\demo.db"
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-from novel_pipeline import config  # noqa: E402
-
-KEY = config.env_value("N8N_API_KEY", "")
-
-
-def n8n_get(path):
-    req = urllib.request.Request(
-        "http://127.0.0.1:5678/api/v1" + path,
-        headers={"X-N8N-API-KEY": KEY},
-        method="GET",
-    )
-    return json.loads(urllib.request.urlopen(req, timeout=15).read().decode("utf-8"))
-
-
-def n8n_exec():
-    conn = sqlite3.connect(Path.home() / ".n8n" / "database.sqlite")
-    conn.row_factory = sqlite3.Row
-    try:
-        r = conn.execute(
-            "SELECT id, status, startedAt, stoppedAt FROM execution_entity "
-            "WHERE workflowId='SkLUnm3uRyBSY84F' ORDER BY id DESC LIMIT 1"
-        ).fetchone()
-        return dict(r) if r else {}
-    finally:
-        conn.close()
-
+DB = str(ROOT / "demo.db")
 
 def snapshot():
-    latest = n8n_exec()
+    from novel_pipeline import db as pipeline_db
+
+    pconn = pipeline_db.connect(DB)
+    try:
+        row = pconn.execute(
+            "SELECT run_id, status, started_at, finished_at FROM daily_runs "
+            "ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        latest = dict(row) if row else {}
+        latest["id"] = latest.get("run_id")
+    finally:
+        pconn.close()
     conn = sqlite3.connect(DB)
     conn.row_factory = sqlite3.Row
     try:
@@ -96,9 +77,10 @@ def main():
             )
         for p in s["publishes"][-3:]:
             print(f"  pub ch{p['chapter_id']} {p['result']} err={p['error'] or '-'}")
-        if s["exec"].get("status") in ("success", "error", "crashed", "failed"):
+        if s["exec"].get("status") in ("completed", "partial", "failed", "error", "running"):
             print("EXEC DONE:", s["exec"]["status"])
-            break
+            if s["exec"]["status"] != "running":
+                break
         time.sleep(30)
 
 

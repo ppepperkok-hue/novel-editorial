@@ -525,6 +525,39 @@ textarea.input {
 .sidebar-foot .dot.ok { background: var(--ok); box-shadow: 0 0 8px rgba(82, 196, 26, 0.7); }
 .sidebar-foot .dot.bad { background: var(--bad); box-shadow: 0 0 8px rgba(255, 77, 79, 0.6); }
 
+/* 链路视图 */
+.flow-canvas { height: 640px; width: 100%; }
+.flow-node {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-soft);
+  color: var(--text);
+  font-size: 12px;
+  padding: 8px 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+.flow-node.flow-ok { border-color: rgba(34, 197, 94, 0.65); }
+.flow-node.flow-warn { border-color: rgba(245, 158, 11, 0.7); }
+.flow-node.flow-bad { border-color: rgba(239, 68, 68, 0.75); }
+.flow-node.flow-run {
+  border-color: rgba(59, 130, 246, 0.9);
+  animation: flow-pulse 1.6s ease-in-out infinite;
+}
+.flow-node.flow-failed {
+  border-width: 2px;
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.14);
+}
+@keyframes flow-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.45); }
+  50% { box-shadow: 0 0 0 8px rgba(59, 130, 246, 0); }
+}
+.flow-edge.flow-ok { stroke: rgba(34, 197, 94, 0.55); }
+.flow-edge.flow-warn { stroke: rgba(245, 158, 11, 0.6); }
+.flow-edge.flow-bad { stroke: rgba(239, 68, 68, 0.65); }
+.flow-edge.flow-run { stroke: rgba(59, 130, 246, 0.7); }
+.chip-soft { background: var(--bg-soft); border: 1px solid var(--line); color: var(--muted); }
+
 .sidebar-mini-btn {
   margin-top: 8px;
   padding: 4px 8px;

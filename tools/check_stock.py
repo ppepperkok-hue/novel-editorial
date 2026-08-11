@@ -11,6 +11,57 @@ sys.path.insert(0, str(ROOT))
 from novel_pipeline import db  # noqa: E402
 
 
+def check_stock(conn):
+    """Inspect the chapter stock pool and the publish target for the current run.
+
+    Mirrors the n8n `查存稿` node: reads the active book from the database and
+    the pending/daily chapter target from settings.
+    """
+    settings = {
+        r["key"]: r["value"]
+        for r in conn.execute("SELECT key, value FROM settings").fetchall()
+    }
+    stock = conn.execute(
+        "SELECT COUNT(*) c FROM chapters WHERE status='reviewed'"
+    ).fetchone()["c"]
+    target = int(settings.get("pending_publish") or 0) or int(
+        settings.get("daily_chapters") or 2
+    )
+    target = max(1, min(target, 10))
+    need = max(0, target - stock)
+    book = conn.execute(
+        "SELECT id, book_id, title, genre, premise, tags FROM novels "
+        "WHERE status='publishing' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    book_id = str(book["book_id"] or "") if book else ""
+    premise = str(book["premise"] or "").strip() if book else ""
+    genre = str(book["genre"] or "").strip() if book else ""
+    keywords = ""
+    if book and book["tags"]:
+        try:
+            tags = json.loads(book["tags"])
+            keywords = ",".join(str(t) for t in tags if t)
+        except (TypeError, ValueError):
+            keywords = str(book["tags"] or "")
+    if not premise:
+        premise = settings.get("novel_premise", "")
+    if not genre:
+        genre = settings.get("novel_genre", "")
+    if not keywords:
+        keywords = settings.get("novel_keywords", "")
+    return {
+        "stock": stock,
+        "target": target,
+        "need": need,
+        "novel_id": int(book["id"]) if book else 0,
+        "book_id": book_id,
+        "book_name": str(book["title"] or "").strip() if book else "",
+        "novel_premise": premise,
+        "novel_keywords": keywords,
+        "novel_genre": genre,
+    }
+
+
 def main():
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -24,54 +75,7 @@ def main():
         db_path = ROOT / db_path
     conn = db.connect(db_path)
     try:
-        settings = {
-            r["key"]: r["value"]
-            for r in conn.execute("SELECT key, value FROM settings").fetchall()
-        }
-        stock = conn.execute(
-            "SELECT COUNT(*) c FROM chapters WHERE status='reviewed'"
-        ).fetchone()["c"]
-        target = int(settings.get("pending_publish") or 0) or int(
-            settings.get("daily_chapters") or 2
-        )
-        target = max(1, min(target, 10))
-        need = max(0, target - stock)
-        book = conn.execute(
-            "SELECT id, book_id, title, genre, premise, tags FROM novels "
-            "WHERE status='publishing' ORDER BY id DESC LIMIT 1"
-        ).fetchone()
-        book_id = str(book["book_id"] or "") if book else ""
-        premise = str(book["premise"] or "").strip() if book else ""
-        genre = str(book["genre"] or "").strip() if book else ""
-        keywords = ""
-        if book and book["tags"]:
-            try:
-                tags = json.loads(book["tags"])
-                keywords = ",".join(str(t) for t in tags if t)
-            except (TypeError, ValueError):
-                keywords = str(book["tags"] or "")
-        if not premise:
-            premise = settings.get("novel_premise", "")
-        if not genre:
-            genre = settings.get("novel_genre", "")
-        if not keywords:
-            keywords = settings.get("novel_keywords", "")
-        print(
-            json.dumps(
-                {
-                    "stock": stock,
-                    "target": target,
-                    "need": need,
-                    "novel_id": int(book["id"]) if book else 0,
-                    "book_id": book_id,
-                    "book_name": str(book["title"] or "").strip() if book else "",
-                    "novel_premise": premise,
-                    "novel_keywords": keywords,
-                    "novel_genre": genre,
-                },
-                ensure_ascii=False,
-            )
-        )
+        print(json.dumps(check_stock(conn), ensure_ascii=False))
     finally:
         conn.close()
 

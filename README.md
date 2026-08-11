@@ -1,10 +1,10 @@
 # novel-pipeline · AI 网文自动生成与发布流水线
 
-面向「番茄小说」副业场景的全自动网文流水线：n8n 定时编排 + DeepSeek 多 Agent 协作 + Python 记忆/知识层（SQLite）+ 番茄 HTTP 发布 + 桌面控制台。
+面向「番茄小说」副业场景的全自动网文流水线：Python 日更调度器（Windows 计划任务可选定时） + DeepSeek 多 Agent 协作 + Python 记忆/知识层（SQLite）+ 番茄 HTTP 发布 + 桌面控制台。
 
 目标场景是每天定时自动生成并发布两章，月预算 100 元内无人值守。Cookie 失效、预算超限、重复触发、章节数不足等异常会自动熔断并写入告警，不会把错误内容发上平台。
 
-当前状态：**端到端链路已真实跑通**（新书会议 → 建书 → 日更生成 → 番茄发布 → 阅读数据回流 → 全员日记 → 知识库同步）。
+当前状态：**端到端链路已真实跑通**（新书会议 → 建书 → 日更生成 → 番茄发布 → 阅读数据回流 → 全员日记 → 知识库同步）；2026-08-11 完成去 n8n 迁移，业务由本地 Python 调度器执行，n8n 工作流 JSON 归档于 `docs/legacy/` 作为回退备份。
 
 仓库：<https://github.com/ppepperkok-hue/novel-pipeline>
 
@@ -12,17 +12,18 @@
 
 | 指标 | 数值 | 控制位置 |
 | --- | --- | --- |
-| 日更章节 | 每天 2 章（约 2000–2200 字/章） | n8n 每日触发 + `settings.daily_chapters` |
+| 日更章节 | 每天 2 章（约 2000–2200 字/章） | 调度器手动开工 + Windows 计划任务定时 + `settings.daily_chapters` |
 | 月预算 | 100 元 | `settings.monthly_budget` + 预检熔断 |
 | 成本单价 | pro 0.01 元 / flash 0.002 元每千 token | `~/.n8n/.env` 的 `COST_PRO_PER_1K` / `COST_FLASH_PER_1K` |
 | 发布平台 | 番茄小说（Cookie + CSRF 鉴权） | `~/.n8n/.env` 的 `FANQIE_COOKIE` / `FANQIE_CSRF_TOKEN` |
 | 发布方式 | 存稿池优先：有存稿发存稿，没存稿现造 | `tools/check_stock.py` + `tools/publish_stock.py` |
 | 健康线 | 存稿 < 3 章触发断更预警 | `novel_pipeline/scheduler.py` 的 `SAFE_BACKLOG` |
-| 测试基线 | 170 个后端 unittest + 8 个前端 Vitest | `python run_tests.py` / `cd webapp && npm test` |
+| 测试基线 | 250 个后端 unittest + 8 个前端 Vitest | `python run_tests.py` / `cd webapp && npm test` |
 
 ## 功能总览
 
-- **自动日更流水线**：n8n 每日 08:00 触发（或手动 Webhook 补更），备份 → 预检 → 查章节号 → 生成作品资料 → 出大纲 → 多 Agent 写作审稿 → 质量门 → 排版 → 番茄三步发布 → 阅读数据回流 → 全员写日记 → 同步设定知识库 → 释放运行锁。
+- **自动日更流水线**：`tools/editorial_daily.py` 单入口调度器，手动开工为主、Windows 计划任务可选定时（08:00 默认）；预检 → 查章节号 → 生成作品资料 → 出大纲 → 多 Agent 写作审稿 → 质量门 → 排版 → 番茄三步发布 → 阅读数据回流 → 全员写日记 → 同步设定知识库 → 释放运行锁；每次运行写入本地 `daily_runs` 留痕（运行中/成功/部分成功/失败 + 失败节点）。
+- **链路可视化**：面板「链路」页用 React Flow 渲染调度器全拓扑（预检/分派/作品资料/大纲守护/A-B 双轨/发布链/收尾），叠加最近一次运行状态着色（成功绿/部分橙/失败红/运行中蓝/待命灰），不运行也能人工审查；可一键导出单文件自包含 HTML 报告离线查看。
 - **A/B 双轨隔离**：同一批生成两章，两条链互相独立。一章质量门失败只在排版处短路，另一章照常发布；失败原因写库，次日可人工补发。
 - **存稿池**：每天先查 `reviewed` 存稿，有货先发存货；多写的章节存着，发不出去就留到第二天，断更风险自动预警。
 - **11 位人格化 Agent**：策划官、世界观守护、叙事写手、文字编辑、逻辑审稿、读者体验审稿、主编终审、记忆官、作品资料、完结评估、知识管家。每个 Agent 都有人物档案（姓名/身份/性格/说话风格/价值观/核心关注点/情绪基线）和日记、周记、会议三套模式。
@@ -39,18 +40,16 @@
 ## 架构
 
 ```text
-┌──────────────────────────── 编排层：n8n 2.8（三个工作流）────────────────────────────┐
-│  日更流水线（66 节点）          周会（8 节点）              知识管家（4 节点）        │
-│  每日 08:00 / 手动 Webhook     每周日 08:10 / 手动        每日 03:30 / 手动          │
-│  备份→预检→查章节号→读本地资料  采集热点→读上下文→开会     读热点/知识包/草稿/质量反馈 │
-│  →Planner→守护→写手A/B→润色      （写周记→点将→三轮→       →市场类自动更新            │
-│  →审稿→终审→质量门→排版→发布     总结→落盘→蒸馏经验）       →技巧类落草案供人工采纳    │
-│  →提炼剧情→日记→同步知识库→释放锁                          →废弃建议                  │
+┌──────────────────────────── 调度层：tools/editorial_daily.py ───────────────────────────┐
+│  日更调度器（单入口 daily()）           后台流程：周会 / 知识管家 / 热点采集             │
+│  手动开工（面板/托盘/CLI）               control.run_workflow_now("weekly")             │
+│  定时：Windows 计划任务（可选）           control.run_knowledge_keeper                    │
+│  备份→预检→查存稿→（发存稿|现造）→A/B 双轨→发布→汇总→收尾→释放锁；daily_runs 全程留痕     │
 └────────────────────────────────────────┬──────────────────────────────────────────────┘
-                                         │ executeCommand（本地 Python 脚本）
+                                         │ 进程内直接调用（Python 库函数）
                     ┌────────────────────▼────────────────────────────────┐
                     │  执行层：tools/*.py + novel_pipeline/*（Python 3.11） │
-                    │  所有业务逻辑在本地脚本，n8n 只负责时序与分支           │
+                    │  所有业务逻辑在本地脚本，调度器只负责时序与分支           │
                     └────────────────────┬────────────────────────────────┘
                                          │ LLM 调用
     ┌────────────────────────────────────▼────────────────────────────────────┐
@@ -73,20 +72,20 @@
 
 分层原则：
 
-- **编排层（n8n）** 只负责时序与分支，所有业务逻辑在本地 Python 脚本执行。工作流 JSON 由 `tools/render_workflow.py` 从 Agent 提示词资产渲染生成，改 Agent 不需要手改工作流。
+- **调度层（tools/editorial_daily.py）** 只负责时序与分支，所有业务逻辑在本地 Python 脚本执行；`daily()` 进程内复用全部工具，运行状态落 `daily_runs`。n8n 已退役（2026-08-11），工作流 JSON 归档于 `docs/legacy/`，`scripts/start_n8n.ps1` 保留为回退入口。
 - **智能层（prompts/agents + tools/agent_tool_loop.py）** 是 11 位人格化 Agent。LLM 不直接联网，爬取、检索、落库全部由 Python 代码执行。
 - **记忆层（SQLite）** 保存故事圣经、章节摘要、角色状态、伏笔台账、设定知识库（版本化）、Agent 日记/周记/心情、会议档案、会后任务、活动日志。
 - **发布层（tools/publish_stock.py + create_book.py）** 直接调番茄作者后台 HTTP API，Cookie + CSRF 鉴权，三步发布。
 - **展示层（webapp + desktop）** 是 React 单页应用 + Electron 桌面壳，SSE 实时推送，托盘常驻。
 
-## 三条 n8n 工作流
+## 调度器与后台流程
 
-### 1. 日更流水线（`n8n/novel_workflow.json`，66 节点）
+### 1. 日更调度器（`tools/editorial_daily.py`）
 
 触发方式：
 
-- `scheduleTrigger` 每日 08:00（`settings.daily_run_time` 可改，保存后自动重部署）；
-- 手动 Webhook `POST /webhook/novel-manual-run`（面板「立即补更」、托盘菜单、命令面板）；
+- 手动开工：面板「立即补更」、托盘菜单、命令面板（`/api/control` action `run_now` 后台线程执行）；
+- 定时（可选）：`scripts/install_daily_task.ps1` 注册 Windows 计划任务，默认每日 08:00（`settings.daily_run_time` 可改，保存时自动更新计划任务）；`daily_enabled=false` 时定时跳过；
 - 手动运行支持指定本次生成章数（上限 5，前后端已对齐）。
 
 流程：
@@ -108,15 +107,15 @@
 15. **汇总运行结果**（`tools/record_work.py`）：章节/成本/摘要/角色/伏笔落库，空载荷跳过防垃圾行。
 16. **收尾**：采集阅读数据 → 全员写日记（11 位 Agent 各自自述，flash）→ 同步设定知识库（`tools/novel_knowledge.py`）→ **回填行动项**（`tools/auto_fill_actions.py`，按当日产出自动把已完成的会后任务标 done）→ 结束并释放运行锁。
 
-### 2. 周会（`n8n/architect_weekly.json`，8 节点）
+### 2. 周会（`tools/agent_meeting.py`）
 
-每周日 08:10 或手动 Webhook `POST /webhook/novel-weekly-run`：
+面板/托盘手动触发（`run_now` action `weekly`）后台依次执行：
 
 采集热点 → 读上下文（本周数据 + 行动项 + 心情）→ **开会**（`tools/agent_meeting.py`：写周记 → 主席点将 → 三轮通气 → 主席总结报告）→ 蒸馏经验（`tools/distill_lessons.py`，落 `knowledge_drafts` 草稿）→ 落盘决策（`tools/apply_architect.py`：合并蓝图、读者画像、卷目标、封面提示词）。
 
-### 3. 知识管家（`n8n/knowledge_keeper.json`，4 节点）
+### 3. 知识管家（`tools/knowledge_keeper.py`）
 
-每日 03:30 或手动触发，`tools/knowledge_keeper.py` 执行：
+面板手动触发（`run_knowledge_keeper` action）执行：
 
 - 市场类知识包：直接把最新热点整理进 `prompts/knowledge/market-and-reader.md`，自动更新并记审计；
 - 技巧/规则类与经验整合：落 `knowledge_drafts` 草案，人工在前端采纳后才写入知识包并重新部署；
@@ -138,7 +137,7 @@
 | 完结评估 | ending_judge.md | flash | 完结时机评估：剧情进度、伏笔回收、收尾建议 |
 | 知识管家 | knowledge_keeper.md | flash | 定时维护知识库、整合经验卡、整理热点 |
 
-每个 Agent 文件（`prompts/agents/*.md`）的 frontmatter 定义 `model` / `temperature` / `max_tokens`，正文依次是「人物档案」「日常任务」「日记模式」「周记模式」「会议模式」。前端 Agent 管理页可直接编辑、校验并一键部署。
+每个 Agent 文件（`prompts/agents/*.md`）的 frontmatter 定义 `model` / `temperature` / `max_tokens`，正文依次是「人物档案」「日常任务」「日记模式」「周记模式」「会议模式」。前端 Agent 管理页可直接编辑、校验，保存后调度器运行时即时生效。
 
 ### 工具式知识调用
 
@@ -268,19 +267,20 @@
 
 ### 面板（React + Vite + Tailwind）
 
-10 个页面 + 命令面板（Ctrl+K）：
+11 个页面 + 命令面板（Ctrl+K）：
 
 | 页面 | 内容 |
 | --- | --- |
-| 仪表盘 | 流水线状态（待命/运行中/离线）、今日任务、上次执行、最近会议、工作流卡片（日更/周会/知识管家）、API 状态、预算进度、健康检查、完读率、最近发布、热点选题、手动补更 |
+| 仪表盘 | 流水线状态（待命/运行中/上次失败/暂停）、今日任务、上次执行、最近会议、流程卡片（日更开关/周会/知识管家）、预算进度、健康检查、完读率、最近发布、热点选题、手动补更 |
 | 作品库 | 大纲/角色卡/人物关系/世界观/伏笔台账（按蓝图聚合）、设定知识库、成长轨迹、封面提示词、建书与绑定 |
 | 章节管理 | 状态筛选（草稿/审稿/待发布/已发布）、字数/评分/修订、章纲详情、阅读器 + AI 味检测 |
 | Agent 管理 | 人格编辑（人物档案/三模式提示词/模型/温度）、部署、知识库、经验卡、会后任务、活动日志、日记 |
 | 成本中心 | 日成本柱状图、按节点 Token/费用表、预算进度 |
-| 执行记录 | 日更/周会/知识管家最近执行状态与耗时 |
+| 执行记录 | 本地持久化的日更运行留痕（状态/发布数/失败节点/错误详情），后端离线也可回看 |
+| 链路 | React Flow 渲染调度器全拓扑 + 最近运行状态着色，支持导出离线 HTML 报告 |
 | 阅读数据 | 完读率/追读率趋势、逐章数据、低表现章节反馈 |
 | 会议中心 | 发起专题会议、直播围观（每轮发言）、插话/总结/取消、周会档案回放 |
-| 系统设置 | 日更开关、预算、目标字数、每日更新时间（保存后自动重部署）、风格微调、自动建书、开机会话 |
+| 系统设置 | 日更开关、预算、目标字数、每日更新时间（保存后自动注册/更新计划任务）、风格微调、自动建书、开机会话 |
 | 留痕档案 | 全量事件审计，按类别筛选 |
 
 所有卡片数据接真实 API；执行状态与上次执行走 SSE + 轮询双通道兜底，SSE 断开不会卡在「待命」。
@@ -304,8 +304,7 @@
 ### 环境要求
 
 - Python 3.9+（项目实际在 3.11 验证）；
-- Node.js 18+（前端构建 + n8n）；
-- n8n 2.8（自托管）；
+- Node.js 18+（前端构建）；
 - 番茄作者账号（已实名）。
 
 ### 安装
@@ -328,45 +327,55 @@ cd ../desktop && npm install
 | `FANQIE_BOOK_ID` / `FANQIE_VOLUME_ID` | 番茄作品/分卷 ID（也可由面板绑定自动写入） |
 | `COST_PRO_PER_1K` / `COST_FLASH_PER_1K` | LLM 成本单价（元/千 token） |
 | `MONTHLY_BUDGET` | 月度预算熔断值 |
-| `N8N_API_KEY` | n8n API Key（前端部署/控制工作流用） |
-| `PYTHON_EXE` / `PIPELINE_ROOT` | n8n executeCommand 运行环境（换机器只改这里） |
-| `NODES_EXCLUDE=[]` | n8n 2.x 默认禁用 executeCommand，必须显式清空排除列表 |
-| `PANEL_TOKEN` | 可选；配置后非浏览器调用（脚本/n8n）必须带 Bearer 头 |
+| `N8N_API_KEY` | 仅回退到 n8n 时需要（调度器模式不需要） |
+| `PYTHON_EXE` / `PIPELINE_ROOT` | 脚本运行环境（换机器只改这里） |
+| `PANEL_TOKEN` | 可选；配置后非浏览器调用（脚本/API）必须带 Bearer 头 |
 
 ### 启动
 
 ```powershell
-# 1. 启动 n8n（必须用脚本，注入 NODES_EXCLUDE 等环境变量）
-powershell -ExecutionPolicy Bypass -File scripts/start_n8n.ps1
-
-# 2. 启动控制台 API（Electron 会自动拉起，也可手动）
+# 1. 启动控制台 API（Electron 会自动拉起，也可手动）
 python -m novel_pipeline.web_api --db demo.db --port 8000
 
-# 3. 桌面控制台
+# 2. 桌面控制台
 launch_desktop.vbs
 
-# 4. 开机自启（可选）：n8n + web_api:8000 随登录自动拉起
+# 3. 开机自启（可选）：web_api:8000 随登录自动拉起
 #    面板自启用系统设置页「开机自动启动」开关
 powershell -ExecutionPolicy Bypass -File scripts/install_autostart.ps1        # 注册
 powershell -ExecutionPolicy Bypass -File scripts/install_autostart.ps1 -DryRun   # 预览
 powershell -ExecutionPolicy Bypass -File scripts/install_autostart.ps1 -Disable  # 卸载
+
+# 4. 注册日更定时任务（可选，默认每日 08:00；不注册则纯手动开工）
+powershell -ExecutionPolicy Bypass -File scripts/install_daily_task.ps1 -Time "08:00"
 ```
 
-### 部署工作流
-
-先渲染（把 Agent 提示词资产写回工作流 JSON），再深度校验，最后推送到 n8n（面板 Agent 管理页也有一键部署）：
+### 手动运行日更
 
 ```bash
-python tools/render_workflow.py
-node tools/validate_workflow_deep.mjs
+python tools/editorial_daily.py --db demo.db --trigger manual
+python tools/editorial_daily.py --db demo.db --trigger manual --dry-run   # 全链占位演练
+```
+
+导出链路报告（自包含 HTML，可离线审查/分享）：
+
+```bash
+python tools/export_flow_html.py --db demo.db
+```
+
+### 回退到 n8n（仅异常情况）
+
+```bash
+powershell -ExecutionPolicy Bypass -File scripts/start_n8n.ps1
+python tools/render_workflow.py && node tools/validate_workflow_deep.mjs
 ```
 
 ### 测试
 
 ```bash
-python run_tests.py                # 170 个后端测试
+python run_tests.py                # 250 个后端测试
 cd webapp && npm test              # 8 个前端测试
-node tools/validate_workflow_deep.mjs   # 工作流深度校验
+node tools/validate_workflow_deep.mjs   # 遗留工作流深度校验（回退路径）
 ```
 
 ## 目录结构
@@ -378,14 +387,19 @@ novel-pipeline/
 │   ├── db.py                # SQLite 数据层与迁移（23 张表）
 │   ├── llm_client.py        # 统一 LLM 客户端（DeepSeek / OpenAI 兼容 / Mock）
 │   ├── web_api.py           # HTTP 路由壳（业务在 services/）
-│   ├── services/            # 服务层：n8n / control / dashboard / agents / meeting_session / knowledge / activity / audit ...
+│   ├── services/            # 服务层：control / dashboard / agents / meeting_session / knowledge / activity / audit ...
 │   ├── hot_topics.py        # 热点采集（HTML + 浏览器双轨）
 │   ├── quality_gate.py      # 质量门
 │   └── desktop.py           # pywebview 后备桌面入口
 ├── prompts/
 │   ├── agents/              # 11 位人格化 Agent（人物档案 + 四种模式）
 │   └── knowledge/           # 6 个通用写作知识包（frontmatter + 正文）
-├── tools/                   # 流水线脚本（全部被 n8n executeCommand 调用）
+├── tools/                   # 流水线脚本与调度器
+│   ├── editorial_daily.py   # 日更调度器单入口（de-n8n 核心）
+│   ├── editorial_steps.py   # 节点逻辑纯函数（质量门/大纲/排版/汇总）
+│   ├── flow_graph.py        # 链路拓扑与失败节点映射
+│   ├── export_flow_html.py  # 自包含 HTML 链路报告
+│   ├── daily_runs.py        # 本地运行留痕（调度器自写 + n8n legacy 同步）
 │   ├── render_workflow.py   # Agent 资产 → 工作流 JSON（代理模式）
 │   ├── validate_workflow_deep.mjs  # 工作流深度校验
 │   ├── preflight.py / check_stock.py / publish_stock.py   # 日更控制
@@ -397,10 +411,10 @@ novel-pipeline/
 │   └── release_lock.py      # 异常残留锁释放
 ├── webapp/                  # React + Vite + Tailwind 前端（Vitest 测试）
 ├── desktop/                 # Electron 壳（main/preload/release.js）
-├── n8n/                     # 工作流 JSON（日更 66 / 周会 8 / 知识管家 4 节点）
-├── scripts/                 # start_n8n.ps1 / inject_fanqie_cookie.py / watch_daily.py ...
+├── n8n/                     # 遗留工作流 JSON（回退备份；docs/legacy/ 另有归档）
+├── scripts/                 # install_daily_task.ps1 / install_autostart.ps1 / watch_daily.py ...
 ├── docs/                    # evolution / planning / research / engineering / reviews
-├── tests/                   # 170 个后端测试（unittest）
+├── tests/                   # 250 个后端测试（unittest）
 └── demo.db                  # 运行数据库（gitignore）
 ```
 
@@ -415,7 +429,8 @@ novel-pipeline/
 
 ## 已知限制与风险
 
-- **n8n 2.8 默认禁用 executeCommand**：必须通过 `scripts/start_n8n.ps1` 注入 `NODES_EXCLUDE=[]` 启动，否则工作流无法激活执行；
+- **n8n 已退役**：业务由 Python 调度器执行；仅当调度器出现无法快速修复的问题时，才按 README「回退到 n8n」一节启动遗留工作流；
+- **调度器与 n8n 共用同一把运行锁**：回退期间两者不会并发双发；
 - **番茄建书接口签名**：`msToken` / `a_bogus` 风控导致直接 HTTP 建书可能被拒，当前依赖浏览器页面操作（已登记待修）；
 - **番茄每日限建 1 本**：删除旧书后当日额度可能不重置；
 - **番茄每日提交字数上限**：实测 9000+ 字后报 `-1019`，日更两章安全；
@@ -425,4 +440,9 @@ novel-pipeline/
 
 ## 后续路线
 
-- 番茄建书接口签名适配（抓真实请求修复 `create_book.py`）；
+- **编辑部人格化**（第一优先）：Agent 消息协作（mailroom）、叙事/人际记忆、两级完工状态机；
+- **审稿打回重写**：调度器内建「审稿失败 → 打回重写 → 回审」回环（重试上限可配置）；
+- **完结机制**：`ending_judge` 接入调度器周检，与收尾决策、完结停更、新书孵化绑定；
+- **统一留痕**：全类别 `audit_logs` 回填、前端留痕档案；
+- **人物卡进化**：`character_evolution` 成长轨迹随剧情推进更新，周会固化角色卡；
+- **番茄建书接口签名适配**（抓真实请求修复 `create_book.py`，如风控策略变化）。

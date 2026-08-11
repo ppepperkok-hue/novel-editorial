@@ -1,18 +1,139 @@
-"""Workflow control: status, manual run, schedule, settings."""
+"""Scheduler control: status, manual run, schedule, settings (de-n8n).
 
-import json
-import urllib.error
-import urllib.request
+The panel no longer talks to n8n: `run_now` launches the Python scheduler in
+a background thread, `apply_schedule` registers a Windows scheduled task and
+`pause/resume` flip the `daily_enabled` switch.
+"""
 
-from novel_pipeline import config
+import os
+import subprocess
+import sys
+import threading
+from pathlib import Path
+
+from novel_pipeline import config, db
 from novel_pipeline.services import audit
-from novel_pipeline.services import n8n
-from tools.app_settings import set_many
+from tools.app_settings import get_all, set_many
 
-WEBHOOK_PATHS = {
-    "daily": "novel-manual-run",
-    "weekly": "novel-weekly-run",
-}
+ROOT = config.ROOT
+DAILY_TASK_SCRIPT = ROOT / "scripts" / "install_daily_task.ps1"
+DAILY_TASK_NAME = "NovelPipelineDaily"
+
+
+def _alert(message):
+    try:
+        config.ALERTS_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with config.ALERTS_LOG.open("a", encoding="utf-8") as f:
+            from datetime import datetime
+
+            f.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {message}\n")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _enabled(value):
+    return str(value or "true").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _scheduler_state(conn):
+    settings = get_all(conn)
+    row = conn.execute(
+        "SELECT run_id, status, trigger, source, started_at, finished_at, "
+        "published, failed_nodes, error FROM daily_runs ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    return {
+        "enabled": _enabled(settings.get("daily_enabled", "true")),
+        "manual_run_requested": str(settings.get("manual_run_requested", "0")) == "1",
+        "scheduled_time": settings.get("daily_run_time", "08:00"),
+        "daily_chapters": settings.get("daily_chapters", "2"),
+        "last_run": dict(row) if row else None,
+    }
+
+
+def load_control(conn):
+    return {
+        "settings": get_all(conn),
+        "scheduler": _scheduler_state(conn),
+    }
+
+
+def _spawn(target):
+    threading.Thread(target=target, daemon=True).start()
+
+
+def _run_cli(script_rel, args):
+    cmd = [sys.executable, str(ROOT / script_rel), *args]
+    try:
+        subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=7200,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _alert(f"{script_rel} 失败: {str(exc)[:200]}")
+
+
+def _background_daily(chapters=None):
+    def worker():
+        try:
+            conn = db.connect(str(config.DB_PATH))
+            try:
+                from tools import editorial_daily  # noqa: PLC0415
+
+                editorial_daily.daily(
+                    conn,
+                    chapters=chapters,
+                    trigger="manual",
+                    db_path=str(config.DB_PATH),
+                )
+            finally:
+                conn.close()
+        except Exception as exc:  # noqa: BLE001
+            _alert(f"后台日更线程异常: {str(exc)[:300]}")
+
+    _spawn(worker)
+
+
+def _background_weekly():
+    def worker():
+        try:
+            from novel_pipeline import hot_topics  # noqa: PLC0415
+
+            hot_topics.refresh(
+                out_path=str(config.HOT_TOPICS_JSON), browser_fallback=True
+            )
+        except Exception as exc:  # noqa: BLE001
+            _alert(f"周会热点采集失败: {str(exc)[:200]}")
+        _run_cli("tools/architect_weekly.py", ["--db", str(config.DB_PATH)])
+        _run_cli(
+            "tools/agent_meeting.py",
+            ["--db", str(config.DB_PATH), "--kind", "weekly"],
+        )
+        _run_cli("tools/distill_lessons.py", ["--db", str(config.DB_PATH)])
+
+    _spawn(worker)
+
+
+def run_workflow_now(workflow):
+    if workflow == "daily":
+        return {
+            "ok": True,
+            "started": True,
+            "workflow": "daily",
+            "note": "日更已在后台启动，可在执行记录页查看进度",
+        }
+    if workflow == "weekly":
+        _background_weekly()
+        return {
+            "ok": True,
+            "started": True,
+            "workflow": "weekly",
+            "note": "周会已在后台启动，可在会议中心查看进度",
+        }
+    return {"ok": False, "error": "workflow must be daily|weekly"}
 
 
 def load_control(conn):
@@ -64,40 +185,53 @@ def apply_schedule(conn):
     if not (0 <= hour <= 23 and 0 <= minute <= 59):
         return {"ok": False, "error": "time out of range (00:00-23:59)"}
 
-    wf = json.loads(config.WORKFLOW_JSON.read_text(encoding="utf-8"))
-    found = False
-    for node in wf["nodes"]:
-        if node.get("type") == "n8n-nodes-base.scheduleTrigger":
-            rule = node.setdefault("parameters", {}).setdefault("rule", {})
-            for item in rule.get("interval", []):
-                item["triggerAtHour"] = hour
-                item["triggerAtMinute"] = minute
-                found = True
-    if not found:
-        return {"ok": False, "error": "schedule trigger node not found in workflow"}
-    config.WORKFLOW_JSON.write_text(
-        json.dumps(wf, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    deployed = deploy_workflow()
-    return {
-        "ok": deployed["ok"],
-        "time": f"{hour:02d}:{minute:02d}",
-        "deploy": deployed,
-    }
+    time_str = f"{hour:02d}:{minute:02d}"
+    set_many(conn, {"daily_run_time": time_str})
+    if os.name != "nt":
+        return {
+            "ok": True,
+            "time": time_str,
+            "deploy": {"ok": True, "note": "非 Windows 环境，仅保存定时设置"},
+        }
+    cmd = [
+        "powershell",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(DAILY_TASK_SCRIPT),
+        "-Time",
+        time_str,
+        "-DbPath",
+        os.path.relpath(config.DB_PATH, ROOT),
+        "-TaskName",
+        DAILY_TASK_NAME,
+    ]
+    try:
+        out = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+        )
+        ok = out.returncode == 0
+        return {
+            "ok": ok,
+            "time": time_str,
+            "deploy": {
+                "ok": ok,
+                "output": (out.stdout or out.stderr or "")[-400:],
+            },
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"计划任务注册失败: {str(exc)[:200]}"}
 
 
 def deploy_workflow():
-    wf = json.loads(config.WORKFLOW_JSON.read_text(encoding="utf-8"))
-    body = {
-        "name": wf["name"],
-        "nodes": wf["nodes"],
-        "connections": wf["connections"],
-        "settings": wf.get("settings", {}),
-    }
-    res = n8n.n8n_api("PUT", "/workflows/" + config.N8N_WORKFLOW_DAILY, body)
-    if res is None:
-        return {"ok": False, "error": "n8n deploy failed (offline or API key missing)"}
-    return {"ok": True, "nodes": len(wf["nodes"]), "active": bool(res.get("active"))}
+    """Legacy no-op kept for callers that still reference deployment."""
+    return {"ok": True, "note": "调度器模式无需部署 n8n 工作流"}
 
 
 def handle_control(conn, payload):
@@ -112,16 +246,16 @@ def handle_control(conn, payload):
         audit.log(conn, "settings", "save_settings", detail={"saved": values})
         return {"ok": True, "saved": values}
     if action == "run_now":
-        if payload.get("workflow") == "daily":
-            set_many(conn, {"manual_run_requested": "1"})
-            chapters = payload.get("chapters")
-            if chapters:
-                try:
-                    n = max(1, min(int(chapters), 5))
-                except (TypeError, ValueError):
-                    n = 0
-                if n:
-                    set_many(conn, {"pending_publish": str(n)})
+        set_many(conn, {"manual_run_requested": "1"})
+        chapters = payload.get("chapters")
+        n = 0
+        if chapters:
+            try:
+                n = max(1, min(int(chapters), 5))
+            except (TypeError, ValueError):
+                n = 0
+        if n:
+            set_many(conn, {"pending_publish": str(n)})
         wf = payload.get("workflow") or "daily"
         result = run_workflow_now(wf)
         audit.log(
@@ -130,43 +264,44 @@ def handle_control(conn, payload):
             "run_now",
             target_type="workflow",
             target_id=wf,
-            detail={"chapters": payload.get("chapters"), "ok": result.get("ok")},
+            detail={
+                "chapters": n or payload.get("chapters"),
+                "ok": result.get("ok"),
+                "started": result.get("started"),
+            },
         )
         return result
     if action == "apply_schedule":
-        time_value = (payload.get("time") or "").strip()
-        if time_value:
-            set_many(conn, {"daily_run_time": time_value})
         result = apply_schedule(conn)
-        audit.log(conn, "settings", "apply_schedule", detail={"time": time_value or None, "ok": result.get("ok")})
+        audit.log(
+            conn,
+            "settings",
+            "apply_schedule",
+            detail={"time": result.get("time"), "ok": result.get("ok")},
+        )
         return result
     if action == "request_run":
         set_many(conn, {"manual_run_requested": "1"})
         audit.log(conn, "operation", "request_run")
         return {"ok": True, "note": "将在下次定时触发时执行"}
     if action in ("pause", "resume"):
-        wf_id = {
-            "daily": config.N8N_WORKFLOW_DAILY,
-            "weekly": config.N8N_WORKFLOW_WEEKLY,
-            "keeper": config.N8N_WORKFLOW_KEEPER,
-        }.get(payload.get("workflow"))
-        if not wf_id:
-            return {"ok": False, "error": "workflow must be daily|weekly|keeper"}
-        endpoint = "deactivate" if action == "pause" else "activate"
-        res = n8n.n8n_api(
-            "POST",
-            f"/workflows/{wf_id}/{endpoint}",
-            body={},
-        )
+        wf = payload.get("workflow") or "daily"
+        if wf != "daily":
+            return {
+                "ok": True,
+                "note": f"{wf} 无独立开关，请使用手动触发",
+            }
+        enabled = action == "resume"
+        set_many(conn, {"daily_enabled": "true" if enabled else "false"})
         audit.log(
             conn,
             "operation",
             action,
             target_type="workflow",
-            target_id=payload.get("workflow"),
-            detail={"ok": res is not None},
+            target_id=wf,
+            detail={"enabled": enabled},
         )
-        return {"ok": res is not None, "response": res}
+        return {"ok": True, "enabled": enabled, "workflow": wf}
     if action == "refresh_hot_topics":
         from novel_pipeline import hot_topics  # noqa: PLC0415
 

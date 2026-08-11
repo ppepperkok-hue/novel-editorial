@@ -108,7 +108,9 @@ def _endpoint(conn, name):
     if name == "cost":
         return dashboard_service.cost_summary(conn)
     if name == "executions":
-        return {"executions": n8n_service.executions()}
+        from tools import daily_runs  # noqa: PLC0415
+
+        return {"executions": daily_runs.local_executions(conn)}
     return {"error": f"未知端点 {name}"}
 
 
@@ -393,6 +395,32 @@ def make_handler(db_path):
                         self._json(control_service.load_control(conn))
                     finally:
                         conn.close()
+                elif path == "/api/flow":
+                    from tools import flow_graph  # noqa: PLC0415
+
+                    conn = db.connect(db_path)
+                    try:
+                        self._json(flow_graph.build_flow(conn))
+                    finally:
+                        conn.close()
+                elif path == "/api/export/flow":
+                    from tools import export_flow_html  # noqa: PLC0415
+
+                    conn = db.connect(db_path)
+                    try:
+                        body = export_flow_html.render_html(conn).encode("utf-8")
+                    finally:
+                        conn.close()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header(
+                        "Content-Disposition",
+                        'attachment; filename="pipeline-flow.html"',
+                    )
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
                 elif path in (
                     "/api/summary",
                     "/api/novels",

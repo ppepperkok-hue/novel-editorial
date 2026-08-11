@@ -3,6 +3,36 @@
 流水线的可持续性靠三条：**提示词资产化**、**配置驱动生成**、**数据反馈回路**。
 改写作风格、调整模型、加一个 Agent，都不需要再手改 66KB 的工作流 JSON。
 
+## 2026-08-11 · 去 n8n 迁移：本地 Python 调度器
+
+背景：66 节点 n8n 日更链路中，25 个 HTTP 请求全部转发到本地 `/api/agent/run`、
+13 个 executeCommand 全部调本地 Python 工具，22 个 code 节点是 JSON 解析/质量门/
+兜底胶水——n8n 只是编排壳，业务逻辑本就在 Python 侧。为消除黑盒、假绿灯与
+n8n 进程依赖，把编排整体迁入本地调度器。
+
+关键决策与取舍：
+
+- **单入口调度器**：`tools/editorial_daily.py` 的 `daily(conn, chapters, trigger, dry_run)`
+  复刻整条链路（预检→查存稿→发存稿|现造→A/B 双轨→发布→汇总→收尾），进程内复用
+  既有工具，`run_id` 全链路穿透，状态机 `running/completed/partial/failed` 落
+  `daily_runs`（`source='scheduler'`）；n8n 同步降级为 `n8n-legacy` 兼容读取。
+- **补偿逻辑逐条等价**：22 个 code 胶水里的失败留痕、合并兜底、非空兜底、K2/K5
+  补位、审稿缺失降级、modify_book 失败不阻塞等全部复刻进 `editorial_steps.py`，
+  并有测试锚定（`docs/planning/de-n8n-mapping.md` 是逐节点映射表）。
+- **锁共用**：调度器与 n8n 共用 `n8n_tmp/<db>.lock`，回退期间两者不会并发双发。
+- **触发与自启**：手动开工为主（面板/托盘/CLI），Windows 计划任务可选定时
+  （`install_daily_task.ps1` 已去掉 `-Premise` 必填参数、指向调度器）；开机自启
+  只保留 web_api，n8n vbs 已移除。
+- **链路可视化**：面板新增 React Flow「链路」页（35 个调度步骤、9 个分组，
+  按最近运行状态着色、失败节点高亮），`/api/export/flow` 与
+  `tools/export_flow_html.py` 可导出单文件自包含 HTML 报告，不运行也能人工审查。
+- **回退保证**：`docs/legacy/` 归档 n8n 工作流 JSON，`scripts/start_n8n.ps1`
+  保留为手动回退入口；n8n 数据（`~/.n8n`）未删除，观察 1–2 周后再清理。
+
+验证：后端 250 unittest + 前端 8 Vitest + 工作流深度校验全绿；dry-run 全链
+（mock preflight + 临时库）跑通 `completed`；锁并发、A/B 隔离、幂等均有测试。
+审查报告见 `docs/reviews/20260811-de-n8n-review.md`。
+
 ## 1. Agent 提示词资产化
 
 15 个 LLM 节点的 system prompt 抽到了 `prompts/agents/*.md`，每个文件带

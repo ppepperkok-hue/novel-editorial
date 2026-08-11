@@ -401,6 +401,50 @@ def upsert_costs(conn, novel_id, payload, run_id=""):
     conn.commit()
 
 
+def record_payload(conn, payload):
+    """Persist a daily-result payload: novel/chars/volume/chapters/summaries/costs.
+
+    Library entry used by the Python scheduler; the CLI keeps the same
+    behaviour through main().
+    """
+    if not payload or not (
+        payload.get("book_name")
+        or payload.get("title")
+        or payload.get("book_id")
+        or payload.get("chapters")
+    ):
+        return {"ok": False, "error": "empty payload, skipped (no novel created)"}
+    novel_id = upsert_novel(conn, payload)
+    upsert_characters(conn, novel_id, payload.get("protagonists") or [])
+    upsert_volume(conn, novel_id, payload)
+    upsert_chapters(conn, novel_id, payload.get("chapters") or [])
+    upsert_costs(conn, novel_id, payload, run_id=str(payload.get("run_id") or ""))
+    from novel_pipeline.services import activity  # noqa: PLC0415
+
+    activity.log_activity(
+        conn,
+        "system",
+        novel_id,
+        "daily_summary",
+        "日更运行结果已归档",
+        {
+            "chapters": len(payload.get("chapters") or []),
+            "published": sum(
+                1 for c in (payload.get("chapters") or []) if c.get("status") == "published"
+            ),
+            "failed": sum(
+                1 for c in (payload.get("chapters") or []) if c.get("error")
+            ),
+        },
+    )
+    conn.commit()
+    return {
+        "ok": True,
+        "novel_id": novel_id,
+        "chapters": len(payload.get("chapters") or []),
+    }
+
+
 def main():
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -415,43 +459,8 @@ def main():
         payload = json.loads(base64.b64decode(sys.argv[1]).decode("utf-8"))
     conn = db.connect(DB_PATH)
     try:
-        if not payload or not (
-            payload.get("book_name")
-            or payload.get("title")
-            or payload.get("book_id")
-            or payload.get("chapters")
-        ):
-            print(
-                json.dumps(
-                    {"ok": False, "error": "empty payload, skipped (no novel created)"},
-                    ensure_ascii=False,
-                )
-            )
-            return
-        novel_id = upsert_novel(conn, payload)
-        upsert_characters(conn, novel_id, payload.get("protagonists") or [])
-        upsert_volume(conn, novel_id, payload)
-        upsert_chapters(conn, novel_id, payload.get("chapters") or [])
-        upsert_costs(conn, novel_id, payload, run_id=str(payload.get("run_id") or ""))
-        from novel_pipeline.services import activity  # noqa: PLC0415
-
-        activity.log_activity(
-            conn,
-            "system",
-            novel_id,
-            "daily_summary",
-            "日更运行结果已归档",
-            {
-                "chapters": len(payload.get("chapters") or []),
-                "published": sum(
-                    1 for c in (payload.get("chapters") or []) if c.get("published")
-                ),
-                "failed": sum(
-                    1 for c in (payload.get("chapters") or []) if c.get("error")
-                ),
-            },
-        )
-        print("recorded novel_id=", novel_id, "chapters=", len(payload.get("chapters") or []))
+        result = record_payload(conn, payload)
+        print(json.dumps(result, ensure_ascii=False))
     finally:
         conn.close()
 

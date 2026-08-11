@@ -1,0 +1,225 @@
+{
+  "name": "架构师周会",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "10 8 * * 0"
+            }
+          ]
+        }
+      },
+      "id": "n-weekly-trigger",
+      "name": "每周日触发",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "command": "={{ $env.PYTHON_EXE }}",
+        "options": {
+          "cwd": "={{ $env.PIPELINE_ROOT }}"
+        },
+        "commandArguments": "={{ ['-m', 'novel_pipeline.hot_topics', '--refresh'] }}"
+      },
+      "onError": "continueRegularOutput",
+      "id": "n-hot-refresh",
+      "name": "采集热点",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "command": "={{ $env.PYTHON_EXE }}",
+        "options": {
+          "cwd": "={{ $env.PIPELINE_ROOT }}"
+        },
+        "commandArguments": "={{ ['tools/architect_weekly.py', '--book-id', JSON.parse($('读当前书').first().json.stdout || '{}').book_id, '--db', 'demo.db'] }}"
+      },
+      "onError": "continueRegularOutput",
+      "id": "n-arch-read",
+      "name": "读上下文",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "novel-weekly-run",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "n-manual-run",
+      "name": "手动触发",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.2,
+      "position": [
+        -220,
+        0
+      ],
+      "webhookId": "wh-804f2eb78ade47ce"
+    },
+    {
+      "parameters": {
+        "command": "={{ $env.PYTHON_EXE }}",
+        "options": {
+          "cwd": "={{ $env.PIPELINE_ROOT }}"
+        },
+        "commandArguments": "={{ ['tools/agent_meeting.py', '--book-id', JSON.parse($('读当前书').first().json.stdout || '{}').book_id, '--db', 'demo.db'] }}"
+      },
+      "id": "n-meeting",
+      "name": "开会",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        300,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [];"
+      },
+      "id": "n-end",
+      "name": "结束",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "command": "={{ $env.PYTHON_EXE }}",
+        "options": {
+          "cwd": "={{ $env.PIPELINE_ROOT }}"
+        },
+        "commandArguments": "={{ ['tools/distill_lessons.py', '--db', 'demo.db'] }}"
+      },
+      "onError": "continueRegularOutput",
+      "id": "n-distill",
+      "name": "蒸馏经验",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        720,
+        0
+      ]
+    },
+    {
+      "id": "n-weekly-current-book",
+      "name": "读当前书",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        80,
+        260
+      ],
+      "parameters": {
+        "command": "={{ $env.PYTHON_EXE }}",
+        "commandArguments": "={{ ['tools/current_book.py', '--db', 'demo.db'] }}",
+        "options": {
+          "cwd": "={{ $env.PIPELINE_ROOT }}"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "每周日触发": {
+      "main": [
+        [
+          {
+            "node": "采集热点",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "读上下文": {
+      "main": [
+        [
+          {
+            "node": "开会",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "手动触发": {
+      "main": [
+        [
+          {
+            "node": "采集热点",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "开会": {
+      "main": [
+        [
+          {
+            "node": "蒸馏经验",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "蒸馏经验": {
+      "main": [
+        [
+          {
+            "node": "结束",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "采集热点": {
+      "main": [
+        [
+          {
+            "node": "读当前书",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "读当前书": {
+      "main": [
+        [
+          {
+            "node": "读上下文",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

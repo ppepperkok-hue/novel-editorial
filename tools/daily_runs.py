@@ -111,13 +111,14 @@ def sync_from_n8n(conn, limit=20):
             "ORDER BY id LIMIT 1"
         ).fetchone()
         conn.execute(
-            "INSERT INTO daily_runs(run_id,novel_id,trigger,status,started_at,"
+            "INSERT INTO daily_runs(run_id,novel_id,trigger,source,status,started_at,"
             "finished_at,failed_nodes,error,published,detail,created_at) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))",
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))",
             (
                 run_id,
                 novel["id"] if novel else 0,
                 str(ex.get("mode") or "scheduled"),
+                "n8n-legacy",
                 status,
                 started,
                 finished,
@@ -163,3 +164,37 @@ def run_detail(conn, run_id):
         except (TypeError, ValueError):
             d[key] = [] if key == "failed_nodes" else {}
     return d
+
+
+def local_executions(conn, limit=30):
+    """Panel-facing execution rows backed by daily_runs (de-n8n).
+
+    Keeps the old n8n executions shape (`id/workflow/status/started_at/
+    stopped_at/error`) so the frontend table keeps working without n8n.
+    """
+    rows = conn.execute(
+        "SELECT run_id, trigger, source, status, started_at, finished_at, "
+        "published, failed_nodes, error FROM daily_runs "
+        "ORDER BY id DESC LIMIT ?",
+        (int(limit or 30),),
+    ).fetchall()
+    out = []
+    for r in rows:
+        try:
+            failed_nodes = json.loads(r["failed_nodes"] or "[]")
+        except (TypeError, ValueError):
+            failed_nodes = []
+        status = "success" if r["status"] == "completed" else r["status"]
+        out.append(
+            {
+                "workflow": "n8n(legacy)" if r["source"] == "n8n-legacy" else "日更",
+                "id": r["run_id"],
+                "status": status,
+                "started_at": r["started_at"],
+                "stopped_at": r["finished_at"],
+                "published": r["published"] or 0,
+                "failed_nodes": failed_nodes,
+                "error": r["error"] or "",
+            }
+        )
+    return out

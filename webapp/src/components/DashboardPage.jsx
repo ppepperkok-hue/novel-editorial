@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { getControl, postControl, refreshHotTopics } from "../api.js";
 import ReaderChart from "./ReaderChart.jsx";
-import { ConfirmDialog, fmtRelative, fmtTime } from "./ui.jsx";
+import { ConfirmDialog, fmtTime } from "./ui.jsx";
 import { getMeetings } from "../api.js";
 
 export function localToday() {
@@ -21,43 +21,15 @@ function Kpi({ label, value, sub, tone }) {
   );
 }
 
-function WorkflowCard({ label, wf, onAction, onPause }) {
-  const state = !wf?.online
-    ? { text: "n8n 离线", cls: "chip-bad" }
-    : wf.active
-      ? { text: "● 运行中", cls: "chip-ok" }
-      : { text: "● 已暂停", cls: "chip-bad" };
-  const statusText = {
-    success: "成功",
-    running: "运行中",
-    waiting: "等待中",
-    failed: "失败",
-    crashed: "崩溃",
-    canceled: "已取消",
-  }[wf?.last?.status] || wf?.last?.status;
-  const last = wf?.last
-    ? `${statusText} · ${fmtRelative(wf.last.stopped_at || wf.last.started_at)}`
-    : "暂无执行记录";
+function ProcessCard({ title, badge, badgeCls, desc, children }) {
   return (
     <div className="panel panel-hover p-4">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold">{label}</span>
-        <span className={`chip ${state.cls}`}>{state.text}</span>
+        <span className="text-sm font-semibold">{title}</span>
+        <span className={`chip ${badgeCls}`}>{badge}</span>
       </div>
-      <div className="muted mt-1 text-xs">上次：{last}</div>
-      <div className="mt-3 flex gap-2">
-        {wf?.online && (
-          wf.active ? (
-            <button className="btn btn-danger !px-3 !py-1 text-xs" onClick={onPause}>
-              暂停
-            </button>
-          ) : (
-            <button className="btn btn-ok !px-3 !py-1 text-xs" onClick={() => onAction("resume")}>
-              恢复
-            </button>
-          )
-        )}
-      </div>
+      <div className="muted mt-1 text-xs">{desc}</div>
+      <div className="mt-3 flex flex-wrap gap-2">{children}</div>
     </div>
   );
 }
@@ -143,13 +115,29 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
   const cost = s.monthly_cost ?? 0;
   const costPct = Math.min(100, Math.round((cost / budget) * 100));
   const passRate = s.quality_total ? Math.round((s.quality_passed / s.quality_total) * 100) : "—";
-  const wfs = control?.workflows || {};
   const issues = data?.health?.issues || [];
   const liveIssueCount = snapshot?.issues ?? issues.length;
-  const daily = wfs.daily || {};
   const liveExecs = snapshot?.executions || data?.executions || [];
   const runningNow = liveExecs.some((e) => e.status === "running" || e.status === "waiting");
-  const lastExec = liveExecs[0];
+  const sch = control?.scheduler || null;
+  const lastRun = sch?.last_run || null;
+  const lastExec = lastRun
+    ? {
+        workflow: "日更",
+        status: lastRun.status,
+        started_at: lastRun.started_at,
+        stopped_at: lastRun.finished_at,
+      }
+    : liveExecs[0] || null;
+  const runStatusText = {
+    completed: "成功",
+    success: "成功",
+    partial: "部分成功",
+    running: "运行中",
+    failed: "失败",
+    error: "失败",
+    crashed: "崩溃",
+  }[lastExec?.status] || lastExec?.status || "未知";
 
   const today = localToday();
   const todayPublished = (data?.chapters || []).filter(
@@ -159,13 +147,17 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
     (l) => l.result === "failed" && (l.created_at || "").slice(0, 10) === today,
   ).length;
 
-  const pipelineState = !daily.online
-    ? { text: "n8n 离线", cls: "bad", desc: "工作流服务不可达，请检查 n8n 是否启动" }
-    : runningNow
+  const pipelineState = !sch
+    ? { text: "调度器未知", cls: "bad", desc: "无法读取调度器状态，请检查后端服务" }
+    : runningNow || lastRun?.status === "running"
       ? { text: "流水线运行中", cls: "ok", desc: "正在后台生成并发布章节，可在执行记录查看进度" }
-      : !daily.active
-        ? { text: "日更已暂停", cls: "warn", desc: "定时更新已暂停，可到系统设置恢复" }
-        : { text: "待命", cls: "ok", desc: `每日 ${control?.settings?.daily_run_time || "08:00"} 自动更新，可随时手动补更` };
+      : !sch.enabled
+        ? { text: "日更已暂停", cls: "warn", desc: "定时与手动日更已暂停，点击日更卡片恢复" }
+        : lastRun?.status === "failed"
+          ? { text: "待命 · 上次失败", cls: "warn", desc: `上次运行失败：${(lastRun.error || "无详情").slice(0, 60)}` }
+          : lastRun?.status === "partial"
+            ? { text: "待命 · 上次部分成功", cls: "warn", desc: `上次发布 ${lastRun.published ?? 0} 章，存在失败节点待处理` }
+            : { text: "待命", cls: "ok", desc: `每日 ${sch.scheduled_time || "08:00"} 自动更新，可随时手动补更` };
 
   const stateDot = { ok: "online", bad: "offline", warn: "paused" }[pipelineState.cls];
 
@@ -197,7 +189,7 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
             <div className="muted mt-1.5 text-xs">
               {todayPublished > 0
                 ? `今天已完成日更${todayFailed ? `，另有 ${todayFailed} 条发布失败` : ""}`
-                : lastExec
+                : lastRun
                   ? `今日尚未发布${todayFailed ? `，${todayFailed} 条发布失败待处理` : "，等待定时或手动触发"}`
                   : "今天还没有执行记录"}
             </div>
@@ -205,7 +197,7 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
           <div className="border-t border-[var(--line-soft)] p-5 md:border-l md:border-t-0">
             <div className="kpi-label">上次执行</div>
             <div className="mt-1 text-base font-semibold">
-              {lastExec ? `${lastExec.workflow === "日更" ? "日更" : "周会"} · ${lastExec.status === "success" ? "成功" : lastExec.status === "running" ? "运行中" : "失败"}` : "暂无"}
+              {lastExec ? `${lastExec.workflow === "日更" ? "日更" : "周会"} · ${runStatusText}` : "暂无"}
             </div>
             <div className="muted mt-1.5 text-xs">
               {lastExec ? `${new Date(lastExec.started_at).toLocaleString("zh-CN", { hour12: false })}` : "运行后自动记录"}
@@ -236,11 +228,51 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
       )}
 
       <section>
-        <div className="section-title">工作流状态与补更</div>
+        <div className="mb-3 flex items-center justify-between">
+          <div className="section-title !mb-0">流程状态与补更</div>
+          <a className="btn !px-3 !py-1 text-xs" href="#flow">⬡ 打开链路视图</a>
+        </div>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-          <WorkflowCard label={`日更工作流（${wfs.daily?.nodes ?? "?"} 节点）`} wf={wfs.daily} onAction={(a) => action({ action: a, workflow: "daily" }, "日更已恢复")} onPause={() => setConfirm("pause-daily")} />
-          <WorkflowCard label={`架构师周会（${wfs.weekly?.nodes ?? "?"} 节点）`} wf={wfs.weekly} onAction={(a) => action({ action: a, workflow: "weekly" }, "周会已恢复")} onPause={() => setConfirm("pause-weekly")} />
-          <WorkflowCard label={`知识管家（${wfs.keeper?.nodes ?? "?"} 节点）`} wf={wfs.keeper} onAction={(a) => action({ action: a, workflow: "keeper" }, "知识管家已恢复")} onPause={() => setConfirm("pause-keeper")} />
+          <ProcessCard
+            title="日更调度"
+            badge={sch?.enabled ? "● 已开启" : "● 已暂停"}
+            badgeCls={sch?.enabled ? "chip-ok" : "chip-bad"}
+            desc={
+              lastRun
+                ? `定时 ${sch?.scheduled_time || "08:00"} · 上次${runStatusText} · 发布 ${lastRun.published ?? 0} 章`
+                : `定时 ${sch?.scheduled_time || "08:00"} · 暂无执行记录`
+            }
+          >
+            {sch?.enabled ? (
+              <button className="btn btn-danger !px-3 !py-1 text-xs" onClick={() => setConfirm("pause-daily")}>
+                暂停
+              </button>
+            ) : (
+              <button className="btn btn-ok !px-3 !py-1 text-xs" onClick={() => action({ action: "resume", workflow: "daily" }, "日更已恢复")}>
+                恢复
+              </button>
+            )}
+          </ProcessCard>
+          <ProcessCard
+            title="架构师周会"
+            badge="手动触发"
+            badgeCls="chip-warn"
+            desc="后台依次执行：采集热点 → 读上下文 → 开会 → 蒸馏经验"
+          >
+            <button className="btn !px-3 !py-1 text-xs" onClick={() => action({ action: "run_now", workflow: "weekly" }, "周会已启动")}>
+              ▶ 立即开会
+            </button>
+          </ProcessCard>
+          <ProcessCard
+            title="知识管家"
+            badge="手动触发"
+            badgeCls="chip-warn"
+            desc="维护热点市场包与知识库草案，规则型变更需人工采纳"
+          >
+            <button className="btn !px-3 !py-1 text-xs" onClick={() => action({ action: "run_knowledge_keeper" }, "知识管家已运行")}>
+              ▶ 立即维护
+            </button>
+          </ProcessCard>
           <div className="panel panel-hover p-4">
             <div className="text-sm font-semibold">手动补更</div>
             <div className="muted mt-1 text-xs">存稿优先：有存货直接发，不够自动补造并发布</div>
@@ -427,15 +459,14 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
       ) : null}
 
       <ConfirmDialog
-        open={confirm === "pause-daily" || confirm === "pause-weekly" || confirm === "pause-keeper"}
-        title="暂停工作流？"
-        body="暂停后定时触发将停止，需要手动恢复。"
+        open={confirm === "pause-daily"}
+        title="暂停日更调度？"
+        body="暂停后定时与手动补更都会停止，需要手动恢复。"
         confirmText="暂停"
         onCancel={() => setConfirm(null)}
         onConfirm={() => {
-          const workflow = confirm === "pause-daily" ? "daily" : confirm === "pause-weekly" ? "weekly" : "keeper";
           setConfirm(null);
-          action({ action: "pause", workflow }, "已暂停");
+          action({ action: "pause", workflow: "daily" }, "日更已暂停");
         }}
       />
 

@@ -17,6 +17,20 @@ sys.path.insert(0, str(ROOT))
 from novel_pipeline import db  # noqa: E402
 
 
+def current_book(conn):
+    """Resolve the active novel (id/book_id/volume_id) from the local database."""
+    row = conn.execute(
+        "SELECT id, book_id, volume_id FROM novels "
+        "WHERE status IN ('publishing','finishing') "
+        "ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    return {
+        "novel_id": row["id"] if row else 0,
+        "book_id": row["book_id"] if row else "",
+        "volume_id": row["volume_id"] if row else "",
+    }
+
+
 def main():
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -30,21 +44,7 @@ def main():
         db_path = ROOT / db_path
     conn = db.connect(db_path)
     try:
-        row = conn.execute(
-            "SELECT id, book_id, volume_id FROM novels "
-            "WHERE status IN ('publishing','finishing') "
-            "ORDER BY id DESC LIMIT 1"
-        ).fetchone()
-        print(
-            json.dumps(
-                {
-                    "novel_id": row["id"] if row else 0,
-                    "book_id": row["book_id"] if row else "",
-                    "volume_id": row["volume_id"] if row else "",
-                },
-                ensure_ascii=False,
-            )
-        )
+        print(json.dumps(current_book(conn), ensure_ascii=False))
     finally:
         conn.close()
 

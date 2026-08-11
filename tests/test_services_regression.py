@@ -86,7 +86,7 @@ class ControlTests(unittest.TestCase):
             self.assertTrue(result["ok"])
             self.assertEqual(result["saved"], {"monthly_budget": "88"})
             with mock.patch("novel_pipeline.services.control.run_workflow_now") as run:
-                run.return_value = {"ok": True, "response": "{}", "workflow": "daily"}
+                run.return_value = {"ok": True, "started": True, "workflow": "daily"}
                 result = control.handle_control(conn, {"action": "run_now", "workflow": "daily"})
             self.assertTrue(result["ok"])
             run.assert_called_once_with("daily")
@@ -118,16 +118,21 @@ class ControlTests(unittest.TestCase):
 
         conn = db.connect(path)
         try:
-            with mock.patch("novel_pipeline.services.n8n.n8n_api") as api:
-                api.return_value = {"active": False}
-                result = control.handle_control(
-                    conn, {"action": "pause", "workflow": "keeper"}
-                )
+            result = control.handle_control(conn, {"action": "pause", "workflow": "keeper"})
             self.assertTrue(result["ok"])
-            call = api.call_args
-            self.assertEqual(call.args[0], "POST")
-            self.assertIn("CXz06QvOKNASreBl", call.args[1])
-            self.assertIn("deactivate", call.args[1])
+            self.assertIn("无独立开关", result["note"])
+            result = control.handle_control(conn, {"action": "pause", "workflow": "daily"})
+            self.assertTrue(result["ok"])
+            row = conn.execute(
+                "SELECT value FROM settings WHERE key='daily_enabled'"
+            ).fetchone()
+            self.assertEqual(row["value"], "false")
+            result = control.handle_control(conn, {"action": "resume", "workflow": "daily"})
+            self.assertTrue(result["ok"])
+            row = conn.execute(
+                "SELECT value FROM settings WHERE key='daily_enabled'"
+            ).fetchone()
+            self.assertEqual(row["value"], "true")
         finally:
             conn.close()
 
@@ -162,7 +167,7 @@ class N8nServiceTests(unittest.TestCase):
         with mock.patch(
             "novel_pipeline.services.n8n.config.env_value", return_value=""
         ) as env:
-            with mock.patch.dict(os.environ, {}, clear=False):
+            with mock.patch.dict(os.environ, {"N8N_API_KEY": ""}, clear=False):
                 self.assertEqual(n8n_service._load_n8n_env(), "")
             self.assertIsNone(n8n_service._N8N_KEY, "empty key must not be cached")
             env.return_value = "key123"
