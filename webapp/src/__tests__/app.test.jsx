@@ -59,8 +59,8 @@ describe("App", () => {
 
   it("renders the dashboard shell", async () => {
     render(<App />);
-    expect(await screen.findByText("流水线实时总览：作品、质量、成本、健康与热点")).toBeInTheDocument();
-    expect(screen.getByText("小说流水线")).toBeInTheDocument();
+    expect(await screen.findByText("编辑部实时总览：作品、质量、成本、健康与热点")).toBeInTheDocument();
+    expect(screen.getByText("文学编辑部")).toBeInTheDocument();
     expect(screen.getByText("连载作品")).toBeInTheDocument();
   });
 
@@ -90,6 +90,6 @@ describe("App", () => {
     fireEvent.keyDown(window, { key: "4" });
     expect(await screen.findByText("写作智能体")).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "1" });
-    expect(await screen.findByText("流水线实时总览：作品、质量、成本、健康与热点")).toBeInTheDocument();
+    expect(await screen.findByText("编辑部实时总览：作品、质量、成本、健康与热点")).toBeInTheDocument();
   });
 });
