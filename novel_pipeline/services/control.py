@@ -41,12 +41,33 @@ def _scheduler_state(conn):
         "SELECT run_id, status, trigger, source, started_at, finished_at, "
         "published, failed_nodes, error FROM daily_runs ORDER BY id DESC LIMIT 1"
     ).fetchone()
+    workday_row = conn.execute(
+        "SELECT run_id, status, phase, mode, boss_instruction, published, "
+        "started_at, finished_at, error, collab_summary, legacy FROM daily_runs "
+        "WHERE source='workday' ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    from datetime import datetime  # noqa: PLC0415
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    today_opened = conn.execute(
+        "SELECT COUNT(*) c FROM daily_runs "
+        "WHERE source='workday' AND substr(started_at,1,10)=?",
+        (today,),
+    ).fetchone()["c"]
+    today_published = conn.execute(
+        "SELECT COUNT(*) c FROM publish_logs "
+        "WHERE result='success' AND substr(created_at,1,10)=?",
+        (today,),
+    ).fetchone()["c"]
     return {
         "enabled": _enabled(settings.get("daily_enabled", "true")),
         "manual_run_requested": str(settings.get("manual_run_requested", "0")) == "1",
         "scheduled_time": settings.get("daily_run_time", "08:00"),
         "daily_chapters": settings.get("daily_chapters", "2"),
         "last_run": dict(row) if row else None,
+        "workday": dict(workday_row) if workday_row else None,
+        "today_opened": today_opened,
+        "today_published": today_published,
     }
 
 
@@ -93,6 +114,65 @@ def _background_daily(chapters=None):
                 conn.close()
         except Exception as exc:  # noqa: BLE001
             _alert(f"后台日更线程异常: {str(exc)[:300]}")
+
+    _spawn(worker)
+
+
+def _background_workday(mode="write", chapters=None, boss_instruction=""):
+    def worker():
+        try:
+            conn = db.connect(str(config.DB_PATH))
+            try:
+                from tools import workday  # noqa: PLC0415
+
+                workday.open(
+                    conn,
+                    chapters=chapters,
+                    trigger="manual",
+                    mode=mode,
+                    boss_instruction=boss_instruction,
+                    db_path=str(config.DB_PATH),
+                )
+            finally:
+                conn.close()
+        except Exception as exc:  # noqa: BLE001
+            _alert(f"工作日后台异常: {str(exc)[:300]}")
+
+    _spawn(worker)
+
+
+def _background_close(run_id):
+    def worker():
+        try:
+            conn = db.connect(str(config.DB_PATH))
+            try:
+                from tools import workday  # noqa: PLC0415
+
+                workday.close(
+                    conn, run_id, db_path=str(config.DB_PATH)
+                )
+            finally:
+                conn.close()
+        except Exception as exc:  # noqa: BLE001
+            _alert(f"收工后台异常: {str(exc)[:300]}")
+
+    _spawn(worker)
+
+
+def _background_resume(run_id, chapters=None):
+    def worker():
+        try:
+            conn = db.connect(str(config.DB_PATH))
+            try:
+                from tools import workday  # noqa: PLC0415
+
+                workday.resume(
+                    conn, run_id, chapters=chapters, db_path=str(config.DB_PATH)
+                )
+            finally:
+                conn.close()
+        except Exception as exc:  # noqa: BLE001
+            _alert(f"继续工作日后台异常: {str(exc)[:300]}")
 
     _spawn(worker)
 
@@ -229,6 +309,29 @@ def handle_control(conn, payload):
         audit.log(conn, "settings", "save_settings", detail={"saved": values})
         return {"ok": True, "saved": values}
     if action == "run_now":
+        mode = str(payload.get("mode") or "")
+        wf = payload.get("workflow") or "daily"
+        if mode in ("write", "org", "meeting", "free"):
+            _background_workday(
+                mode,
+                chapters=payload.get("chapters"),
+                boss_instruction=payload.get("boss_instruction") or "",
+            )
+            audit.log(
+                conn,
+                "operation",
+                "run_now",
+                target_type="workflow",
+                target_id="workday",
+                detail={"mode": mode, "chapters": payload.get("chapters")},
+            )
+            return {
+                "ok": True,
+                "started": True,
+                "workflow": "workday",
+                "mode": mode,
+                "note": "编辑部已开工，可在首页查看进度",
+            }
         set_many(conn, {"manual_run_requested": "1"})
         chapters = payload.get("chapters")
         n = 0
@@ -254,6 +357,26 @@ def handle_control(conn, payload):
             },
         )
         return result
+    if action == "close_workday":
+        run_id = payload.get("run_id") or ""
+        if not run_id:
+            return {"ok": False, "error": "run_id required"}
+        _background_close(run_id)
+        audit.log(
+            conn, "operation", "close_workday",
+            target_type="run", target_id=run_id,
+        )
+        return {"ok": True, "started": True, "note": "收工流程已启动"}
+    if action == "resume_workday":
+        run_id = payload.get("run_id") or ""
+        if not run_id:
+            return {"ok": False, "error": "run_id required"}
+        _background_resume(run_id, chapters=payload.get("chapters"))
+        audit.log(
+            conn, "operation", "resume_workday",
+            target_type="run", target_id=run_id,
+        )
+        return {"ok": True, "started": True, "note": "继续补跑已启动"}
     if action == "apply_schedule":
         result = apply_schedule(conn)
         audit.log(

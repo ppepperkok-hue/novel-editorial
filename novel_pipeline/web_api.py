@@ -1144,6 +1144,9 @@ def main():
     if args.host not in ("127.0.0.1", "localhost"):
         raise SystemExit("本机控制台只允许绑定 127.0.0.1，禁止暴露到局域网")
     _fail_orphan_sessions(args.db)
+    from novel_pipeline.services import reminders  # noqa: PLC0415
+
+    reminders.start_worker(str(Path(args.db).resolve()))
     server = ThreadingHTTPServer((args.host, args.port), make_handler(args.db))
     print(f"监控面板：http://{args.host}:{args.port}/  （Ctrl+C 停止）")
     try:

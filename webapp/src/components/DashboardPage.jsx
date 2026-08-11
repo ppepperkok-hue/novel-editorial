@@ -39,6 +39,7 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
   const [running, setRunning] = useState(false);
   const [confirm, setConfirm] = useState(null);
   const [runChapters, setRunChapters] = useState(2);
+  const [bossInstruction, setBossInstruction] = useState("");
   const [logDetail, setLogDetail] = useState(null);
   const [latestMeeting, setLatestMeeting] = useState(null);
   const [hotBusy, setHotBusy] = useState(false);
@@ -78,15 +79,70 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
   const runNow = async (chapters) => {
     setRunning(true);
     setConfirm(null);
-    setRunChapters(2);
     try {
-      const r = await postControl({ action: "run_now", workflow: "daily", chapters });
+      const r = await postControl({ action: "run_now", mode: "write", chapters });
       pushToast(
         r.ok
-          ? `已启动：本次目标发布 ${chapters} 章（存稿优先）`
-          : "启动失败：" + (r.error || "未知"),
+          ? `编辑部已开工：目标 ${chapters} 章（存稿优先）`
+          : "开工失败：" + (r.error || "未知"),
         r.ok ? "ok" : "bad",
       );
+      refreshControl();
+      onRefresh();
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const openWorkday = async (mode, chapters) => {
+    setRunning(true);
+    try {
+      const r = await postControl({
+        action: "run_now",
+        mode,
+        chapters: chapters || undefined,
+        boss_instruction: bossInstruction,
+      });
+      const label =
+        mode === "write"
+          ? `写稿 ${chapters} 章`
+          : mode === "org"
+            ? "整理日"
+            : mode === "meeting"
+              ? "开会日"
+              : "自由安排";
+      pushToast(
+        r.ok ? `编辑部已开工（${label}）` : "开工失败：" + (r.error || "未知"),
+        r.ok ? "ok" : "bad",
+      );
+      refreshControl();
+      onRefresh();
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const closeWorkday = async () => {
+    const runId = sch?.workday?.run_id;
+    if (!runId) return;
+    setRunning(true);
+    try {
+      const r = await postControl({ action: "close_workday", run_id: runId });
+      pushToast(r.ok ? "收工流程已启动" : "收工失败：" + (r.error || "未知"), r.ok ? "ok" : "bad");
+      refreshControl();
+      onRefresh();
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const resumeWorkday = async () => {
+    const runId = sch?.workday?.run_id;
+    if (!runId) return;
+    setRunning(true);
+    try {
+      const r = await postControl({ action: "resume_workday", run_id: runId });
+      pushToast(r.ok ? "继续补跑已启动" : "继续失败：" + (r.error || "未知"), r.ok ? "ok" : "bad");
       refreshControl();
       onRefresh();
     } finally {
@@ -120,6 +176,20 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
   const liveExecs = snapshot?.executions || data?.executions || [];
   const runningNow = liveExecs.some((e) => e.status === "running" || e.status === "waiting");
   const sch = control?.scheduler || null;
+  const workdayRow = sch?.workday || null;
+  const workdayPhase = workdayRow?.phase || "";
+  const workdayAwaiting = workdayPhase === "awaiting_close";
+  const workdayFinished =
+    ["completed", "completed_with_pending", "partial", "failed"].includes(
+      workdayRow?.status || "",
+    );
+  const phaseText = {
+    opening: "开门",
+    morning: "晨会",
+    producing: "写稿",
+    awaiting_close: "待决策",
+    closing: "收工",
+  }[workdayPhase] || workdayPhase;
   const lastRun = sch?.last_run || null;
   const lastExec = lastRun
     ? {
@@ -149,8 +219,20 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
 
   const pipelineState = !sch
     ? { text: "调度器未知", cls: "bad", desc: "无法读取调度器状态，请检查后端服务" }
-    : runningNow || lastRun?.status === "running"
-      ? { text: "流水线运行中", cls: "ok", desc: "正在后台生成并发布章节，可在执行记录查看进度" }
+    : workdayAwaiting
+      ? { text: "待决策 · 今天的工作完成了", cls: "ok", desc: "主产出已结束，可收工、开会或继续补跑" }
+      : workdayRow?.phase && !workdayFinished
+        ? { text: `工作中 · ${phaseText}`, cls: "ok", desc: "编辑部正在上班，可在首页看到当前阶段" }
+        : workdayRow?.status === "completed_with_pending"
+          ? { text: "已收工 · 有遗留", cls: "warn", desc: "今天收工了，遗留事项明天晨会优先处理" }
+          : workdayRow?.status === "completed"
+            ? { text: "已收工", cls: "ok", desc: "今天的工作已完整收工" }
+            : workdayRow?.status === "partial"
+              ? { text: "已收工 · 部分完成", cls: "warn", desc: "今天只发布了一部分章节，明天优先续跑" }
+              : workdayRow?.status === "failed"
+                ? { text: "已收工 · 失败", cls: "bad", desc: "今天没有产出，请查看执行记录" }
+                : runningNow || lastRun?.status === "running"
+                  ? { text: "流水线运行中", cls: "ok", desc: "正在后台生成并发布章节，可在执行记录查看进度" }
       : !sch.enabled
         ? { text: "日更已暂停", cls: "warn", desc: "定时与手动日更已暂停，点击日更卡片恢复" }
         : lastRun?.status === "failed"
@@ -205,6 +287,43 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
           </div>
         </div>
       </section>
+
+      {workdayFinished && workdayRow ? (
+        <section className="panel p-4">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-xs font-semibold">今日收工</span>
+            <span
+              className={`chip ${
+                workdayRow.status === "completed"
+                  ? "chip-ok"
+                  : workdayRow.status === "completed_with_pending" || workdayRow.status === "partial"
+                    ? "chip-warn"
+                    : "chip-bad"
+              }`}
+            >
+              {workdayRow.status === "completed"
+                ? "完整收工"
+                : workdayRow.status === "completed_with_pending"
+                  ? "有遗留"
+                  : workdayRow.status === "partial"
+                    ? "部分完成"
+                    : "失败"}
+            </span>
+            <span className="muted text-xs">
+              发布 {workdayRow.published ?? 0} 章 · 收工于{" "}
+              {workdayRow.finished_at ? new Date(workdayRow.finished_at).toLocaleString("zh-CN", { hour12: false }) : "—"}
+            </span>
+          </div>
+          {workdayRow.collab_summary ? (
+            <div className="muted mt-2 text-xs">
+              协作摘要：{workdayRow.collab_summary}
+            </div>
+          ) : null}
+          {workdayRow.legacy && workdayRow.legacy !== "{}" ? (
+            <div className="mt-2 text-xs text-amber-400">遗留：{workdayRow.legacy}</div>
+          ) : null}
+        </section>
+      ) : null}
 
       {latestMeeting ? (
         <section className="panel p-4">
@@ -274,11 +393,54 @@ export default function DashboardPage({ data, error, onRefresh, pushToast, snaps
             </button>
           </ProcessCard>
           <div className="panel panel-hover p-4">
-            <div className="text-sm font-semibold">手动补更</div>
-            <div className="muted mt-1 text-xs">存稿优先：有存货直接发，不够自动补造并发布</div>
-            <button className="btn btn-ok mt-3" disabled={running} onClick={() => setConfirm("run")}>
-              {running ? "正在启动…" : "▶ 立即补更"}
-            </button>
+            <div className="text-sm font-semibold">编辑部开工</div>
+            <div className="muted mt-1 text-xs">
+              开工即上班：晨会 → 主产出 → 决策点（收工 / 开会 / 继续）
+            </div>
+            {workdayAwaiting ? (
+              <div className="mt-3 flex flex-col gap-2">
+                <button className="btn btn-ok" disabled={running} onClick={closeWorkday}>
+                  🕗 收工
+                </button>
+                <button
+                  className="btn"
+                  disabled={running}
+                  onClick={() => action({ action: "run_now", workflow: "weekly" }, "周会已启动")}
+                >
+                  ▦ 开会（周会）
+                </button>
+                <button className="btn" disabled={running} onClick={resumeWorkday}>
+                  ⏩ 继续补跑
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button
+                    className="btn btn-primary"
+                    disabled={running}
+                    onClick={() => openWorkday("write", runChapters)}
+                  >
+                    写稿 {runChapters} 章
+                  </button>
+                  <button className="btn" disabled={running} onClick={() => openWorkday("org")}>
+                    整理日
+                  </button>
+                  <button className="btn" disabled={running} onClick={() => openWorkday("meeting")}>
+                    开会日
+                  </button>
+                  <button className="btn" disabled={running} onClick={() => openWorkday("free")}>
+                    自由安排
+                  </button>
+                </div>
+                <input
+                  className="input mt-2"
+                  placeholder="老板指令（可选），如：今天赶两章"
+                  value={bossInstruction}
+                  onChange={(e) => setBossInstruction(e.target.value)}
+                />
+              </>
+            )}
           </div>
         </div>
       </section>
