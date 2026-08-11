@@ -51,6 +51,25 @@ def build_context_snapshot(conn, agent, novel_id=0):
             )
         sections.append("收件箱：\n" + "\n".join(lines))
 
+    pending = conn.execute(
+        "SELECT id, from_agent, subject, body FROM agent_messages "
+        "WHERE to_agent=? AND reply_to>0 "
+        "AND status NOT IN ('resolved','archived') "
+        "AND ref_novel_id IN (" + marks + ") "
+        "ORDER BY id DESC LIMIT ?",
+        (agent, *scopes, config.AGENT_CTX_MESSAGES),
+    ).fetchall()
+    if pending:
+        sections.append(
+            "待响应留言（同事等着你的决定）：\n"
+            + "\n".join(
+                f"- #{r['id']} 来自 {r['from_agent']}"
+                + (f"：{r['subject']}" if r["subject"] else "")
+                + "：" + _truncate(r["body"], limit)
+                for r in pending
+            )
+        )
+
     memories = editorial_state.list_memories(
         conn, agent=agent, novel_id=novel_id, limit=config.AGENT_CTX_MEMORIES
     ).get("items") or []

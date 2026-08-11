@@ -11,7 +11,7 @@ from datetime import datetime
 
 from novel_pipeline.services import audit
 
-RESOLUTIONS = ("accepted", "rejected", "done")
+RESOLUTIONS = ("accepted", "rejected", "done", "rework", "clarify", "defer")
 
 
 def _now():

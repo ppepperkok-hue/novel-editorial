@@ -84,6 +84,18 @@ class MailroomTests(unittest.TestCase):
         self.assertEqual(row["status"], "resolved")
         self.assertEqual(row["resolution"], "accepted")
 
+    def test_resolve_accepts_decision_resolutions(self):
+        for res in ("rework", "clarify", "defer"):
+            msg = mailroom.send(self.conn, "reviewer", "writer", "重做", novel_id=1)
+            r = mailroom.resolve(self.conn, msg["id"], res)
+            self.assertTrue(r["ok"])
+            row = self.conn.execute(
+                "SELECT resolution, status FROM agent_messages WHERE id=?",
+                (msg["id"],),
+            ).fetchone()
+            self.assertEqual(row["resolution"], res)
+            self.assertEqual(row["status"], "resolved")
+
     def test_archive(self):
         result = mailroom.archive(self.conn, self.r3["id"])
         self.assertTrue(result["ok"])

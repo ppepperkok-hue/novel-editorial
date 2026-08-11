@@ -94,6 +94,8 @@ def _handle_outbox(ctx, node, text):
         for item in outbox:
             if not isinstance(item, dict):
                 continue
+            decision = str(item.get("decision") or "").strip().lower()
+            reply_to = int(item.get("reply_to") or 0)
             result = mailroom.send(
                 conn,
                 from_agent,
@@ -103,11 +105,32 @@ def _handle_outbox(ctx, node, text):
                 kind=str(item.get("kind") or "note"),
                 novel_id=ctx.novel_id,
                 chapter_id=int(item.get("chapter_id") or 0),
+                reply_to=reply_to,
             )
             if not result.get("ok"):
                 ctx.warnings.append(
                     f"outbox {node} -> {item.get('to')}: {result.get('error', 'unknown')}"
                 )
+                continue
+            if reply_to and decision in ("rework", "clarify", "defer"):
+                mailroom.resolve(conn, reply_to, decision)
+                if decision in ("rework", "defer"):
+                    from novel_pipeline.services import activity  # noqa: PLC0415
+
+                    prefix = "按留言重做：" if decision == "rework" else "明日处理："
+                    task = prefix + str(item.get("body") or "")[:200]
+                    activity.create_action(
+                        conn,
+                        from_agent,
+                        task,
+                        novel_id=ctx.novel_id,
+                        detail={
+                            "source": "message_decision",
+                            "decision": decision,
+                            "message_id": reply_to,
+                        },
+                        priority="high" if decision == "rework" else "medium",
+                    )
     finally:
         conn.close()
     return json.dumps(obj, ensure_ascii=False)

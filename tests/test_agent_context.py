@@ -43,6 +43,18 @@ class AgentContextTests(unittest.TestCase):
         self.assertIn("来自 reviewer", snap)
         self.assertIn("最近记忆", snap)
         self.assertIn("审稿打回过我的第二章", snap)
+
+    def test_pending_reply_messages_are_injected(self):
+        first = mailroom.send(
+            self.conn, "writer", "reviewer", "这是初稿，请审", novel_id=1
+        )
+        mailroom.send(
+            self.conn, "reviewer", "writer", "重写第三章",
+            reply_to=first["id"], novel_id=1,
+        )
+        snap = agent_context.build_context_snapshot(self.conn, "writer", novel_id=1)
+        self.assertIn("待响应留言", snap)
+        self.assertIn("重写第三章", snap)
         self.assertIn("我与同事的关系", snap)
         self.assertIn("熟悉0.2 信任0.3 摩擦0.4", snap)
         self.assertIn("我未兑现的承诺", snap)

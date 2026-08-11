@@ -52,6 +52,65 @@ class OutboxTests(unittest.TestCase):
         text = "正文里提到 outbox 这个词也不该被解析"
         self.assertEqual(editorial_daily._handle_outbox(self.ctx, "写手A", text), text)
 
+    def test_outbox_decision_rework_creates_action_and_resolves(self):
+        original = mailroom.send(
+            self.conn, "reviewer", "writer", "请重写第二章", novel_id=1
+        )
+        text = json.dumps(
+            {
+                "passed": True,
+                "outbox": [
+                    {
+                        "to": "reviewer",
+                        "body": "我重做这章",
+                        "reply_to": original["id"],
+                        "decision": "rework",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        )
+        editorial_daily._handle_outbox(self.ctx, "写手A", text)
+        row = self.conn.execute(
+            "SELECT status, resolution FROM agent_messages WHERE id=?",
+            (original["id"],),
+        ).fetchone()
+        self.assertEqual(row["status"], "resolved")
+        self.assertEqual(row["resolution"], "rework")
+        actions = self.conn.execute(
+            "SELECT agent, task, priority FROM agent_actions"
+        ).fetchall()
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0]["agent"], "writer")
+        self.assertIn("按留言重做", actions[0]["task"])
+        self.assertEqual(actions[0]["priority"], "high")
+
+    def test_outbox_decision_clarify_only_resolves(self):
+        original = mailroom.send(
+            self.conn, "reviewer", "writer", "确认下设定", novel_id=1
+        )
+        text = json.dumps(
+            {
+                "outbox": [
+                    {
+                        "to": "reviewer",
+                        "body": "设定是旧书店",
+                        "reply_to": original["id"],
+                        "decision": "clarify",
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        )
+        editorial_daily._handle_outbox(self.ctx, "写手A", text)
+        row = self.conn.execute(
+            "SELECT status, resolution FROM agent_messages WHERE id=?",
+            (original["id"],),
+        ).fetchone()
+        self.assertEqual(row["resolution"], "clarify")
+        n = self.conn.execute("SELECT COUNT(*) c FROM agent_actions").fetchone()["c"]
+        self.assertEqual(n, 0)
+
     def test_mark_injected_read(self):
         mailroom.send(self.conn, "eic", "writer", "今天两章归你", novel_id=1)
         mailroom.send(self.conn, "reviewer", "writer", "注意承接", novel_id=1)
