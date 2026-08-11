@@ -123,16 +123,6 @@ def _weekly_worker():
             )
         except Exception as exc:  # noqa: BLE001
             _alert(f"周会热点采集失败: {str(exc)[:200]}")
-        try:
-            from tools import ending_check  # noqa: PLC0415
-
-            conn = db.connect(str(config.DB_PATH))
-            try:
-                ending_check.check(conn)
-            finally:
-                conn.close()
-        except Exception as exc:  # noqa: BLE001
-            _alert(f"周检完结评估失败: {str(exc)[:200]}")
         _run_cli("tools/architect_weekly.py", ["--db", str(config.DB_PATH)])
         _run_cli(
             "tools/agent_meeting.py",
