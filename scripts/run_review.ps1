@@ -65,7 +65,7 @@ Requirements:
 "@
 
 function Get-ReviewArgs {
-    param([string]$Focus = "")
+    param([string]$Focus = "", [string]$Mode = "", [string]$ExcludeNote = "")
     $a = @("exec", "review")
     if ($Scope -eq "uncommitted") {
         $a += "--uncommitted"
@@ -85,7 +85,19 @@ function Get-ReviewArgs {
     if ($Scope -ne "uncommitted") {
         $p = ($persona -replace "`r?`n", " ")
         if ($Focus) {
-            $p += " Focus this review on the directory: $Focus"
+            $p += " Focus this review on these paths: $Focus."
+        }
+        if ($ExcludeNote) {
+            $p += $ExcludeNote
+        }
+        if ($Focus) {
+            $p += " Read dependency interfaces (e.g. novel_editorial/db.py, novel_editorial/config.py, novel_editorial/services/*) only to verify contracts; do NOT scan the whole repository."
+        }
+        if ($Mode -eq "tests") {
+            $p += " Run the full verification baseline: python run_tests.py and webapp npm test."
+        }
+        else {
+            $p += " Run targeted validation only (e.g. python -m compileall on your slice files for syntax); do NOT run the full test suite in this slice."
         }
         $a += $p
     }
@@ -93,21 +105,74 @@ function Get-ReviewArgs {
 }
 
 if ($Scope -eq "slices") {
-    $slicePaths = @{
-        "core"    = "novel_editorial"
-        "tools"   = "tools"
-        "webapp"  = "webapp/src"
-        "tests"   = "tests"
-        "scripts" = "scripts"
-    }
+    $sliceSpecs = @(
+        @{
+            Name  = "core"
+            Paths = @("novel_editorial")
+            Files = @()
+            Exclude = @()
+        },
+        @{
+            Name  = "editorial"
+            Paths = @()
+            Files = @(
+                "tools/editorial_daily.py", "tools/workday.py", "tools/editorial_steps.py",
+                "tools/editorial_state.py", "tools/flow_graph.py", "tools/export_flow_html.py",
+                "tools/daily_runs.py", "tools/auto_fill_actions.py",
+                "tools/agent_context.py", "tools/agent_meeting.py", "tools/agent_tool_loop.py",
+                "tools/mailroom.py", "tools/relations.py", "tools/promises.py",
+                "tools/meeting_actions.py", "tools/meeting_kinds.py", "tools/meeting_materials.py",
+                "tools/write_diaries.py", "tools/architect_weekly.py", "tools/apply_architect.py",
+                "tools/app_settings.py"
+            )
+            Exclude = @()
+        },
+        @{
+            Name  = "platform"
+            Paths = @("scripts")
+            Files = @(
+                "tools/publish_stock.py", "tools/create_book.py", "tools/check_stock.py",
+                "tools/get_meta.py", "tools/record_work.py", "tools/delete_book.py",
+                "tools/collect_reader_stats.py", "tools/current_book.py", "tools/preflight.py",
+                "tools/release_lock.py", "tools/n8n_api.py",
+                "pyproject.toml", "launch_desktop.vbs"
+            )
+            Exclude = @()
+        },
+        @{
+            Name  = "knowledge"
+            Paths = @("prompts")
+            Files = @(
+                "tools/novel_knowledge.py", "tools/knowledge_keeper.py",
+                "tools/distill_lessons.py", "tools/clean_novel_knowledge.py",
+                "tools/ai_taste_check.py", "tools/export_agent_prompts.py"
+            )
+            Exclude = @()
+        },
+        @{
+            Name  = "frontend"
+            Paths = @("webapp/src", "desktop")
+            Files = @()
+            Exclude = @("node_modules", "dist", "package-lock.json")
+        },
+        @{
+            Name  = "tests"
+            Paths = @("tests")
+            Files = @("run_tests.py", "ai_words.json", "compliance_words.txt", ".env.example")
+            Exclude = @()
+        }
+    )
     $stamp = Get-Date -Format "yyyyMMdd-HHmm"
     $index = Join-Path $root ("docs/reviews/" + $stamp + "-slices-index.md")
     $procs = @()
-    foreach ($name in $slicePaths.Keys) {
-        $focus = $slicePaths[$name]
+    foreach ($spec in $sliceSpecs) {
+        $name = $spec.Name
+        $focusList = @($spec.Paths) + @($spec.Files)
+        $focus = ($focusList -join ", ")
+        $excludeNote = if ($spec.Exclude.Count) { " Exclude these paths from review: " + ($spec.Exclude -join ", ") + "." } else { "" }
         $outFile = Join-Path $root ("docs/reviews/" + $stamp + "-slice-" + $name + ".md")
         $errFile = $outFile + ".err"
-        $a = Get-ReviewArgs -Focus $focus
+        $a = Get-ReviewArgs -Focus $focus -Mode $name -ExcludeNote $excludeNote
         $quoted = $a | ForEach-Object { '"' + $_ + '"' }
         $cmdLine = "node `"$codexJs`" " + ($quoted -join " ")
         if ($DryRun) {
