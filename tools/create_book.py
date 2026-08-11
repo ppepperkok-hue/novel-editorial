@@ -1,15 +1,22 @@
 """Auto-create a new Fanqie book for a confirmed novel, then bind book_id.
 
-Endpoint (validated by OpenNovel and webnovel-writer-opencode):
+Endpoint (validated against the real writer console, 2026-08-11):
     POST /api/author/book/create/v0/
 Prereqs:
-    GET /api/author/book/category_list/v0/?gender=   -> category_id
-    GET /api/author/book/group_category_list/v0/?gender= -> label ids
+    GET /api/author/book/category_list/v0/?gender= -> label list
+        (label in {"主分类", "主题", "角色", "情节"})
+    GET /api/author/activity/activity_list/v0/     -> default activity
 After creation:
     GET /api/author/volume/volume_list/v1/?book_id=  -> volume_id
 
 Platform limit: at most 1 new book per day (Fanqie side).
 Auth: same cookie + CSRF token used by publish_stock.py.
+
+Request shape (copied from the browser's real POST body):
+    aid, app_name, book_name, roles (JSON array string), category (comma
+    joined category ids), gender, thumb_uri (default cover), abstract,
+    activity_id, is_self_pic, group_category_id (main category id, only
+    sent when an activity is selected).
 
 Run from the pipeline root:
     python tools/create_book.py --novel-id N
@@ -38,6 +45,12 @@ UA = (
     "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
 )
 
+DEFAULT_THUMB_URI = "novel-static/7107d91219967759d105674fa8393923"
+MAIN_LABEL = "主分类"
+EXTRA_LABELS = ("主题", "角色", "情节")
+MAX_EXTRA_LABELS = 2
+MAX_PROTAGONISTS = 2
+
 # Female-only genres; anything with a male keyword below stays male (gender=1).
 _FEMALE_GENRES = {"言情", "女频", "现代言情", "古代言情", "仙侠言情", "豪门", "宫斗"}
 _MALE_KEYWORDS = ("仙侠", "玄幻", "武侠", "男频", "都市", "科幻")
@@ -51,7 +64,7 @@ def load_env():
 def http_json(method, path, fields, env):
     if method == "POST":
         url = BASE + path + "?" + urllib.parse.urlencode(COMMON)
-        body = urllib.parse.urlencode(fields).encode("utf-8")
+        body = urllib.parse.urlencode({**COMMON, **fields}).encode("utf-8")
     else:
         url = BASE + path + "?" + urllib.parse.urlencode({**COMMON, **fields})
         body = None
@@ -95,66 +108,54 @@ def _clean_protagonist_name(name):
     return name[:5]
 
 
-def _find_category_id(categories, genre):
-    def get_name(c):
-        return c.get("name") or c.get("category_name") or ""
-
-    for c in categories or []:
-        if get_name(c) == genre:
-            return int(c["category_id"])
-    for c in categories or []:
-        name = get_name(c)
-        if genre in name or name in genre:
-            return int(c["category_id"])
-    if categories:
-        return int(categories[0]["category_id"])
-    return 0
+def _category_name(c):
+    return c.get("name") or c.get("category_name") or ""
 
 
-def _find_label_ids(labels, genre, tags, max_count=4):
-    def get_name(l):
-        return l.get("label_name") or l.get("name") or ""
+def _category_id(c):
+    return c.get("category_id") or c.get("id") or 0
 
-    def get_id(l):
-        v = l.get("label_id") or l.get("id") or l.get("category_id")
-        return str(v) if v else ""
 
-    genre_tokens = set(re.findall(r"[\u4e00-\u9fff]{2,}", genre or ""))
-    tag_tokens = set()
-    for t in tags or []:
-        tag_tokens.update(re.findall(r"[\u4e00-\u9fff]{2,}", str(t)))
-    tokens = genre_tokens | tag_tokens
-    selected = []
-    for l in labels or []:
-        name = get_name(l)
-        lid = get_id(l)
-        if not name or not lid:
+def _pick_main_category(categories, genre):
+    """Pick exactly one main category (label == 主分类).
+
+    Fanqie's category_list is actually the *label* list: every entry has
+    ``label`` in {"主分类", "主题", "角色", "情节"}. Only one main category may
+    be sent; matching is exact first, then substring either way, then first.
+    """
+    mains = [
+        c for c in categories or []
+        if (c.get("label") or "") == MAIN_LABEL and _category_id(c)
+    ]
+    if not mains:
+        return None
+    for c in mains:
+        if _category_name(c) == genre:
+            return c
+    for c in mains:
+        name = _category_name(c)
+        if genre and (genre in name or name in genre):
+            return c
+    return mains[0]
+
+
+def _pick_extra_categories(categories, tags, max_count=MAX_EXTRA_LABELS):
+    """Pick theme/role/plot labels matching the novel tags (at most 2)."""
+    extras = [
+        c for c in categories or []
+        if (c.get("label") or "") in EXTRA_LABELS and _category_id(c)
+    ]
+    tags = [str(t) for t in (tags or []) if str(t).strip()]
+    picked = []
+    for c in extras:
+        name = _category_name(c)
+        if not name:
             continue
-        if (
-            any(w in name or name in w for w in tokens)
-            or name in (genre or "")
-            or name in tags
-        ):
-            selected.append(lid)
-        if len(selected) >= max_count:
+        if name in tags or any(name in t or t in name for t in tags):
+            picked.append(c)
+        if len(picked) >= max_count:
             break
-    if not selected:
-        # Fallback: score labels by single-char intersection with the genre
-        # string (still better than a random pick), then first two labels.
-        scored = []
-        for l in labels or []:
-            name = get_name(l)
-            lid = get_id(l)
-            if not name or not lid:
-                continue
-            score = sum(1 for ch in (genre or "") if ch in name)
-            if score:
-                scored.append((score, lid))
-        scored.sort(key=lambda x: -x[0])
-        selected = [lid for _score, lid in scored[:2]]
-    if not selected:
-        selected = [get_id(l) for l in (labels or [])[:2] if get_id(l)]
-    return selected
+    return picked
 
 
 def _build_abstract(text):
@@ -166,32 +167,47 @@ def _build_abstract(text):
     return abstract
 
 
-def _get_category_id(env, gender, genre):
+def _get_categories(env, gender):
     res = http_json(
         "GET", "/api/author/book/category_list/v0/", {"gender": gender}, env
     )
     if res.get("code") != 0:
         raise RuntimeError(f"category_list: {res.get('message') or res}")
     data = res.get("data")
-    categories = data if isinstance(data, list) else (data or {}).get("category_list", [])
-    return _find_category_id(categories, genre)
+    return data if isinstance(data, list) else []
 
 
-def _get_label_ids(env, gender, genre, tags):
-    """Resolve label ids for the create-book call.
+def _get_activity_id(env, gender, main_category_id):
+    """Pick the default activity that supports the chosen main category.
 
-    Note: ``group_category_list`` currently returns the *category* list
-    (category_id/name/group_id), not label entries. Sending category ids as
-    label ids is invalid and made Fanqie reject every create call. Until the
-    real label endpoint/params are captured from the browser, keep the list
-    empty so we do not send bogus ids.
+    The writer console blocks creating a book without an activity, and only
+    offers activities whose ``group_categorys`` (``"{gender}_{category_id}"``)
+    contains the selected main category. ``is_default_choose=1`` wins.
+    Returns "" when nothing matches; the create call then omits
+    ``group_category_id`` exactly like the console does.
     """
     res = http_json(
-        "GET", "/api/author/book/group_category_list/v0/", {"gender": gender}, env
+        "GET", "/api/author/activity/activity_list/v0/", {}, env
     )
     if res.get("code") != 0:
-        raise RuntimeError(f"group_category_list: {res.get('message') or res}")
-    return []
+        return ""
+    data = res.get("data") or {}
+    acts = (
+        data.get("activity_list", [])
+        if isinstance(data, dict)
+        else (data if isinstance(data, list) else [])
+    )
+    key = f"{gender}_{main_category_id}"
+    supported = [
+        a for a in acts
+        if not a.get("group_categorys") or key in (a.get("group_categorys") or [])
+    ]
+    for a in supported:
+        if a.get("is_default_choose") == 1:
+            return str(a.get("activity_id") or "")
+    if supported:
+        return str(supported[0].get("activity_id") or "")
+    return ""
 
 
 def _get_volume_id(env, book_id):
@@ -243,26 +259,32 @@ def create_book_on_fanqie(conn, novel_id):
 
     gender = _gender(genre)
     try:
-        category_id = _get_category_id(env, gender, genre)
-        label_ids = _get_label_ids(env, gender, genre, tags)
-        p_names = [_clean_protagonist_name(p.get("name")) for p in protagonists[:2]]
-        p1 = p_names[0] if len(p_names) > 0 else ""
-        p2 = p_names[1] if len(p_names) > 1 else ""
-        res = http_json(
-            "POST",
-            "/api/author/book/create/v0/",
-            {
-                "book_name": title,
-                "gender": str(gender),
-                "abstract": _build_abstract(row["abstract"] or row["premise"] or ""),
-                "category_id": str(category_id),
-                "original_type": "1",
-                "label_id_list": ",".join(label_ids),
-                "protagonist_name_1": p1,
-                "protagonist_name_2": p2,
-            },
-            env,
-        )
+        categories = _get_categories(env, gender)
+        main = _pick_main_category(categories, genre)
+        if main is None:
+            return {"ok": False, "error": "未能从番茄分类列表中找到主分类"}
+        extras = _pick_extra_categories(categories, tags)
+        activity_id = _get_activity_id(env, gender, int(_category_id(main)))
+        p_names = [
+            _clean_protagonist_name(p.get("name"))
+            for p in protagonists[:MAX_PROTAGONISTS]
+        ]
+        p_names = [n for n in p_names if n][:MAX_PROTAGONISTS]
+        fields = {
+            "book_name": title,
+            "roles": json.dumps(p_names, ensure_ascii=False, separators=(",", ":")),
+            "category": ",".join(
+                str(_category_id(c)) for c in [main, *extras]
+            ),
+            "gender": str(gender),
+            "thumb_uri": DEFAULT_THUMB_URI,
+            "abstract": _build_abstract(row["abstract"] or row["premise"] or ""),
+            "activity_id": activity_id,
+            "is_self_pic": "0",
+        }
+        if activity_id:
+            fields["group_category_id"] = str(_category_id(main))
+        res = http_json("POST", "/api/author/book/create/v0/", fields, env)
     except (urllib.error.URLError, urllib.error.HTTPError, RuntimeError, ValueError) as exc:
         return {"ok": False, "error": f"建书请求失败：{exc}"}
 
@@ -294,7 +316,9 @@ def create_book_on_fanqie(conn, novel_id):
         target_type="novel",
         target_id=novel_id,
         detail={"book_id": book_id, "volume_id": volume_id, "gender": gender,
-                "category_id": category_id, "label_ids": label_ids},
+                "category": fields["category"],
+                "group_category_id": fields.get("group_category_id", ""),
+                "activity_id": activity_id, "thumb_uri": DEFAULT_THUMB_URI},
     )
     conn.commit()
     return {

@@ -225,7 +225,7 @@
 - 新书选题会：无作品时也能开，会议结论 `next_book` 自动落成 planning 新书；
 - 作品库确认创意（ready）→ 一键自动建书（番茄 `create/v0`，每天限 1 本）→ 自动绑定 book_id / volume_id；
 - 封面：会议生成封面提示词，作品库一键复制给豆包等文生图工具，人工上传；
-- 注意：番茄作者 API 部分接口要求 `msToken` / `a_bogus` 签名，直接 HTTP 建书可能被拒；当前建书建议用浏览器页面操作（bb-browser + `scripts/inject_fanqie_cookie.py` 注入登录态），已登记待修。
+- 建书请求已按番茄作家后台真实请求对齐（2026-08-11 抓包验证）：`category` 传主分类 ID、`group_category_id` 传主分类 ID、`roles` 传 JSON 数组、`activity_id` 自动选默认征文活动、`thumb_uri` 用平台默认封面；标签列表来自 `category_list`（`label` 区分主分类/主题/角色/情节），不再使用旧的 `category_id`/`label_id_list`/`protagonist_name_*` 字段。该接口无需 `msToken`/`a_bogus` 签名，Cookie + CSRF 即可直接 HTTP 建书。
 
 ## 发布链路（番茄）
 
