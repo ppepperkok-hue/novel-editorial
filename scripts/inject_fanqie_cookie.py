@@ -92,18 +92,5 @@ def main():
     ws.close()
 
 
-        mid = seq["n"]
-        ws.send(json.dumps({"id": mid, "method": method, "params": params or {}}))
-        while True:
-            msg = json.loads(ws.recv())
-            if msg.get("id") == mid:
-                return msg
-
-    cmd("Input.dispatchMouseEvent", {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1})
-    cmd("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1})
-    ws.close()
-    print(f"clicked at ({x},{y})")
-
-
 if __name__ == "__main__":
     main()

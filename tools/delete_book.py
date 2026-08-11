@@ -65,6 +65,12 @@ def _purge_novel(conn, novel_id):
         cols = [r[1] for r in conn.execute(f'PRAGMA table_info("{t}")')]
         if "ref_novel_id" in cols:
             conn.execute(f'DELETE FROM "{t}" WHERE ref_novel_id=?', (novel_id,))
+    if "novel_knowledge" in tables:
+        conn.execute(
+            "DELETE FROM novel_knowledge_history WHERE knowledge_id IN "
+            "(SELECT id FROM novel_knowledge WHERE novel_id=?)",
+            (novel_id,),
+        )
     for t in ("chapters", "volumes"):
         if t in tables:
             conn.execute(f'DELETE FROM "{t}" WHERE novel_id=?', (novel_id,))
