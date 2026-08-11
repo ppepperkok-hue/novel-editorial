@@ -165,6 +165,47 @@ def _resolve_speakers(conn, novel_id, materials, transcript, topic, attendees, r
         return list(attendees or [])
 
 
+def _collect_topic_requests(conn, novel_id=0):
+    """Agenda items agents asked to discuss (kind='topic_request' mail)."""
+    scope = "AND ref_novel_id=?" if novel_id else ""
+    params = (int(novel_id),) if novel_id else ()
+    rows = conn.execute(
+        f"SELECT from_agent, subject, body FROM agent_messages "
+        f"WHERE kind='topic_request' AND status!='archived' {scope} "
+        "ORDER BY id DESC LIMIT 8",
+        params,
+    ).fetchall()
+    return [
+        {
+            "from": r["from_agent"],
+            "title": str(r["body"] or r["subject"] or "")[:120],
+        }
+        for r in rows
+    ]
+
+
+def _record_topic_requests(conn, agent, novel_id, speech):
+    """Persist an agent's suggested agenda items as topic_request mail."""
+    requests = speech.get("topic_requests") if isinstance(speech, dict) else None
+    if not isinstance(requests, list) or not requests:
+        return
+    from tools import mailroom  # noqa: PLC0415
+
+    for item in requests:
+        text = str(item or "").strip()
+        if not text:
+            continue
+        mailroom.send(
+            conn,
+            agent,
+            "eic",
+            body=text[:400],
+            subject="议题提议",
+            kind="topic_request",
+            novel_id=novel_id or 0,
+        )
+
+
 def run_session(session_id, db_path=""):
     """Background worker: executes rounds, pauses for user instructions."""
     conn = None
@@ -202,6 +243,9 @@ def _run_locked(conn, session_id):
         )
         if topic:
             topics = [topic] + [t for t in (topics or []) if t != topic]
+        topic_requests = _collect_topic_requests(conn, novel_id)
+        if topic_requests:
+            topics = topics + [f"（议题提议·{r['from']}）{r['title']}" for r in topic_requests]
         conn.execute(
             "UPDATE meeting_sessions SET attendees=?, current_round=0, updated_at=? WHERE id=?",
             (json.dumps(attendees, ensure_ascii=False), _now(), session_id),
@@ -304,6 +348,7 @@ def _run_locked(conn, session_id):
                     promises.record_promises(
                         conn, agent, novel_id or 0, speech["promises"], source="meeting"
                     )
+                _record_topic_requests(conn, agent, novel_id or 0, speech)
                 transcript.append({"round": round_no, "agent": agent, "speech": speech})
                 activity.log_activity(
                     conn,

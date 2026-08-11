@@ -8,7 +8,7 @@ from unittest import mock
 
 from novel_pipeline import db
 from novel_pipeline.services import meeting_session
-from tools import agent_meeting
+from tools import agent_meeting, mailroom
 
 
 class OpenMeetingTests(unittest.TestCase):
@@ -100,6 +100,39 @@ class OpenMeetingTests(unittest.TestCase):
             )
         self.assertFalse(result["ok"])
         self.assertFalse(result["continue"])
+
+    def test_collect_topic_requests(self):
+        mailroom.send(
+            self.conn, "writer", "eic",
+            body="想讨论下一卷的节奏问题", subject="议题提议",
+            kind="topic_request", novel_id=1,
+        )
+        items = meeting_session._collect_topic_requests(self.conn, novel_id=1)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["from"], "writer")
+        self.assertIn("节奏", items[0]["title"])
+        items_other = meeting_session._collect_topic_requests(self.conn, novel_id=2)
+        self.assertEqual(items_other, [])
+
+    def test_record_topic_requests_from_speech(self):
+        speech = {
+            "speech": "我建议讨论人物动机",
+            "topic_requests": ["下周讨论主角动机线"],
+        }
+        meeting_session._record_topic_requests(self.conn, "writer", 1, speech)
+        msgs = mailroom.list_messages(
+            self.conn, agent="eic", status="unread"
+        )["messages"]
+        self.assertEqual(len(msgs), 1)
+        self.assertEqual(msgs[0]["kind"], "topic_request")
+        self.assertEqual(msgs[0]["from_agent"], "writer")
+        self.assertIn("动机线", msgs[0]["body"])
+
+    def test_record_topic_requests_ignores_missing(self):
+        meeting_session._record_topic_requests(self.conn, "writer", 1, {"speech": "无议题"})
+        self.assertEqual(
+            mailroom.list_messages(self.conn, agent="eic")["messages"], []
+        )
 
 
 if __name__ == "__main__":

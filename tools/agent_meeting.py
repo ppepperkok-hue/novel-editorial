@@ -378,7 +378,8 @@ def round_speech(conn, novel_id, agent, materials, history, round_no, dry_run,
     )
     json_rule = (
         "严格只输出一个 JSON 对象，字段为：speech(字符串,自然发言全文), weekly_summary(字符串), feelings(字符串), "
-        "opinion(字符串), concerns(字符串数组), proposals(字符串数组), priority(字符串)。"
+        "opinion(字符串), concerns(字符串数组), proposals(字符串数组), priority(字符串), "
+        "topic_requests(可选字符串数组：你希望下次会议讨论的议题)。"
         "不要输出 JSON 以外的任何文字、Markdown、注释或解释。"
     )
     mock_text = json.dumps(

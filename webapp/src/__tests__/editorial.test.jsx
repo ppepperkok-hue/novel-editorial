@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import EditorialPage from "../components/EditorialPage.jsx";
 
@@ -15,7 +15,7 @@ describe("EditorialPage", () => {
           agents: [{ file: "writer.md", name: "墨白" }],
           relations: [{ id: 1, agent: "reviewer", other: "writer", familiarity: 0.2, trust: 0.3, friction: 0.4 }],
           unread: { writer: 2 },
-          actions: [{ id: 1, task: "把规则台账模板定死", status: "claimed", assignee: "writer", claimed_by: "writer", due_at: "2026-08-20" }],
+          actions: [{ id: 1, task: "把规则台账模板定死", status: "pending", assignee: "writer", claimed_by: "", due_at: "2026-08-20" }],
           today_activity: [{ id: 1, agent: "writer", activity_type: "chapter", title: "写了第二章" }],
         });
       }
@@ -60,5 +60,17 @@ describe("EditorialPage", () => {
     render(<EditorialPage />);
     await waitFor(() => expect(screen.getByText("收件箱是空的，agent 之间还没说过话。")).toBeInTheDocument());
     expect(screen.getByText("今天还没有活动记录。")).toBeInTheDocument();
+  });
+
+  it("claims a pending action", async () => {
+    render(<EditorialPage />);
+    await waitFor(() => expect(screen.getByText("把规则台账模板定死")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("认领"));
+    await waitFor(() => {
+      const post = global.fetch.mock.calls.find(
+        ([url, opts]) => String(url).includes("/api/agent_actions/claim") && opts?.method === "POST",
+      );
+      expect(post).toBeTruthy();
+    });
   });
 });

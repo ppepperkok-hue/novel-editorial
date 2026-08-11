@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getEditorialOverview, getMailbox } from "../api.js";
+import { claimAction, getEditorialOverview, getMailbox } from "../api.js";
 
 const STATUS_META = {
   pending: ["待认领", "chip-warn"],
@@ -44,7 +44,7 @@ function MessageList({ messages }) {
   );
 }
 
-function TaskBoard({ actions }) {
+function TaskBoard({ actions, agents, onClaim }) {
   const groups = {
     pending: [],
     claimed: [],
@@ -73,6 +73,30 @@ function TaskBoard({ actions }) {
                     {a.claimed_by ? <span>认领：{a.claimed_by}</span> : null}
                     {a.due_at ? <span>期限：{a.due_at}</span> : null}
                   </div>
+                  {status === "pending" && !a.claimed_by ? (
+                    <div className="mt-1.5 flex items-center gap-1">
+                      <select
+                        className="input !h-6 !px-1 text-[11px]"
+                        defaultValue={a.assignee || a.agent || (agents[0]?.name || "")}
+                        data-action-id={a.id}
+                      >
+                        {agents.map((ag) => (
+                          <option key={ag.file} value={ag.name}>
+                            {ag.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        className="btn !px-2 !py-0.5 text-[11px]"
+                        onClick={() => {
+                          const sel = document.querySelector(`[data-action-id="${a.id}"]`);
+                          onClaim(a.id, sel?.value || agents[0]?.name || "");
+                        }}
+                      >
+                        认领
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ))}
               {!items.length ? <div className="muted text-[11px]">暂无</div> : null}
@@ -173,6 +197,22 @@ export default function EditorialPage() {
   const openActions = (overview?.actions || []).filter(
     (a) => a.status !== "done" && a.status !== "skipped",
   ).length;
+  const agents = overview?.agents || [];
+
+  const handleClaim = async (actionId, agent) => {
+    try {
+      const r = await claimAction(actionId, agent);
+      if (r.ok) {
+        const [o, m] = await Promise.all([getEditorialOverview(), getMailbox("")]);
+        setOverview(o);
+        setMessages(m.messages || []);
+      } else {
+        setError(r.error || "认领失败");
+      }
+    } catch (e) {
+      setError(String(e));
+    }
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -189,7 +229,7 @@ export default function EditorialPage() {
       </div>
       <section className="panel p-4">
         <div className="section-title !mb-3">任务板</div>
-        <TaskBoard actions={overview?.actions || []} />
+        <TaskBoard actions={overview?.actions || []} agents={agents} onClaim={handleClaim} />
       </section>
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <section className="panel p-4">
