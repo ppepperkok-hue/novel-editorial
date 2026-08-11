@@ -42,6 +42,11 @@ def create_planning_from_next_book(conn, report, cover_prompt=""):
     ).fetchone()
     if dup is not None:
         return {"ok": True, "id": dup["id"], "duplicate": True}
+    existing = conn.execute(
+        "SELECT id FROM novels WHERE status='planning' LIMIT 1"
+    ).fetchone()
+    if existing is not None:
+        return {"ok": True, "skipped": True, "reason": "已有待确认的规划新书，暂不重复孵化"}
     protagonists = json.dumps(
         [
             {
@@ -131,26 +136,30 @@ def apply_report(conn, novel_id, report):
             (str(next_book["book_name"]),),
         ).fetchone()
         if dup is None:
-            protagonists = json.dumps(
-                [{"name": str(next_book.get("protagonist") or "主角"), "role": "主角"}],
-                ensure_ascii=False,
-            )
-            conn.execute(
-                "INSERT INTO novels(title,genre,premise,selling_point,platform,status,abstract,protagonists,cover_prompt,updated_at) "
-                "VALUES(?,?,?,?,?,?,?,?,?,datetime('now','localtime'))",
-                (
-                    str(next_book["book_name"])[:50],
-                    str(next_book.get("genre") or "都市"),
-                    str(next_book.get("abstract") or ""),
-                    str(next_book.get("selling_point") or ""),
-                    "fanqie",
-                    "planning",
-                    str(next_book.get("abstract") or ""),
-                    protagonists,
-                    cover_prompt,
-                ),
-            )
-            created_next = True
+            existing = conn.execute(
+                "SELECT id FROM novels WHERE status='planning' LIMIT 1"
+            ).fetchone()
+            if existing is None:
+                protagonists = json.dumps(
+                    [{"name": str(next_book.get("protagonist") or "主角"), "role": "主角"}],
+                    ensure_ascii=False,
+                )
+                conn.execute(
+                    "INSERT INTO novels(title,genre,premise,selling_point,platform,status,abstract,protagonists,cover_prompt,updated_at) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,datetime('now','localtime'))",
+                    (
+                        str(next_book["book_name"])[:50],
+                        str(next_book.get("genre") or "都市"),
+                        str(next_book.get("abstract") or ""),
+                        str(next_book.get("selling_point") or ""),
+                        "fanqie",
+                        "planning",
+                        str(next_book.get("abstract") or ""),
+                        protagonists,
+                        cover_prompt,
+                    ),
+                )
+                created_next = True
     cover_prompt = cover_prompt or str(row["cover_prompt"] or "")
     conn.execute(
         "UPDATE novels SET outline=?, volume_goal=?, cover_prompt=?, updated_at=? WHERE id=?",

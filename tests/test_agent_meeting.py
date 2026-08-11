@@ -321,6 +321,45 @@ class MeetingDryRunTests(unittest.TestCase):
 
 
 class ApplyReportTests(unittest.TestCase):
+    def _next_book_report(self):
+        return {
+            "decisions": {
+                "next_book": {
+                    "book_name": "Test Book",
+                    "genre": "玄幻",
+                    "abstract": "A premise",
+                    "selling_point": "hook",
+                    "protagonist": "Lin",
+                }
+            }
+        }
+
+    def test_create_planning_skips_when_another_planning_exists(self):
+        path = make_db()
+        from tools import apply_architect
+
+        conn = db.connect(path)
+        try:
+            # A different planning novel already awaits confirmation.
+            conn.execute(
+                "INSERT INTO novels(title,genre,premise,selling_point,platform,status,"
+                "abstract,protagonists,updated_at) "
+                "VALUES('旧规划','都市','p','','fanqie','planning','a','[]',"
+                "datetime('now','localtime'))"
+            )
+            conn.commit()
+            r = apply_architect.create_planning_from_next_book(
+                conn, self._next_book_report()
+            )
+            self.assertTrue(r["ok"])
+            self.assertTrue(r.get("skipped"))
+            count = conn.execute(
+                "SELECT COUNT(*) c FROM novels WHERE status='planning'"
+            ).fetchone()["c"]
+            self.assertEqual(count, 1, "must not incubate a second planning book")
+        finally:
+            conn.close()
+
     def test_create_planning_from_next_book_idempotent(self):
         path = make_db()
         from tools import apply_architect
@@ -438,6 +477,30 @@ class ApplyReportTests(unittest.TestCase):
                 "SELECT title, genre, status FROM novels WHERE status='planning'"
             ).fetchone()
             self.assertEqual(nb["title"], "下一本")
+        finally:
+            conn.close()
+
+    def test_apply_report_skips_next_book_when_planning_exists(self):
+        path = make_db()
+        from tools import apply_architect
+
+        conn = db.connect(path)
+        try:
+            conn.execute("UPDATE novels SET status='finished' WHERE id=1")
+            conn.execute(
+                "INSERT INTO novels(title,genre,premise,selling_point,platform,status,"
+                "abstract,protagonists,updated_at) "
+                "VALUES('已有规划','都市','p','','fanqie','planning','a','[]',"
+                "datetime('now','localtime'))"
+            )
+            conn.commit()
+            r = apply_architect.apply_report(conn, 1, self._next_book_report())
+            self.assertTrue(r["ok"])
+            self.assertFalse(r["next_book_created"])
+            count = conn.execute(
+                "SELECT COUNT(*) c FROM novels WHERE status='planning'"
+            ).fetchone()["c"]
+            self.assertEqual(count, 1)
         finally:
             conn.close()
 
