@@ -260,6 +260,34 @@ def make_handler(db_path):
                         self._json(misc_service.character_evolution(conn, novel_id))
                     finally:
                         conn.close()
+                elif path == "/api/novel_knowledge/history":
+                    from tools import novel_knowledge  # noqa: PLC0415
+
+                    conn = db.connect(db_path)
+                    try:
+                        qs = parse_qs(parsed.query)
+                        knowledge_id = int(qs.get("knowledge_id", ["0"])[0] or 0)
+                        if not knowledge_id:
+                            self._json({"error": "knowledge_id required"}, status=400)
+                        else:
+                            self._json(
+                                {"items": novel_knowledge.history(conn, knowledge_id)}
+                            )
+                    finally:
+                        conn.close()
+                elif path == "/api/novel_knowledge/graph":
+                    from tools import novel_knowledge  # noqa: PLC0415
+
+                    conn = db.connect(db_path)
+                    try:
+                        qs = parse_qs(parsed.query)
+                        novel_id = int(qs.get("novel_id", ["0"])[0] or 0)
+                        if not novel_id:
+                            self._json({"error": "novel_id required"}, status=400)
+                        else:
+                            self._json(novel_knowledge.graph(conn, novel_id))
+                    finally:
+                        conn.close()
                 elif path == "/api/novel_knowledge":
                     from tools import novel_knowledge  # noqa: PLC0415
 
@@ -695,7 +723,7 @@ def make_handler(db_path):
                         }
                     elif action == "upsert":
                         try:
-                            kid = novel_knowledge.upsert(
+                            meta = novel_knowledge.upsert_ex(
                                 conn,
                                 novel_id,
                                 str(payload.get("category") or ""),
@@ -703,6 +731,7 @@ def make_handler(db_path):
                                 str(payload.get("content") or ""),
                                 source_chapter=payload.get("source_chapter"),
                                 change_note=str(payload.get("change_note") or ""),
+                                check_similar=True,
                             )
                         except ValueError as exc:
                             result = {"ok": False, "error": str(exc)}
@@ -712,10 +741,17 @@ def make_handler(db_path):
                                 target_type="novel", target_id=str(novel_id),
                                 detail={
                                     "category": payload.get("category"),
-                                    "entity": payload.get("entity"),
+                                    "entity": meta.get("entity"),
+                                    "merged_into": meta.get("merged_into"),
                                 },
                             )
-                            result = {"ok": bool(kid), "id": kid}
+                            result = {
+                                "ok": bool(meta.get("id")),
+                                "id": meta.get("id"),
+                                "entity": meta.get("entity"),
+                                "merged_into": meta.get("merged_into"),
+                                "similar": meta.get("similar") or [],
+                            }
                     else:
                         result = {"ok": False, "error": f"unknown action {action}"}
                 self._json(result)

@@ -128,10 +128,46 @@ class WebApiTests(unittest.TestCase):
         ) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         self.assertTrue(data["ok"])
+        self.assertEqual(data["entity"], "苏晚晴")
+        self.assertIn("merged_into", data)
+        self.assertIn("similar", data)
+        # Sentence-style entity normalizes to the same row (version 2).
+        body = json.dumps(
+            {"action": "upsert", "novel_id": 1, "category": "character",
+             "entity": "苏晚晴：主角", "content": "筑基后期"}
+        ).encode("utf-8")
+        with urlopen(
+            f"{self.base}/api/novel_knowledge", data=body, timeout=10
+        ) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        self.assertEqual(data["entity"], "苏晚晴")
         with urlopen(f"{self.base}/api/novel_knowledge?novel_id=1", timeout=10) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         self.assertEqual(len(data["items"]), 1)
         self.assertEqual(data["items"][0]["entity"], "苏晚晴")
+        self.assertEqual(data["items"][0]["version"], 2)
+
+    def test_novel_knowledge_history_and_graph(self):
+        body = json.dumps(
+            {"action": "upsert", "novel_id": 1, "category": "character",
+             "entity": "林一", "content": "练气一层"}
+        ).encode("utf-8")
+        with urlopen(f"{self.base}/api/novel_knowledge", data=body, timeout=10) as resp:
+            upserted = json.loads(resp.read().decode("utf-8"))
+        kid = upserted["id"]
+        with urlopen(
+            f"{self.base}/api/novel_knowledge/history?knowledge_id={kid}", timeout=10
+        ) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        self.assertIn("items", data)
+        with urlopen(
+            f"{self.base}/api/novel_knowledge/graph?novel_id=1", timeout=10
+        ) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        self.assertIn("nodes", data)
+        self.assertIn("edges", data)
+        self.assertEqual(len(data["nodes"]), 1)
+        self.assertEqual(data["nodes"][0]["label"], "林一")
 
     def test_cross_origin_post_rejected(self):
         req = __import__("urllib.request", fromlist=["Request"]).Request(

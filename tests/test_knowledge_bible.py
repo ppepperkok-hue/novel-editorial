@@ -29,13 +29,16 @@ def make_db():
 
 
 BIBLE = {
-    "world_rules": ["灵气复苏，境界：练气-筑基-金丹", "灵根决定修炼速度"],
+    "world_rules": [
+        "灵气复苏，境界：练气-筑基-金丹",
+        {"rule": "灵根决定修炼速度", "content": "灵根品阶决定修炼速度，天灵根一日千里。"},
+    ],
     "characters": [
         {"name": "林一", "role": "主角", "identity": "废灵根少年",
          "personality": "坚韧", "speech_style": "寡言", "current_state": "练气一层"},
     ],
     "relationships": [{"from": "林一", "to": "师父", "relation": "师徒"}],
-    "golden_finger": "破碗可提纯灵物",
+    "golden_finger": "破碗可提炼灵药",
     "main_plot": "废灵根少年逆袭",
     "style_guide": "平实白描，短句为主",
 }
@@ -47,14 +50,23 @@ class BibleInitTests(unittest.TestCase):
         conn = db.connect(path)
         try:
             result = novel_knowledge.sync_from_bible(conn, 1, BIBLE)
-            self.assertGreaterEqual(result["count"], 7)
+            # 2 world rules + 1 character + 1 golden-finger item + 1 main plot.
+            self.assertEqual(result["count"], 5)
             rows = novel_knowledge.get(conn, 1)
             cats = {r["category"] for r in rows}
             self.assertIn("world_rule", cats)
             self.assertIn("character", cats)
             self.assertIn("plot", cats)
             self.assertIn("item", cats)
-            self.assertIn("power", cats)
+            # No more duplicated golden finger under power, no 人物关系 in plot,
+            # no 文风 inside world_rule.
+            self.assertNotIn("power", cats)
+            self.assertNotIn("人物关系", {r["entity"] for r in rows})
+            self.assertNotIn("文风", {r["entity"] for r in rows})
+            # String rules keep the leading name as entity.
+            entities = {r["entity"] for r in rows if r["category"] == "world_rule"}
+            self.assertIn("灵气复苏", entities)
+            self.assertIn("灵根决定修炼速度", entities)
             char = conn.execute(
                 "SELECT content FROM novel_knowledge "
                 "WHERE novel_id=1 AND category='character' AND entity='林一'"
@@ -98,7 +110,7 @@ class BibleInitTests(unittest.TestCase):
             conn.commit()
             result = novel_knowledge.sync_latest(conn)
             self.assertEqual(result["novel_id"], 1)
-            self.assertGreaterEqual(result["count"], 7)
+            self.assertEqual(result["count"], 5)
         finally:
             conn.close()
 

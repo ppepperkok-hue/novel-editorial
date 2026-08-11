@@ -605,3 +605,12 @@ Toast 带图标、执行失败可查看原因弹窗、作品库搜索与批量�
 - **validator**：提炼/整理 onError、兜底读质量门、算章节号显式失败断言。
 - **验证**：后端 144 + 前端 6 全绿；15/15 表达式通过；validator 通过；
   三份工作流重新部署激活（64/8/4）；服务重启正常。
+# 流水线进化机制（2026-08-10）
+# 知识库逻辑重构（2026-08-11）
+设定知识库从「谁都能写、写坏再说」改为「写入端守规矩」：
+- `tools/novel_knowledge.py` 新增实体名规范化（短名词、去整句/括号/书名号）、相似实体合并（`upsert_ex` + `find_similar`）、冲突内容自动落 `knowledge_drafts` 草案；`sync_from_bible` 的 `world_rules` 支持结构化 `{rule, content}`，金手指只入 item，文风/人物关系不再混入规则与剧情分类；`sync_from_chapters` 的角色状态改为更新同名主实体（版本化），不再产生「名字·状态」平行条目。
+- 三个 Agent 提示词联动：planner 的圣经规则改为结构化输出并要求角色名全书唯一；memory 的角色状态键必须与角色卡一致（禁止漂移成新角色）；guard 审核项新增「角色名」类型，专门拦截形近/音近的疑似漂移。
+- `tools/clean_novel_knowledge.py` 一次性清理脚本（默认 dry-run，`--apply` 前自动备份）：规范化超长实体、合并「·状态」条目、去重 item/power 金手指、合并高度相似规则。真实库已执行两轮：62 条 → 58 条，超长实体清零。
+- web_api 新增版本历史与图谱接口（`/api/novel_knowledge/history`、`/api/novel_knowledge/graph`），手动录入返回 `merged_into`/`similar` 提示。
+
+# 流水线进化机制（2026-08-10）

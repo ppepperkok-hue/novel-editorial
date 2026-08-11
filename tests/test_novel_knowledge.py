@@ -13,8 +13,8 @@ class NovelKnowledgeTests(unittest.TestCase):
         nid = db.add_novel(self.conn, "测试书", "都市", "简介")
         self.nid = nid
         vid = db.add_volume(self.conn, nid, 1, "第一卷")
-        self.cid1 = db.add_chapter(self.conn, nid, vid, 1, "第1章")
-        self.cid2 = db.add_chapter(self.conn, nid, vid, 2, "第2章")
+        self.cid1 = db.add_chapter(self.conn, nid, vid, 1, "第一章")
+        self.cid2 = db.add_chapter(self.conn, nid, vid, 2, "第二章")
 
     def tearDown(self):
         self.conn.close()
@@ -40,6 +40,79 @@ class NovelKnowledgeTests(unittest.TestCase):
         self.assertEqual(hist[0]["content"], "筑基初期，重伤未愈")
         self.assertEqual(hist[0]["version"], 1)
 
+    def test_normalize_entity(self):
+        self.assertEqual(
+            novel_knowledge.normalize_entity("world_rule", "阴阳守恒：殡仪馆是阴阳交界点"),
+            "阴阳守恒",
+        )
+        self.assertEqual(
+            novel_knowledge.normalize_entity("character", "沈老爷子（已故）"),
+            "沈老爷子",
+        )
+        self.assertEqual(
+            novel_knowledge.normalize_entity("item", "「破碗」"),
+            "破碗",
+        )
+        long_name = "这是一个非常非常长的实体名称超过十六个字符"
+        self.assertEqual(len(novel_knowledge.normalize_entity("plot", long_name)), 16)
+        self.assertEqual(novel_knowledge.normalize_entity("character", "   "), "")
+
+    def test_upsert_normalizes_entity(self):
+        kid = novel_knowledge.upsert(
+            self.conn, self.nid, "world_rule",
+            "三香引魂：殡葬师以三炷香为号，一香问路",
+            "三香引魂：殡葬师以三炷香为号，一香问路、二香开路、三香送魂。",
+        )
+        self.assertIsNotNone(kid)
+        row = self.conn.execute(
+            "SELECT entity FROM novel_knowledge WHERE id=?", (kid,)
+        ).fetchone()
+        self.assertEqual(row["entity"], "三香引魂")
+
+    def test_upsert_ex_merges_similar_and_flags_conflict(self):
+        base = novel_knowledge.upsert_ex(
+            self.conn, self.nid, "world_rule", "阴阳守恒",
+            "殡仪馆是阴阳交界点，活人误入阴路会折寿。",
+        )
+        self.assertTrue(base["id"])
+        # A sentence-style entity normalizes to the exact same name, so it
+        # version-updates the existing row instead of creating a duplicate.
+        normalized = novel_knowledge.upsert_ex(
+            self.conn, self.nid, "world_rule", "阴阳守恒：殡仪馆是阴阳交界点",
+            "殡仪馆是阴阳交界点，活人误入阴路会折寿，死人闯入阳道会冲煞。",
+            check_similar=True,
+        )
+        self.assertEqual(normalized["id"], base["id"])
+        self.assertIsNone(normalized["merged_into"])
+        rows = novel_knowledge.get(self.conn, self.nid, category="world_rule")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["version"], 2)
+        # A near-duplicate entity (different normalized name, similar content)
+        # merges into the existing row and reports merged_into.
+        merged = novel_knowledge.upsert_ex(
+            self.conn, self.nid, "world_rule", "阴阳守恒律",
+            "殡仪馆是阴阳交界点，活人误入阴路会折寿，死人闯入阳道会冲煞。",
+            check_similar=True,
+        )
+        self.assertEqual(merged["id"], base["id"])
+        self.assertEqual(merged["merged_into"], "阴阳守恒")
+        rows = novel_knowledge.get(self.conn, self.nid, category="world_rule")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["version"], 3)
+        # Conflicting content for a similar-but-distinct entity queues a draft.
+        conflicted = novel_knowledge.upsert_ex(
+            self.conn, self.nid, "world_rule", "阴阳守恒之律",
+            "与阴阳守恒完全冲突的另一套规则描述。",
+            check_similar=True,
+        )
+        self.assertTrue(conflicted["id"])
+        self.assertIsNone(conflicted["merged_into"])
+        drafts = self.conn.execute(
+            "SELECT COUNT(*) c FROM knowledge_drafts "
+            "WHERE kind='knowledge' AND source='auto_conflict' AND status='draft'"
+        ).fetchone()["c"]
+        self.assertGreaterEqual(drafts, 1)
+
     def test_resolve_keyword_search(self):
         novel_knowledge.upsert(self.conn, self.nid, "item", "破碗", "每日只能提纯三次灵药")
         novel_knowledge.upsert(self.conn, self.nid, "world_rule", "灵气复苏", "灵气浓度随深度增加")
@@ -58,7 +131,7 @@ class NovelKnowledgeTests(unittest.TestCase):
         self.assertIn("plot", cats)
         self.assertEqual(len(snap), 2)
 
-    def test_sync_from_chapters(self):
+    def test_sync_from_chapters_updates_same_character_entity(self):
         db.add_chapter_summary(
             self.conn, self.cid1, "第一章主角登场",
             json.dumps({"苏晚晴": {"current_state": "筑基初期，重伤"}}, ensure_ascii=False),
@@ -75,11 +148,13 @@ class NovelKnowledgeTests(unittest.TestCase):
         result = novel_knowledge.sync_from_chapters(self.conn, self.nid)
         self.assertGreaterEqual(result["count"], 4)
         chars = novel_knowledge.get(self.conn, self.nid, category="character")
-        su = next(c for c in chars if c["entity"] == "苏晚晴·状态")
+        su = next(c for c in chars if c["entity"] == "苏晚晴")
         self.assertEqual(su["content"], "筑基中期，痊愈")
         self.assertEqual(su["version"], 2)
+        self.assertNotIn("·状态", {c["entity"] for c in chars})
         plots = novel_knowledge.get(self.conn, self.nid, category="plot")
         self.assertEqual(len(plots), 1)
+        self.assertEqual(plots[0]["entity"], "破碗认主")
         timeline = novel_knowledge.get(self.conn, self.nid, category="timeline")
         self.assertEqual(len(timeline), 2)
 
