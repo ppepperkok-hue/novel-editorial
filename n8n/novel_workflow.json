@@ -1960,6 +1960,21 @@
       ]
     },
     {
+      "parameters": {
+        "command": "={{ 'cd /d ' + $env.PIPELINE_ROOT + ' && ' + $env.PYTHON_EXE + ' ' + (['tools/auto_fill_actions.py', '--db', 'demo.db']).join(' ') }}",
+        "executeOnce": true
+      },
+      "onError": "continueRegularOutput",
+      "id": "n-auto-fill-actions",
+      "name": "回填行动项",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1.2,
+      "position": [
+        2520,
+        700
+      ]
+    },
+    {
       "id": "n-merge-fallback",
       "name": "合并兜底",
       "type": "n8n-nodes-base.code",
@@ -2848,6 +2863,17 @@
       ]
     },
     "同步设定知识库": {
+      "main": [
+        [
+          {
+            "node": "回填行动项",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "回填行动项": {
       "main": [
         [
           {

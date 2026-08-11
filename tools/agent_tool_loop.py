@@ -300,6 +300,19 @@ def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None,
         if name == "get_knowledge":
             hits = knowledge.resolve_knowledge(agent, topic)
             used_knowledge.append({"topic": topic, "files": [h["file"] for h in hits]})
+            _log_activity(
+                canonical,
+                novel_id,
+                "knowledge_lookup",
+                f"检索知识包：{topic}",
+                {
+                    "tool": name,
+                    "topic": topic,
+                    "files": [h["file"] for h in hits],
+                    "hits": len(hits),
+                },
+                db_path,
+            )
             content = "\n\n".join(
                 f"【{h['title']}】\n{h['content']}" for h in hits
             ) or f"未找到与「{topic}」匹配的知识包，请直接作答。"
@@ -313,6 +326,19 @@ def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None,
                 conn.close()
             used_knowledge.append(
                 {"topic": topic, "novel_id": novel_id or 0, "hits": len(hits)}
+            )
+            _log_activity(
+                canonical,
+                novel_id,
+                "knowledge_lookup",
+                f"检索设定库：{topic}",
+                {
+                    "tool": name,
+                    "topic": topic,
+                    "novel_id": novel_id or 0,
+                    "hits": len(hits),
+                },
+                db_path,
             )
             content = "\n\n".join(
                 f"【{h['category']}·{h['entity']} v{h['version']}】\n{h['content']}"

@@ -121,7 +121,8 @@ for (const file of files) {
       ["发布存稿", "采集阅读数据"],
       ["采集阅读数据", "全员写日记"],
       ["全员写日记", "同步设定知识库"],
-      ["同步设定知识库", "结束"],
+      ["同步设定知识库", "回填行动项"],
+      ["回填行动项", "结束"],
     ]) {
       const targets = (conns[src]?.main?.[0] || []).map((x) => x.node);
       if (!targets.includes(dst)) issues.push(`${file}: tail chain broken ${src} -> ${dst}`);

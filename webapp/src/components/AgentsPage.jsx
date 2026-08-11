@@ -290,6 +290,7 @@ const ACTIVITY_LABELS = {
   action_done: { text: "完成任务", cls: "chip-ok" },
   action_status: { text: "任务状态", cls: "chip" },
   knowledge: { text: "知识维护", cls: "chip" },
+  knowledge_lookup: { text: "知识检索", cls: "chip-info" },
   plan: { text: "规划大纲", cls: "chip-primary" },
   chapter: { text: "写作 / 润色", cls: "chip-info" },
   review: { text: "审稿 / 终审", cls: "chip-warn" },

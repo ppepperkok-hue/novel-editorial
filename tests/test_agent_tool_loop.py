@@ -70,6 +70,34 @@ class AgentToolLoopTests(unittest.TestCase):
         self.assertEqual(r["used_knowledge"][0]["topic"], "钩子")
         self.assertTrue(r["used_knowledge"][0]["files"])
 
+    def test_tool_use_logs_knowledge_activity(self):
+        calls = {"n": 0}
+
+        def fake(model, system, user, temperature=0.5, max_tokens=1600, messages=None, tools=None, json_mode=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return _resp("", [_tool_call()])
+            return _resp("基于知识包的最终回答")
+
+        with mock.patch("tools.agent_tool_loop.chat_deepseek", side_effect=fake):
+            r = agent_tool_loop.run("writer", "写章末钩子", db_path=self.db_path)
+        self.assertTrue(r["ok"])
+        conn = db.connect(self.db_path)
+        try:
+            rows = conn.execute(
+                "SELECT activity_type, title, detail FROM agent_activity ORDER BY id"
+            ).fetchall()
+        finally:
+            conn.close()
+        types = [row["activity_type"] for row in rows]
+        self.assertIn("knowledge_lookup", types)
+        self.assertIn("chapter", types)
+        lookup = next(row for row in rows if row["activity_type"] == "knowledge_lookup")
+        self.assertIn("钩子", lookup["title"])
+        detail = json.loads(lookup["detail"])
+        self.assertEqual(detail["tool"], "get_knowledge")
+        self.assertGreater(detail["hits"], 0)
+
     def test_tools_failure_degrades_to_plain_call(self):
         calls = {"n": 0}
 
@@ -142,8 +170,10 @@ class AgentToolLoopTests(unittest.TestCase):
             ).fetchall()
         finally:
             conn.close()
-        self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["activity_type"], "agent")
+        types = [row["activity_type"] for row in rows]
+        self.assertIn("agent", types)
+        self.assertIn("knowledge_lookup", types)
+        self.assertEqual(len(rows), 2)
 
 
 if __name__ == "__main__":
