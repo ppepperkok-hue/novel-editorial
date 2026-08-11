@@ -189,6 +189,21 @@ def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None,
     stem = _resolve_agent_file(agent)
     canonical = stem.stem if stem is not None else agent
     meta, system = build_system(agent, target_words)
+    if db_path:
+        try:
+            from tools import agent_context  # noqa: PLC0415
+
+            conn = db.connect(db_path)
+            try:
+                snapshot = agent_context.build_context_snapshot(
+                    conn, canonical, novel_id or 0
+                )
+            finally:
+                conn.close()
+            if snapshot:
+                system += "\n\n" + snapshot
+        except Exception:  # noqa: BLE001 - context injection must never break the call
+            pass
     model = model or meta.get("model") or "deepseek-v4-flash"
     temp = float(temperature) if temperature is not None else float(meta.get("temperature") or 0.5)
     used_knowledge = []

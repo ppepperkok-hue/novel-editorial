@@ -5,6 +5,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+
+def _env_int(key, default):
+    try:
+        return int(os.environ.get(key, str(default)))
+    except (TypeError, ValueError):
+        return default
+
 AGENTS_DIR = ROOT / "prompts" / "agents"
 N8N_DIR = ROOT / "n8n"
 TOOLS_DIR = ROOT / "tools"
@@ -39,6 +46,15 @@ AGENT_NAMES = [
     "ending_judge",
     "knowledge_keeper",
 ]
+
+# Editorial context injection (S3): how much collaboration context each LLM
+# call carries. Truncation bounds the token overhead; see the master plan.
+AGENT_CTX_MESSAGES = _env_int("AGENT_CTX_MESSAGES", 8)
+AGENT_CTX_MEMORIES = _env_int("AGENT_CTX_MEMORIES", 3)
+AGENT_CTX_RELATIONS = _env_int("AGENT_CTX_RELATIONS", 3)
+AGENT_CTX_PROMISES = _env_int("AGENT_CTX_PROMISES", 3)
+AGENT_CTX_ACTIONS = _env_int("AGENT_CTX_ACTIONS", 3)
+AGENT_CTX_TRUNCATE = _env_int("AGENT_CTX_TRUNCATE", 200)
 
 
 def load_env():
