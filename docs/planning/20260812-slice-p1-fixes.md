@@ -64,9 +64,9 @@
 | P3-9 | knowledge | prompts/ 根目录旧模板死文件 | prompts/editor.md 等 | ✅ 7285138（并修后备管线路径指向 prompts/agents） |
 | P3-10 | knowledge | export_agent_prompts 导出丢失 max_tokens | export_agent_prompts.py:72-76 | ✅ 7285138 |
 | P3-11 | knowledge | distill_lessons 脏 JSON 无保护 | distill_lessons.py:83-89 | ✅ 7285138 |
-| P3-12 | frontend | DashboardPage 发布章数 modal/runNow 死代码 | DashboardPage.jsx | ✅ 待提交（章数选择并入开工卡片） |
-| P3-13 | frontend | desktop/main.js 注册未暴露的 IPC | desktop/main.js | ✅ 待提交 |
-| P3-14 | frontend | desktop/main.js spawn pythonw 无错误处理 | desktop/main.js | ✅ 待提交（error 事件 + api-error 通道） |
+| P3-12 | frontend | DashboardPage 发布章数 modal/runNow 死代码 | DashboardPage.jsx | ✅ 2aae15c（章数选择并入开工卡片） |
+| P3-13 | frontend | desktop/main.js 注册未暴露的 IPC | desktop/main.js | ✅ 2aae15c |
+| P3-14 | frontend | desktop/main.js spawn pythonw 无错误处理 | desktop/main.js | ✅ 2aae15c（error 事件 + api-error 通道） |
 | P3-15 | tests | run_tests.py 零测试假绿 + ai_words 重叠双倍计数 + .env.example 遗漏 + 午夜边界 flake | tests/run_tests.py 等 | ✅ 2aae15c + dae8334（零测试守卫、非重叠计数、env 补全、due-date 断言跨天容差） |
 
 全量回归：472 后端 + 16 前端全绿（P3-15 的午夜边界 flake 已通过跨天容差断言修复）。
