@@ -1435,7 +1435,7 @@
     },
     {
       "parameters": {
-        "command": "={{ 'cd /d ' + $env.PIPELINE_ROOT + ' && ' + $env.PYTHON_EXE + ' ' + (['novel_pipeline/backup.py', '--db', 'demo.db', '--backup-dir', 'backups']).join(' ') }}",
+        "command": "={{ 'cd /d ' + $env.PIPELINE_ROOT + ' && ' + $env.PYTHON_EXE + ' ' + (['novel_editorial/backup.py', '--db', 'demo.db', '--backup-dir', 'backups']).join(' ') }}",
         "executeOnce": true
       },
       "id": "n-backup",

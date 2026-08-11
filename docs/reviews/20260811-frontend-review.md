@@ -3,7 +3,7 @@
 ## 审查范围与方法
 
 审查 `webapp/src` 全部 13 个组件 + App 框架 + Electron 壳，逐模块对照
-`novel_pipeline/web_api.py`、`services/*`、`tools/*`。
+`novel_editorial/web_api.py`、`services/*`、`tools/*`。
 
 执行验证：
 

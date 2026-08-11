@@ -43,7 +43,7 @@
 
 ## 四、结论与建议（副业定位）
 
-1. **编排底座**：继续用我们自己的 [novel-pipeline](novel-pipeline/README.md)（测试全绿、零依赖），不整盘迁移。
+1. **编排底座**：继续用我们自己的 [novel-editorial](novel-editorial/README.md)（测试全绿、零依赖），不整盘迁移。
 2. **发布接入**：按 `tomato-writer-mcp` 的 HTTP 接口方式实现 `FanqieHttpAdapter`；浏览器自动化（`fanqie_auto_publish` 思路）做兜底。**只借鉴思路，不复制无协议代码。**
 3. **质量与记忆**：Agent 分工参考 `awesome-novel-studio`（Apache-2.0）；长篇记忆后期升级 `MemMachine`（Apache-2.0）。
 4. **选题**：参考 `DaisyWriter` / `webnovel-reverse-analysis` 的拆书与结构分析思路，强化我们的 Planner。

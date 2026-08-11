@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from novel_pipeline.services import audit
+from novel_editorial.services import audit
 
 
 def _now():

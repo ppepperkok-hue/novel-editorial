@@ -78,7 +78,7 @@ B 章串行承接 A 章：写手B/审稿B 输入 A 章结尾原文与 A 章提�
 ## 监控
 
 - n8n Executions 页面可查看每次执行结果
-- Python 侧监控面板：`python -m novel_pipeline.web_api --db demo.db --port 8000`
+- Python 侧监控面板：`python -m novel_editorial.web_api --db demo.db --port 8000`
 
 ## 作品资料自动链路（2026-08-09 新增）
 

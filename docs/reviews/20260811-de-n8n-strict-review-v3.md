@@ -2,7 +2,7 @@
 
 ## 审查范围与方法
 
-独立第三轮复审，不沿用前两轮结论。范围：调度器 `tools/editorial_daily.py` 全文（920 行逐段走查）、`tools/editorial_steps.py`、`tools/daily_runs.py`、控制层 `novel_pipeline/services/control.py`、`agents.py`、`web_api.py`、全部前端页面（重点 SettingsPage/AgentsPage/FlowPage 的旧结构残留），以及测试断言质量。
+独立第三轮复审，不沿用前两轮结论。范围：调度器 `tools/editorial_daily.py` 全文（920 行逐段走查）、`tools/editorial_steps.py`、`tools/daily_runs.py`、控制层 `novel_editorial/services/control.py`、`agents.py`、`web_api.py`、全部前端页面（重点 SettingsPage/AgentsPage/FlowPage 的旧结构残留），以及测试断言质量。
 
 方法：基线（259+8 全绿）→ 静态扫描（n8n 残留/裸异常/硬编码/密钥/TODO/死 import）→ 分域走查 → 动态验证（失败测试先行复现 2 个 P1，再修复；API 真实响应验证）。
 
@@ -26,7 +26,7 @@
 
 ### P3
 
-7. `novel_pipeline/services/agents.py` 残留 `from novel_pipeline.services import n8n` 死 import（无任何使用）。已删除。
+7. `novel_editorial/services/agents.py` 残留 `from novel_editorial.services import n8n` 死 import（无任何使用）。已删除。
 8. 备份失败仅记 warning 不阻塞（与 n8n「备份失败即停」语义不同）；设定知识库初始化失败同样不阻塞。属工程取舍（发布链已有 publish_logs/daily_runs 留痕），记录不修。
 9. `run_knowledge_keeper`/`refresh_hot_topics` 为同步执行，长任务会阻塞 HTTP 请求线程（ThreadingHTTPServer 多线程，不阻塞其他请求）；体验优化留给后续。
 

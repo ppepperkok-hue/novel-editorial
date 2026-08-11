@@ -9,8 +9,8 @@ from pathlib import Path
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from novel_pipeline import db  # noqa: E402
-from novel_pipeline.services import audit, ending  # noqa: E402
+from novel_editorial import db  # noqa: E402
+from novel_editorial.services import audit, ending  # noqa: E402
 
 
 def make_db():
@@ -175,7 +175,7 @@ class EndingBindTests(unittest.TestCase):
             ending.confirm_next_book(conn, 2)
             tmp_env = Path(tempfile.mkdtemp()) / ".env"
             tmp_env.write_text("FANQIE_BOOK_ID=old\nFANQIE_VOLUME_ID=v1\n", encoding="utf-8")
-            with mock.patch("novel_pipeline.services.ending.config.N8N_ENV_FILE", tmp_env):
+            with mock.patch("novel_editorial.services.ending.config.N8N_ENV_FILE", tmp_env):
                 r = ending.bind_book(conn, 2, "newbook", "v2")
             self.assertTrue(r["ok"])
             content = tmp_env.read_text(encoding="utf-8")

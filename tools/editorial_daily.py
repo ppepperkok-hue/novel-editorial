@@ -24,8 +24,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import backup, config, db  # noqa: E402
-from novel_pipeline.services import audit  # noqa: E402
+from novel_editorial import backup, config, db  # noqa: E402
+from novel_editorial.services import audit  # noqa: E402
 from tools import (  # noqa: E402
     agent_tool_loop,
     auto_fill_actions,
@@ -115,7 +115,7 @@ def _handle_outbox(ctx, node, text):
             if reply_to and decision in ("rework", "clarify", "defer"):
                 mailroom.resolve(conn, reply_to, decision)
                 if decision in ("rework", "defer"):
-                    from novel_pipeline.services import activity  # noqa: PLC0415
+                    from novel_editorial.services import activity  # noqa: PLC0415
 
                     prefix = "按留言重做：" if decision == "rework" else "明日处理："
                     task = prefix + str(item.get("body") or "")[:200]
@@ -149,7 +149,7 @@ def _handle_agency(ctx, node, text):
         return text
     actions = obj.pop("agency")
     from_agent = _canonical_agent(node)
-    from novel_pipeline.services import agency as agency_service  # noqa: PLC0415
+    from novel_editorial.services import agency as agency_service  # noqa: PLC0415
 
     conn = db.connect(ctx.db_path)
     try:
@@ -1047,7 +1047,7 @@ def _run_track(ctx, conn, idx, outline, guard, meta, target_words, env, prev_tra
         ROOT,
     )
     if gate.get("passed"):
-        from novel_pipeline import compliance  # noqa: PLC0415
+        from novel_editorial import compliance  # noqa: PLC0415
 
         comp = compliance.check(editor_text)
         if not comp["passed"]:

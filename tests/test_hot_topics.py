@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from novel_pipeline.hot_topics import (
+from novel_editorial.hot_topics import (
     count_keywords,
     from_csv,
     parse_rank_html,
@@ -51,7 +51,7 @@ class HotTopicsTests(unittest.TestCase):
         tmpdir = tempfile.mkdtemp()
         out = os.path.join(tmpdir, "hot_topics.json")
         with mock.patch(
-            "novel_pipeline.hot_topics.fetch_rank_browser",
+            "novel_editorial.hot_topics.fetch_rank_browser",
             return_value=[
                 {"title": "都市之重生系统", "author": "甲", "intro": "", "latest": "", "url": "http://x/1", "source": "fake"},
                 {"title": "修仙从直播开始", "author": "乙", "intro": "", "latest": "", "url": "http://x/2", "source": "fake"},
@@ -68,7 +68,7 @@ class HotTopicsTests(unittest.TestCase):
         self.assertEqual(len(src["books"]), 2)
 
     def test_browser_extract_cleans_font_glyphs(self):
-        import novel_pipeline.hot_topics as ht
+        import novel_editorial.hot_topics as ht
 
         def fake_bb(args, timeout=60):
             cmd = args[0]
@@ -90,14 +90,14 @@ class HotTopicsTests(unittest.TestCase):
                 )
             return mock.Mock(returncode=0, stdout="{}", stderr="")
 
-        with mock.patch("novel_pipeline.hot_topics._bb_run", side_effect=fake_bb):
+        with mock.patch("novel_editorial.hot_topics._bb_run", side_effect=fake_bb):
             books = ht.fetch_rank_browser({"url": "http://x", "name": "fake"})
         self.assertEqual(books[0]["title"], "笨蛋替嫁疯批王爷宠")
         self.assertEqual(books[0]["author"], "莫栖君")
         self.assertIn("乔韫", books[0]["intro"])
 
     def test_parse_qidian_books(self):
-        from novel_pipeline.hot_topics import parse_browser_books
+        from novel_editorial.hot_topics import parse_browser_books
 
         items = [
             {

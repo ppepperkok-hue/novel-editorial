@@ -2,8 +2,8 @@ import os
 import tempfile
 import unittest
 
-from novel_pipeline import db
-from novel_pipeline.scheduler import Scheduler
+from novel_editorial import db
+from novel_editorial.scheduler import Scheduler
 
 
 class FakeAdapter:

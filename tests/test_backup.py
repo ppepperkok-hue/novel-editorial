@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from novel_pipeline.backup import backup_db
+from novel_editorial.backup import backup_db
 
 
 class BackupTests(unittest.TestCase):

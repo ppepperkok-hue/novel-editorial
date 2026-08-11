@@ -10,7 +10,7 @@ sys.path.insert(0, str(ROOT))
 DB = str(ROOT / "demo.db")
 
 def snapshot():
-    from novel_pipeline import db as pipeline_db
+    from novel_editorial import db as pipeline_db
 
     pconn = pipeline_db.connect(DB)
     try:

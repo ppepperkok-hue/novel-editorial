@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = ROOT / "demo.db"
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import data_feedback, db  # noqa: E402
+from novel_editorial import data_feedback, db  # noqa: E402
 from tools.app_settings import get_all  # noqa: E402
 from tools import novel_knowledge  # noqa: E402
 

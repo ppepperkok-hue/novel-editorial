@@ -22,9 +22,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import config, db  # noqa: E402
-from novel_pipeline.llm_client import chat_deepseek  # noqa: E402
-from novel_pipeline.services import knowledge  # noqa: E402
+from novel_editorial import config, db  # noqa: E402
+from novel_editorial.llm_client import chat_deepseek  # noqa: E402
+from novel_editorial.services import knowledge  # noqa: E402
 
 AGENTS_DIR = config.AGENTS_DIR
 
@@ -125,7 +125,7 @@ def _resolve_agent_file(agent):
         candidate = AGENTS_DIR / filename
         if candidate.exists():
             return candidate
-    from novel_pipeline.services.agents import AGENT_DISPLAY  # noqa: PLC0415
+    from novel_editorial.services.agents import AGENT_DISPLAY  # noqa: PLC0415
 
     for filename, display in AGENT_DISPLAY.items():
         if display == agent:
@@ -171,7 +171,7 @@ _ACTIVITY_TYPES = {
 def _log_activity(agent, novel_id, activity_type, title, detail, db_path):
     """Best-effort activity trace; never fail the agent call over logging."""
     try:
-        from novel_pipeline.services import activity  # noqa: PLC0415
+        from novel_editorial.services import activity  # noqa: PLC0415
 
         conn = db.connect(db_path or config.DB_PATH)
         try:

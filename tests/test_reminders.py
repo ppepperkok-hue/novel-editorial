@@ -5,8 +5,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-from novel_pipeline import db
-from novel_pipeline.services import reminders
+from novel_editorial import db
+from novel_editorial.services import reminders
 
 
 class ReminderTests(unittest.TestCase):

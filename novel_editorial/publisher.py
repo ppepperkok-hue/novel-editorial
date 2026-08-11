@@ -48,7 +48,7 @@ class FanqieHttpAdapter(PublisherAdapter):
         self.conn = conn
 
     def publish(self, chapter_id, text, scheduled_at=None, as_draft=False):
-        from novel_pipeline import config, db  # noqa: PLC0415
+        from novel_editorial import config, db  # noqa: PLC0415
         from tools import publish_stock  # noqa: PLC0415
 
         if self.conn is None:

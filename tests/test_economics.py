@@ -1,6 +1,6 @@
 import unittest
 
-from novel_pipeline.economics import monthly_model
+from novel_editorial.economics import monthly_model
 
 
 class EconomicsTests(unittest.TestCase):

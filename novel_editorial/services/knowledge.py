@@ -12,7 +12,7 @@ import json
 import re
 from datetime import datetime
 
-from novel_pipeline import config
+from novel_editorial import config
 
 KNOWLEDGE_DIR = config.ROOT / "prompts" / "knowledge"
 

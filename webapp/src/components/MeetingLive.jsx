@@ -46,7 +46,7 @@ const SPEECH_FIELDS = [
   ["priority", "优先级"],
 ];
 
-const KIND_LABELS = {
+export const KIND_LABELS = {
   weekly: "编辑部例会",
   topic: "剧情碰头会",
   planning: "选题会",

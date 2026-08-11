@@ -107,7 +107,7 @@ n8n 表达式，实际值由控制台「目标字数」设置决定。
 - **反思蒸馏**：周会结束后自动跑 `tools/distill_lessons.py`，从会议记录、
   本周日记、质量与读者数据蒸馏经验卡（草稿）；专题会议可手动触发。前端
   Agent 管理页可预览/编辑/采纳/拒绝，采纳即写知识包并 render+deploy。
-- **热点双轨采集**：`novel_pipeline/hot_topics.py` 先 HTML 直抓，失败或空
+- **热点双轨采集**：`novel_editorial/hot_topics.py` 先 HTML 直抓，失败或空
   时降级 bb-browser（每次重新 open，eval 提取书名并清洗字体乱码）；首页
   「热点选题」有「立即采集」按钮，日更/周会/选题会材料均注入热点数据。
 
@@ -150,8 +150,8 @@ npm run build        # 产物 webapp/dist，由 web_api 自动托管
 npm run dev          # 本地开发热更新
 ```
 
-`novel_pipeline/web_api.py` 优先服务 `webapp/dist`，不存在时回退旧版
-`web/index.html`。桌面控制台（`python -m novel_pipeline.desktop`）复用同一前端。
+`novel_editorial/web_api.py` 优先服务 `webapp/dist`，不存在时回退旧版
+`web/index.html`。桌面控制台（`python -m novel_editorial.desktop`）复用同一前端。
 
 ## 5. 可调设置（控制台）
 
@@ -259,7 +259,7 @@ Toast 带图标、执行失败可查看原因弹窗、作品库搜索与批量�
 桌面壳从 pywebview 切换到 Electron（与 Codex 桌面同类引擎）：
 
 - `desktop/main.js`：frameless 窗口（1320x880），启动时自动拉起
-  `pythonw -m novel_pipeline.web_api`（8000 被占用则复用），窗口关闭时
+  `pythonw -m novel_editorial.web_api`（8000 被占用则复用），窗口关闭时
   回收自起的 API 进程；IPC 处理最小化/最大化/关闭。
 - `desktop/preload.js`：`contextBridge` 暴露 `window.desktopApi`。
 - 前端在 Electron 环境渲染 42px 自绘标题栏（`app-region: drag` 拖动 +
@@ -268,7 +268,7 @@ Toast 带图标、执行失败可查看原因弹窗、作品库搜索与批量�
 
 开发运行：`cd desktop && npm install && npm start`；
 安装依赖使用 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`。
-`novel_pipeline/desktop.py`（pywebview 版）保留作后备入口。
+`novel_editorial/desktop.py`（pywebview 版）保留作后备入口。
 
 ## 11. v2.0 大版本（2026-08-10）
 
@@ -284,7 +284,7 @@ Toast 带图标、执行失败可查看原因弹窗、作品库搜索与批量�
 - Electron 桌面集成：托盘（显示/隐藏/立即更新/周会/退出）、执行完成系统通知、
   单实例锁、关闭窗口最小化到托盘、设置页开机自启开关与退出按钮。
 - 工程化：electron-builder NSIS 安装包（带图标），安装版从
-  `resources/novel-pipeline` 运行 API、数据库放 `%APPDATA%`；
+  `resources/novel-editorial` 运行 API、数据库放 `%APPDATA%`；
   electron-updater 对接 GitHub Releases 自动更新；前端 Vitest 冒烟测试。
 
 安装包构建：`cd desktop && npm run dist`，产物在 `desktop/release/`。

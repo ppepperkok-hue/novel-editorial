@@ -5,9 +5,9 @@ import tempfile
 import unittest
 from unittest import mock
 
-from novel_pipeline import db
-from novel_pipeline.services import agency
-from novel_pipeline.services import activity
+from novel_editorial import db
+from novel_editorial.services import agency
+from novel_editorial.services import activity
 from tools import mailroom
 
 
@@ -95,7 +95,7 @@ class AgencyTests(unittest.TestCase):
         self.assertIn("publish_book", row["detail"])
 
     def test_disabled_returns_noop(self):
-        with mock.patch("novel_pipeline.services.agency.config.AGENCY_ENABLED", False):
+        with mock.patch("novel_editorial.services.agency.config.AGENCY_ENABLED", False):
             r = agency.apply(
                 self.conn, "writer", 1,
                 [{"action": "write_report", "body": "x"}],

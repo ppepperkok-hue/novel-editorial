@@ -12,8 +12,8 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from novel_pipeline.llm_client import chat_deepseek
-from novel_pipeline.services import audit
+from novel_editorial.llm_client import chat_deepseek
+from novel_editorial.services import audit
 
 ACTION_STATUSES = ("pending", "claimed", "in_progress", "done", "skipped")
 AGENTS_DIR = Path(__file__).resolve().parent.parent.parent / "prompts" / "agents"

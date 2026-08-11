@@ -9,8 +9,8 @@ delete books, finishing, adopting knowledge) are never reachable here.
 
 from __future__ import annotations
 
-from novel_pipeline import config
-from novel_pipeline.services import audit
+from novel_editorial import config
+from novel_editorial.services import audit
 
 AGENCY_ACTIONS = ("write_report", "update_draft", "post_issue", "claim_task", "propose")
 
@@ -21,7 +21,7 @@ def _err(message):
 
 def _dispatch(conn, agent, novel_id, name, item):
     """Execute one whitelisted action; returns True on success."""
-    from novel_pipeline.services import activity  # noqa: PLC0415
+    from novel_editorial.services import activity  # noqa: PLC0415
     from tools import mailroom  # noqa: PLC0415
 
     body = str(

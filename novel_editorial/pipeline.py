@@ -14,9 +14,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import compliance, db, quality_gate
-from novel_pipeline.llm_client import LLMClient, MockLLMClient
-from novel_pipeline.publisher import FanqieHttpAdapter, ManualAdapter
+from novel_editorial import compliance, db, quality_gate
+from novel_editorial.llm_client import LLMClient, MockLLMClient
+from novel_editorial.publisher import FanqieHttpAdapter, ManualAdapter
 
 PROMPTS_DIR = ROOT / "prompts"
 
@@ -234,7 +234,7 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8")
     except (AttributeError, ValueError):
         pass
-    ap = argparse.ArgumentParser(description="novel-pipeline MVP 脚手架")
+    ap = argparse.ArgumentParser(description="novel-editorial MVP 脚手架")
     ap.add_argument("--demo", action="store_true", help="无 API 依赖的端到端演示")
     ap.add_argument("--generate", action="store_true", help="走真实 LLM 生成链路（需配置密钥）")
     ap.add_argument("--db", default=None, help="演示数据库路径（默认临时文件）")

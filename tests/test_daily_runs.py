@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
-from novel_pipeline import db
+from novel_editorial import db
 from tools import daily_runs
 
 

@@ -11,7 +11,7 @@ from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from novel_pipeline import db  # noqa: E402
+from novel_editorial import db  # noqa: E402
 from tools import publish_stock  # noqa: E402
 
 

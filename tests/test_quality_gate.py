@@ -1,6 +1,6 @@
 import unittest
 
-from novel_pipeline import quality_gate
+from novel_editorial import quality_gate
 
 
 class QualityGateTests(unittest.TestCase):

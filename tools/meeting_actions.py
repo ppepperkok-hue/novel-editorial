@@ -9,8 +9,8 @@ is idempotent per session (an audit marker prevents double application).
 
 from __future__ import annotations
 
-from novel_pipeline import config
-from novel_pipeline.services import audit
+from novel_editorial import config
+from novel_editorial.services import audit
 from tools import meeting_kinds
 
 

@@ -1,7 +1,7 @@
 import unittest
 
-from novel_pipeline.llm_client import MockLLMClient
-from novel_pipeline.planner import build_outline
+from novel_editorial.llm_client import MockLLMClient
+from novel_editorial.planner import build_outline
 
 VALID_PLAN = """```json
 {

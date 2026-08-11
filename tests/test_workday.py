@@ -9,7 +9,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 
-from novel_pipeline import db  # noqa: E402
+from novel_editorial import db  # noqa: E402
 from tools import workday  # noqa: E402
 
 

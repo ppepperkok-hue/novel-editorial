@@ -103,7 +103,7 @@ def cost_summary(conn):
 
 
 def build_payload(conn):
-    from novel_pipeline.services import misc  # noqa: PLC0415
+    from novel_editorial.services import misc  # noqa: PLC0415
     from tools.app_settings import get_float  # noqa: PLC0415
     from tools import daily_runs  # noqa: PLC0415
 

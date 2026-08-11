@@ -11,13 +11,13 @@ import sys
 import threading
 from pathlib import Path
 
-from novel_pipeline import config, db
-from novel_pipeline.services import audit
+from novel_editorial import config, db
+from novel_editorial.services import audit
 from tools.app_settings import get_all, set_many
 
 ROOT = config.ROOT
 DAILY_TASK_SCRIPT = ROOT / "scripts" / "install_daily_task.ps1"
-DAILY_TASK_NAME = "NovelPipelineDaily"
+DAILY_TASK_NAME = "NovelEditorialDaily"
 
 
 def _alert(message):
@@ -196,7 +196,7 @@ def _weekly_worker():
         return
     try:
         try:
-            from novel_pipeline import hot_topics  # noqa: PLC0415
+            from novel_editorial import hot_topics  # noqa: PLC0415
 
             hot_topics.refresh(
                 out_path=str(config.HOT_TOPICS_JSON), browser_fallback=True
@@ -409,7 +409,7 @@ def handle_control(conn, payload):
         )
         return {"ok": True, "enabled": enabled, "workflow": wf}
     if action == "refresh_hot_topics":
-        from novel_pipeline import hot_topics  # noqa: PLC0415
+        from novel_editorial import hot_topics  # noqa: PLC0415
 
         payload = hot_topics.refresh(
             out_path=str(config.HOT_TOPICS_JSON), browser_fallback=True

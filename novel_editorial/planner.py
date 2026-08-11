@@ -48,7 +48,7 @@ def main():
         pass
     import argparse
 
-    from novel_pipeline.llm_client import LLMClient
+    from novel_editorial.llm_client import LLMClient
 
     ap = argparse.ArgumentParser(description="立项与大纲")
     ap.add_argument("--premise", required=True, help="一句话核心设定")

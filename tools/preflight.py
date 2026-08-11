@@ -22,8 +22,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import config, db  # noqa: E402
-from novel_pipeline.services import audit  # noqa: E402
+from novel_editorial import config, db  # noqa: E402
+from novel_editorial.services import audit  # noqa: E402
 from tools.app_settings import get_all, get_bool, get_float  # noqa: E402
 
 ENV_FILE = Path.home() / ".n8n" / ".env"

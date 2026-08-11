@@ -1,6 +1,6 @@
 # Phase 1 运行手册（半自动 → 自动日更）
 
-> 配套代码：[novel-pipeline](novel-pipeline/README.md)　|　适用平台：番茄小说（首选）
+> 配套代码：[novel-editorial](novel-editorial/README.md)　|　适用平台：番茄小说（首选）
 
 ---
 
@@ -16,7 +16,7 @@
 ## 1. 安装与配置
 
 ```bash
-cd outputs/novel-pipeline
+cd outputs/novel-editorial
 pip install -e .          # 可选，装成包
 python run_tests.py       # 应显示 29+ 个测试全绿
 ```
@@ -42,19 +42,19 @@ Windows PowerShell 里导入环境变量后即可试跑。
 先出大纲，人工过目：
 
 ```bash
-python -m novel_pipeline.planner --premise "林舟重生回到高考前三个月。" --chapters 10
+python -m novel_editorial.planner --premise "林舟重生回到高考前三个月。" --chapters 10
 ```
 
 再生成一章看质量：
 
 ```bash
-python -m novel_pipeline.pipeline --generate --db novel.db
+python -m novel_editorial.pipeline --generate --db novel.db
 ```
 
 最后跑完整连载（建议先 3-5 章）：
 
 ```bash
-python -m novel_pipeline.novel_flow --premise "林舟重生回到高考前三个月。" --chapters 5 --db novel.db
+python -m novel_editorial.novel_flow --premise "林舟重生回到高考前三个月。" --chapters 5 --db novel.db
 ```
 
 **半自动阶段原则**：每章发布前人工过目，重点看人设、剧情走向、AI 味。
@@ -77,7 +77,7 @@ python -m novel_pipeline.novel_flow --premise "林舟重生回到高考前三个
 一条命令跑完「生成 → 双门 → 发布调度 → 健康检查」：
 
 ```bash
-python -m novel_pipeline.autopilot --premise "林舟重生回到高考前三个月。" --chapters 5 --daily 2 --db novel.db
+python -m novel_editorial.autopilot --premise "林舟重生回到高考前三个月。" --chapters 5 --daily 2 --db novel.db
 ```
 
 注册 Windows 计划任务（每天定时跑）：
@@ -90,7 +90,7 @@ powershell -ExecutionPolicy Bypass -File scripts/install_daily_task.ps1 `
 先加 `-DryRun` 查看命令，确认无误再去掉注册。删除任务：
 
 ```powershell
-schtasks /Delete /TN NovelPipelineDaily /F
+schtasks /Delete /TN NovelEditorialDaily /F
 ```
 
 **注意**：日更量与存稿池联动——每日发布数必须 ≤ 当日新增存稿，
@@ -109,7 +109,7 @@ schtasks /Delete /TN NovelPipelineDaily /F
 ## 6. 监控与告警
 
 ```bash
-python -m novel_pipeline.monitor --db novel.db --spent 12.5 --budget 100
+python -m novel_editorial.monitor --db novel.db --spent 12.5 --budget 100
 ```
 
 检查项：Cookie 失效 / 存稿池低于安全线 / 发布失败 / 成本超限。
@@ -118,7 +118,7 @@ python -m novel_pipeline.monitor --db novel.db --spent 12.5 --budget 100
 ### 6.1 实时监控面板
 
 ```bash
-python -m novel_pipeline.web_api --db novel.db --port 8000
+python -m novel_editorial.web_api --db novel.db --port 8000
 ```
 
 浏览器打开 `http://127.0.0.1:8000/`：总览卡片、章节状态、发布日志、
@@ -127,13 +127,13 @@ python -m novel_pipeline.web_api --db novel.db --port 8000
 ### 6.2 热点选题
 
 ```bash
-python -m novel_pipeline.hot_topics --refresh
+python -m novel_editorial.hot_topics --refresh
 ```
 
 抓取公开网文榜单（起点/番茄）并写 `hot_topics.json`；抓不到时用 CSV 兜底：
 
 ```bash
-python -m novel_pipeline.hot_topics --from-csv topics.csv
+python -m novel_editorial.hot_topics --from-csv topics.csv
 ```
 
 热点关键词会显示在监控面板，也可作为 Planner 选题候选。
@@ -153,7 +153,7 @@ chapter,finish_rate,follow_rate
 2. 跑反馈分析：
 
 ```bash
-python -m novel_pipeline.data_feedback --file reader_stats.csv
+python -m novel_editorial.data_feedback --file reader_stats.csv
 ```
 
 3. 低于阈值的章节反查大纲节奏与钩子，调整后续章纲；题材整体低迷则换选题。
@@ -163,7 +163,7 @@ python -m novel_pipeline.data_feedback --file reader_stats.csv
 ## 8. 备份
 
 ```bash
-python -m novel_pipeline.backup --db novel.db --backup-dir backups --keep 3
+python -m novel_editorial.backup --db novel.db --backup-dir backups --keep 3
 ```
 
 每次自动保留最近 3 份数据库，旧备份自动清理。

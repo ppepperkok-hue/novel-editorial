@@ -13,10 +13,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import db, monitor, novel_flow
-from novel_pipeline.llm_client import LLMClient
-from novel_pipeline.publisher import FanqieHttpAdapter
-from novel_pipeline.scheduler import Scheduler
+from novel_editorial import db, monitor, novel_flow
+from novel_editorial.llm_client import LLMClient
+from novel_editorial.publisher import FanqieHttpAdapter
+from novel_editorial.scheduler import Scheduler
 from tools import preflight
 
 

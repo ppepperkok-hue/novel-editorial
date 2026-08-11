@@ -7,7 +7,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime
 
-from novel_pipeline import config
+from novel_editorial import config
 
 _N8N_KEY = None
 _EXEC_ERROR_CACHE = {}

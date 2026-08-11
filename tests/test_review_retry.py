@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from novel_pipeline import db
+from novel_editorial import db
 from tools import editorial_daily, mailroom
 
 LONG = "他推开门走进院子，风从巷口吹来，远处传来吆喝声。" * 100

@@ -6,8 +6,8 @@ import unittest
 from datetime import datetime, timedelta
 from unittest import mock
 
-from novel_pipeline import db
-from novel_pipeline.services import activity
+from novel_editorial import db
+from novel_editorial.services import activity
 from tools import agent_context
 from tools import auto_fill_actions
 
@@ -126,7 +126,7 @@ class AgentActionsTests(unittest.TestCase):
 
         report = {"action_items": [], "discussion_summary": "会议结论"}
         with mock.patch(
-            "novel_pipeline.services.activity.chat_deepseek", side_effect=fake_chat
+            "novel_editorial.services.activity.chat_deepseek", side_effect=fake_chat
         ):
             result = activity.generate_post_meeting_actions(
                 self.conn, session_id=1, meeting_id=1, novel_id=1,

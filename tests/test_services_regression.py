@@ -10,7 +10,7 @@ from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from novel_pipeline import db  # noqa: E402
+from novel_editorial import db  # noqa: E402
 
 
 def make_db():
@@ -75,7 +75,7 @@ class CheckStockTests(unittest.TestCase):
 class ControlTests(unittest.TestCase):
     def test_load_control_returns_scheduler_state_without_n8n(self):
         path = make_db()
-        from novel_pipeline.services import control
+        from novel_editorial.services import control
 
         conn = db.connect(path)
         try:
@@ -89,7 +89,7 @@ class ControlTests(unittest.TestCase):
 
     def test_save_settings_whitelist_and_run_now(self):
         path = make_db()
-        from novel_pipeline.services import control
+        from novel_editorial.services import control
 
         conn = db.connect(path)
         try:
@@ -99,7 +99,7 @@ class ControlTests(unittest.TestCase):
             )
             self.assertTrue(result["ok"])
             self.assertEqual(result["saved"], {"monthly_budget": "88"})
-            with mock.patch("novel_pipeline.services.control.run_workflow_now") as run:
+            with mock.patch("novel_editorial.services.control.run_workflow_now") as run:
                 run.return_value = {"ok": True, "started": True, "workflow": "daily"}
                 result = control.handle_control(conn, {"action": "run_now", "workflow": "daily"})
             self.assertTrue(result["ok"])
@@ -109,11 +109,11 @@ class ControlTests(unittest.TestCase):
 
     def test_run_now_chapters_capped_at_five(self):
         path = make_db()
-        from novel_pipeline.services import control
+        from novel_editorial.services import control
 
         conn = db.connect(path)
         try:
-            with mock.patch("novel_pipeline.services.control.run_workflow_now") as run:
+            with mock.patch("novel_editorial.services.control.run_workflow_now") as run:
                 run.return_value = {"ok": True, "workflow": "daily"}
                 result = control.handle_control(
                     conn, {"action": "run_now", "workflow": "daily", "chapters": 9}
@@ -128,7 +128,7 @@ class ControlTests(unittest.TestCase):
 
     def test_pause_resume_keeper_workflow(self):
         path = make_db()
-        from novel_pipeline.services import control
+        from novel_editorial.services import control
 
         conn = db.connect(path)
         try:
@@ -151,14 +151,14 @@ class ControlTests(unittest.TestCase):
             conn.close()
 
     def test_weekly_worker_skips_when_lock_held(self):
-        from novel_pipeline.services import control
+        from novel_editorial.services import control
 
         with mock.patch(
             "tools.preflight.acquire_lock",
             return_value=(False, "已有周会在途"),
         ) as acq:
-            with mock.patch("novel_pipeline.services.control._run_cli") as cli:
-                with mock.patch("novel_pipeline.services.control._alert") as alert:
+            with mock.patch("novel_editorial.services.control._run_cli") as cli:
+                with mock.patch("novel_editorial.services.control._alert") as alert:
                     control._weekly_worker()
         acq.assert_called_once()
         cli.assert_not_called()
@@ -166,7 +166,7 @@ class ControlTests(unittest.TestCase):
         self.assertIn("已有周会在途", alert.call_args[0][0])
 
     def test_weekly_worker_releases_lock(self):
-        from novel_pipeline.services import control
+        from novel_editorial.services import control
 
         lock_path = control.ROOT / "n8n_tmp" / "weekly.lock"
         if lock_path.exists():
@@ -175,7 +175,7 @@ class ControlTests(unittest.TestCase):
             "tools.preflight.acquire_lock",
             return_value=(True, ""),
         ):
-            with mock.patch("novel_pipeline.services.control._run_cli"):
+            with mock.patch("novel_editorial.services.control._run_cli"):
                 with mock.patch(
                     "tools.preflight.release_lock"
                 ) as release:
@@ -186,7 +186,7 @@ class ControlTests(unittest.TestCase):
 
     def test_process_messages_returns_unread_summary(self):
         path = make_db()
-        from novel_pipeline.services import control
+        from novel_editorial.services import control
         from tools import mailroom
 
         conn = db.connect(path)
@@ -203,7 +203,7 @@ class ControlTests(unittest.TestCase):
 class MiscTests(unittest.TestCase):
     def test_diary_list_and_update(self):
         path = make_db()
-        from novel_pipeline.services import misc
+        from novel_editorial.services import misc
 
         conn = db.connect(path)
         try:
@@ -223,7 +223,7 @@ class MiscTests(unittest.TestCase):
 
     def test_audit_list_logs_filters_by_date_range(self):
         path = make_db()
-        from novel_pipeline.services import audit
+        from novel_editorial.services import audit
 
         conn = db.connect(path)
         try:
@@ -251,11 +251,11 @@ class MiscTests(unittest.TestCase):
 
 class N8nServiceTests(unittest.TestCase):
     def test_api_key_empty_not_cached(self):
-        from novel_pipeline.services import n8n as n8n_service
+        from novel_editorial.services import n8n as n8n_service
 
         n8n_service._N8N_KEY = None
         with mock.patch(
-            "novel_pipeline.services.n8n.config.env_value", return_value=""
+            "novel_editorial.services.n8n.config.env_value", return_value=""
         ) as env:
             with mock.patch.dict(os.environ, {"N8N_API_KEY": ""}, clear=False):
                 self.assertEqual(n8n_service._load_n8n_env(), "")
@@ -266,10 +266,10 @@ class N8nServiceTests(unittest.TestCase):
         n8n_service._N8N_KEY = None
 
     def test_workflow_status_includes_node_count(self):
-        from novel_pipeline.services import n8n as n8n_service
+        from novel_editorial.services import n8n as n8n_service
 
         with mock.patch(
-            "novel_pipeline.services.n8n.n8n_api",
+            "novel_editorial.services.n8n.n8n_api",
             return_value={
                 "active": True,
                 "nodes": [{"name": "a"}, {"name": "b"}, {"name": "c"}],

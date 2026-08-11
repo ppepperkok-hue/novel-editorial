@@ -9,7 +9,7 @@ import time
 import urllib.error
 import urllib.request
 
-from novel_pipeline import config  # noqa: E402
+from novel_editorial import config  # noqa: E402
 
 MODEL_TIERS = ("planning", "writing", "editing", "reviewing", "memory")
 _ENV_CACHE = {"ts": 0.0, "env": {}}

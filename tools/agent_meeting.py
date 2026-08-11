@@ -15,10 +15,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import db  # noqa: E402
-from novel_pipeline.llm_client import chat_deepseek, estimate_cost  # noqa: E402
-from novel_pipeline.services import activity  # noqa: E402
-from novel_pipeline.services import knowledge  # noqa: E402
+from novel_editorial import db  # noqa: E402
+from novel_editorial.llm_client import chat_deepseek, estimate_cost  # noqa: E402
+from novel_editorial.services import activity  # noqa: E402
+from novel_editorial.services import knowledge  # noqa: E402
 from tools import architect_weekly, meeting_kinds, write_diaries  # noqa: E402
 
 AGENTS_DIR = ROOT / "prompts" / "agents"
@@ -211,7 +211,7 @@ def ask(conn, novel_id, agent, user, temperature, dry_run, mock_text, max_tokens
         {"role": "user", "content": user},
         {"role": "assistant", "content": first.get("text") or "", "tool_calls": tool_calls},
     ]
-    from novel_pipeline.services import knowledge  # noqa: PLC0415
+    from novel_editorial.services import knowledge  # noqa: PLC0415
 
     for tc in tool_calls:
         fn = tc.get("function") or {}

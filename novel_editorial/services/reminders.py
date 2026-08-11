@@ -15,7 +15,7 @@ import threading
 import time
 from datetime import datetime
 
-from novel_pipeline import db
+from novel_editorial import db
 from tools.app_settings import get_all, set_many
 
 _KINDS = ("unopened", "unpublished", "awaiting")

@@ -18,9 +18,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import config, db  # noqa: E402
-from novel_pipeline.llm_client import chat_deepseek, estimate_cost  # noqa: E402
-from novel_pipeline.services import knowledge  # noqa: E402
+from novel_editorial import config, db  # noqa: E402
+from novel_editorial.llm_client import chat_deepseek, estimate_cost  # noqa: E402
+from novel_editorial.services import knowledge  # noqa: E402
 
 
 def _parse_json(text):
@@ -191,7 +191,7 @@ def distill(conn, meeting_id=None, session_id=None):
             agents=[a for a in agents if a],
         )
         drafted += 1
-    from novel_pipeline.services import activity  # noqa: PLC0415
+    from novel_editorial.services import activity  # noqa: PLC0415
 
     activity.log_activity(
         conn,

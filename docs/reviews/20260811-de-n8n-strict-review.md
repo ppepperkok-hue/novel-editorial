@@ -2,7 +2,7 @@
 
 ## 审查范围与方法
 
-本次为独立复审，不沿用上一轮结论。范围：迁移核心 `tools/editorial_daily.py`、`tools/editorial_steps.py`、`tools/flow_graph.py`、`tools/export_flow_html.py`、`tools/daily_runs.py`，控制层 `novel_pipeline/services/control.py`、`novel_pipeline/web_api.py`（含 SSE 快照线程）、`scripts/*.ps1`、`scripts/watch_daily.py`，前端 `DashboardPage/ExecutionsPage/FlowPage/Shell/App`，以及迁移涉及的既有工具（publish_stock/record_work/check_stock/current_book/collect_reader_stats）与全部相关测试。
+本次为独立复审，不沿用上一轮结论。范围：迁移核心 `tools/editorial_daily.py`、`tools/editorial_steps.py`、`tools/flow_graph.py`、`tools/export_flow_html.py`、`tools/daily_runs.py`，控制层 `novel_editorial/services/control.py`、`novel_editorial/web_api.py`（含 SSE 快照线程）、`scripts/*.ps1`、`scripts/watch_daily.py`，前端 `DashboardPage/ExecutionsPage/FlowPage/Shell/App`，以及迁移涉及的既有工具（publish_stock/record_work/check_stock/current_book/collect_reader_stats）与全部相关测试。
 
 方法：基线（后端 251 + 前端 8 + build + validate 全绿）→ 静态扫描（裸异常/硬编码/密钥/残留 n8n 调用/未转义 HTML/测试外部依赖）→ 分域走查（逻辑/数据/并发/外部/安全/生成物/前端/可观测/性能/测试）→ 动态验证（构造失败与并发场景）。
 
@@ -14,8 +14,8 @@
 
 ### P1
 
-1. **SSE 快照线程仍调用 n8n API**：`novel_pipeline/web_api.py:61-64` 的 `_snapshot_loop` 每 5 秒执行 `n8n_service.workflow_status(...)` 与 `n8n_service.executions()`。n8n 已停止，实测 `alerts.log` 在 18:47–18:48 连续写入「n8n API GET /executions... 失败」「n8n API GET /workflows... 失败」（共 3+ 条/轮）。影响：日志噪音、无用网络依赖、快照线程与「去 n8n」目标相悖；`workflows` 字段已无前端消费者（前端改读 `scheduler`）。修复：快照 `executions` 改读 `daily_runs.local_executions(conn)[:5]`，删除 `workflows` 字段。
-2. **周会后台触发无防重入锁**：`novel_pipeline/services/control.py:_background_weekly` 直接 `_spawn(worker)`，连续点击「立即开会」会并行启动多个周会线程，同时跑 `agent_meeting.py`（20–50 分钟、flash 调用约 20–40 次），成本翻倍且周会档案可能互相覆盖。日更路径有 `preflight` 原子锁，周会没有。修复：worker 复用 `preflight.acquire_lock/release_lock` 持有 `n8n_tmp/weekly.lock`，拿不到锁则告警并跳过。
+1. **SSE 快照线程仍调用 n8n API**：`novel_editorial/web_api.py:61-64` 的 `_snapshot_loop` 每 5 秒执行 `n8n_service.workflow_status(...)` 与 `n8n_service.executions()`。n8n 已停止，实测 `alerts.log` 在 18:47–18:48 连续写入「n8n API GET /executions... 失败」「n8n API GET /workflows... 失败」（共 3+ 条/轮）。影响：日志噪音、无用网络依赖、快照线程与「去 n8n」目标相悖；`workflows` 字段已无前端消费者（前端改读 `scheduler`）。修复：快照 `executions` 改读 `daily_runs.local_executions(conn)[:5]`，删除 `workflows` 字段。
+2. **周会后台触发无防重入锁**：`novel_editorial/services/control.py:_background_weekly` 直接 `_spawn(worker)`，连续点击「立即开会」会并行启动多个周会线程，同时跑 `agent_meeting.py`（20–50 分钟、flash 调用约 20–40 次），成本翻倍且周会档案可能互相覆盖。日更路径有 `preflight` 原子锁，周会没有。修复：worker 复用 `preflight.acquire_lock/release_lock` 持有 `n8n_tmp/weekly.lock`，拿不到锁则告警并跳过。
 3. **测试隔离违规**：`tests/test_editorial_daily.py` 的 `test_track_isolation_quality_gate_failure` 与 `test_real_chain_records_chapters_and_costs` 以 `dry_run=False` 跑 `daily()`，但未 mock `_wrapup`，会真实执行 `collect_reader_stats.run`（番茄网络请求）、`write_diaries.write` 与 `auto_fill_actions.run`（LLM 调用）。当前因环境无凭据快速失败而“通过”，属被容错掩盖的外部依赖，违反测试隔离红线。修复：两个用例显式 mock `tools.editorial_daily._wrapup`。
 
 ### P2

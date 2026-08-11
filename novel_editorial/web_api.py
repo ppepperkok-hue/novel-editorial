@@ -1,4 +1,4 @@
-"""实时监控 Web API：路由层，业务逻辑在 novel_pipeline.services。"""
+"""实时监控 Web API：路由层，业务逻辑在 novel_editorial.services。"""
 
 import argparse
 import json
@@ -15,9 +15,9 @@ from urllib.parse import parse_qs, urlparse
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import config, db  # noqa: E402
-from novel_pipeline.llm_client import cached_env  # noqa: E402
-from novel_pipeline.services import (  # noqa: E402
+from novel_editorial import config, db  # noqa: E402
+from novel_editorial.llm_client import cached_env  # noqa: E402
+from novel_editorial.services import (  # noqa: E402
     agents as agents_service,
     audit as audit_service,
     control as control_service,
@@ -265,7 +265,7 @@ def make_handler(db_path):
         self._json(result)
 
     def _get_editorial_overview(self, parsed):
-        from novel_pipeline.services import editorial as editorial_service  # noqa: PLC0415
+        from novel_editorial.services import editorial as editorial_service  # noqa: PLC0415
 
         conn = db.connect(db_path)
         try:
@@ -274,7 +274,7 @@ def make_handler(db_path):
             conn.close()
 
     def _post_claim_action(self, parsed, payload):
-        from novel_pipeline.services import activity as activity_service  # noqa: PLC0415
+        from novel_editorial.services import activity as activity_service  # noqa: PLC0415
 
         conn = db.connect(db_path)
         try:
@@ -529,7 +529,7 @@ def make_handler(db_path):
                     finally:
                         conn.close()
                 elif path == "/api/activity":
-                    from novel_pipeline.services import activity as activity_service  # noqa: PLC0415
+                    from novel_editorial.services import activity as activity_service  # noqa: PLC0415
 
                     conn = db.connect(db_path)
                     try:
@@ -550,7 +550,7 @@ def make_handler(db_path):
                     finally:
                         conn.close()
                 elif path == "/api/agent_actions":
-                    from novel_pipeline.services import activity as activity_service  # noqa: PLC0415
+                    from novel_editorial.services import activity as activity_service  # noqa: PLC0415
 
                     conn = db.connect(db_path)
                     try:
@@ -712,7 +712,7 @@ def make_handler(db_path):
                     finally:
                         conn.close()
                 elif parsed.path == "/api/agent_actions/update":
-                    from novel_pipeline.services import activity as activity_service  # noqa: PLC0415
+                    from novel_editorial.services import activity as activity_service  # noqa: PLC0415
 
                     try:
                         result = activity_service.update_action(
@@ -725,7 +725,7 @@ def make_handler(db_path):
                     finally:
                         conn.close()
                 elif parsed.path == "/api/agent_actions/create":
-                    from novel_pipeline.services import activity as activity_service  # noqa: PLC0415
+                    from novel_editorial.services import activity as activity_service  # noqa: PLC0415
 
                     try:
                         result = activity_service.create_action(
@@ -784,7 +784,7 @@ def make_handler(db_path):
                         # conclusions (best effort; logging failure must not
                         # block the call).
                         try:
-                            from novel_pipeline.services import activity as activity_service  # noqa: PLC0415
+                            from novel_editorial.services import activity as activity_service  # noqa: PLC0415
 
                             stem_file = agent_tool_loop._resolve_agent_file(agent)
                             stem = stem_file.stem if stem_file is not None else agent
@@ -840,7 +840,7 @@ def make_handler(db_path):
                             }
                     conn.close()
                 elif parsed.path == "/api/knowledge":
-                    from novel_pipeline.services import knowledge as knowledge_service  # noqa: PLC0415
+                    from novel_editorial.services import knowledge as knowledge_service  # noqa: PLC0415
 
                     action = payload.get("action") or "list"
                     if action == "list":
@@ -865,7 +865,7 @@ def make_handler(db_path):
                     else:
                         result = {"ok": False, "error": f"unknown action {action}"}
                 elif parsed.path == "/api/knowledge_drafts":
-                    from novel_pipeline.services import knowledge as knowledge_service  # noqa: PLC0415
+                    from novel_editorial.services import knowledge as knowledge_service  # noqa: PLC0415
 
                     action = payload.get("action") or "list"
                     if action == "list":
@@ -1113,7 +1113,7 @@ def _fail_orphan_sessions(db_path):
     """Mark running meetings whose background thread died (e.g. web_api restart)."""
     from datetime import datetime, timedelta
 
-    from novel_pipeline import db  # noqa: PLC0415
+    from novel_editorial import db  # noqa: PLC0415
 
     cutoff = (datetime.now() - timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
     try:
@@ -1138,7 +1138,7 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8")
     except (AttributeError, ValueError):
         pass
-    ap = argparse.ArgumentParser(description="novel-pipeline 实时监控面板")
+    ap = argparse.ArgumentParser(description="novel-editorial 实时监控面板")
     ap.add_argument("--db", default="demo.db")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8000)
@@ -1146,7 +1146,7 @@ def main():
     if args.host not in ("127.0.0.1", "localhost"):
         raise SystemExit("本机控制台只允许绑定 127.0.0.1，禁止暴露到局域网")
     _fail_orphan_sessions(args.db)
-    from novel_pipeline.services import reminders  # noqa: PLC0415
+    from novel_editorial.services import reminders  # noqa: PLC0415
 
     reminders.start_worker(str(Path(args.db).resolve()))
     server = ThreadingHTTPServer((args.host, args.port), make_handler(args.db))

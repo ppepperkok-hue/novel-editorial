@@ -10,7 +10,7 @@ from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from novel_pipeline import db  # noqa: E402
+from novel_editorial import db  # noqa: E402
 
 
 def make_db(status="publishing"):
@@ -81,7 +81,7 @@ class MonitorCostAlertTests(unittest.TestCase):
                 "VALUES(1,'x','deepseek-v4-flash',1,1,5,datetime('now','localtime'))"
             )
             conn.commit()
-            from novel_pipeline.services import misc
+            from novel_editorial.services import misc
 
             alerts = misc.load_alerts(conn)
             self.assertTrue(any("成本超限" in i for i in alerts["issues"]))
@@ -91,7 +91,7 @@ class MonitorCostAlertTests(unittest.TestCase):
 
 class AgentsSaveGuardTests(unittest.TestCase):
     def test_absolute_path_rejected(self):
-        from novel_pipeline.services import agents
+        from novel_editorial.services import agents
 
         result = agents.agent_save(
             {"file": r"C:\Windows\win.ini", "model": "x", "temperature": 0.5, "prompt": "足够长的提示词内容用于测试"}
@@ -99,7 +99,7 @@ class AgentsSaveGuardTests(unittest.TestCase):
         self.assertFalse(result["ok"])
 
     def test_traversal_rejected(self):
-        from novel_pipeline.services import agents
+        from novel_editorial.services import agents
 
         result = agents.agent_save(
             {"file": "../escape.md", "model": "x", "temperature": 0.5, "prompt": "足够长的提示词内容用于测试"}
@@ -132,8 +132,8 @@ class SchedulerBodyTests(unittest.TestCase):
                 "VALUES(1,'正文内容',datetime('now','localtime'))"
             )
             conn.commit()
-            from novel_pipeline.publisher import ManualAdapter
-            from novel_pipeline.scheduler import Scheduler
+            from novel_editorial.publisher import ManualAdapter
+            from novel_editorial.scheduler import Scheduler
 
             class RecordingAdapter(ManualAdapter):
                 def __init__(self):
@@ -153,9 +153,9 @@ class SchedulerBodyTests(unittest.TestCase):
 class MeetingDbIsolationTests(unittest.TestCase):
     def test_run_session_uses_its_own_db(self):
         path = make_db()
-        from novel_pipeline.services import meeting_session
+        from novel_editorial.services import meeting_session
 
-        with mock.patch("novel_pipeline.db.connect") as connect_mock:
+        with mock.patch("novel_editorial.db.connect") as connect_mock:
             with mock.patch.object(meeting_session, "_run_locked"):
                 meeting_session.run_session(1, db_path=path)
         self.assertEqual(connect_mock.call_args[0][0], path)

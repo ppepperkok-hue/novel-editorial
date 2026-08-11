@@ -11,8 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import db, pipeline, planner
-from novel_pipeline.llm_client import LLMClient
+from novel_editorial import db, pipeline, planner
+from novel_editorial.llm_client import LLMClient
 
 
 def run_novel(conn, client, premise, chapters=3, platform="fanqie",

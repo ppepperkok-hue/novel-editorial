@@ -17,7 +17,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from novel_pipeline import config
+from novel_editorial import config
 
 N8N_DB = Path.home() / ".n8n" / "database.sqlite"
 UTC_OFFSET = timedelta(hours=8)

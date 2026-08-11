@@ -9,8 +9,8 @@ from unittest import mock
 from urllib.error import HTTPError
 from urllib.request import urlopen
 
-from novel_pipeline import db
-from novel_pipeline.web_api import make_handler
+from novel_editorial import db
+from novel_editorial.web_api import make_handler
 
 
 class WebApiTests(unittest.TestCase):
@@ -44,7 +44,7 @@ class WebApiTests(unittest.TestCase):
         self.assertIn("updated_at", data)
 
     def test_build_snapshot_uses_local_runs_without_n8n(self):
-        from novel_pipeline.web_api import _build_snapshot
+        from novel_editorial.web_api import _build_snapshot
 
         conn = db.connect(self.db_path)
         try:
@@ -93,7 +93,7 @@ class WebApiTests(unittest.TestCase):
             self.assertIn("items", data)
 
     def test_claim_action_endpoint(self):
-        from novel_pipeline.services import activity
+        from novel_editorial.services import activity
 
         conn = db.connect(self.db_path)
         try:
@@ -125,7 +125,7 @@ class WebApiTests(unittest.TestCase):
         with urlopen(self.base + "/", timeout=10) as resp:
             html = resp.read().decode("utf-8")
         self.assertTrue(
-            "<div id=\"root\">" in html or "novel-pipeline 实时监控" in html,
+            "<div id=\"root\">" in html or "novel-editorial 实时监控" in html,
             "监控页应返回 React 控制台或旧版 HTML",
         )
 
@@ -135,7 +135,7 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(len(data["chapters"]), 1)
 
     def test_agent_run_endpoint_shape(self):
-        from novel_pipeline import db as db_mod
+        from novel_editorial import db as db_mod
 
         conn = db_mod.connect(self.db_path)
         conn.execute(
@@ -167,7 +167,7 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(data["used_knowledge"][0]["topic"], "钩子")
 
     def test_knowledge_list_and_draft_reject(self):
-        from novel_pipeline import db as db_mod
+        from novel_editorial import db as db_mod
 
         conn = db_mod.connect(self.db_path)
         cur = conn.execute(
@@ -287,8 +287,8 @@ class WebApiTests(unittest.TestCase):
         # 403 before reaching it, but the authorized branch would otherwise
         # fire a real n8n webhook from the test suite.
         with (
-            mock.patch("novel_pipeline.web_api._panel_token", return_value="secret"),
-            mock.patch("novel_pipeline.services.control.run_workflow_now") as run,
+            mock.patch("novel_editorial.web_api._panel_token", return_value="secret"),
+            mock.patch("novel_editorial.services.control.run_workflow_now") as run,
         ):
             run.return_value = {"ok": True, "workflow": "daily"}
             req = __import__("urllib.request", fromlist=["Request"]).Request(
@@ -324,18 +324,18 @@ class WebApiTests(unittest.TestCase):
             method="POST",
         )
         with mock.patch(
-            "novel_pipeline.web_api.config.ALERTS_LOG",
+            "novel_editorial.web_api.config.ALERTS_LOG",
             __import__("pathlib").Path(alert_file),
         ):
             with self.assertRaises(HTTPError) as ctx:
                 urlopen(req, timeout=10)
             self.assertEqual(ctx.exception.code, 500)
-        from novel_pipeline import config
+        from novel_editorial import config
 
         self.assertFalse((config.ROOT / "escape.md").exists())
 
     def test_agent_run_injects_pending_actions_and_model(self):
-        from novel_pipeline.services import activity
+        from novel_editorial.services import activity
 
         conn = db.connect(self.db_path)
         activity.create_action(conn, "writer", "伏笔台账", novel_id=1)
@@ -359,7 +359,7 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(call.kwargs["model"], "deepseek-v4-pro")
 
     def test_activity_and_actions_endpoints(self):
-        from novel_pipeline.services import activity
+        from novel_editorial.services import activity
 
         conn = db.connect(self.db_path)
         activity.log_activity(
@@ -406,7 +406,7 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(created["actions"][0]["task"], "organize reader feedback")
 
     def test_meeting_cancel_endpoint(self):
-        from novel_pipeline.services import meeting_session
+        from novel_editorial.services import meeting_session
 
         conn = db.connect(self.db_path)
         r = meeting_session.create_session(conn, "cancel me")

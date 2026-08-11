@@ -6,7 +6,7 @@ import sqlite3
 import tempfile
 import unittest
 
-from novel_pipeline import db
+from novel_editorial import db
 
 
 class AgentSchemaTests(unittest.TestCase):

@@ -4,8 +4,8 @@ import json
 import subprocess
 import sys
 
-from novel_pipeline import config
-from novel_pipeline.services import audit
+from novel_editorial import config
+from novel_editorial.services import audit
 from tools import render_workflow
 
 AGENT_DISPLAY = {
@@ -155,7 +155,7 @@ def agent_save(payload, conn=None):
 
 
 def agent_deploy(conn=None):
-    from novel_pipeline.services.control import deploy_workflow  # noqa: PLC0415
+    from novel_editorial.services.control import deploy_workflow  # noqa: PLC0415
 
     result = deploy_workflow()
     if conn is not None:

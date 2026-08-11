@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from novel_pipeline import db
+from novel_editorial import db
 from tools import export_flow_html
 
 

@@ -167,7 +167,7 @@ wheels = [
 ]
 
 [[package]]
-name = "novel-pipeline"
+name = "novel-editorial"
 version = "0.1.0"
 source = { editable = "." }
 

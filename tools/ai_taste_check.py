@@ -13,7 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import db  # noqa: E402
+from novel_editorial import db  # noqa: E402
 
 FLOWERY = [
     "璀璨", "耀眼", "磅礴", "深邃", "浩瀚", "凛冽", "炽热", "幽深", "玄奥", "古朴",

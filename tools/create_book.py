@@ -35,8 +35,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import config, db  # noqa: E402
-from novel_pipeline.services import audit, ending  # noqa: E402
+from novel_editorial import config, db  # noqa: E402
+from novel_editorial.services import audit, ending  # noqa: E402
 
 BASE = "https://fanqienovel.com"
 COMMON = {"aid": "2503", "app_name": "muye_novel"}

@@ -3,8 +3,8 @@
 import json
 from pathlib import Path
 
-from novel_pipeline import config
-from novel_pipeline.services import audit
+from novel_editorial import config
+from novel_editorial.services import audit
 
 
 def ending_status(conn):

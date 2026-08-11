@@ -11,7 +11,7 @@ from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from novel_pipeline import db  # noqa: E402
+from novel_editorial import db  # noqa: E402
 from tools import create_book  # noqa: E402
 
 
@@ -132,7 +132,7 @@ class CreateBookFlowTests(unittest.TestCase):
         conn = db.connect(path)
         env_file = self._env_file()
         try:
-            with mock.patch("novel_pipeline.config.N8N_ENV_FILE", env_file):
+            with mock.patch("novel_editorial.config.N8N_ENV_FILE", env_file):
                 with mock.patch(
                     "tools.create_book.http_json", side_effect=self._responses()
                 ) as http:

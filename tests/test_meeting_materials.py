@@ -4,8 +4,8 @@ import os
 import tempfile
 import unittest
 
-from novel_pipeline import db
-from novel_pipeline.services import meeting_session
+from novel_editorial import db
+from novel_editorial.services import meeting_session
 from tools import meeting_kinds, meeting_materials
 
 

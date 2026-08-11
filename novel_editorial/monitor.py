@@ -9,15 +9,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import db
-from novel_pipeline.scheduler import SAFE_BACKLOG, backlog_level
+from novel_editorial import db
+from novel_editorial.scheduler import SAFE_BACKLOG, backlog_level
 
 N8N_ENV = Path.home() / ".n8n" / ".env"
 
 
 def _load_n8n_env():
     """Shared env loader: ~/.n8n/.env filled in by config.load_env()."""
-    from novel_pipeline import config  # noqa: PLC0415
+    from novel_editorial import config  # noqa: PLC0415
 
     return config.load_env()
 

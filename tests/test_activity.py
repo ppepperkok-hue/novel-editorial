@@ -8,8 +8,8 @@ from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from novel_pipeline import db  # noqa: E402
-from novel_pipeline.services import activity  # noqa: E402
+from novel_editorial import db  # noqa: E402
+from novel_editorial.services import activity  # noqa: E402
 
 
 class ActivityTests(unittest.TestCase):
@@ -106,7 +106,7 @@ class ActivityTests(unittest.TestCase):
 
     def test_post_meeting_actions_llm_failure_falls_back(self):
         with mock.patch(
-            "novel_pipeline.services.activity.chat_deepseek",
+            "novel_editorial.services.activity.chat_deepseek",
             side_effect=RuntimeError("api down"),
         ):
             res = activity.generate_post_meeting_actions(
@@ -120,7 +120,7 @@ class ActivityTests(unittest.TestCase):
 
     def test_post_meeting_actions_system_includes_persona(self):
         captured = {}
-        from novel_pipeline.services import activity as act
+        from novel_editorial.services import activity as act
 
         def fake_chat(model, system, user, temperature=0.5, max_tokens=1600):
             captured["system"] = system
@@ -131,7 +131,7 @@ class ActivityTests(unittest.TestCase):
             }
 
         with mock.patch(
-            "novel_pipeline.services.activity.chat_deepseek",
+            "novel_editorial.services.activity.chat_deepseek",
             side_effect=fake_chat,
         ):
             act.generate_post_meeting_actions(
@@ -144,7 +144,7 @@ class ActivityTests(unittest.TestCase):
 
     def test_llm_parsed_tasks_are_used(self):
         with mock.patch(
-            "novel_pipeline.services.activity.chat_deepseek",
+            "novel_editorial.services.activity.chat_deepseek",
             return_value={
                 "text": json.dumps(
                     [

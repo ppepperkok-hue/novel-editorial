@@ -6,8 +6,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-from novel_pipeline import db
-from novel_pipeline.services import meeting_session
+from novel_editorial import db
+from novel_editorial.services import meeting_session
 from tools import agent_meeting, mailroom
 
 
@@ -24,23 +24,23 @@ class OpenMeetingTests(unittest.TestCase):
         return {"context": {}, "agent_briefs": {}}
 
     def test_rounds_mode_keeps_everyone(self):
-        with mock.patch("novel_pipeline.services.meeting_session.config.MEETING_MODE", "rounds"):
+        with mock.patch("novel_editorial.services.meeting_session.config.MEETING_MODE", "rounds"):
             speakers = meeting_session._resolve_speakers(
                 self.conn, 1, self._materials(), [], "主题", self.attendees, 3
             )
         self.assertEqual(speakers, self.attendees)
 
     def test_open_mode_round_one_is_everyone(self):
-        with mock.patch("novel_pipeline.services.meeting_session.config.MEETING_MODE", "open"):
+        with mock.patch("novel_editorial.services.meeting_session.config.MEETING_MODE", "open"):
             speakers = meeting_session._resolve_speakers(
                 self.conn, 1, self._materials(), [], "主题", self.attendees, 1
             )
         self.assertEqual(speakers, self.attendees)
 
     def test_open_mode_chair_ends_meeting(self):
-        with mock.patch("novel_pipeline.services.meeting_session.config.MEETING_MODE", "open"):
+        with mock.patch("novel_editorial.services.meeting_session.config.MEETING_MODE", "open"):
             with mock.patch(
-                "novel_pipeline.services.meeting_session.agent_meeting.chair_direct",
+                "novel_editorial.services.meeting_session.agent_meeting.chair_direct",
                 return_value={"ok": True, "continue": False, "next_agents": [], "note": "结论已达成"},
             ):
                 speakers = meeting_session._resolve_speakers(
@@ -49,9 +49,9 @@ class OpenMeetingTests(unittest.TestCase):
         self.assertEqual(speakers, [])
 
     def test_open_mode_chair_picks_subset(self):
-        with mock.patch("novel_pipeline.services.meeting_session.config.MEETING_MODE", "open"):
+        with mock.patch("novel_editorial.services.meeting_session.config.MEETING_MODE", "open"):
             with mock.patch(
-                "novel_pipeline.services.meeting_session.agent_meeting.chair_direct",
+                "novel_editorial.services.meeting_session.agent_meeting.chair_direct",
                 return_value={"ok": True, "continue": True, "next_agents": ["writer"], "note": ""},
             ):
                 speakers = meeting_session._resolve_speakers(
@@ -60,9 +60,9 @@ class OpenMeetingTests(unittest.TestCase):
         self.assertEqual(speakers, ["writer"])
 
     def test_open_mode_chair_failure_degrades_to_everyone(self):
-        with mock.patch("novel_pipeline.services.meeting_session.config.MEETING_MODE", "open"):
+        with mock.patch("novel_editorial.services.meeting_session.config.MEETING_MODE", "open"):
             with mock.patch(
-                "novel_pipeline.services.meeting_session.agent_meeting.chair_direct",
+                "novel_editorial.services.meeting_session.agent_meeting.chair_direct",
                 side_effect=RuntimeError("boom"),
             ):
                 speakers = meeting_session._resolve_speakers(

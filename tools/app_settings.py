@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import db  # noqa: E402
+from novel_editorial import db  # noqa: E402
 
 DEFAULTS = {
     "daily_enabled": "true",

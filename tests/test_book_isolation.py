@@ -5,7 +5,7 @@ import os
 import tempfile
 import unittest
 
-from novel_pipeline import db
+from novel_editorial import db
 from tools import check_stock, preflight
 
 

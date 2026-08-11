@@ -5,8 +5,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from novel_pipeline import db
-from novel_pipeline.services import knowledge
+from novel_editorial import db
+from novel_editorial.services import knowledge
 
 
 def make_tmp_knowledge():

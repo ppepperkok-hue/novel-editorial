@@ -14,7 +14,7 @@
 #>
 param(
     [string]$Time = "08:00",
-    [string]$TaskName = "NovelPipelineDaily",
+    [string]$TaskName = "NovelEditorialDaily",
     [string]$DbPath = "demo.db",
     [switch]$DryRun,
     [switch]$Remove
@@ -50,5 +50,5 @@ if ($DryRun) {
 $action = New-ScheduledTaskAction -Execute $python -Argument $argList -WorkingDirectory $projectDir
 $trigger = New-ScheduledTaskTrigger -Daily -At $Time
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
-    -Description "novel-pipeline 日更调度器（每天 $Time）" -Force
+    -Description "novel-editorial 日更调度器（每天 $Time）" -Force
 Write-Host "已注册计划任务 $TaskName，每天 $Time 运行。"

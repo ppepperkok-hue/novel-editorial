@@ -2,8 +2,8 @@ import os
 import tempfile
 import unittest
 
-from novel_pipeline import db
-from novel_pipeline.seed_demo import seed
+from novel_editorial import db
+from novel_editorial.seed_demo import seed
 
 
 class SeedDemoTests(unittest.TestCase):

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>novel-pipeline 实时监控</title>
+<title>novel-editorial 实时监控</title>
 <style>
   :root { --bg:#0f1420; --card:#1a2233; --line:#2b3550; --fg:#e6ecf5; --muted:#8fa0b8;
           --green:#37d39b; --amber:#f5b84c; --red:#ff6b6b; --blue:#5aa9ff; }
@@ -67,7 +67,7 @@
 </head>
 <body>
 <header>
-  <h1>novel-pipeline 实时监控</h1>
+  <h1>novel-editorial 实时监控</h1>
   <div><button onclick="refresh()">刷新</button>
        <span id="updated"></span></div>
 </header>
@@ -211,7 +211,7 @@ function render(data) {
   const tEl = document.getElementById("topics");
   if (!data.hot_topics.present) {
     tEl.innerHTML = '<span class="empty">暂无热点数据，运行 ' +
-      '<code>python -m novel_pipeline.hot_topics --refresh</code> 生成。</span>';
+      '<code>python -m novel_editorial.hot_topics --refresh</code> 生成。</span>';
   } else {
     const kw = data.hot_topics.top_keywords || [];
     tEl.innerHTML = '<div class="chips">' +

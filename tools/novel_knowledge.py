@@ -22,7 +22,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import config, db  # noqa: E402
+from novel_editorial import config, db  # noqa: E402
 
 CATEGORIES = ("character", "world_rule", "item", "faction", "location", "power", "plot", "timeline")
 MAX_ENTITY_LEN = 16

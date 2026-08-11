@@ -16,7 +16,7 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-from novel_pipeline.services import knowledge
+from novel_editorial.services import knowledge
 
 SOURCES = [
     {"name": "zongheng_rank", "url": "https://www.zongheng.com/rank/", "parser": "zongheng"},

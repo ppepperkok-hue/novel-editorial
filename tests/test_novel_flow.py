@@ -3,9 +3,9 @@ import os
 import tempfile
 import unittest
 
-from novel_pipeline import db
-from novel_pipeline.llm_client import MockLLMClient
-from novel_pipeline.novel_flow import run_novel
+from novel_editorial import db
+from novel_editorial.llm_client import MockLLMClient
+from novel_editorial.novel_flow import run_novel
 
 PLAN = json.dumps({
     "title": "重启：从高三教室开始",

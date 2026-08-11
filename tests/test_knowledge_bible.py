@@ -10,7 +10,7 @@ from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from novel_pipeline import db  # noqa: E402
+from novel_editorial import db  # noqa: E402
 from tools import novel_knowledge  # noqa: E402
 
 
@@ -120,7 +120,7 @@ class AutopilotLockTests(unittest.TestCase):
         path = make_db()
         conn = db.connect(path)
         try:
-            from novel_pipeline import autopilot
+            from novel_editorial import autopilot
 
             with mock.patch("tools.preflight.acquire_lock", return_value=(False, "锁被占用")):
                 result = autopilot.daily_run(

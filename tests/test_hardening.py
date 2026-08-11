@@ -3,10 +3,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from novel_pipeline import db, quality_gate
-from novel_pipeline.backup import backup_db
-from novel_pipeline.pipeline import parse_review
-from novel_pipeline.scheduler import Scheduler
+from novel_editorial import db, quality_gate
+from novel_editorial.backup import backup_db
+from novel_editorial.pipeline import parse_review
+from novel_editorial.scheduler import Scheduler
 
 
 class FakeAdapter:

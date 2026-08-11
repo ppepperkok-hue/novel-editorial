@@ -27,7 +27,7 @@
         "options": {
           "cwd": "={{ $env.PIPELINE_ROOT }}"
         },
-        "commandArguments": "={{ ['-m', 'novel_pipeline.hot_topics', '--refresh'] }}"
+        "commandArguments": "={{ ['-m', 'novel_editorial.hot_topics', '--refresh'] }}"
       },
       "onError": "continueRegularOutput",
       "id": "n-hot-refresh",

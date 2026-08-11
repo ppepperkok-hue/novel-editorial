@@ -38,7 +38,7 @@
   `ipcMain` 对应；`desktopApi` 调用是否有 try/catch。
 - 测试覆盖：Vitest 是否覆盖核心交互；新模块必须有测试。
 
-### 2.2 后端（novel_pipeline / tools）
+### 2.2 后端（novel_editorial / tools）
 
 - 每个 API handler 的输入校验、错误返回（HTTP 码 + JSON body）。
 - 数据库写入是否幂等/防重复；空载荷是否有防护。
@@ -61,7 +61,7 @@
 
 ```bash
 # 后端
-cd E:\code\novel-pipeline
+cd E:\code\novel-editorial
 python run_tests.py
 node tools/validate_workflow_deep.mjs
 

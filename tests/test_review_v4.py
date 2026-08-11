@@ -11,7 +11,7 @@ from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from novel_pipeline import db  # noqa: E402
+from novel_editorial import db  # noqa: E402
 
 
 def make_db(status="publishing"):
@@ -98,7 +98,7 @@ class AdapterLoggingTests(unittest.TestCase):
                 "VALUES(1,'正文内容',datetime('now','localtime'))"
             )
             conn.commit()
-            from novel_pipeline.publisher import FanqieHttpAdapter
+            from novel_editorial.publisher import FanqieHttpAdapter
 
             adapter = FanqieHttpAdapter(conn)
             with mock.patch("tools.publish_stock.publish_chapter", return_value=(True, "i1", "")):
@@ -125,7 +125,7 @@ class AdapterLoggingTests(unittest.TestCase):
                 "VALUES(1,'正文内容',datetime('now','localtime'))"
             )
             conn.commit()
-            from novel_pipeline.publisher import FanqieHttpAdapter
+            from novel_editorial.publisher import FanqieHttpAdapter
 
             adapter = FanqieHttpAdapter(conn)
             with mock.patch(
@@ -154,8 +154,8 @@ class SchedulerMissingBodyTests(unittest.TestCase):
                 "VALUES(1,1,1,'章纲文本','reviewed','第 1 章')"
             )
             conn.commit()
-            from novel_pipeline.publisher import ManualAdapter
-            from novel_pipeline.scheduler import Scheduler
+            from novel_editorial.publisher import ManualAdapter
+            from novel_editorial.scheduler import Scheduler
 
             class RecordingAdapter(ManualAdapter):
                 def __init__(self):
@@ -189,8 +189,8 @@ class SchedulerFailureReportTests(unittest.TestCase):
                 "VALUES(1,'正文内容',datetime('now','localtime'))"
             )
             conn.commit()
-            from novel_pipeline.publisher import ManualAdapter
-            from novel_pipeline.scheduler import Scheduler
+            from novel_editorial.publisher import ManualAdapter
+            from novel_editorial.scheduler import Scheduler
 
             class ExplodingAdapter(ManualAdapter):
                 def publish(self, chapter_id, text, scheduled_at=None, as_draft=False):
@@ -224,8 +224,8 @@ class AdapterWarningTests(unittest.TestCase):
                 "VALUES(1,'正文内容',datetime('now','localtime'))"
             )
             conn.commit()
-            from novel_pipeline import config as cfg
-            from novel_pipeline.publisher import FanqieHttpAdapter
+            from novel_editorial import config as cfg
+            from novel_editorial.publisher import FanqieHttpAdapter
 
             adapter = FanqieHttpAdapter(conn)
             with mock.patch(
@@ -278,14 +278,14 @@ class TokenGetTests(unittest.TestCase):
         from http.server import ThreadingHTTPServer
         from urllib.request import urlopen
 
-        from novel_pipeline.web_api import make_handler
+        from novel_editorial.web_api import make_handler
 
         path = make_db()
         server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(path))
         port = server.server_address[1]
         threading.Thread(target=server.serve_forever, daemon=True).start()
         self.addCleanup(server.shutdown)
-        with mock.patch("novel_pipeline.web_api._panel_token", return_value="secret"):
+        with mock.patch("novel_editorial.web_api._panel_token", return_value="secret"):
             with urlopen(f"http://127.0.0.1:{port}/api/dashboard", timeout=10) as resp:
                 self.assertEqual(resp.status, 200)
 
@@ -376,7 +376,7 @@ class BookIsolationTests(unittest.TestCase):
                 },
             ]
             with mock.patch("tools.novel_knowledge.resolve", return_value=[]) as resolve:
-                with mock.patch("novel_pipeline.db.connect"):
+                with mock.patch("novel_editorial.db.connect"):
                     agent_tool_loop.run(
                         "writer", "写一章", novel_id=7, target_words=2000
                     )

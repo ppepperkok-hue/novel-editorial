@@ -4,7 +4,7 @@
 > 「实施记录」），本报告保留原始问题清单作为设计依据。
 
 审查方式：逐文件阅读 `prompts/agents/*.md`、`tools/agent_meeting.py`、
-`novel_pipeline/services/meeting_session.py`、`activity.py`、`knowledge.py`、
+`novel_editorial/services/meeting_session.py`、`activity.py`、`knowledge.py`、
 `tools/agent_tool_loop.py`、`write_diaries.py`、`architect_weekly.py`、
 `distill_lessons.py`、`knowledge_keeper.py`、`get_meta.py`、`record_work.py`、
 三个 n8n 工作流 JSON 与前端 `MeetingLive/MeetingsPage/AgentsPage`。

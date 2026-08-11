@@ -3,7 +3,7 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from novel_pipeline.llm_client import LLMClient, LLMError, MockLLMClient
+from novel_editorial.llm_client import LLMClient, LLMError, MockLLMClient
 
 
 class FakeHandler(BaseHTTPRequestHandler):

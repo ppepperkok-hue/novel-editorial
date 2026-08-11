@@ -17,7 +17,7 @@
 | 成本单价 | pro 0.01 元 / flash 0.002 元每千 token | `~/.n8n/.env` 的 `COST_PRO_PER_1K` / `COST_FLASH_PER_1K` |
 | 发布平台 | 番茄小说（Cookie + CSRF 鉴权） | `~/.n8n/.env` 的 `FANQIE_COOKIE` / `FANQIE_CSRF_TOKEN` |
 | 发布方式 | 存稿池优先：有存稿发存稿，没存稿现造 | `tools/check_stock.py` + `tools/publish_stock.py` |
-| 健康线 | 存稿 < 3 章触发断更预警 | `novel_pipeline/scheduler.py` 的 `SAFE_BACKLOG` |
+| 健康线 | 存稿 < 3 章触发断更预警 | `novel_editorial/scheduler.py` 的 `SAFE_BACKLOG` |
 | 测试基线 | 437 个后端 unittest + 16 个前端 Vitest | `python run_tests.py` / `cd webapp && npm test` |
 
 ## 功能总览
@@ -52,7 +52,7 @@
 └────────────────────────────────────────┬──────────────────────────────────────────────┘
                                          │ 进程内直接调用（Python 库函数）
                     ┌────────────────────▼────────────────────────────────┐
-                    │  执行层：tools/*.py + novel_pipeline/*（Python 3.11） │
+                    │  执行层：tools/*.py + novel_editorial/*（Python 3.11） │
                     │  所有业务逻辑在本地脚本，调度器只负责时序与分支           │
                     └────────────────────┬────────────────────────────────┘
                                          │ LLM 调用
@@ -215,7 +215,7 @@
 
 ## 热点采集
 
-`novel_pipeline/hot_topics.py` 采集三个来源的排行榜：
+`novel_editorial/hot_topics.py` 采集三个来源的排行榜：
 
 - 纵横：HTML 直抓有效（实测约 40 条）；
 - 番茄/起点：HTML 抓不到时自动降级 bb-browser（每次任务重新 open 页面，eval 提取书名，实测可用）；
@@ -302,8 +302,8 @@
 
 ### 备选入口
 
-- 纯浏览器：`python -m novel_pipeline.web_api --db demo.db --port 8000`；
-- pywebview 原生窗（旧版后备）：`python -m novel_pipeline.desktop`。
+- 纯浏览器：`python -m novel_editorial.web_api --db demo.db --port 8000`；
+- pywebview 原生窗（旧版后备）：`python -m novel_editorial.desktop`。
 
 ## 快速开始
 
@@ -316,7 +316,7 @@
 ### 安装
 
 ```bash
-cd novel-pipeline
+cd novel-editorial
 python -m pip install -e .          # 或用 uv
 cd webapp && npm install && npm run build
 cd ../desktop && npm install
@@ -341,7 +341,7 @@ cd ../desktop && npm install
 
 ```powershell
 # 1. 启动控制台 API（Electron 会自动拉起，也可手动）
-python -m novel_pipeline.web_api --db demo.db --port 8000
+python -m novel_editorial.web_api --db demo.db --port 8000
 
 # 2. 桌面控制台
 launch_desktop.vbs
@@ -387,8 +387,8 @@ node tools/validate_workflow_deep.mjs   # 遗留工作流深度校验（回退�
 ## 目录结构
 
 ```text
-novel-pipeline/
-├── novel_pipeline/          # Python 库
+novel-editorial/
+├── novel_editorial/          # Python 库
 │   ├── config.py            # 集中配置：路径 / env 加载 / 常量
 │   ├── db.py                # SQLite 数据层与迁移（23 张表）
 │   ├── llm_client.py        # 统一 LLM 客户端（DeepSeek / OpenAI 兼容 / Mock）

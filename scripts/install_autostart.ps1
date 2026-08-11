@@ -2,11 +2,11 @@
 Unified startup registration for the pipeline services.
 
 Registers the pipeline API in the user Startup folder (n8n retired):
-  - NovelPipeline-api.vbs   -> pythonw web_api on 127.0.0.1:8000
+  - NovelEditorial-api.vbs   -> pythonw web_api on 127.0.0.1:8000
 
 The Electron panel has its own auto-launch switch (Settings page), so it is
-not registered here. Old launchers (NovelPipeline-n8n.vbs, n8n-start.vbs,
-novel-pipeline-8000.vbs, novel-pipeline-8001.vbs) are removed on enable.
+not registered here. Old launchers (NovelEditorial-n8n.vbs, n8n-start.vbs,
+novel-editorial-8000.vbs, novel-editorial-8001.vbs) are removed on enable.
 
 Usage:
   powershell -ExecutionPolicy Bypass -File scripts/install_autostart.ps1 -DryRun
@@ -29,13 +29,13 @@ $PipelineRoot = (Resolve-Path -LiteralPath $PipelineRoot).Path
 $StartupDir = [Environment]::GetFolderPath("Startup")
 
 $ManagedNames = @(
-    "NovelPipeline-api.vbs"
+    "NovelEditorial-api.vbs"
 )
 $LegacyNames = @(
-    "NovelPipeline-n8n.vbs",
+    "NovelEditorial-n8n.vbs",
     "n8n-start.vbs",
-    "novel-pipeline-8000.vbs",
-    "novel-pipeline-8001.vbs"
+    "novel-editorial-8000.vbs",
+    "novel-editorial-8001.vbs"
 )
 
 function Resolve-Pythonw {
@@ -57,7 +57,7 @@ function New-ApiVbs {
     return @"
 Set ws = CreateObject("WScript.Shell")
 ws.CurrentDirectory = "$PipelineRoot"
-ws.Run """$pythonw"" -m novel_pipeline.web_api --db demo.db --port 8000", 0, False
+ws.Run """$pythonw"" -m novel_editorial.web_api --db demo.db --port 8000", 0, False
 "@
 }
 
@@ -83,7 +83,7 @@ if ($Disable) {
 }
 
 $targets = @{
-    (Join-Path $StartupDir "NovelPipeline-api.vbs") = (New-ApiVbs)
+    (Join-Path $StartupDir "NovelEditorial-api.vbs") = (New-ApiVbs)
 }
 
 if ($DryRun) {

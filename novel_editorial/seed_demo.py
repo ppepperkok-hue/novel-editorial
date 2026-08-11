@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import db
+from novel_editorial import db
 
 DEMO_NOVEL = {
     "title": "重启：从高三教室开始",

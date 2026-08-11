@@ -15,9 +15,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import db  # noqa: E402
-from novel_pipeline.llm_client import chat_deepseek, estimate_cost  # noqa: E402
-from novel_pipeline.services import activity  # noqa: E402
+from novel_editorial import db  # noqa: E402
+from novel_editorial.llm_client import chat_deepseek, estimate_cost  # noqa: E402
+from novel_editorial.services import activity  # noqa: E402
 from tools import promises  # noqa: E402
 
 AGENTS_DIR = ROOT / "prompts" / "agents"

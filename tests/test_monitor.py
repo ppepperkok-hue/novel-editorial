@@ -3,7 +3,7 @@ import tempfile
 import unittest
 import unittest.mock
 
-from novel_pipeline import db, monitor
+from novel_editorial import db, monitor
 
 
 class MonitorTests(unittest.TestCase):
@@ -16,7 +16,7 @@ class MonitorTests(unittest.TestCase):
         issues = monitor.run_checks(self.conn, env=env, monthly_budget=100, spent=20)
         self.assertEqual(issues, [])
 
-    @unittest.mock.patch("novel_pipeline.monitor._load_n8n_env", return_value={})
+    @unittest.mock.patch("novel_editorial.monitor._load_n8n_env", return_value={})
     def test_detects_missing_cookie_and_budget_overrun(self, _mock_env):
         issues = monitor.run_checks(self.conn, env={}, monthly_budget=100, spent=150)
         self.assertTrue(any("Cookie" in i for i in issues))

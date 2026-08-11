@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from novel_pipeline import compliance
+from novel_editorial import compliance
 
 
 class ComplianceTests(unittest.TestCase):

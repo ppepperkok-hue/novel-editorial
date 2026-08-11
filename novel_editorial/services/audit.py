@@ -20,7 +20,7 @@ def log(conn, category, action, target_type="", target_id="", detail=None, sourc
         conn.commit()
     except Exception as exc:  # noqa: BLE001 - audit must never break business logic
         try:
-            from novel_pipeline import config  # noqa: PLC0415
+            from novel_editorial import config  # noqa: PLC0415
             from datetime import datetime  # noqa: PLC0415
 
             config.ALERTS_LOG.parent.mkdir(parents=True, exist_ok=True)

@@ -3,8 +3,8 @@
 ## 目录结构
 
 ```text
-novel-pipeline/
-├── novel_pipeline/          # Python 库
+novel-editorial/
+├── novel_editorial/          # Python 库
 │   ├── config.py            # 集中配置：路径 / env 加载 / 常量
 │   ├── db.py                # SQLite 数据层与迁移
 │   ├── llm_client.py        # 统一 LLM 客户端（DeepSeek 直连 + 旧兼容类）
@@ -56,7 +56,7 @@ n8n 每周日 08:10（或手动）
 - `tools/agent_meeting.py` / `tools/write_diaries.py`：多 Agent 会议与两级记忆
 - `tools/ai_taste_check.py`：AI 味检测（华丽辞藻/填充词/密度评分）
 - `tools/preflight.py`：日更预检（Cookie/预算/幂等/并发锁）
-- `novel_pipeline/llm_client.py`：统一 DeepSeek 客户端
+- `novel_editorial/llm_client.py`：统一 DeepSeek 客户端
 - `tools/debug/`：一次性调试脚本（probe_*/cdp_*/query_* 等）
 
 ## 记忆与连贯性

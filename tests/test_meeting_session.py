@@ -8,8 +8,8 @@ from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from novel_pipeline import db  # noqa: E402
-from novel_pipeline.services import meeting_session  # noqa: E402
+from novel_editorial import db  # noqa: E402
+from novel_editorial.services import meeting_session  # noqa: E402
 
 
 class MeetingSessionTests(unittest.TestCase):
@@ -95,7 +95,7 @@ class MeetingSessionTests(unittest.TestCase):
 
         mailroom.send(self.conn, "guard", "eic", "测试议题", kind="topic_request")
         with mock.patch(
-            "novel_pipeline.services.meeting_session.config.TOPIC_REQUEST_ACTIONS",
+            "novel_editorial.services.meeting_session.config.TOPIC_REQUEST_ACTIONS",
             False,
         ):
             created = meeting_session._persist_topic_request_actions(
@@ -189,7 +189,7 @@ class MeetingSessionTests(unittest.TestCase):
             mock.patch("tools.agent_meeting.ask", side_effect=fake_ask),
             mock.patch("time.sleep", side_effect=fake_sleep),
             mock.patch(
-                "novel_pipeline.services.activity.chat_deepseek",
+                "novel_editorial.services.activity.chat_deepseek",
                 side_effect=RuntimeError("offline"),
             ),
         ):

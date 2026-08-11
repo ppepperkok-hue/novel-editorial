@@ -22,8 +22,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import config, db  # noqa: E402
-from novel_pipeline.services import audit  # noqa: E402
+from novel_editorial import config, db  # noqa: E402
+from novel_editorial.services import audit  # noqa: E402
 from tools import editorial_daily, preflight  # noqa: E402
 
 MODES = ("write", "org", "meeting", "free")

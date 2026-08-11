@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = ROOT / "demo.db"
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import config, db  # noqa: E402
+from novel_editorial import config, db  # noqa: E402
 
 
 def _j(value, fallback):
@@ -420,7 +420,7 @@ def record_payload(conn, payload):
     upsert_volume(conn, novel_id, payload)
     upsert_chapters(conn, novel_id, payload.get("chapters") or [])
     upsert_costs(conn, novel_id, payload, run_id=str(payload.get("run_id") or ""))
-    from novel_pipeline.services import activity  # noqa: PLC0415
+    from novel_editorial.services import activity  # noqa: PLC0415
 
     activity.log_activity(
         conn,

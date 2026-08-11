@@ -23,7 +23,7 @@
 | n8n 节点 | 作用 | Python 等价 | 备注 |
 | --- | --- | --- | --- |
 | 每日触发 / 手动触发 | 定时/手动入口 | Windows 计划任务 + `daily(trigger="scheduled"\|"manual")` | 计划任务由 `install_daily_task.ps1` 管理 |
-| 备份数据库 | 运行前备份 | `novel_pipeline/backup.py --db demo.db --backup-dir backups` | 保持 subprocess 调用 |
+| 备份数据库 | 运行前备份 | `novel_editorial/backup.py --db demo.db --backup-dir backups` | 保持 subprocess 调用 |
 | 预检 | cookie/当日已发/预算/有效作品/锁 | `tools/preflight.py` 的 `check_cookie/check_already_ran/check_budget/check_active_book/acquire_lock` | 调度器进程内调用，锁路径与 n8n 共用（`n8n_tmp/<db>.lock`），过渡期互斥 |
 | 预检通过? | 分支 | Python `if` | 预检失败 → 显式 failed 留痕，不进入生成 |
 | 读当前书 | 当前活跃作品 | `tools/current_book.py`（novel_id/book_id/volume_id） | 从 novels 表 `status IN ('publishing','finishing')` 取最新 |

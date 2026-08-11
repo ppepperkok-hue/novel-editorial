@@ -22,7 +22,7 @@
 ### P3
 
 3. `desktop/package.json` extraResources 仍打包 `n8n/**`（n8n 已退役，`docs/legacy/` 有归档）。已移除。
-4. `novel_pipeline/autopilot.py`、`novel_flow.py`、`publisher.py`、`scheduler.py` 为 n8n 时代全自动路径，当前无调用方（保留为后备，`install_daily_task.ps1` 已指向调度器）；与调度器共用同一把锁，回退时不会并发。记录不修。
+4. `novel_editorial/autopilot.py`、`novel_flow.py`、`publisher.py`、`scheduler.py` 为 n8n 时代全自动路径，当前无调用方（保留为后备，`install_daily_task.ps1` 已指向调度器）；与调度器共用同一把锁，回退时不会并发。记录不修。
 
 ## 确认无问题的模块
 

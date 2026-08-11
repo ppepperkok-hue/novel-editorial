@@ -21,10 +21,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline import config, db  # noqa: E402
-from novel_pipeline.llm_client import chat_deepseek  # noqa: E402
-from novel_pipeline.services import activity  # noqa: E402
-from novel_pipeline.services import audit  # noqa: E402
+from novel_editorial import config, db  # noqa: E402
+from novel_editorial.llm_client import chat_deepseek  # noqa: E402
+from novel_editorial.services import activity  # noqa: E402
+from novel_editorial.services import audit  # noqa: E402
 
 
 def _today():

@@ -6,7 +6,7 @@ Uses a normal system-framed window (stable drag/resize/close) with a
 dark title bar via the Windows DWM immersive-dark-mode attribute, so the
 panel never flashes a white frame.
 
-Run: python -m novel_pipeline.desktop
+Run: python -m novel_editorial.desktop
 """
 
 import argparse
@@ -21,7 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from novel_pipeline.web_api import make_handler  # noqa: E402
+from novel_editorial.web_api import make_handler  # noqa: E402
 
 # DWMWA_USE_IMMERSIVE_DARK_MODE: 20 on Win10 2004+/Win11, 19 on older builds
 DWMWA_USE_IMMERSIVE_DARK_MODE = 20

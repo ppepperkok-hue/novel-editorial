@@ -2,7 +2,7 @@ import os
 import tempfile
 import unittest
 
-from novel_pipeline import data_feedback
+from novel_editorial import data_feedback
 
 
 class FeedbackTests(unittest.TestCase):

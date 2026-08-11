@@ -6,8 +6,8 @@ import sys
 import threading
 from datetime import datetime
 
-from novel_pipeline import config, data_feedback, monitor
-from novel_pipeline.services import audit
+from novel_editorial import config, data_feedback, monitor
+from novel_editorial.services import audit
 
 
 def load_alerts(conn):
@@ -42,7 +42,7 @@ def load_hot_topics():
 
 
 def export_novels(conn):
-    from novel_pipeline.services.dashboard import load_novels  # noqa: PLC0415
+    from novel_editorial.services.dashboard import load_novels  # noqa: PLC0415
 
     novels = load_novels(conn)
     lines = []

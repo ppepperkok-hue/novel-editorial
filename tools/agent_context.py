@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 
-from novel_pipeline import config
+from novel_editorial import config
 from tools import editorial_state
 
 

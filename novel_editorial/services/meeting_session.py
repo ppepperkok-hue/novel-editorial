@@ -5,10 +5,10 @@ import threading
 import time
 from datetime import datetime, timedelta
 
-import novel_pipeline
-from novel_pipeline import config
-from novel_pipeline.services import audit
-from novel_pipeline.services import activity
+import novel_editorial
+from novel_editorial import config
+from novel_editorial.services import audit
+from novel_editorial.services import activity
 from tools import agent_meeting, architect_weekly, meeting_kinds, meeting_materials
 
 _MEETING_LOCK = threading.Lock()
@@ -155,7 +155,7 @@ def cancel_session(conn, session_id):
 def _resolve_speakers(conn, novel_id, materials, transcript, topic, attendees, round_no):
     """S13: open mode lets the chair pick who speaks next; rounds mode keeps
     everyone. Any failure degrades to everyone speaking (never stalls)."""
-    from novel_pipeline import config  # noqa: PLC0415
+    from novel_editorial import config  # noqa: PLC0415
 
     if config.MEETING_MODE != "open":
         return list(attendees or [])
@@ -260,7 +260,7 @@ def run_session(session_id, db_path=""):
     try:
         # Use the database the session was created on; never fall back to a
         # hardcoded demo.db lookup that silently misses sessions in other DBs.
-        conn = novel_pipeline.db.connect(db_path or config.DB_PATH)
+        conn = novel_editorial.db.connect(db_path or config.DB_PATH)
         with _MEETING_LOCK:
             _run_locked(conn, session_id)
     finally:
@@ -686,7 +686,7 @@ def _fail_timeout(conn, session_id, round_no):
 
 def start_session_async(topic, novel_id=0, db_path=None, kind="topic"):
     """Create a session and run it in a background thread."""
-    conn = novel_pipeline.db.connect(db_path or config.DB_PATH)
+    conn = novel_editorial.db.connect(db_path or config.DB_PATH)
     try:
         result = create_session(
             conn, topic, novel_id, db_path=db_path or "", kind=kind
