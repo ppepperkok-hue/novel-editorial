@@ -300,6 +300,29 @@ class EditorialDailyTests(unittest.TestCase):
             ctx.warnings,
         )
 
+    def test_meeting_directives_injected(self):
+        report = json.dumps(
+            {
+                "kind": "topic",
+                "writing_directives": [
+                    "本卷巧思：第 3 章的握手动作在第 20 章回收",
+                    "守正确认：主角不知道自己是破绽",
+                ],
+            },
+            ensure_ascii=False,
+        )
+        self.conn.execute(
+            "INSERT INTO weekly_meetings(held_at,novel_id,attendees,topics,report,status,kind) "
+            "VALUES(datetime('now','localtime'),?, '[]', '[]', ?, 'completed', 'topic')",
+            (self.novel_id, report),
+        )
+        self.conn.commit()
+        directives = editorial_daily._meeting_directives(
+            self.conn, self.novel_id
+        )
+        self.assertEqual(len(directives), 2)
+        self.assertIn("握手动作", directives[0])
+
     def test_two_runs_are_idempotent(self):
         self._ok_preflight()
         r1 = editorial_daily.daily(

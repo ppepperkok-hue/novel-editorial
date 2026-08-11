@@ -177,3 +177,35 @@ class WorkdayTests(unittest.TestCase):
             preflight.release_lock(lock_path)
         self.assertFalse(result["ok"])
         self.assertFalse(result.get("locked"))
+
+    def test_open_broadcasts_workday_start(self):
+        result = workday.open(
+            self.conn, trigger="manual", mode="org",
+            dry_run=False, db_path=self.db_path,
+        )
+        self.assertTrue(result["ok"], result)
+        rows = self.conn.execute(
+            "SELECT subject, from_agent FROM agent_messages "
+            "WHERE subject='开工'"
+        ).fetchall()
+        self.assertGreaterEqual(len(rows), 1)
+        self.assertEqual(rows[0]["from_agent"], "eic")
+
+    def test_milestone_broadcast_fires_once(self):
+        for n in range(1, 101):
+            self.conn.execute(
+                "INSERT INTO chapters(novel_id,seq,outline,status,title) "
+                "VALUES(1,?,?, 'published', ?)",
+                (n, "o", f"第 {n} 章"),
+            )
+        self.conn.commit()
+        workday._milestone_broadcast(self.conn, 1)
+        first = self.conn.execute(
+            "SELECT subject FROM agent_messages WHERE subject='里程碑'"
+        ).fetchall()
+        self.assertGreaterEqual(len(first), 1)
+        workday._milestone_broadcast(self.conn, 1)
+        second = self.conn.execute(
+            "SELECT subject FROM agent_messages WHERE subject='里程碑'"
+        ).fetchall()
+        self.assertEqual(len(second), len(first))

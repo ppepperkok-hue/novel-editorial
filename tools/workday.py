@@ -130,6 +130,22 @@ def open(conn, chapters=None, trigger="manual", mode="write", boss_instruction="
         plan = _morning_plan(
             conn, run_id, mode, boss_instruction, dry_run, db_path
         )
+        if not dry_run:
+            try:
+                from tools import mailroom  # noqa: PLC0415
+
+                mailroom.broadcast(
+                    conn, "eic", list(config.AGENT_NAMES),
+                    subject="开工",
+                    body="编辑部开工了。今日安排：" + _j(plan),
+                    novel_id=novel_id,
+                )
+            except Exception as exc:  # noqa: BLE001
+                audit.log(
+                    conn, "workday", "open_broadcast_failed",
+                    target_type="run", target_id=run_id,
+                    detail={"error": str(exc)[:200]},
+                )
         produce = None
         if plan.get("produce"):
             _update(conn, run_id, phase="producing")
@@ -245,6 +261,7 @@ def close(conn, run_id, dry_run=False, db_path=None):
                 body="今天的工作结束了。收工小结：" + _j(collab),
                 novel_id=row["novel_id"] or 0,
             )
+            _milestone_broadcast(conn, row["novel_id"] or 0)
         except Exception as exc:  # noqa: BLE001
             audit.log(
                 conn, "workday", "broadcast_failed",
@@ -264,6 +281,37 @@ def close(conn, run_id, dry_run=False, db_path=None):
         "ok": True, "run_id": run_id, "status": final_status,
         "published": published, "collab": collab, "legacy": legacy,
     }
+
+
+def _milestone_broadcast(conn, novel_id):
+    """R4-3: celebrate published chapters at 100-chapter milestones once each."""
+    total = conn.execute(
+        "SELECT COUNT(*) c FROM chapters "
+        "WHERE novel_id=? AND status='published'",
+        (novel_id,),
+    ).fetchone()["c"]
+    if not total or total % 100 != 0:
+        return
+    dup = conn.execute(
+        "SELECT id FROM audit_logs WHERE action='milestone' "
+        "AND target_id=? AND detail LIKE ?",
+        (str(novel_id), f'%"chapters": {total}%'),
+    ).fetchone()
+    if dup:
+        return
+    from tools import mailroom  # noqa: PLC0415
+
+    mailroom.broadcast(
+        conn, "eic", list(config.AGENT_NAMES),
+        subject="里程碑",
+        body=f"作品已发布第 {total} 章，编辑部一起纪念一下。",
+        novel_id=novel_id,
+    )
+    audit.log(
+        conn, "meeting", "milestone",
+        target_type="novel", target_id=str(novel_id),
+        detail={"chapters": total},
+    )
 
 
 def main():

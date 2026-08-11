@@ -552,6 +552,23 @@ def _run_locked(conn, session_id):
                 detail={"error": str(exc)[:300]},
             )
             conn.commit()
+        try:
+            from tools import meeting_actions  # noqa: PLC0415
+
+            meeting_actions.run_post_actions(
+                conn, session_id, weekly_id, novel_id, kind,
+                report, transcript, attendees,
+            )
+        except Exception as exc:  # noqa: BLE001
+            audit.log(
+                conn,
+                "meeting",
+                "post_actions_routing_failed",
+                target_type="session",
+                target_id=session_id,
+                detail={"error": str(exc)[:300]},
+            )
+            conn.commit()
         # Persist decisions (blueprints / cover_prompt / next_book) for topic
         # meetings too; skip when no novel exists yet (new-book topic meeting).
         if novel_id:
@@ -667,11 +684,13 @@ def _fail_timeout(conn, session_id, round_no):
     conn.commit()
 
 
-def start_session_async(topic, novel_id=0, db_path=None):
+def start_session_async(topic, novel_id=0, db_path=None, kind="topic"):
     """Create a session and run it in a background thread."""
     conn = novel_pipeline.db.connect(db_path or config.DB_PATH)
     try:
-        result = create_session(conn, topic, novel_id, db_path=db_path or "")
+        result = create_session(
+            conn, topic, novel_id, db_path=db_path or "", kind=kind
+        )
     finally:
         conn.close()
     if not result["ok"]:

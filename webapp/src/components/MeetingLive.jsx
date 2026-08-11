@@ -46,6 +46,18 @@ const SPEECH_FIELDS = [
   ["priority", "优先级"],
 ];
 
+const KIND_LABELS = {
+  weekly: "编辑部例会",
+  topic: "剧情碰头会",
+  planning: "选题会",
+  critique: "单章会诊",
+  retro: "数据复盘会",
+  review: "收尾会",
+  incident: "危机处理会",
+  learning: "知识分享会",
+  free: "茶水间闲聊",
+};
+
 
 function RawSpeech({ raw }) {
   let display = raw;
@@ -64,6 +76,7 @@ function RawSpeech({ raw }) {
 
 export default function MeetingLive({ onArchived }) {
   const [topic, setTopic] = useState("");
+  const [meetingKind, setMeetingKind] = useState("topic");
   const [starting, setStarting] = useState(false);
   const [session, setSession] = useState(null);
   const [pollTick, setPollTick] = useState(0);
@@ -126,9 +139,14 @@ export default function MeetingLive({ onArchived }) {
     if (!topic.trim()) return;
     setStarting(true);
     try {
-      const r = await startMeeting(topic.trim());
+      const r = await startMeeting(topic.trim(), meetingKind);
       if (r.ok) {
-        setSession({ id: r.session_id, topic: topic.trim(), status: "running" });
+        setSession({
+          id: r.session_id,
+          topic: topic.trim(),
+          status: "running",
+          kind: meetingKind,
+        });
         setTopic("");
         setInstruction("");
         setMsg("");
@@ -200,6 +218,18 @@ export default function MeetingLive({ onArchived }) {
               onKeyDown={(e) => e.key === "Enter" && start()}
             />
           </label>
+          <label className="text-xs muted">
+            会议类型
+            <select
+              className="input mt-1"
+              value={meetingKind}
+              onChange={(e) => setMeetingKind(e.target.value)}
+            >
+              {Object.entries(KIND_LABELS).map(([k, label]) => (
+                <option key={k} value={k}>{label}</option>
+              ))}
+            </select>
+          </label>
           <button className="btn btn-primary" disabled={starting || !topic.trim()} onClick={start}>
             {starting ? "启动中…" : "▦ 一键组织 Agent 开会"}
           </button>
@@ -207,7 +237,12 @@ export default function MeetingLive({ onArchived }) {
       ) : (
         <div className="overflow-hidden rounded-xl border border-[var(--line)]">
           <div className="flex flex-wrap items-center gap-2 border-b border-[var(--line)] px-4 py-3">
-            <span className="text-sm font-bold">会议直播 · {session.topic || "专题会议"}</span>
+            <span className="text-sm font-bold">
+              会议直播 · {session.topic || KIND_LABELS[session.kind] || "专题会议"}
+            </span>
+            {session.kind ? (
+              <span className="chip chip-info">{KIND_LABELS[session.kind] || session.kind}</span>
+            ) : null}
             <span className={`chip ${
               session.status === "running" ? "chip-warn" :
               session.status === "awaiting_input" ? "chip-info" :

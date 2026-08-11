@@ -790,6 +790,23 @@ def _load_mood(ctx, conn, agent, key):
     setattr(ctx, key, note)
 
 
+def _meeting_directives(conn, novel_id):
+    """R4-2: latest meeting's writing directives, injected into today's context."""
+    row = conn.execute(
+        "SELECT report FROM weekly_meetings WHERE novel_id=? "
+        "ORDER BY id DESC LIMIT 1",
+        (novel_id,),
+    ).fetchone()
+    if not row or not row["report"]:
+        return []
+    try:
+        report = json.loads(row["report"])
+    except (TypeError, ValueError):
+        return []
+    directives = report.get("writing_directives") or []
+    return [str(d)[:300] for d in directives if str(d).strip()]
+
+
 def _review_tone(conn, writer_agent, reviewer_agent, novel_id):
     """R2-1-3: soften or sharpen rejection wording with relationship friction."""
     if not config.RELATION_WEIGHT:
@@ -1240,6 +1257,9 @@ def _generate(ctx, conn, stock, env, run_id, out_file):
         raise RuntimeError("读本地资料失败")
     prev_for_meta = prev if prev.get("book_name") else None
     ctx.writing_context = steps.build_writing_context(prev)
+    directives = _meeting_directives(conn, ctx.novel_id)
+    if directives:
+        ctx.writing_context += "；编辑部最近共识：" + "；".join(directives)
     target_words = int(prev.get("target_words") or 2000)
 
     work_meta_task = (

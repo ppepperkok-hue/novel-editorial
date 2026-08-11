@@ -742,7 +742,9 @@ def make_handler(db_path):
                 elif parsed.path == "/api/meetings/start":
                     conn.close()
                     result = meeting_service.start_session_async(
-                        payload.get("topic"), db_path=str(db_path)
+                        payload.get("topic"),
+                        db_path=str(db_path),
+                        kind=payload.get("kind") or "topic",
                     )
                 elif parsed.path == "/api/meetings/advance":
                     try:
