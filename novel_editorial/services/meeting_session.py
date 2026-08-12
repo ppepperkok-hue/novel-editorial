@@ -27,8 +27,11 @@ def _now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def create_session(conn, topic, novel_id=0, db_path="", kind="topic"):
+def create_session(conn, topic, novel_id=0, db_path="", kind="topic", mode="rounds"):
     kind = str(kind or "topic").strip()
+    mode = str(mode or "rounds").strip()
+    if mode not in ("rounds", "free"):
+        return {"ok": False, "error": "mode must be rounds or free"}
     if kind not in meeting_kinds.MEETING_KIND_NAMES:
         return {"ok": False, "error": f"kind must be one of {meeting_kinds.MEETING_KIND_NAMES}"}
     if not topic or not str(topic).strip():
@@ -44,12 +47,14 @@ def create_session(conn, topic, novel_id=0, db_path="", kind="topic"):
             row = conn.execute("SELECT id FROM novels ORDER BY id DESC LIMIT 1").fetchone()
             novel_id = row["id"] if row else 0
         cur = conn.execute(
-            "INSERT INTO meeting_sessions(kind,topic,status,novel_id,db_path,heartbeat_at,created_at,updated_at) "
-            "VALUES(?,?,?,?,?,?,?,?)",
+            "INSERT INTO meeting_sessions(kind,topic,status,mode,novel_id,db_path,"
+            "heartbeat_at,created_at,updated_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?)",
             (
                 kind,
                 str(topic).strip(),
                 "running",
+                mode,
                 novel_id,
                 str(db_path or ""),
                 _now(),
@@ -860,16 +865,29 @@ def _fail_timeout(conn, session_id, round_no):
     conn.commit()
 
 
-def start_session_async(topic, novel_id=0, db_path=None, kind="topic"):
+def start_session_async(topic, novel_id=0, db_path=None, kind="topic", mode="rounds"):
     """Create a session and run it in a background thread."""
     conn = novel_editorial.db.connect(db_path or config.DB_PATH)
     try:
         result = create_session(
-            conn, topic, novel_id, db_path=db_path or "", kind=kind
+            conn, topic, novel_id, db_path=db_path or "", kind=kind, mode=mode
         )
     finally:
         conn.close()
     if not result["ok"]:
+        return result
+    if mode == "free":
+        # 自由会议由事件驱动：提交开场事件即可，不跑轮次线程。
+        from tools import meeting_free_loop  # noqa: PLC0415
+
+        meeting_free_loop.get_loop(db_path or "").submit_event(
+            result["session_id"],
+            {
+                "kind": "user_message",
+                "content": str(topic or "").strip(),
+                "event_id": f"kickoff-{result['session_id']}",
+            },
+        )
         return result
     threading.Thread(
         target=run_session,

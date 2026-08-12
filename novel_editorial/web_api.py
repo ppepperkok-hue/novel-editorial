@@ -866,6 +866,7 @@ def make_handler(db_path):
                         payload.get("topic"),
                         db_path=str(db_path),
                         kind=payload.get("kind") or "topic",
+                        mode=payload.get("mode") or "rounds",
                     )
                 elif parsed.path == "/api/meetings/advance":
                     try:

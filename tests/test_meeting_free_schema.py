@@ -6,6 +6,7 @@ import tempfile
 import unittest
 
 from novel_editorial import db
+from novel_editorial.services import meeting_session
 
 
 class MeetingFreeSchemaTests(unittest.TestCase):
@@ -85,6 +86,21 @@ class MeetingFreeSchemaTests(unittest.TestCase):
                 ("idx_pending_interactions_session",),
             ).fetchall()
             self.assertEqual(len(indexes), 1)
+        finally:
+            conn.close()
+
+    def test_create_session_free_mode(self):
+        conn = db.connect(self.db_path)
+        try:
+            result = meeting_session.create_session(conn, "自由讨论测试", mode="free")
+            self.assertTrue(result["ok"])
+            row = conn.execute(
+                "SELECT mode FROM meeting_sessions WHERE id=?",
+                (result["session_id"],),
+            ).fetchone()
+            self.assertEqual(row["mode"], "free")
+            bad = meeting_session.create_session(conn, "非法模式", mode="nope")
+            self.assertFalse(bad["ok"])
         finally:
             conn.close()
 
