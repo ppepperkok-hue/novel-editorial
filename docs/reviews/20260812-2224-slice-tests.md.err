@@ -1,0 +1,3851 @@
+OpenAI Codex v0.147.0
+--------
+workdir: E:\code\novel-editorial
+model: deepseek-v4-flash
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: max
+reasoning summaries: none
+session id: 019ff65c-942c-7aa0-b2e4-fdbc0bb935af
+--------
+user
+You are an extremely strict, highly skilled senior engineer performing an independent code review. Review the requested scope carefully and report ONLY findings backed by evidence.  Requirements: 1. Run the project verification baseline first when applicable (python run_tests.py / npm test / npm run build). 2. Scan for real issues: silent failures, fake green, hardcoded paths/secrets, lock/concurrency bugs,    SQL placeholder mistakes, encoding problems, dead code, missing tests, scope violations. 3. Classify every finding as P0 (must fix now), P1 (high risk), P2 (low risk), P3 (docs/UX). 4. Every finding must carry evidence: file:line, command output, or reproduction steps. No feelings. 5. Produce a report with: scope, baseline results, P0-P3 findings, impact table, and an honest conclusion. 6. Do NOT fix anything. This is a review-only pass. Focus this review on these paths: tests, run_tests.py, ai_words.json, compliance_words.txt, .env.example. Read dependency interfaces (e.g. novel_editorial/db.py, novel_editorial/config.py, novel_editorial/services/*) only to verify contracts; do NOT scan the whole repository. Run the full verification baseline: python run_tests.py and webapp npm test.
+2026-08-12T14:24:51.735115Z ERROR rmcp::transport::worker: worker quit with fatal: Transport channel closed, when AuthRequired(AuthRequiredError { www_authenticate_header: "Bearer resource_metadata=\"https://mcp.figma.com/.well-known/oauth-protected-resource\",scope=\"mcp:connect\",authorization_uri=\"https://api.figma.com/.well-known/oauth-authorization-server\"" })
+2026-08-12T14:24:51.999160Z ERROR rmcp::transport::worker: worker quit with fatal: Transport channel closed, when AuthRequired(AuthRequiredError { www_authenticate_header: "Bearer resource_metadata=\"https://mcp.figma.com/.well-known/oauth-protected-resource\",scope=\"mcp:connect\",authorization_uri=\"https://api.figma.com/.well-known/oauth-authorization-server\"" })
+  → 查看仓库结构、git 变更范围与目标文件
+  • 运行验证基线：python run_tests.py 与 webapp npm test
+  • 审查目标文件与依赖契约（db.py/config.py/services）
+  • 汇总 P0-P3 发现并输出 JSON 报告
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "git status --short; Write-Host '---BRANCH---'; git branch --show-current; Write-Host '---LOG---'; git log --oneline -5" in E:\code\novel-editorial
+ succeeded in 1022ms:
+ M scripts/run_review.ps1
+?? docs/reviews/20260812-2224-slice-core.md
+?? docs/reviews/20260812-2224-slice-core.md.err
+?? docs/reviews/20260812-2224-slice-editorial.md
+?? docs/reviews/20260812-2224-slice-editorial.md.err
+?? docs/reviews/20260812-2224-slice-frontend.md
+?? docs/reviews/20260812-2224-slice-frontend.md.err
+?? docs/reviews/20260812-2224-slice-knowledge.md
+?? docs/reviews/20260812-2224-slice-knowledge.md.err
+?? docs/reviews/20260812-2224-slice-platform.md
+?? docs/reviews/20260812-2224-slice-platform.md.err
+?? docs/reviews/20260812-2224-slice-tests.md
+?? docs/reviews/20260812-2224-slice-tests.md.err
+---BRANCH---
+codex/frontend-redesign
+---LOG---
+d7f2e89 docs: track free-meeting progress through dry-run stage
+006b2b1 test: add free-meeting end-to-end dry run with kickoff, advance and finish
+6374b6b feat: configurable compression with compress events and summary anchor
+bc74aa0 feat: free-meeting live room with mentions, approval dialog and SSE stream
+b8d5c2e feat: support free meeting mode in session creation and start API
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Get-ChildItem -Force | Select-Object Name, Mode; Write-Host '---TESTS DIR---'; Get-ChildItem -Path . -Recurse -Directory -Filter tests -ErrorAction SilentlyContinue | Select-Object FullName; Write-Host '---TARGET FILES---'; Get-ChildItem -Path . -Recurse -Include run_tests.py,ai_words.json,compliance_words.txt,.env.example -ErrorAction SilentlyContinue | Select-Object FullName" in E:\code\novel-editorial
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "git diff --stat HEAD; Write-Host '---STAGED---'; git diff --cached --stat" in E:\code\novel-editorial
+ succeeded in 1257ms:
+ scripts/run_review.ps1 | 3 +++
+ 1 file changed, 3 insertions(+)
+---STAGED---
+warning: in the working copy of 'scripts/run_review.ps1', LF will be replaced by CRLF the next time Git touches it
+
+ succeeded in 6822ms:
+
+---TESTS DIR---
+Name                    Mode  
+----                    ----  
+.agents                 d-----
+.codex                  d-----
+.git                    d--h--
+.pytest_cache           d-----
+.venv                   d-----
+backups                 d-----
+demo_data               d-----
+desktop                 d-----
+docs                    d-----
+exports                 d-----
+n8n                     d-----
+n8n_tmp                 d-----
+novel_editorial         d-----
+novel_pipeline.egg-info d-----
+prompts                 d-----
+scripts                 d-----
+tests                   d-----
+tools                   d-----
+web                     d-----
+webapp                  d-----
+__pycache__             d-----
+.env.example            -a----
+.gitignore              -a----
+ai_words.json           -a----
+alerts.log              -a----
+ARCHITECTURE.md         -a----
+compliance_words.txt    -a----
+conftest.py             -a----
+demo.db                 -a----
+hot_topics.json         -a----
+launch_desktop.vbs      -a----
+publish_queue.jsonl     -a----
+pyproject.toml          -a----
+README.md               -a----
+run_tests.py            -a----
+uv.lock                 -a----
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+---TARGET FILES---
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+                              
+
+
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command 'Get-Content run_tests.py -Raw' in E:\code\novel-editorial
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command 'Get-Content .env.example -Raw' in E:\code\novel-editorial
+ succeeded in 1671ms:
+"""杩愯鍏ㄩ儴娴嬭瘯锛堜粎鏍囧噯搴擄紝鏃犻渶瀹夎渚濊禆锛夈€?""
+
+import ast
+import sys
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT))
+
+
+class EnvConfigContractTests(unittest.TestCase):
+    """Guard the .env.example <-> config.py contract (R12-E-02)."""
+
+    # Keys read outside novel_editorial/config.py: key -> (file, evidence).
+    # Evidence is the literal string that must occur in the file; dynamic
+    # keys (LLM_MODEL_*) use the prefix built by the consumer.
+    EXTERNAL_CONSUMERS = {
+        "LLM_API_KEY": ("novel_editorial/llm_client.py", "LLM_API_KEY"),
+        "LLM_BASE_URL": ("novel_editorial/llm_client.py", "LLM_BASE_URL"),
+        "LLM_MODEL_PLANNING": ("novel_editorial/llm_client.py", "LLM_MODEL_"),
+        "LLM_MODEL_WRITING": ("novel_editorial/llm_client.py", "LLM_MODEL_"),
+        "LLM_MODEL_EDITING": ("novel_editorial/llm_client.py", "LLM_MODEL_"),
+        "LLM_MODEL_REVIEWING": ("novel_editorial/llm_client.py", "LLM_MODEL_"),
+        "LLM_MODEL_MEMORY": ("novel_editorial/llm_client.py", "LLM_MODEL_"),
+        "DEEPSEEK_API_KEY": ("novel_editorial/llm_client.py", "DEEPSEEK_API_KEY"),
+        "TOMATO_COOKIE": ("novel_editorial/monitor.py", "TOMATO_COOKIE"),
+        "TOMATO_CSRF_TOKEN": ("novel_editorial/monitor.py", "TOMATO_CSRF_TOKEN"),
+        "FANQIE_COOKIE": ("tools/publish_stock.py", "FANQIE_COOKIE"),
+        "FANQIE_CSRF_TOKEN": ("tools/publish_stock.py", "FANQIE_CSRF_TOKEN"),
+        "FANQIE_BOOK_ID": ("tools/publish_stock.py", "FANQIE_BOOK_ID"),
+        "MEETING_HEARTBEAT_TIMEOUT_MINUTES": (
+            "novel_editorial/services/meeting_session.py",
+            "MEETING_HEARTBEAT_TIMEOUT_MINUTES",
+        ),
+        "N8N_EMAIL": ("tools/n8n_api.py", "N8N_EMAIL"),
+        "N8N_TMP_PW": ("tools/n8n_api.py", "N8N_TMP_PW"),
+        "N8N_API_KEY": ("novel_editorial/services/n8n.py", "N8N_API_KEY"),
+        "N8N_WORKFLOW_TRIGGER": ("tools/n8n_api.py", "N8N_WORKFLOW_TRIGGER"),
+        "PANEL_TOKEN": ("novel_editorial/web_api.py", "PANEL_TOKEN"),
+        "PYTHON_EXE": ("scripts/install_daily_task.ps1", "PYTHON_EXE"),
+        "PYTHONW_EXE": ("scripts/install_daily_task.ps1", "PYTHONW_EXE"),
+        "PIPELINE_ROOT": ("tools/validate_workflow_deep.mjs", "PIPELINE_ROOT"),
+        "NOVEL_PREMISE": ("n8n/novel_workflow.json", "NOVEL_PREMISE"),
+        "NOVEL_KEYWORDS": ("n8n/novel_workflow.json", "NOVEL_KEYWORDS"),
+        "NOVEL_GENRE": ("n8n/novel_workflow.json", "NOVEL_GENRE"),
+        "COST_PRO_PER_1K": ("novel_editorial/llm_client.py", "COST_PRO_PER_1K"),
+        "COST_FLASH_PER_1K": ("novel_editorial/llm_client.py", "COST_FLASH_PER_1K"),
+        "CHROME_EXE": ("tools/launch_headless_chrome.ps1", "CHROME_EXE"),
+    }
+
+    @staticmethod
+    def _env_example_entries():
+        entries = {}
+        for raw in (ROOT / ".env.example").read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            if key.strip():
+                entries[key.strip()] = value.strip()
+        return entries
+
+    @staticmethod
+    def _config_consumed_keys():
+        tree = ast.parse(
+            (ROOT / "novel_editorial" / "config.py").read_text(encoding="utf-8")
+        )
+        consumed = {}
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not node.args:
+                continue
+            func = node.func
+            is_os_get = (
+                isinstance(func, ast.Attribute)
+                and func.attr == "get"
+                and isinstance(func.value, ast.Attribute)
+                and func.value.attr == "environ"
+                and isinstance(func.value.value, ast.Name)
+                and func.value.value.id == "os"
+            )
+            is_env_int = isinstance(func, ast.Name) and func.id == "_env_int"
+            if not (is_os_get or is_env_int):
+                continue
+            key_node = node.args[0]
+            if not isinstance(key_node, ast.Constant) or not isinstance(
+                key_node.value, str
+            ):
+                continue
+            default = None
+            if len(node.args) > 1 and isinstance(node.args[1], ast.Constant):
+                default = node.args[1].value
+            consumed[key_node.value] = default
+        return consumed
+
+    def test_env_example_keys_are_all_consumed(self):
+        entries = self._env_example_entries()
+        consumed = self._config_consumed_keys()
+        actual = set(entries)
+        expected = set(consumed) | set(self.EXTERNAL_CONSUMERS)
+        self.assertEqual(
+            len(entries),
+            len(actual),
+            "duplicate KEY= lines in .env.example",
+        )
+        self.assertEqual(
+            actual,
+            expected,
+            "env contract drift: every .env.example key must be consumed by "
+            "config.py or registered in EXTERNAL_CONSUMERS, and every "
+            "registered/config key must stay in .env.example",
+        )
+        for key, (rel, evidence) in self.EXTERNAL_CONSUMERS.items():
+            self.assertIn(
+                evidence,
+                (ROOT / rel).read_text(encoding="utf-8"),
+                f"consumer file for {key} no longer references it",
+            )
+
+    def test_config_defaults_match_env_example(self):
+        entries = self._env_example_entries()
+        mismatches = []
+        for key, default in self._config_consumed_keys().items():
+            if default is None or key not in entries:
+                continue
+            if str(default) != entries[key]:
+                mismatches.append(f"{key}: config={default!r} example={entries[key]!r}")
+        self.assertEqual(mismatches, [])
+
+
+loader = unittest.TestLoader()
+suite = unittest.TestSuite([
+    loader.discover(str(ROOT / "tests"), pattern="test_*.py"),
+    loader.discover(str(ROOT / "tests"), pattern="*_test.py"),
+])
+# R12-E-02: the .env.example <-> config.py contract guard lives in this file so
+# a broken env contract fails the standard `python run_tests.py` run too.
+suite.addTests(loader.loadTestsFromTestCase(EnvConfigContractTests))
+if suite.countTestCases() == 0:
+    print("ERROR: no tests discovered under tests/ (fake green guard)", file=sys.stderr)
+    sys.exit(1)
+result = unittest.TextTestRunner(verbosity=2, buffer=True).run(suite)
+sys.exit(0 if result.wasSuccessful() else 1)
+
+
+ succeeded in 1443ms:
+# LLM锛堝啓浣?缂栬緫/瀹＄/璁板繂鍒嗘。锛?LLM_API_KEY=
+LLM_BASE_URL=
+LLM_MODEL_PLANNING=
+LLM_MODEL_WRITING=
+LLM_MODEL_EDITING=
+LLM_MODEL_REVIEWING=
+LLM_MODEL_MEMORY=
+
+# DeepSeek锛坣8n 鏃ユ洿涓庢灦鏋勫笀鍛ㄤ細浣跨敤锛?DEEPSEEK_API_KEY=
+
+# 鐣寗浣滆€呭悗鍙扮櫥褰曟€侊紙绾?1-2 涓湀澶辨晥锛屽け鏁堥渶閲嶆柊鎶撳彇锛?TOMATO_COOKIE=
+TOMATO_CSRF_TOKEN=
+FANQIE_COOKIE=
+FANQIE_CSRF_TOKEN=
+# 鐣寗浣滃搧 ID锛坱ools/collect_reader_stats.py銆乼ools/publish_stock.py 璇诲彇锛涙浛鎹㈡垚浣犺嚜宸辩殑锛?FANQIE_BOOK_ID=YOUR_FANQIE_BOOK_ID
+# FANQIE_VOLUME_ID 宸插純鐢細鍏ㄤ粨搴撴棤璇诲彇鏂癸紙浠?novel_editorial/services/ending.py 鍐欏叆锛夛紝鏃犻渶閰嶇疆
+
+# 缂栬緫閮ㄨ涓哄紑鍏筹紙import 鏃惰鍙栵紝鏀瑰悗闇€閲嶅惎 web_api锛?# editorial | fixed锛堜富缂栧垎娲撅級
+DISPATCH_MODE=editorial
+# on | off锛堝啓鎵嬫帴鍙?鎷掔粷/鏇夸唬鏂规锛?TASK_RESPONSE_MODE=on
+# 姣忔杩愯鍗虫椂閲嶅啓涓婇檺
+REWORK_MAX=1
+# 瀹＄鎵撳洖鍚庢渶澶氶噸鍐欒疆鏁?REVIEW_RETRY_MAX=1
+# on | off锛堣棰嗕换鍔℃敞鍏ュ啓鎵嬶級
+CLAIM_INJECT=on
+# on | off锛堣棰樿嚜鍔ㄨ浆琛屽姩椤癸級
+TOPIC_REQUEST_ACTIONS=on
+# on | off锛堝叧绯诲奖鍝嶅垎娲?鎺緸锛?RELATION_WEIGHT=on
+# on | off锛堝畨鍏ㄥ姩浣滅櫧鍚嶅崟锛?AGENCY_ENABLED=on
+# rounds | open锛坮ounds=鍏ㄥ憳杞祦鍙戣█锛沷pen=涓诲腑鐐瑰悕锛屽け璐ュ洖閫€鍏ㄥ憳锛?MEETING_MODE=rounds
+# 浼氳蹇冭烦瓒呮椂锛堝垎閽燂級锛岃秴鏃跺垽瀹氫細璇濆け娲?MEETING_HEARTBEAT_TIMEOUT_MINUTES=60
+
+# 涓婁笅鏂囨敞鍏ラ噺锛坕mport 鏃惰鍙栵紝鏀瑰悗闇€閲嶅惎锛涙帶鍒舵瘡涓?LLM 璋冪敤鎼哄甫鐨勫崗浣滀笂涓嬫枃锛?# 鎼哄甫鐨勬渶杩戞秷鎭潯鏁?AGENT_CTX_MESSAGES=8
+# 鎼哄甫鐨勮蹇嗘潯鏁?AGENT_CTX_MEMORIES=3
+# 鎼哄甫鐨勫叧绯绘潯鏁?AGENT_CTX_RELATIONS=3
+# 鎼哄甫鐨勬壙璇烘潯鏁?AGENT_CTX_PROMISES=3
+# 鎼哄甫鐨勫姩浣滄潯鏁?AGENT_CTX_ACTIONS=3
+# 鍗曟潯鍐呭鎴柇闀垮害锛堝瓧绗︼級
+AGENT_CTX_TRUNCATE=200
+
+# 閬楃暀 n8n 鍥為€€璺緞锛堜粎寮傚父鍥為€€鏃朵娇鐢紱tools/n8n_api.py 鐧诲綍鐢級
+# 鐧诲綍閭锛堥粯璁ょ┖锛?N8N_EMAIL=
+# 鐧诲綍瀵嗙爜瀹為檯鍙栧€硷紙榛樿绌猴紱n8n_api.py 浣跨敤锛?N8N_TMP_PW=
+
+# n8n API key锛堝墠绔儴缃?鎺у埗宸ヤ綔娴佺敤锛涘湪 n8n 璁剧疆閲岀敓鎴愶級
+N8N_API_KEY=
+
+# n8n API 鍦板潃锛坰ervices/n8n銆乼ools/daily_runs 璇诲彇锛涢粯璁?http://127.0.0.1:5678锛?N8N_BASE=http://127.0.0.1:5678
+
+# n8n 宸ヤ綔娴?ID锛堝洖璇绘墽琛岃褰?澶辫触璇︽儏鐢紱鎵撳紑宸ヤ綔娴佸悗鍦?n8n 闈㈡澘 URL 涓幏鍙栵級
+N8N_WORKFLOW_DAILY=your-daily-workflow-id
+N8N_WORKFLOW_WEEKLY=your-weekly-workflow-id
+N8N_WORKFLOW_KEEPER=your-keeper-workflow-id
+# 鍥為€€璺緞瑙﹀彂 n8n 宸ヤ綔娴佷娇鐢ㄧ殑瑙﹀彂鍣ㄥ悕锛坱ools/n8n_api.py run 璇诲彇锛涢粯璁?姣忔棩瑙﹀彂锛?N8N_WORKFLOW_TRIGGER=姣忔棩瑙﹀彂
+
+# 鏈満闈㈡澘閴存潈锛堝彲閫夛級锛氶厤缃悗闈炴祻瑙堝櫒璋冪敤锛堣剼鏈?n8n锛夊繀椤诲甫 Bearer 澶?PANEL_TOKEN=
+
+# n8n executeCommand 鑺傜偣杩愯鐜锛堟崲鎴愪綘鏈哄櫒涓婄殑瀹為檯鍊硷紝宸ヤ綔娴?JSON 涓嶅啀鍐欐璺緞锛?PYTHON_EXE=C:/path/to/python.exe
+# 鏃犵獥鍙?Python 瑙ｉ噴鍣ㄨ矾寰勶紙鍙€夛紱desktop/main.js 涓?scripts/install_daily_task.ps1 璇诲彇锛屼笉璁剧疆鍒欏洖閫€ PATH 鏌ユ壘 pythonw锛?PYTHONW_EXE=C:/path/to/pythonw.exe
+PIPELINE_ROOT=C:/path/to/novel-editorial
+# 杩愯鏃舵暟鎹洰褰曪紙鍙€夛級锛歯8n_tmp/exports/demo_data/alerts.log 绛夎惤鐩樻牴锛涗笉璁剧疆榛樿浠撳簱鏍圭洰褰曪紙鍙瀹夎璇锋寚鍚戝彲鍐欑洰褰曪級锛屾闈㈢増鑷姩娉ㄥ叆
+NOVEL_DATA_DIR=
+
+# 鏃ユ洿棰樻潗锛堣瀹氶鏉愯妭鐐硅鍙栵紱鐣欑┖鍒欑敤宸ヤ綔娴佸唴缃粯璁ゅ€硷級
+NOVEL_PREMISE=
+NOVEL_KEYWORDS=
+NOVEL_GENRE=
+
+# LLM 鎴愭湰鍗曚环锛堝厓/鍗?token锛夛紝鍐欏叆 cost_logs 鎴愭湰鍙拌处锛涙湰缁勪负鍞竴鐢熸晥瀹氫箟锛堟棫閲嶅椤瑰凡鍚堝苟锛?# pro 妯″瀷鍗曚环锛堝厓/鍗?token锛?COST_PRO_PER_1K=0.01
+# flash 妯″瀷鍗曚环锛堝厓/鍗?token锛?COST_FLASH_PER_1K=0.002
+
+# 鏃犲ご Chrome 璺緞锛堝彲閫夛紱tools/launch_headless_chrome.ps1 浣跨敤锛屼笉璁剧疆鍒欒嚜鍔ㄦ帰娴嬶級
+CHROME_EXE=
+
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-ChildItem tests -Force | Select-Object Name, Length; Write-Host '"'---AI_WORDS head---'; Get-Content ai_words.json -TotalCount 60; Write-Host '---COMPLIANCE head---'; Get-Content compliance_words.txt -TotalCount 40" in E:\code\novel-editorial
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command 'git log --oneline -15 -- tests run_tests.py ai_words.json compliance_words.txt .env.example' in E:\code\novel-editorial
+ succeeded in 1154ms:
+
+---AI_WORDS head---
+---COMPLIANCE head---
+Name                         Length
+----                         ------
+__pycache__                        
+test_activity.py             7048  
+test_agency.py               3842  
+test_agent_actions.py        8740  
+test_agent_context.py        6612  
+test_agent_meeting.py        28584 
+test_agent_schema.py         4500  
+test_agent_tool_loop.py      9367  
+test_ai_taste_check.py       4450  
+test_apply_architect.py      3637  
+test_audit_evolution.py      7253  
+test_autopilot.py            3847  
+test_auto_fill_actions.py    7225  
+test_backup.py               1195  
+test_book_isolation.py       3445  
+test_clean_knowledge.py      7968  
+test_compliance.py           3990  
+test_create_book.py          10320 
+test_daily_runs.py           8563  
+test_db.py                   3642  
+test_delete_book.py          7980  
+test_dispatch.py             14267 
+test_distill_lessons.py      2437  
+test_economics.py            1376  
+test_editorial_daily.py      53721 
+test_editorial_state.py      2785  
+test_editorial_steps.py      15759 
+test_export_flow_html.py     2799  
+test_feedback.py             888   
+test_flow_graph.py           2745  
+test_hardening.py            1527  
+test_hot_topics.py           5320  
+test_knowledge.py            4249  
+test_knowledge_bible.py      6002  
+test_knowledge_keeper.py     4981  
+test_llm_client.py           3202  
+test_mailroom.py             5752  
+test_meeting_actions.py      2417  
+test_meeting_events.py       1079  
+test_meeting_executor.py     12622 
+test_meeting_free_e2e.py     4958  
+test_meeting_free_loop.py    19159 
+test_meeting_free_schema.py  5435  
+test_meeting_interactions.py 4428  
+test_meeting_materials.py    3785  
+test_meeting_mentions.py     2595  
+test_meeting_session.py      18706 
+test_meeting_speaker.py      5074  
+test_monitor.py              2545  
+test_novel_flow.py           2270  
+test_novel_knowledge.py      8969  
+test_open_meeting.py         6115  
+test_outbox.py               7381  
+test_pipeline_generate.py    3224  
+test_planner.py              1428  
+test_preflight_guard.py      4125  
+test_produce_article.py      5109  
+test_promises.py             5380  
+test_publish_stock.py        9533  
+test_quality_gate.py         3603  
+test_record_work.py          5996  
+test_relations.py            4196  
+test_reminders.py            2374  
+test_render_workflow.py      3410  
+test_review_retry.py         6085  
+test_review_v3.py            5888  
+test_review_v4.py            15037 
+test_scheduler.py            2433  
+test_seed_demo.py            1147  
+test_services_regression.py  12944 
+test_summarize_slices.py     1410  
+test_web_api.py              19725 
+test_workday.py              10443 
+{
+  "_note": "鍞竴鏉冨▉鏉ユ簮锛歛i_flavor 璇嶈〃鍙湪鏈枃浠剁淮鎶わ紱n8n/novel_workflow.json 璐ㄩ噺闂ˋ/B 鍐呯殑纭紪鐮佸垪琛ㄤ粎涓烘棤 PIPELINE_ROOT 鏃剁殑鍥為€€鍓湰锛堝綋鍓嶄笌鏈枃涓€鑷达級锛屼慨鏀硅瘝琛ㄨ鍙敼鏈枃浠躲€?,
+  "ai_flavor": [
+    "绐佺劧", "椤挎椂", "浠夸經", "缂撶紦", "涓嶇敱寰?, "寰井涓€", "鍢磋",
+    "鐪肩涓€鍑?, "浣庢矇", "鍐峰摷涓€澹?, "蹇冧腑涓€鍔?, "涓嶇", "鐬棿",
+    "闈㈡棤琛ㄦ儏", "娣℃贰", "涓嶇敱鑷富", "鎯呬笉鑷", "寰井涓€鎰?,
+    "缂撶紦璇撮亾", "涓庢鍚屾椂", "涓€鑲″己澶х殑姘旀伅"
+  ]
+}
+# 鍚堣璇嶅簱鎵╁睍鏂囦欢锛堟瘡琛屼竴涓瘝锛? 寮€澶翠负娉ㄩ噴锛夈€?# 姝ｅ紡鍚敤鍓嶈鎸夌洰鏍囧钩鍙帮紙鐣寗/璧风偣绛夛級鐨勫鏍歌鍒欒ˉ鍏呬笌瑁佸壀锛?# 涓庡唴缃€氱敤杩濊璇嶅悎骞跺幓閲嶅悗鍙備笌鍙戝竷鍓嶅悎瑙勬壂鎻忋€?# 涓嬫柟涓洪€氱敤鏄庢樉杩濊璇嶇ず渚嬶紝鍙寜骞冲彴瑙勫垯澧炲垹銆?
+# 杩濈鍝?/ 娑夋瘨
+姣掑搧
+澶ч夯
+鍙崱鍥?楦︾墖
+# 璧屽崥 / 鍗氬僵
+璧屽満
+鑰佽檸鏈?鍏悎褰?澶栧洿璧岀悆
+# 璇堥獥 / 闈炴硶閲戣瀺
+楂樺埄璐?濂楄矾璐?鏍″洯璐?娲楅挶
+# 鏆存亹 / 鍗遍櫓鍝?鍐涚伀
+寮硅嵂
+鐖嗙偢鐗?绠″埗鍒€鍏?# 閭暀 / 鏋佺缁勭粐
+閭暀缁勭粐
+# 鑹叉儏闇查
+娣Ы
+闇查鎬ф弿鍐?鐚ヤ旱
+瀚栧
+# 琛€鑵ユ毚鍔?鍒嗗案
+铏愭潃
+鑲㈣В
+# 鏈垚骞翠汉淇濇姢
+鏍″洯闇稿噷
+
+
+
+ succeeded in 906ms:
+006b2b1 test: add free-meeting end-to-end dry run with kickoff, advance and finish
+bc74aa0 feat: free-meeting live room with mentions, approval dialog and SSE stream
+b8d5c2e feat: support free meeting mode in session creation and start API
+03be886 feat: broadcast thinking status and add meeting messages endpoint
+35a8b9f feat: add SSE meeting event hub with message and approval broadcast
+3d51de8 feat: add approval and clarify interaction routing with expiry
+b9e8bf3 fix: scope meeting breaker to novel and drain inflight speakers on stop
+077f729 feat: add bounded history with truncation and one-shot summary compression
+03a6162 feat: wire parallel speech pool, breaker, cold timer and chair cadence
+948ae23 feat: add speaker candidacy with mentions, interest ranking and cooldown
+49e3b69 feat: add free-meeting event loop with heartbeat and recovery
+d0b6496 fix: normalize agent suffix and guard seq concurrency in meeting executor
+3d254cf feat: add free-meeting speech executor with retry and explicit audit
+a50f1db feat: add hermes-style mention parser with CJK boundaries
+3b18ae5 feat: add free-meeting schema with messages, interactions and mode column
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Write-Host '---AI_WORDS---'; Get-Content ai_words.json -Encoding UTF8 -Raw; Write-Host '---COMPLIANCE---'; Get-Content compliance_words.txt -Encoding UTF8 -Raw" in E:\code\novel-editorial
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content .env.example -Encoding UTF8 -Raw' in E:\code\novel-editorial
+ succeeded in 1013ms:
+---AI_WORDS---
+{
+  "_note": "唯一权威来源：ai_flavor 词表只在本文件维护；n8n/novel_workflow.json 质量门A/B 内的硬编码列表仅为无 PIPELINE_ROOT 时的回退副本（当前与本文一致），修改词表请只改本文件。",
+  "ai_flavor": [
+    "突然", "顿时", "仿佛", "缓缓", "不由得", "微微一", "嘴角",
+    "眼神一凝", "低沉", "冷哼一声", "心中一动", "不禁", "瞬间",
+    "面无表情", "淡淡", "不由自主", "情不自禁", "微微一愣",
+    "缓缓说道", "与此同时", "一股强大的气息"
+  ]
+}
+
+---COMPLIANCE---
+# 合规词库扩展文件（每行一个词，# 开头为注释）。
+# 正式启用前请按目标平台（番茄/起点等）的审核规则补充与裁剪；
+# 与内置通用违规词合并去重后参与发布前合规扫描。
+# 下方为通用明显违规词示例，可按平台规则增删。
+
+# 违禁品 / 涉毒
+毒品
+大麻
+可卡因
+鸦片
+# 赌博 / 博彩
+赌场
+老虎机
+六合彩
+外围赌球
+# 诈骗 / 非法金融
+高利贷
+套路贷
+校园贷
+洗钱
+# 暴恐 / 危险品
+军火
+弹药
+爆炸物
+管制刀具
+# 邪教 / 极端组织
+邪教组织
+# 色情露骨
+淫秽
+露骨性描写
+猥亵
+嫖娼
+# 血腥暴力
+分尸
+虐杀
+肢解
+# 未成年人保护
+校园霸凌
+
+
+ succeeded in 1033ms:
+# LLM（写作/编辑/审稿/记忆分档）
+LLM_API_KEY=
+LLM_BASE_URL=
+LLM_MODEL_PLANNING=
+LLM_MODEL_WRITING=
+LLM_MODEL_EDITING=
+LLM_MODEL_REVIEWING=
+LLM_MODEL_MEMORY=
+
+# DeepSeek（n8n 日更与架构师周会使用）
+DEEPSEEK_API_KEY=
+
+# 番茄作者后台登录态（约 1-2 个月失效，失效需重新抓取）
+TOMATO_COOKIE=
+TOMATO_CSRF_TOKEN=
+FANQIE_COOKIE=
+FANQIE_CSRF_TOKEN=
+# 番茄作品 ID（tools/collect_reader_stats.py、tools/publish_stock.py 读取；替换成你自己的）
+FANQIE_BOOK_ID=YOUR_FANQIE_BOOK_ID
+# FANQIE_VOLUME_ID 已弃用：全仓库无读取方（仅 novel_editorial/services/ending.py 写入），无需配置
+
+# 编辑部行为开关（import 时读取，改后需重启 web_api）
+# editorial | fixed（主编分派）
+DISPATCH_MODE=editorial
+# on | off（写手接受/拒绝/替代方案）
+TASK_RESPONSE_MODE=on
+# 每次运行即时重写上限
+REWORK_MAX=1
+# 审稿打回后最多重写轮数
+REVIEW_RETRY_MAX=1
+# on | off（认领任务注入写手）
+CLAIM_INJECT=on
+# on | off（议题自动转行动项）
+TOPIC_REQUEST_ACTIONS=on
+# on | off（关系影响分派/措辞）
+RELATION_WEIGHT=on
+# on | off（安全动作白名单）
+AGENCY_ENABLED=on
+# rounds | open（rounds=全员轮流发言；open=主席点名，失败回退全员）
+MEETING_MODE=rounds
+# 会议心跳超时（分钟），超时判定会话失活
+MEETING_HEARTBEAT_TIMEOUT_MINUTES=60
+
+# 上下文注入量（import 时读取，改后需重启；控制每个 LLM 调用携带的协作上下文）
+# 携带的最近消息条数
+AGENT_CTX_MESSAGES=8
+# 携带的记忆条数
+AGENT_CTX_MEMORIES=3
+# 携带的关系条数
+AGENT_CTX_RELATIONS=3
+# 携带的承诺条数
+AGENT_CTX_PROMISES=3
+# 携带的动作条数
+AGENT_CTX_ACTIONS=3
+# 单条内容截断长度（字符）
+AGENT_CTX_TRUNCATE=200
+
+# 遗留 n8n 回退路径（仅异常回退时使用；tools/n8n_api.py 登录用）
+# 登录邮箱（默认空）
+N8N_EMAIL=
+# 登录密码实际取值（默认空；n8n_api.py 使用）
+N8N_TMP_PW=
+
+# n8n API key（前端部署/控制工作流用；在 n8n 设置里生成）
+N8N_API_KEY=
+
+# n8n API 地址（services/n8n、tools/daily_runs 读取；默认 http://127.0.0.1:5678）
+N8N_BASE=http://127.0.0.1:5678
+
+# n8n 工作流 ID（回读执行记录/失败详情用；打开工作流后在 n8n 面板 URL 中获取）
+N8N_WORKFLOW_DAILY=your-daily-workflow-id
+N8N_WORKFLOW_WEEKLY=your-weekly-workflow-id
+N8N_WORKFLOW_KEEPER=your-keeper-workflow-id
+# 回退路径触发 n8n 工作流使用的触发器名（tools/n8n_api.py run 读取；默认 每日触发）
+N8N_WORKFLOW_TRIGGER=每日触发
+
+# 本机面板鉴权（可选）：配置后非浏览器调用（脚本/n8n）必须带 Bearer 头
+PANEL_TOKEN=
+
+# n8n executeCommand 节点运行环境（换成你机器上的实际值，工作流 JSON 不再写死路径）
+PYTHON_EXE=C:/path/to/python.exe
+# 无窗口 Python 解释器路径（可选；desktop/main.js 与 scripts/install_daily_task.ps1 读取，不设置则回退 PATH 查找 pythonw）
+PYTHONW_EXE=C:/path/to/pythonw.exe
+PIPELINE_ROOT=C:/path/to/novel-editorial
+# 运行时数据目录（可选）：n8n_tmp/exports/demo_data/alerts.log 等落盘根；不设置默认仓库根目录（只读安装请指向可写目录），桌面版自动注入
+NOVEL_DATA_DIR=
+
+# 日更题材（设定题材节点读取；留空则用工作流内置默认值）
+NOVEL_PREMISE=
+NOVEL_KEYWORDS=
+NOVEL_GENRE=
+
+# LLM 成本单价（元/千 token），写入 cost_logs 成本台账；本组为唯一生效定义（旧重复项已合并）
+# pro 模型单价（元/千 token）
+COST_PRO_PER_1K=0.01
+# flash 模型单价（元/千 token）
+COST_FLASH_PER_1K=0.002
+
+# 无头 Chrome 路径（可选；tools/launch_headless_chrome.ps1 使用，不设置则自动探测）
+CHROME_EXE=
+
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content webapp/package.json -Encoding UTF8 -Raw; Write-Host '---PY---'; .\\.venv\\Scripts\\python.exe --version" in E:\code\novel-editorial
+ succeeded in 939ms:
+{
+  "name": "novel-editorial-webapp",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.7",
+    "@radix-ui/react-dialog": "^1.1.6",
+    "@radix-ui/react-dropdown-menu": "^2.1.6",
+    "@radix-ui/react-select": "^2.1.6",
+    "@radix-ui/react-tabs": "^1.1.3",
+    "@radix-ui/react-tooltip": "^1.1.8",
+    "@xyflow/react": "^12.11.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
+    "motion": "^12.15.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^7.6.0",
+    "recharts": "^3.1.0",
+    "sonner": "^2.0.3",
+    "tailwind-merge": "^3.3.0",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.2",
+    "@vitejs/plugin-react": "^5.0.0",
+    "jsdom": "^29.1.1",
+    "tailwindcss": "^4.0.0",
+    "vite": "^7.0.0",
+    "vitest": "^4.1.10"
+  }
+}
+
+---PY---
+Python 3.11.9
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$env:PYTHONIOENCODING='"'utf-8'; .\\.venv\\Scripts\\python.exe run_tests.py 2>&1 | Select-Object -Last 30" in E:\code\novel-editorial
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "Test-Path webapp/node_modules; Write-Host '---'; node --version; npm --version" in E:\code\novel-editorial
+ succeeded in 3493ms:
+True
+---
+v22.22.1
+10.9.4
+
+2026-08-12T14:27:39.093212Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 130.6 seconds
+Output:
+test_panel_token_required_for_non_browser_post (test_web_api.WebApiTests.test_panel_token_required_for_non_browser_post
+) ... ok
+test_text_plain_post_rejected (test_web_api.WebApiTests.test_text_plain_post_rejected) ... ok
+test_close_completed_when_no_pending (test_workday.WorkdayTests.test_close_completed_when_no_pending) ... ok
+test_close_completed_with_pending_actions (test_workday.WorkdayTests.test_close_completed_with_pending_actions) ... ok
+test_close_org_workday_is_completed_not_failed (test_workday.WorkdayTests.test_close_org_workday_is_completed_not_faile
+d) ... ok
+test_close_partial_when_published_some (test_workday.WorkdayTests.test_close_partial_when_published_some) ... ok
+test_milestone_broadcast_fires_once (test_workday.WorkdayTests.test_milestone_broadcast_fires_once) ... ok
+test_open_blocked_by_existing_lock (test_workday.WorkdayTests.test_open_blocked_by_existing_lock) ... ok
+test_open_broadcasts_workday_start (test_workday.WorkdayTests.test_open_broadcasts_workday_start) ... ok
+test_open_org_skips_produce (test_workday.WorkdayTests.test_open_org_skips_produce) ... ok
+test_open_persists_one_workday_row (test_workday.WorkdayTests.test_open_persists_one_workday_row) ... ok
+test_open_rejects_unclosed_workday (test_workday.WorkdayTests.test_open_rejects_unclosed_workday) ... ok
+test_open_write_reaches_awaiting_close (test_workday.WorkdayTests.test_open_write_reaches_awaiting_close) ... ok
+test_resume_blocked_by_existing_lock (test_workday.WorkdayTests.test_resume_blocked_by_existing_lock) ... ok
+test_resume_returns_to_awaiting_close (test_workday.WorkdayTests.test_resume_returns_to_awaiting_close) ... ok
+test_config_defaults_match_env_example (__main__.EnvConfigContractTests.test_config_defaults_match_env_example) ... ok
+test_env_example_keys_are_all_consumed (__main__.EnvConfigContractTests.test_env_example_keys_are_all_consumed) ... ok
+======================================================================
+FAIL: test_full_loop_with_approval_and_finish (test_meeting_free_e2e.FreeMeetingE2ETests.test_full_loop_with_approval_a
+nd_finish)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "E:\code\novel-editorial\tests\test_meeting_free_e2e.py", line 106, in test_full_loop_with_approval_and_finish
+    self.assertGreaterEqual(count, 2)
+AssertionError: 1 not greater than or equal to 2
+----------------------------------------------------------------------
+Ran 574 tests in 126.060s
+FAILED (failures=1)
+
+ exited 1 in 130646ms:
+test_panel_token_required_for_non_browser_post (test_web_api.WebApiTests.test_panel_token_required_for_non_browser_post
+) ... ok
+test_text_plain_post_rejected (test_web_api.WebApiTests.test_text_plain_post_rejected) ... ok
+test_close_completed_when_no_pending (test_workday.WorkdayTests.test_close_completed_when_no_pending) ... ok
+test_close_completed_with_pending_actions (test_workday.WorkdayTests.test_close_completed_with_pending_actions) ... ok
+test_close_org_workday_is_completed_not_failed (test_workday.WorkdayTests.test_close_org_workday_is_completed_not_faile
+d) ... ok
+test_close_partial_when_published_some (test_workday.WorkdayTests.test_close_partial_when_published_some) ... ok
+test_milestone_broadcast_fires_once (test_workday.WorkdayTests.test_milestone_broadcast_fires_once) ... ok
+test_open_blocked_by_existing_lock (test_workday.WorkdayTests.test_open_blocked_by_existing_lock) ... ok
+test_open_broadcasts_workday_start (test_workday.WorkdayTests.test_open_broadcasts_workday_start) ... ok
+test_open_org_skips_produce (test_workday.WorkdayTests.test_open_org_skips_produce) ... ok
+test_open_persists_one_workday_row (test_workday.WorkdayTests.test_open_persists_one_workday_row) ... ok
+test_open_rejects_unclosed_workday (test_workday.WorkdayTests.test_open_rejects_unclosed_workday) ... ok
+test_open_write_reaches_awaiting_close (test_workday.WorkdayTests.test_open_write_reaches_awaiting_close) ... ok
+test_resume_blocked_by_existing_lock (test_workday.WorkdayTests.test_resume_blocked_by_existing_lock) ... ok
+test_resume_returns_to_awaiting_close (test_workday.WorkdayTests.test_resume_returns_to_awaiting_close) ... ok
+test_config_defaults_match_env_example (__main__.EnvConfigContractTests.test_config_defaults_match_env_example) ... ok
+test_env_example_keys_are_all_consumed (__main__.EnvConfigContractTests.test_env_example_keys_are_all_consumed) ... ok
+======================================================================
+FAIL: test_full_loop_with_approval_and_finish (test_meeting_free_e2e.FreeMeetingE2ETests.test_full_loop_with_approval_a
+nd_finish)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "E:\code\novel-editorial\tests\test_meeting_free_e2e.py", line 106, in test_full_loop_with_approval_and_finish
+    self.assertGreaterEqual(count, 2)
+AssertionError: 1 not greater than or equal to 2
+----------------------------------------------------------------------
+Ran 574 tests in 126.060s
+FAILED (failures=1)
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command 'npm test 2>&1 | Select-Object -Last 40' in E:\code\novel-editorial\webapp
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$env:PYTHONIOENCODING='"'utf-8'; .\\.venv\\Scripts\\python.exe -m pytest tests/test_meeting_free_e2e.py -x -q 2>&1 | Select-Object -Last 25" in E:\code\novel-editorial
+ succeeded in 2164ms:
+.                                                                        [100%]
+1 passed in 0.82s
+
+ succeeded in 15855ms:
+
+> novel-editorial-webapp@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.10 E:/code/novel-editorial/webapp
+
+
+ Test Files  10 passed (10)
+      Tests  45 passed (45)
+   Start at  22:27:44
+   Duration  13.67s (transform 1.13s, setup 3.69s, import 70.09s, tests 3.53s, environment 24.66s)
+
+node.exe : [2m22:27:43[22m [33m[1m[vite][22m[39m [33mwarning: `esbuild` option was specified by "vite:react-babe
+l" plugin. This option is deprecated, please use `oxc` instead.[39m
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([2m22:27:43[2...` instead.[39m:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[2m22:27:43[22m [33m[1m[vite][22m[39m [33mwarning: `optimizeDeps.esbuildOptions` option was specified by "vite:r
+eact-babel" plugin. This option is deprecated, please use `optimizeDeps.rolldownOptions` instead.[39m
+[33mBoth esbuild and oxc options were set. oxc options will be used and esbuild options will be ignored.[39m The foll
+owing esbuild options were set: `{ jsx: 'automatic', jsxImportSource: undefined }`
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content tests/test_meeting_free_e2e.py -Encoding UTF8 -Raw' in E:\code\novel-editorial
+ succeeded in 738ms:
+"""Free-meeting end-to-end dry run: kickoff event -> speaker -> approval ->
+advance event -> finish. Uses mock LLM, a temp DB and the real scheduler."""
+
+import os
+import tempfile
+import time
+import unittest
+from unittest import mock
+
+from novel_editorial import db
+from novel_editorial.services import meeting_session
+from tools import meeting_executor, meeting_free_loop, meeting_speaker
+
+
+class FreeMeetingE2ETests(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.tmpdir, "t.db")
+        self.reply_calls = []
+
+        def fake_reply(conn_, session_id, agent, event, **kwargs):
+            self.reply_calls.append((agent, event.get("kind")))
+            seq = conn_.execute(
+                "SELECT COALESCE(MAX(seq),0)+1 AS s FROM meeting_messages "
+                "WHERE session_id=?",
+                (session_id,),
+            ).fetchone()["s"]
+            cur = conn_.execute(
+                "INSERT INTO meeting_messages(session_id, novel_id, seq, from_agent, "
+                "role, kind, body, status, created_at) "
+                "VALUES(?,0,?,?,'assistant','speech',?,'active',"
+                "datetime('now','localtime'))",
+                (session_id, seq, agent, f"{agent} 的发言"),
+            )
+            conn_.commit()
+            return {
+                "ok": True,
+                "spoken": True,
+                "message_id": cur.lastrowid,
+                "speech": f"{agent} 的发言",
+                "interaction_id": None,
+            }
+
+        def fake_speakers(conn_, session, event, agent_pool, **kwargs):
+            return [
+                {"agent": "planner", "reason": "kickoff", "score": 1, "mandatory": False},
+                {"agent": "reviewer", "reason": "reply", "score": 1, "mandatory": False},
+            ]
+
+        self._patches = [
+            mock.patch.object(meeting_executor, "reply_to_mention", fake_reply),
+            mock.patch.object(meeting_speaker, "candidate_speakers", fake_speakers),
+        ]
+        for patch in self._patches:
+            patch.start()
+        result = meeting_session.start_session_async(
+            "讨论下一卷剧情", db_path=self.db_path, kind="topic", mode="free"
+        )
+        self.assertTrue(result["ok"])
+        self.session_id = result["session_id"]
+
+    def tearDown(self):
+        meeting_free_loop.get_loop(self.db_path).stop(self.session_id)
+        for patch in reversed(self._patches):
+            patch.stop()
+
+    def _conn(self):
+        return db.connect(self.db_path)
+
+    def _messages(self, conn):
+        return conn.execute(
+            "SELECT from_agent, kind, body FROM meeting_messages "
+            "WHERE session_id=? ORDER BY id",
+            (self.session_id,),
+        ).fetchall()
+
+    def test_full_loop_with_approval_and_finish(self):
+        conn = self._conn()
+        try:
+            # start_session_async 已提交 kickoff 事件；再投递一条用户消息。
+            loop = meeting_free_loop.get_loop(self.db_path)
+            loop.submit_event(
+                self.session_id,
+                {"kind": "user_message", "content": "各位继续", "from_agent": "boss"},
+            )
+            deadline = time.time() + 8
+            count = 0
+            status = ""
+            while True:
+                conn2 = self._conn()
+                try:
+                    count = conn2.execute(
+                        "SELECT COUNT(*) AS c FROM meeting_messages "
+                        "WHERE session_id=? AND kind='speech'",
+                        (self.session_id,),
+                    ).fetchone()["c"]
+                    status = conn2.execute(
+                        "SELECT status FROM meeting_sessions WHERE id=?",
+                        (self.session_id,),
+                    ).fetchone()["status"]
+                finally:
+                    conn2.close()
+                if count >= 2 or time.time() > deadline:
+                    break
+                time.sleep(0.2)
+            self.assertGreaterEqual(count, 2)
+
+            # 老板发消息（advance 事件）。
+            advanced = meeting_session.advance_session(
+                conn, self.session_id, "@守正 回应一下"
+            )
+            self.assertTrue(advanced["ok"])
+            self.assertEqual(advanced["mode"], "free")
+
+            # 结束。
+            finished = meeting_session.advance_session(
+                conn, self.session_id, "", finish=True
+            )
+            self.assertTrue(finished["ok"])
+            self.assertEqual(finished["status"], "finished")
+            row = conn.execute(
+                "SELECT status FROM meeting_sessions WHERE id=?",
+                (self.session_id,),
+            ).fetchone()
+            self.assertEqual(row["status"], "finished")
+            self.assertEqual(status, "running")
+        finally:
+            conn.close()
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content novel_editorial/services/meeting_session.py -Encoding UTF8 -Raw' in E:\code\novel-editorial
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content tools/meeting_free_loop.py -Encoding UTF8 -Raw' in E:\code\novel-editorial
+ succeeded in 816ms:
+"""Interactive topic meetings: run round by round, pausing for user input."""
+
+import json
+import threading
+import time
+from datetime import datetime, timedelta
+
+import novel_editorial
+from novel_editorial import config
+from novel_editorial.services import audit
+from novel_editorial.services import activity
+from tools import agent_meeting, architect_weekly, meeting_kinds, meeting_materials
+
+_MEETING_LOCK = threading.Lock()
+# Serializes create_session's check-and-insert so concurrent callers (e.g.
+# ThreadingHTTPServer threads) cannot both create a running meeting session.
+# Deliberately separate from _MEETING_LOCK, which is held for the entire
+# meeting run and would block new session creation for up to an hour.
+_CREATE_SESSION_LOCK = threading.Lock()
+FINISH_TOKEN = "__FINISH__"
+MAX_ROUNDS = 20
+MEETING_TIMEOUT_SECONDS = 60 * 60
+MEETING_HEARTBEAT_TIMEOUT_MINUTES = 60
+
+
+def _now():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def create_session(conn, topic, novel_id=0, db_path="", kind="topic", mode="rounds"):
+    kind = str(kind or "topic").strip()
+    mode = str(mode or "rounds").strip()
+    if mode not in ("rounds", "free"):
+        return {"ok": False, "error": "mode must be rounds or free"}
+    if mode == "free":
+        from tools.meeting_executor import AGENT_PERSONA  # noqa: PLC0415
+
+        attendees = json.dumps(list(AGENT_PERSONA), ensure_ascii=False)
+    else:
+        attendees = "[]"
+    if kind not in meeting_kinds.MEETING_KIND_NAMES:
+        return {"ok": False, "error": f"kind must be one of {meeting_kinds.MEETING_KIND_NAMES}"}
+    if not topic or not str(topic).strip():
+        return {"ok": False, "error": "topic 不能为空"}
+    with _CREATE_SESSION_LOCK:
+        active = get_active_session(conn)
+        if active is not None:
+            return {
+                "ok": False,
+                "error": f"已有会议进行中（#{active['id']}），请先结束或关闭当前会议",
+            }
+        if not novel_id and kind != "planning":
+            row = conn.execute("SELECT id FROM novels ORDER BY id DESC LIMIT 1").fetchone()
+            novel_id = row["id"] if row else 0
+        cur = conn.execute(
+            "INSERT INTO meeting_sessions(kind,topic,status,mode,novel_id,db_path,"
+            "attendees,heartbeat_at,created_at,updated_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (
+                kind,
+                str(topic).strip(),
+                "running",
+                mode,
+                novel_id,
+                str(db_path or ""),
+                attendees,
+                _now(),
+                _now(),
+                _now(),
+            ),
+        )
+        conn.commit()
+        session_id = cur.lastrowid
+        audit.log(
+            conn, "meeting", "start_session",
+            target_type="session", target_id=session_id,
+            detail={"topic": topic, "kind": kind},
+        )
+        return {"ok": True, "session_id": session_id}
+
+
+def get_session(conn, session_id):
+    row = conn.execute("SELECT * FROM meeting_sessions WHERE id=?", (session_id,)).fetchone()
+    if row is None:
+        return None
+    d = dict(row)
+    try:
+        d["transcript"] = json.loads(d["transcript"] or "[]")
+    except (TypeError, json.JSONDecodeError):
+        d["transcript"] = []
+    try:
+        d["attendees"] = json.loads(d["attendees"] or "[]")
+    except (TypeError, json.JSONDecodeError):
+        d["attendees"] = []
+    if d.get("report"):
+        try:
+            d["report"] = json.loads(d["report"])
+        except (TypeError, json.JSONDecodeError):
+            pass
+    return d
+
+
+def _heartbeat_timeout_minutes():
+    """Heartbeat stale threshold; MEETING_HEARTBEAT_TIMEOUT_MINUTES overrides."""
+    raw = config.env_value("MEETING_HEARTBEAT_TIMEOUT_MINUTES", "")
+    try:
+        minutes = int(raw)
+    except (TypeError, ValueError):
+        minutes = MEETING_HEARTBEAT_TIMEOUT_MINUTES
+    return minutes if minutes > 0 else MEETING_HEARTBEAT_TIMEOUT_MINUTES
+
+
+def get_active_session(conn):
+    """Latest in-progress topic session (running or awaiting input).
+
+    Stale ``running`` sessions whose heartbeat is older than the heartbeat
+    timeout (default 60 minutes, override via MEETING_HEARTBEAT_TIMEOUT_MINUTES)
+    are considered dead (their background thread died, e.g. after a web_api
+    restart) and are marked failed so they cannot block new meetings.
+    ``awaiting_input`` sessions are left alone: the thread is parked waiting
+    for the user, which is a legitimate state.
+    """
+    row = conn.execute(
+        "SELECT id FROM meeting_sessions WHERE status='running' ORDER BY id DESC LIMIT 5"
+    ).fetchone()
+    if row is not None:
+        session = get_session(conn, row["id"])
+        cutoff = (datetime.now() - timedelta(minutes=_heartbeat_timeout_minutes())).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        # NULL heartbeat means the row never had one written (e.g. legacy
+        # rows); treat it as alive instead of comparing None to a string.
+        heartbeat = session.get("heartbeat_at") or _now()
+        if heartbeat < cutoff:
+            conn.execute(
+                "UPDATE meeting_sessions SET status='failed', updated_at=? WHERE id=?",
+                (_now(), row["id"]),
+            )
+            conn.commit()
+        else:
+            return session
+    parked = conn.execute(
+        "SELECT id FROM meeting_sessions WHERE status='awaiting_input' "
+        "ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    if parked is not None:
+        return get_session(conn, parked["id"])
+    return None
+
+
+def advance_session(conn, session_id, instruction="", finish=False):
+    row = conn.execute(
+        "SELECT id, status, mode, db_path FROM meeting_sessions WHERE id=?", (session_id,)
+    ).fetchone()
+    if row is None:
+        return {"ok": False, "error": "session not found"}
+    if str(row["mode"] or "rounds") == "free":
+        # 自由会议：指令/消息作为事件投递，不推进轮次。
+        if finish:
+            conn.execute(
+                "UPDATE meeting_sessions SET status='finished', updated_at=? WHERE id=?",
+                (_now(), session_id),
+            )
+            conn.commit()
+            return {"ok": True, "mode": "free", "status": "finished"}
+        from tools import meeting_free_loop  # noqa: PLC0415
+
+        meeting_free_loop.get_loop(str(row["db_path"] or "")).submit_event(
+            session_id,
+            {
+                "kind": "user_message",
+                "content": str(instruction or ""),
+                "from_agent": "boss",
+                "event_id": f"adv-{session_id}-{_now()}",
+            },
+        )
+        return {"ok": True, "mode": "free", "status": row["status"]}
+    if row["status"] != "awaiting_input":
+        return {"ok": False, "error": f"当前状态不是等待输入（{row['status']}）"}
+    if finish:
+        instruction = FINISH_TOKEN
+    conn.execute(
+        "UPDATE meeting_sessions SET instruction=?, status='running', updated_at=? WHERE id=?",
+        (str(instruction or "").strip(), _now(), session_id),
+    )
+    conn.commit()
+    return {"ok": True}
+
+
+def cancel_session(conn, session_id):
+    """Cancel a running/parked session; the background thread stops at the
+    next round boundary (awaiting_input write is guarded against cancelled)."""
+    cur = conn.execute(
+        "UPDATE meeting_sessions SET status='cancelled', updated_at=? "
+        "WHERE id=? AND status IN ('running','awaiting_input')",
+        (_now(), session_id),
+    )
+    conn.commit()
+    if cur.rowcount == 0:
+        return {"ok": False, "error": "session not found or already finished"}
+    audit.log(
+        conn,
+        "meeting",
+        "cancel_session",
+        target_type="session",
+        target_id=session_id,
+    )
+    return {"ok": True}
+
+
+def _resolve_speakers(conn, novel_id, materials, transcript, topic, attendees, round_no):
+    """S13: open mode lets the chair pick who speaks next; rounds mode keeps
+    everyone. Any failure degrades to everyone speaking (never stalls)."""
+    from novel_editorial import config  # noqa: PLC0415
+
+    if config.MEETING_MODE != "open":
+        return list(attendees or [])
+    if round_no <= 1:
+        return list(attendees or [])
+    try:
+        direct = agent_meeting.chair_direct(
+            conn, novel_id, materials, transcript, topic
+        )
+        if not direct.get("ok") or not direct.get("continue"):
+            return []
+        picked = [a for a in (direct.get("next_agents") or []) if a in attendees]
+        return picked or list(attendees or [])
+    except Exception:  # noqa: BLE001 - degrade to everyone
+        return list(attendees or [])
+
+
+def _collect_topic_requests(conn, novel_id=0):
+    """Agenda items agents asked to discuss (kind='topic_request' mail)."""
+    scope = "AND ref_novel_id=?" if novel_id else ""
+    params = (int(novel_id),) if novel_id else ()
+    rows = conn.execute(
+        f"SELECT from_agent, subject, body FROM agent_messages "
+        f"WHERE kind='topic_request' AND status!='archived' {scope} "
+        "ORDER BY id DESC LIMIT 8",
+        params,
+    ).fetchall()
+    return [
+        {
+            "from": r["from_agent"],
+            "title": str(r["body"] or r["subject"] or "")[:120],
+        }
+        for r in rows
+    ]
+
+
+def _record_topic_requests(conn, agent, novel_id, speech):
+    """Persist an agent's suggested agenda items as topic_request mail."""
+    requests = speech.get("topic_requests") if isinstance(speech, dict) else None
+    if not isinstance(requests, list) or not requests:
+        return
+    from tools import mailroom  # noqa: PLC0415
+
+    for item in requests:
+        text = str(item or "").strip()
+        if not text:
+            continue
+        mailroom.send(
+            conn,
+            agent,
+            "eic",
+            body=text[:400],
+            subject="议题提议",
+            kind="topic_request",
+            novel_id=novel_id or 0,
+        )
+
+
+def _persist_topic_request_actions(conn, session_id, meeting_id, novel_id=0):
+    """F4: turn unconsumed topic_request mail into action items after a meeting.
+
+    Each unarchived topic_request becomes an action owned by its proposer,
+    then the mail is archived so a repeated close can never duplicate it.
+    Disabled via TOPIC_REQUEST_ACTIONS=off.
+    """
+    if not config.TOPIC_REQUEST_ACTIONS:
+        return 0
+    from tools import mailroom  # noqa: PLC0415
+
+    scope = "AND ref_novel_id=?" if novel_id else ""
+    params = (int(novel_id),) if novel_id else ()
+    rows = conn.execute(
+        f"SELECT id, from_agent, body, subject FROM agent_messages "
+        f"WHERE kind='topic_request' AND status!='archived' {scope} "
+        "ORDER BY id ASC",
+        params,
+    ).fetchall()
+    created = 0
+    for r in rows:
+        task = str(r["body"] or r["subject"] or "").strip()[:300]
+        if not task:
+            continue
+        result = activity.create_action(
+            conn,
+            str(r["from_agent"] or "").strip() or "eic",
+            task,
+            novel_id=novel_id or 0,
+            session_id=session_id,
+            meeting_id=meeting_id,
+            detail={"source": "topic_request", "message_id": r["id"]},
+        )
+        if result.get("ok"):
+            mailroom.archive(conn, r["id"])
+            created += 1
+    conn.commit()
+    return created
+
+
+def _handle_meeting_actions(conn, agent, novel_id, speech):
+    """Execute whitelisted agency actions and outbox mail from a speech.
+
+    Meeting speeches may carry `agency` (safe autonomous actions) and
+    `outbox` (messages to colleagues), closing the same loop the daily chain
+    has. Anything outside the whitelist is rejected by agency.apply with an
+    audit trail.
+    """
+    if not isinstance(speech, dict):
+        return
+    from novel_editorial.services import agency as agency_service  # noqa: PLC0415
+    from tools import mailroom  # noqa: PLC0415
+
+    actions = speech.get("agency")
+    if isinstance(actions, list) and actions:
+        result = agency_service.apply(conn, agent, novel_id or 0, actions)
+        audit.log(
+            conn, "agency", "meeting_agency",
+            target_type="agent", target_id=agent,
+            detail={
+                "applied": result.get("applied", 0),
+                "rejected": result.get("rejected", 0),
+            },
+        )
+    outbox = speech.get("outbox")
+    if isinstance(outbox, list):
+        for item in outbox:
+            if not isinstance(item, dict):
+                continue
+            try:
+                chapter_id = int(item.get("chapter_id") or 0)
+                reply_to = int(item.get("reply_to") or 0)
+            except (TypeError, ValueError) as exc:
+                audit.log(
+                    conn,
+                    "meeting",
+                    "outbox_skip",
+                    target_type="agent",
+                    target_id=agent,
+                    detail={
+                        "subject": str(item.get("subject") or "")[:200],
+                        "reason": f"invalid chapter_id/reply_to: {exc}",
+                    },
+                )
+                continue
+            mailroom.send(
+                conn,
+                agent,
+                str(item.get("to") or ""),
+                str(item.get("body") or ""),
+                subject=str(item.get("subject") or ""),
+                kind=str(item.get("kind") or "note"),
+                novel_id=novel_id or 0,
+                chapter_id=chapter_id,
+                reply_to=reply_to,
+            )
+    used = speech.get("memory_used")
+    if isinstance(used, list):
+        for item in used:
+            text = str(item).strip()
+            if text:
+                activity.log_activity(
+                    conn, agent, novel_id or 0, "memory_used",
+                    "引用了记忆：" + text[:200],
+                    {"memory": text[:300]},
+                )
+    conn.commit()
+
+
+def run_session(session_id, db_path=""):
+    """Background worker: executes rounds, pauses for user instructions."""
+    conn = None
+    try:
+        # Use the database stored on the session row; never silently fall
+        # back to a hardcoded demo.db lookup that misses sessions in other DBs.
+        requested = str(db_path or "").strip()
+        default_path = requested or str(config.DB_PATH)
+        conn = novel_editorial.db.connect(default_path)
+        if not requested:
+            row = conn.execute(
+                "SELECT db_path FROM meeting_sessions WHERE id=?", (session_id,)
+            ).fetchone()
+            if row is None:
+                raise RuntimeError(
+                    f"meeting session {session_id} not found in database "
+                    f"{default_path!r}; cannot resolve its db_path"
+                )
+            row_db = str(row["db_path"] or "").strip()
+            if row_db:
+                conn.close()
+                conn = novel_editorial.db.connect(row_db)
+        with _MEETING_LOCK:
+            _run_locked(conn, session_id)
+    except Exception as exc:  # noqa: BLE001
+        _persist_session_failure(conn, session_id, exc)
+        raise
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def _persist_session_failure(conn, session_id, exc):
+    """Best-effort failure record for a background meeting thread.
+
+    Marks the session failed and writes an audit entry when the session row
+    exists in the connected database, and always appends to alerts.log so a
+    worker crash stays visible even when the row is unreachable.
+    """
+    try:
+        if conn is not None:
+            row = conn.execute(
+                "SELECT 1 FROM meeting_sessions WHERE id=?", (session_id,)
+            ).fetchone()
+            if row is not None:
+                conn.execute(
+                    "UPDATE meeting_sessions SET status='failed', updated_at=? WHERE id=?",
+                    (_now(), session_id),
+                )
+            audit.log(
+                conn, "meeting", "session_failed",
+                target_type="session", target_id=session_id,
+                detail={"error": f"{exc.__class__.__name__}: {exc}"},
+            )
+            conn.commit()
+    except Exception:  # noqa: BLE001 - failure handling must never mask the original error
+        pass
+    try:
+        config.ALERTS_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with config.ALERTS_LOG.open("a", encoding="utf-8") as f:
+            f.write(
+                f"[{_now()}] meeting session {session_id} failed: "
+                f"{exc.__class__.__name__}: {exc}\n"
+            )
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _run_locked(conn, session_id):
+    started_at = time.time()
+    try:
+        row = conn.execute("SELECT * FROM meeting_sessions WHERE id=?", (session_id,)).fetchone()
+        if row is None:
+            raise RuntimeError(
+                f"meeting session {session_id} not found in the connected database"
+            )
+        novel_id = row["novel_id"]
+        topic = row["topic"]
+        kind = str(row["kind"] or "topic").strip()
+        if time.time() - started_at > MEETING_TIMEOUT_SECONDS:
+            _fail_timeout(conn, session_id, 0)
+            return
+        materials = meeting_materials.build_materials(conn, novel_id, kind, topic)
+        if materials is None:
+            conn.execute(
+                "UPDATE meeting_sessions SET status='failed', updated_at=? WHERE id=?",
+                (_now(), session_id),
+            )
+            audit.log(
+                conn,
+                "meeting",
+                "session_failed",
+                target_type="session",
+                target_id=session_id,
+                detail={
+                    "error": "meeting materials could not be built",
+                    "kind": kind,
+                    "novel_id": novel_id,
+                },
+            )
+            conn.commit()
+            return
+        attendees, topics, pick = agent_meeting.chair_pick(
+            conn, novel_id, dry_run=False, materials=materials,
+            topic=topic, kind=kind,
+        )
+        if topic:
+            topics = [topic] + [t for t in (topics or []) if t != topic]
+        topic_requests = _collect_topic_requests(conn, novel_id)
+        if topic_requests:
+            topics = topics + [f"（议题提议·{r['from']}）{r['title']}" for r in topic_requests]
+        conn.execute(
+            "UPDATE meeting_sessions SET attendees=?, current_round=0, updated_at=? WHERE id=?",
+            (json.dumps(attendees, ensure_ascii=False), _now(), session_id),
+        )
+        conn.commit()
+
+        transcript = []
+        compressed = {"summary": "", "until": 0}
+        round_no = 0
+        while True:
+            if time.time() - started_at > MEETING_TIMEOUT_SECONDS:
+                _fail_timeout(conn, session_id, round_no)
+                return
+            round_no += 1
+            conn.execute(
+                "UPDATE meeting_sessions SET current_round=?, status='running', updated_at=? WHERE id=?",
+                (round_no, _now(), session_id),
+            )
+            conn.commit()
+            # Incrementally compress history once per round (round 2+):
+            # the memory agent merges new speeches into the running summary.
+            if len(transcript) > 2 and len(transcript) > compressed["until"]:
+                new_part = transcript[compressed["until"]:]
+                try:
+                    compressed = agent_meeting.compress_history(
+                        conn, novel_id, new_part,
+                        prev_summary=compressed["summary"], dry_run=False,
+                    )
+                    compressed["until"] = len(transcript)
+                except Exception as exc:  # noqa: BLE001
+                    audit.log(
+                        conn,
+                        "meeting",
+                        "compress_history_failed",
+                        target_type="session",
+                        target_id=session_id,
+                        detail={"round": round_no, "error": str(exc)[:300]},
+                    )
+            instruction = ""
+            if round_no > 1:
+                # read user instruction placed while awaiting
+                r = conn.execute(
+                    "SELECT instruction FROM meeting_sessions WHERE id=?", (session_id,)
+                ).fetchone()
+                instruction = r["instruction"] if r else ""
+            speakers = _resolve_speakers(
+                conn, novel_id, materials, transcript, topic, attendees, round_no
+            )
+            if not speakers:
+                break
+            for agent in speakers:
+                conn.execute(
+                    "UPDATE meeting_sessions SET current_agent=?, heartbeat_at=? WHERE id=?",
+                    (agent, _now(), session_id),
+                )
+                conn.commit()
+                try:
+                    speech = agent_meeting.round_speech(
+                        conn,
+                        novel_id,
+                        agent,
+                        materials,
+                        transcript,
+                        round_no,
+                        dry_run=False,
+                        instruction=instruction if round_no > 1 else "",
+                        topic=topic,
+                        compressed_history=compressed["summary"],
+                        kind=kind,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    # One attendee failing must not kill the whole meeting:
+                    # record a visible placeholder + audit trace and continue.
+                    speech = {
+                        "speech": f"（{agent} 本轮没有发言，已跳过）",
+                        "weekly_summary": "",
+                        "feelings": "",
+                        "opinion": "",
+                        "concerns": [],
+                        "proposals": [],
+                        "priority": "低",
+                        "_error": str(exc)[:200],
+                    }
+                    audit.log(
+                        conn,
+                        "meeting",
+                        "round_speech_failed",
+                        target_type="session",
+                        target_id=session_id,
+                        detail={"agent": agent, "round": round_no, "error": str(exc)[:300]},
+                    )
+                finally:
+                    conn.execute(
+                        "UPDATE meeting_sessions SET current_agent='', heartbeat_at=? WHERE id=?",
+                        (_now(), session_id),
+                    )
+                    conn.commit()
+                if isinstance(speech, dict) and isinstance(speech.get("promises"), list):
+                    from tools import promises  # noqa: PLC0415
+
+                    promises.record_promises(
+                        conn, agent, novel_id or 0, speech["promises"], source="meeting"
+                    )
+                _record_topic_requests(conn, agent, novel_id or 0, speech)
+                try:
+                    _handle_meeting_actions(conn, agent, novel_id or 0, speech)
+                except Exception as exc:  # noqa: BLE001
+                    audit.log(
+                        conn, "meeting", "meeting_actions_failed",
+                        target_type="session", target_id=session_id,
+                        detail={"agent": agent, "error": str(exc)[:300]},
+                    )
+                transcript.append({"round": round_no, "agent": agent, "speech": speech})
+                activity.log_activity(
+                    conn,
+                    agent,
+                    novel_id,
+                    "meeting_speech",
+                    f"会议第 {round_no} 轮发言",
+                    {
+                        "session_id": session_id,
+                        "round": round_no,
+                        "speech": str(speech.get("speech") or "")[:500],
+                        "proposals": speech.get("proposals") or [],
+                    },
+                )
+                conn.execute(
+                    "UPDATE meeting_sessions SET transcript=?, updated_at=? WHERE id=?",
+                    (json.dumps(transcript, ensure_ascii=False), _now(), session_id),
+                )
+                conn.commit()
+            cur = conn.execute(
+                "UPDATE meeting_sessions SET status='awaiting_input', instruction='', "
+                "updated_at=? WHERE id=? AND status != 'cancelled'",
+                (_now(), session_id),
+            )
+            conn.commit()
+            if cur.rowcount == 0:
+                # cancelled while speaking: stop instead of parking forever
+                return
+            if round_no >= MAX_ROUNDS:
+                # Hard cap: auto-finish instead of waiting forever for a click.
+                break
+            # wait for the user: continue to the next round or finish
+            while True:
+                r = conn.execute(
+                    "SELECT status, instruction FROM meeting_sessions WHERE id=?", (session_id,)
+                ).fetchone()
+                if r["status"] == "cancelled":
+                    return
+                if r["status"] == "failed":
+                    # failed elsewhere (e.g. failure persistence): stop
+                    # polling forever and let run_session clean up.
+                    return
+                if r["status"] == "running":
+                    break
+                time.sleep(2)
+            if r["instruction"] == FINISH_TOKEN:
+                break
+        # summary
+        report = agent_meeting.chair_summary(
+            conn, novel_id, attendees, topics, transcript, dry_run=False,
+            materials=materials,
+        )
+        report["attendees"] = attendees
+        report["topics"] = topics
+        report["date"] = _now()
+        report["kind"] = kind
+        report.setdefault("decisions", {"blueprint_updates": [], "volume_goal_adjust": ""})
+        report.setdefault("disagreements", [])
+        report.setdefault("action_items", [])
+        report.setdefault("discussion_summary", "")
+
+        cur = conn.execute(
+            "INSERT INTO weekly_meetings(held_at,novel_id,attendees,topics,report,status,kind,session_id) "
+            "VALUES(?,?,?,?,?,?,?,?)",
+            (
+                report["date"],
+                novel_id,
+                json.dumps(attendees, ensure_ascii=False),
+                json.dumps(topics, ensure_ascii=False),
+                json.dumps(report, ensure_ascii=False),
+                "completed",
+                kind,
+                session_id,
+            ),
+        )
+        conn.commit()
+        weekly_id = cur.lastrowid
+        audit.log(
+            conn,
+            "meeting",
+            "completed",
+            target_type="session",
+            target_id=session_id,
+            detail={
+                "meeting_id": weekly_id,
+                "attendees": attendees,
+                "topics": topics,
+                "action_items": len(report.get("action_items") or []),
+            },
+        )
+        activity.log_activity(
+            conn,
+            "eic",
+            novel_id,
+            "meeting_summary",
+            "主席总结会议",
+            {
+                "session_id": session_id,
+                "meeting_id": weekly_id,
+                "summary": str(report.get("discussion_summary") or "")[:400],
+                "action_items": len(report.get("action_items") or []),
+            },
+        )
+        # Post-meeting tasks: each attendee turns the conclusions into their
+        # own actionable backlog (flash call per agent, rule fallback on error).
+        try:
+            action_result = activity.generate_post_meeting_actions(
+                conn,
+                session_id,
+                weekly_id,
+                novel_id,
+                attendees,
+                report,
+                transcript,
+                dry_run=False,
+            )
+            audit.log(
+                conn,
+                "meeting",
+                "post_meeting_actions",
+                target_type="session",
+                target_id=session_id,
+                detail={"created": action_result.get("created", 0)},
+            )
+        except Exception as exc:  # noqa: BLE001
+            audit.log(
+                conn,
+                "meeting",
+                "post_meeting_actions_failed",
+                target_type="session",
+                target_id=session_id,
+                detail={"error": str(exc)[:300]},
+            )
+            conn.commit()
+        try:
+            converted = _persist_topic_request_actions(
+                conn, session_id, weekly_id, novel_id
+            )
+            if converted:
+                audit.log(
+                    conn,
+                    "meeting",
+                    "topic_requests_to_actions",
+                    target_type="session",
+                    target_id=session_id,
+                    detail={"created": converted},
+                )
+                conn.commit()
+        except Exception as exc:  # noqa: BLE001
+            audit.log(
+                conn,
+                "meeting",
+                "topic_requests_to_actions_failed",
+                target_type="session",
+                target_id=session_id,
+                detail={"error": str(exc)[:300]},
+            )
+            conn.commit()
+        try:
+            from tools import meeting_actions  # noqa: PLC0415
+
+            meeting_actions.run_post_actions(
+                conn, session_id, weekly_id, novel_id, kind,
+                report, transcript, attendees,
+            )
+        except Exception as exc:  # noqa: BLE001
+            audit.log(
+                conn,
+                "meeting",
+                "post_actions_routing_failed",
+                target_type="session",
+                target_id=session_id,
+                detail={"error": str(exc)[:300]},
+            )
+            conn.commit()
+        # Persist decisions: planning meetings never apply a report against a
+        # book, and new-book topic meetings (novel_id=0) create the planning
+        # novel from decisions.next_book instead.
+        if novel_id and kind != "planning":
+            try:
+                from tools.apply_architect import apply_report  # noqa: PLC0415
+
+                apply_report(conn, novel_id, report)
+            except Exception as exc:  # noqa: BLE001
+                audit.log(
+                    conn,
+                    "meeting",
+                    "apply_report_failed",
+                    target_type="session",
+                    target_id=session_id,
+                    detail={"error": str(exc)},
+                )
+                conn.commit()
+        else:
+            # Planning / new-book meetings: turn decisions.next_book into a
+            # planning novel so auto-create on Fanqie has a target.
+            try:
+                from tools.apply_architect import create_planning_from_next_book  # noqa: PLC0415
+
+                book_result = create_planning_from_next_book(
+                    conn, report, cover_prompt=report.get("cover_prompt", "")
+                )
+                if book_result.get("ok"):
+                    audit.log(
+                        conn,
+                        "meeting",
+                        "planning_book_created",
+                        target_type="novel",
+                        target_id=str(book_result.get("id") or ""),
+                        detail={"duplicate": bool(book_result.get("duplicate"))},
+                    )
+            except Exception as exc:  # noqa: BLE001
+                audit.log(
+                    conn,
+                    "meeting",
+                    "planning_book_failed",
+                    target_type="session",
+                    target_id=session_id,
+                    detail={"error": str(exc)[:300]},
+                )
+                conn.commit()
+        # meeting memory for each attendee
+        for agent in attendees:
+            speech = next((s["speech"] for s in transcript if s["agent"] == agent), {})
+            conn.execute(
+                "INSERT INTO agent_diaries(agent,novel_id,diary_type,content,created_at) "
+                "VALUES(?,?,?,?,datetime('now','localtime'))",
+                (
+                    agent,
+                    novel_id,
+                    "meeting",
+                    json.dumps(
+                        {"topic": topic, "my_speech": speech, "conclusions": report.get("action_items", []), "date": report["date"]},
+                        ensure_ascii=False,
+                    ),
+                ),
+            )
+        conn.execute(
+            "UPDATE meeting_sessions SET status='finished', report=?, transcript=?, updated_at=? WHERE id=?",
+            (json.dumps(report, ensure_ascii=False), json.dumps(transcript, ensure_ascii=False), _now(), session_id),
+        )
+        conn.commit()
+        audit.log(conn, "meeting", "finish_session", target_type="session", target_id=session_id, detail={"topic": topic})
+    except Exception as exc:  # noqa: BLE001
+        if conn is not None:
+            try:
+                agent_at_fail = conn.execute(
+                    "SELECT current_agent FROM meeting_sessions WHERE id=?",
+                    (session_id,),
+                ).fetchone()
+                conn.execute("UPDATE meeting_sessions SET status='failed' WHERE id=?", (session_id,))
+                audit.log(
+                    conn,
+                    "meeting",
+                    "session_failed",
+                    target_type="session",
+                    target_id=session_id,
+                    detail={
+                        "error": f"{exc.__class__.__name__}: {exc}",
+                        "agent": (agent_at_fail["current_agent"] if agent_at_fail else "") or "",
+                    },
+                )
+                conn.commit()
+            except Exception:  # noqa: BLE001
+                try:
+                    conn.execute(
+                        "UPDATE meeting_sessions SET current_agent='', heartbeat_at=? WHERE id=?",
+                        (_now(), session_id),
+                    )
+                    conn.commit()
+                except Exception:  # noqa: BLE001
+                    pass
+                pass
+
+
+def _fail_timeout(conn, session_id, round_no):
+    conn.execute(
+        "UPDATE meeting_sessions SET status='failed', updated_at=? WHERE id=?",
+        (_now(), session_id),
+    )
+    audit.log(
+        conn,
+        "meeting",
+        "session_timeout",
+        target_type="session",
+        target_id=session_id,
+        detail={"round": round_no, "timeout_seconds": MEETING_TIMEOUT_SECONDS},
+    )
+    conn.commit()
+
+
+def start_session_async(topic, novel_id=0, db_path=None, kind="topic", mode="rounds"):
+    """Create a session and run it in a background thread."""
+    conn = novel_editorial.db.connect(db_path or config.DB_PATH)
+    try:
+        result = create_session(
+            conn, topic, novel_id, db_path=db_path or "", kind=kind, mode=mode
+        )
+    finally:
+        conn.close()
+    if not result["ok"]:
+        return result
+    if mode == "free":
+        # 自由会议由事件驱动：提交开场事件即可，不跑轮次线程。
+        from tools import meeting_free_loop  # noqa: PLC0415
+
+        meeting_free_loop.get_loop(db_path or "").submit_event(
+            result["session_id"],
+            {
+                "kind": "user_message",
+                "content": str(topic or "").strip(),
+                "event_id": f"kickoff-{result['session_id']}",
+            },
+        )
+        return result
+    threading.Thread(
+        target=run_session,
+        args=(result["session_id"], db_path or ""),
+        daemon=True,
+    ).start()
+    return result
+
+
+ succeeded in 794ms:
+"""Free-meeting event loop: per-session queue, heartbeat and recovery.
+
+Events (user message, agent message, approval result, cold timer) are
+submitted without blocking; one daemon worker per session processes them in
+order. Speech scheduling lives in `meeting_speaker` (step 2.2); this module
+owns the queue, the lock, the heartbeat and fail-closed recovery.
+"""
+
+from __future__ import annotations
+
+import json
+import queue
+import threading
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+
+from novel_editorial import db
+from novel_editorial.services import audit
+from tools import app_settings, meeting_events, meeting_executor, meeting_speaker
+from tools import meeting_interactions
+
+
+def _now():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+class FreeMeetingLoop:
+    """进程内事件循环。重启后事件丢失，但消息持久；running 会话由
+    `scan_interrupted` 显式标记，避免「看似在跑实则无线程」的假绿灯。"""
+
+    def __init__(self, db_path="", dry_run=False):
+        self._db_path = db_path
+        self._dry_run = dry_run
+        self._queues = {}
+        self._workers = {}
+        self._seen_events = {}
+        self._locks = {}
+        self._running = {}
+        self._running_guard = threading.Lock()
+        self._futures = {}
+        self._pool = ThreadPoolExecutor(max_workers=3)
+        self._guard = threading.Lock()
+
+    # ── 对外接口 ────────────────────────────────────────────
+
+    def submit_event(self, session_id, event):
+        """投递事件，立即返回（不阻塞）。同 event_id 只处理一次。"""
+        session_id = int(session_id)
+        event = dict(event or {})
+        event_id = str(event.get("event_id") or "")
+        with self._guard:
+            if event_id:
+                seen = self._seen_events.setdefault(session_id, deque(maxlen=100))
+                if event_id in seen:
+                    return {"ok": True, "duplicate": True}
+                seen.append(event_id)
+            q = self._queues.setdefault(session_id, queue.Queue())
+            if session_id not in self._workers or not self._workers[session_id].is_alive():
+                worker = threading.Thread(
+                    target=self._run_worker,
+                    args=(session_id,),
+                    name=f"free-meeting-{session_id}",
+                    daemon=True,
+                )
+                self._workers[session_id] = worker
+                worker.start()
+        q.put(event)
+        return {"ok": True, "duplicate": False}
+
+    def is_processing(self, session_id):
+        with self._guard:
+            return bool(self._locks.get(int(session_id)))
+
+    def running_agents(self, session_id):
+        with self._running_guard:
+            return set(self._running.get(int(session_id), set()))
+
+    # ── 内部 ────────────────────────────────────────────────
+
+    def _run_worker(self, session_id):
+        q = self._queues.get(session_id)
+        if q is None:
+            return
+        lock = self._locks.setdefault(session_id, threading.Lock())
+        while True:
+            try:
+                conn = db.connect(self._db_path)
+                try:
+                    cold_s = app_settings.get_int(
+                        conn, "meeting_free_cold_s", 30
+                    )
+                finally:
+                    conn.close()
+                event = q.get(timeout=max(0.2, cold_s))
+            except queue.Empty:
+                self._process_cold(session_id)
+                continue
+            if event is None:
+                return
+            with lock:
+                self._process_event(session_id, event)
+
+    def _process_event(self, session_id, event):
+        conn = db.connect(self._db_path)
+        try:
+            conn.execute(
+                "UPDATE meeting_sessions SET heartbeat_at=?, updated_at=? WHERE id=?",
+                (_now(), _now(), session_id),
+            )
+            session = conn.execute(
+                "SELECT * FROM meeting_sessions WHERE id=?", (session_id,)
+            ).fetchone()
+            if not session or session["status"] not in ("running", "awaiting_input"):
+                return
+            audit.log(
+                conn,
+                "meeting",
+                "free_event",
+                target_type="session",
+                target_id=session_id,
+                detail={"kind": event.get("kind") or "user_message"},
+            )
+            meeting_interactions.expire_interactions(conn)
+            self._maybe_compress(conn, session)
+            self._schedule_speakers(conn, session, event)
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _process_cold(self, session_id):
+        conn = db.connect(self._db_path)
+        try:
+            session = conn.execute(
+                "SELECT * FROM meeting_sessions WHERE id=?", (session_id,)
+            ).fetchone()
+            if not session or session["status"] != "running":
+                return
+            candidates = self._cold_candidates(conn, session)
+            if not candidates:
+                return
+            audit.log(
+                conn,
+                "meeting",
+                "cold_timer",
+                target_type="session",
+                target_id=session_id,
+                detail={"agents": [c["agent"] for c in candidates]},
+            )
+            self._run_candidates(conn, session, candidates, event={"kind": "cold_timer"})
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _cold_candidates(self, conn, session):
+        attendees = self._attendees(session)
+        busy = self.running_agents(session["id"])
+        cooldown_s = app_settings.get_int(conn, "meeting_free_cooldown_s", 60)
+        if "eic" in attendees and "eic" not in busy:
+            return [{"agent": "eic", "reason": "cold_chair", "score": 0, "mandatory": True}]
+        # 轮转：选最近发言最久的 agent（无发言记录者优先）。
+        rows = conn.execute(
+            "SELECT from_agent, MAX(id) AS last_id FROM meeting_messages "
+            "WHERE session_id=? AND kind='speech' GROUP BY from_agent",
+            (session["id"],),
+        ).fetchall()
+        spoke = {r["from_agent"] for r in rows}
+        for agent in attendees:
+            if agent not in busy and agent not in spoke:
+                return [{"agent": agent, "reason": "cold_rotate", "score": 0, "mandatory": True}]
+        if rows:
+            oldest = min(rows, key=lambda r: r["last_id"])
+            if oldest["from_agent"] not in busy:
+                return [
+                    {
+                        "agent": oldest["from_agent"],
+                        "reason": "cold_rotate",
+                        "score": 0,
+                        "mandatory": True,
+                    }
+                ]
+        return []
+
+    def _schedule_speakers(self, conn, session, event):
+        if self._breaker_hit(conn, session):
+            audit.log(
+                conn,
+                "meeting",
+                "breaker",
+                target_type="session",
+                target_id=session["id"],
+                detail={"reason": "meeting free budget exhausted"},
+            )
+            return
+        attendees = self._attendees(session)
+        if not attendees:
+            return
+        k = app_settings.get_int(conn, "meeting_free_candidate_k", 2)
+        cooldown_s = app_settings.get_int(conn, "meeting_free_cooldown_s", 60)
+        candidates = meeting_speaker.candidate_speakers(
+            conn,
+            session,
+            event,
+            attendees,
+            busy=self.running_agents(session["id"]),
+            k=k,
+            cooldown_s=cooldown_s,
+        )
+        candidates = self._maybe_add_chair(conn, session, candidates)
+        if not candidates:
+            audit.log(
+                conn,
+                "meeting",
+                "no_candidate",
+                target_type="session",
+                target_id=session["id"],
+                detail={"kind": event.get("kind") or "user_message"},
+            )
+            return
+        self._run_candidates(conn, session, candidates, event)
+
+    def _maybe_compress(self, conn, session):
+        """历史超限且无摘要时生成一次摘要（幂等：有摘要即跳过）。"""
+        if session["meeting_summary"]:
+            return False
+        limit = app_settings.get_int(conn, "meeting_free_compress_chars", 30000)
+        row = conn.execute(
+            "SELECT COALESCE(SUM(LENGTH(body)),0) AS s FROM meeting_messages "
+            "WHERE session_id=? AND status='active'",
+            (session["id"],),
+        ).fetchone()
+        if int(row["s"] or 0) <= limit:
+            return False
+        hub = meeting_events.get_hub()
+        hub.publish(
+            session["id"],
+            {"type": "compress", "session_id": session["id"], "status": "compressing"},
+        )
+        summary = meeting_executor.summarize_history(
+            conn, session, dry_run=self._dry_run
+        )
+        conn.execute(
+            "UPDATE meeting_sessions SET meeting_summary=?, updated_at=? WHERE id=?",
+            (summary, _now(), session["id"]),
+        )
+        conn.execute(
+            "UPDATE meeting_messages SET compressed_at=? "
+            "WHERE session_id=? AND compressed_at=''",
+            (_now(), session["id"]),
+        )
+        audit.log(
+            conn,
+            "meeting",
+            "history_compressed",
+            target_type="session",
+            target_id=session["id"],
+            detail={"summary_len": len(summary)},
+        )
+        hub.publish(
+            session["id"],
+            {"type": "compress", "session_id": session["id"], "status": "done"},
+        )
+        return True
+
+    def _maybe_add_chair(self, conn, session, candidates):
+        """每 N 条发言主席插话一次（N 可配，默认 12）。"""
+        every_n = app_settings.get_int(conn, "meeting_free_chair_every_n", 12)
+        if every_n <= 0:
+            return candidates
+        count = conn.execute(
+            "SELECT COUNT(*) AS c FROM meeting_messages "
+            "WHERE session_id=? AND kind='speech'",
+            (session["id"],),
+        ).fetchone()["c"]
+        if count == 0 or count % every_n != 0:
+            return candidates
+        busy = self.running_agents(session["id"])
+        if "eic" not in busy and "eic" not in {c["agent"] for c in candidates}:
+            candidates.append(
+                {"agent": "eic", "reason": "chair_every_n", "score": 0, "mandatory": True}
+            )
+        return candidates
+
+    def _breaker_hit(self, conn, session):
+        max_calls = app_settings.get_int(conn, "meeting_free_max_calls", 300)
+        max_cost = app_settings.get_float(conn, "meeting_free_max_cost", 20.0)
+        speech = conn.execute(
+            "SELECT COUNT(*) AS c FROM meeting_messages "
+            "WHERE session_id=? AND kind='speech'",
+            (session["id"],),
+        ).fetchone()["c"]
+        if speech >= max_calls:
+            return True
+        # cost_logs 无 session_id，按 novel_id 限定范围（仍可能混入该书的
+        # 日更成本，但避免把其他作品的成本算进本次会议）。
+        if session["created_at"]:
+            cost_row = conn.execute(
+                "SELECT COALESCE(SUM(cost),0) AS s FROM cost_logs "
+                "WHERE created_at >= ? AND novel_id=?",
+                (session["created_at"], session["novel_id"]),
+            ).fetchone()
+            if float(cost_row["s"] or 0) >= max_cost:
+                return True
+        return False
+
+    def _run_candidates(self, conn, session, candidates, event):
+        busy = set()
+        with self._running_guard:
+            busy = set(self._running.get(int(session["id"]), set()))
+        for c in candidates:
+            if c["agent"] in busy:
+                continue
+            with self._running_guard:
+                self._running.setdefault(int(session["id"]), set()).add(c["agent"])
+            session_id = int(session["id"])
+            meeting_events.get_hub().publish(
+                session_id,
+                {"type": "status", "session_id": session_id, "agent": c["agent"], "status": "thinking"},
+            )
+            future = self._pool.submit(
+                self._speak, session_id, c["agent"], event
+            )
+            with self._running_guard:
+                self._futures.setdefault(session_id, set()).add(future)
+            future.add_done_callback(
+                lambda f, sid=session_id: self._drop_future(sid, f)
+            )
+
+    def _drop_future(self, session_id, future):
+        with self._running_guard:
+            self._futures.get(session_id, set()).discard(future)
+
+    def _speak(self, session_id, agent, event):
+        try:
+            conn = db.connect(self._db_path)
+            try:
+                result = meeting_executor.reply_to_mention(
+                    conn,
+                    session_id,
+                    agent,
+                    event,
+                    dry_run=self._dry_run,
+                )
+                self._broadcast_result(conn, session_id, agent, result)
+            finally:
+                conn.close()
+        finally:
+            with self._running_guard:
+                self._running.get(session_id, set()).discard(agent)
+            meeting_events.get_hub().publish(
+                session_id,
+                {"type": "status", "session_id": session_id, "agent": agent, "status": "ready"},
+            )
+
+    def _broadcast_result(self, conn, session_id, agent, result):
+        hub = meeting_events.get_hub()
+        if result.get("ok") and result.get("spoken"):
+            hub.publish(
+                session_id,
+                {
+                    "type": "message",
+                    "session_id": session_id,
+                    "message_id": result.get("message_id"),
+                    "agent": agent,
+                    "speech": result.get("speech"),
+                },
+            )
+        interaction_id = result.get("interaction_id")
+        if interaction_id:
+            row = conn.execute(
+                "SELECT * FROM pending_interactions WHERE id=?", (interaction_id,)
+            ).fetchone()
+            if row:
+                hub.publish(
+                    session_id,
+                    {
+                        "type": "approval",
+                        "session_id": session_id,
+                        "interaction": {
+                            "id": row["id"],
+                            "agent": row["agent"],
+                            "kind": row["kind"],
+                            "question": str(
+                                dict_from_json(row["payload"]).get("question", "")
+                            ),
+                            "choices": dict_from_json(row["payload"]).get("choices", []),
+                            "expires_at": row["expires_at"],
+                            "status": row["status"],
+                        },
+                    },
+                )
+    def _attendees(self, session):
+        try:
+            return [
+                str(a).replace(".md", "")
+                for a in json.loads(session["attendees"] or "[]")
+            ]
+        except (TypeError, ValueError):
+            return []
+
+    def stop(self, session_id):
+        """停止指定会话的 worker（用于测试与收尾）。"""
+        session_id = int(session_id)
+        with self._guard:
+            q = self._queues.get(session_id)
+            worker = self._workers.get(session_id)
+        with self._running_guard:
+            futures = list(self._futures.get(session_id, set()))
+        if q is not None:
+            q.put(None)
+        if worker is not None:
+            worker.join(timeout=3)
+        for future in futures:
+            try:
+                future.result(timeout=5)
+            except Exception:  # noqa: BLE001 - stop must not raise on speaker failure
+                pass
+        with self._guard:
+            self._queues.pop(session_id, None)
+            self._workers.pop(session_id, None)
+        with self._running_guard:
+            self._running.pop(session_id, None)
+            self._futures.pop(session_id, None)
+
+
+_LOOP = None
+_LOOP_LOCK = threading.Lock()
+
+
+def get_loop(db_path=""):
+    """进程级单例事件循环。"""
+    global _LOOP
+    with _LOOP_LOCK:
+        if _LOOP is None:
+            _LOOP = FreeMeetingLoop(db_path=db_path)
+        return _LOOP
+
+
+def scan_interrupted(conn):
+    """启动时把 status='running' 的 free 会话标记 interrupted（fail-closed）。
+    返回受影响会话数。"""
+    rows = conn.execute(
+        "SELECT id FROM meeting_sessions WHERE mode='free' AND status='running'"
+    ).fetchall()
+    if not rows:
+        return 0
+    for row in rows:
+        conn.execute(
+            "UPDATE meeting_sessions SET status='interrupted', updated_at=? WHERE id=?",
+            (_now(), row["id"]),
+        )
+        audit.log(
+            conn,
+            "meeting",
+            "session_interrupted",
+            target_type="session",
+            target_id=row["id"],
+            detail={"reason": "process restart"},
+        )
+    conn.commit()
+    return len(rows)
+
+
+def dict_from_json(text):
+    import json as _json
+
+    try:
+        obj = _json.loads(text or "{}")
+        return obj if isinstance(obj, dict) else {}
+    except (TypeError, ValueError):
+        return {}
+
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; rg -n \"get_loop|FreeMeetingLoop\\(\" --glob \"*.py\" -g \""'!*.venv*" -g "!tests/__pycache__/*" | Select-Object -First 60' in E:\code\novel-editorial
+ succeeded in 982ms:
+tools\meeting_free_loop.py:430:def get_loop(db_path=""):
+tools\meeting_free_loop.py:435:            _LOOP = FreeMeetingLoop(db_path=db_path)
+novel_editorial\services\meeting_session.py:168:        meeting_free_loop.get_loop(str(row["db_path"] or "")).submit_event(
+novel_editorial\services\meeting_session.py:911:        meeting_free_loop.get_loop(db_path or "").submit_event(
+tests\test_meeting_free_e2e.py:63:        meeting_free_loop.get_loop(self.db_path).stop(self.session_id)
+tests\test_meeting_free_e2e.py:81:            loop = meeting_free_loop.get_loop(self.db_path)
+tests\test_meeting_free_loop.py:31:        loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path)
+tests\test_meeting_free_loop.py:52:        loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path)
+tests\test_meeting_free_loop.py:77:        loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path)
+tests\test_meeting_free_loop.py:145:        loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path, dry_run=True)
+tests\test_meeting_free_loop.py:183:        loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path, dry_run=True)
+tests\test_meeting_free_loop.py:217:        loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path, dry_run=True)
+tests\test_meeting_free_loop.py:253:        loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path, dry_run=True)
+tests\test_meeting_free_loop.py:288:        loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path, dry_run=True)
+tests\test_meeting_free_loop.py:331:        loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path, dry_run=True)
+tests\test_meeting_free_loop.py:364:            loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path)
+tests\test_meeting_free_loop.py:384:        loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path, dry_run=True)
+tests\test_meeting_free_loop.py:422:        loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path, dry_run=True)
+tests\test_meeting_free_loop.py:448:        loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path, dry_run=True)
+tests\test_meeting_free_schema.py:119:            loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path)
+tests\test_meeting_free_schema.py:121:                meeting_free_loop, "get_loop", return_value=loop
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$env:PYTHONIOENCODING='"'utf-8'; .\\.venv\\Scripts\\python.exe -m unittest tests.test_meeting_actions tests.test_meeting_events tests.test_meeting_executor tests.test_meeting_free_e2e -v 2>&1 | Select-Object -Last 30" in E:\code\novel-editorial
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$env:PYTHONIOENCODING='"'utf-8'; .\\.venv\\Scripts\\python.exe run_tests.py 2>&1 | Select-String -Pattern \"FAIL:|ERROR:|Ran |OK|FAILED\" | Select-Object -Last 20" in E:\code\novel-editorial
+2026-08-12T14:28:50.792412Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 5.3 seconds
+Output:
+.\.venv\Scripts\python.exe : test_incident_lessons_become_drafts (tests.test_meeting_actions.MeetingActionsTests.test_i
+ncident_lessons_become_drafts) ... ok
+At line:2 char:32
++ ... NG='utf-8'; .\.venv\Scripts\python.exe -m unittest tests.test_meeting ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (test_incident_l..._drafts) ... ok:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+test_learning_proposals_become_drafts (tests.test_meeting_actions.MeetingActionsTests.test_learning_proposals_become_dr
+afts) ... ok
+test_repeat_application_is_skipped (tests.test_meeting_actions.MeetingActionsTests.test_repeat_application_is_skipped) 
+... ok
+test_review_records_marker (tests.test_meeting_actions.MeetingActionsTests.test_review_records_marker) ... ok
+test_publish_fans_out_to_subscribers (tests.test_meeting_events.MeetingEventHubTests.test_publish_fans_out_to_subscribe
+rs) ... ok
+test_publish_to_empty_session_is_noop (tests.test_meeting_events.MeetingEventHubTests.test_publish_to_empty_session_is_
+noop) ... ok
+test_unsubscribe_stops_delivery (tests.test_meeting_events.MeetingEventHubTests.test_unsubscribe_stops_delivery) ... ok
+test_context_includes_history_and_event (tests.test_meeting_executor.MeetingExecutorTests.test_context_includes_history
+_and_event) ... ok
+test_history_truncated_when_over_limit (tests.test_meeting_executor.MeetingExecutorTests.test_history_truncated_when_ov
+er_limit) ... ok
+test_parse_speech_empty (tests.test_meeting_executor.MeetingExecutorTests.test_parse_speech_empty) ... ok
+test_parse_speech_json_block (tests.test_meeting_executor.MeetingExecutorTests.test_parse_speech_json_block) ... ok
+test_parse_speech_plain_text (tests.test_meeting_executor.MeetingExecutorTests.test_parse_speech_plain_text) ... ok
+test_parse_speech_simple (tests.test_meeting_executor.MeetingExecutorTests.test_parse_speech_simple) ... ok
+test_parse_speech_six_fields (tests.test_meeting_executor.MeetingExecutorTests.test_parse_speech_six_fields) ... ok
+test_parse_speech_skip (tests.test_meeting_executor.MeetingExecutorTests.test_parse_speech_skip) ... ok
+test_reply_fails_twice_and_audits (tests.test_meeting_executor.MeetingExecutorTests.test_reply_fails_twice_and_audits) 
+... ok
+test_reply_normalizes_md_suffix (tests.test_meeting_executor.MeetingExecutorTests.test_reply_normalizes_md_suffix) ... 
+ok
+test_reply_retries_once_then_succeeds (tests.test_meeting_executor.MeetingExecutorTests.test_reply_retries_once_then_su
+cceeds) ... ok
+test_reply_silence_records_no_speech (tests.test_meeting_executor.MeetingExecutorTests.test_reply_silence_records_no_sp
+eech) ... ok
+test_reply_speaks_and_persists (tests.test_meeting_executor.MeetingExecutorTests.test_reply_speaks_and_persists) ... ok
+test_reply_with_approval_request_persists_interaction (tests.test_meeting_executor.MeetingExecutorTests.test_reply_with
+_approval_request_persists_interaction) ... ok
+test_summarize_history_parses_json (tests.test_meeting_executor.MeetingExecutorTests.test_summarize_history_parses_json
+) ... ok
+test_unique_seq_constraint (tests.test_meeting_executor.MeetingExecutorTests.test_unique_seq_constraint) ... ok
+test_full_loop_with_approval_and_finish (tests.test_meeting_free_e2e.FreeMeetingE2ETests.test_full_loop_with_approval_a
+nd_finish) ... ok
+----------------------------------------------------------------------
+Ran 24 tests in 3.982s
+OK
+
+ exited 1 in 5266ms:
+.\.venv\Scripts\python.exe : test_incident_lessons_become_drafts (tests.test_meeting_actions.MeetingActionsTests.test_i
+ncident_lessons_become_drafts) ... ok
+At line:2 char:32
++ ... NG='utf-8'; .\.venv\Scripts\python.exe -m unittest tests.test_meeting ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (test_incident_l..._drafts) ... ok:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+test_learning_proposals_become_drafts (tests.test_meeting_actions.MeetingActionsTests.test_learning_proposals_become_dr
+afts) ... ok
+test_repeat_application_is_skipped (tests.test_meeting_actions.MeetingActionsTests.test_repeat_application_is_skipped) 
+... ok
+test_review_records_marker (tests.test_meeting_actions.MeetingActionsTests.test_review_records_marker) ... ok
+test_publish_fans_out_to_subscribers (tests.test_meeting_events.MeetingEventHubTests.test_publish_fans_out_to_subscribe
+rs) ... ok
+test_publish_to_empty_session_is_noop (tests.test_meeting_events.MeetingEventHubTests.test_publish_to_empty_session_is_
+noop) ... ok
+test_unsubscribe_stops_delivery (tests.test_meeting_events.MeetingEventHubTests.test_unsubscribe_stops_delivery) ... ok
+test_context_includes_history_and_event (tests.test_meeting_executor.MeetingExecutorTests.test_context_includes_history
+_and_event) ... ok
+test_history_truncated_when_over_limit (tests.test_meeting_executor.MeetingExecutorTests.test_history_truncated_when_ov
+er_limit) ... ok
+test_parse_speech_empty (tests.test_meeting_executor.MeetingExecutorTests.test_parse_speech_empty) ... ok
+test_parse_speech_json_block (tests.test_meeting_executor.MeetingExecutorTests.test_parse_speech_json_block) ... ok
+test_parse_speech_plain_text (tests.test_meeting_executor.MeetingExecutorTests.test_parse_speech_plain_text) ... ok
+test_parse_speech_simple (tests.test_meeting_executor.MeetingExecutorTests.test_parse_speech_simple) ... ok
+test_parse_speech_six_fields (tests.test_meeting_executor.MeetingExecutorTests.test_parse_speech_six_fields) ... ok
+test_parse_speech_skip (tests.test_meeting_executor.MeetingExecutorTests.test_parse_speech_skip) ... ok
+test_reply_fails_twice_and_audits (tests.test_meeting_executor.MeetingExecutorTests.test_reply_fails_twice_and_audits) 
+... ok
+test_reply_normalizes_md_suffix (tests.test_meeting_executor.MeetingExecutorTests.test_reply_normalizes_md_suffix) ... 
+ok
+test_reply_retries_once_then_succeeds (tests.test_meeting_executor.MeetingExecutorTests.test_reply_retries_once_then_su
+cceeds) ... ok
+test_reply_silence_records_no_speech (tests.test_meeting_executor.MeetingExecutorTests.test_reply_silence_records_no_sp
+eech) ... ok
+test_reply_speaks_and_persists (tests.test_meeting_executor.MeetingExecutorTests.test_reply_speaks_and_persists) ... ok
+test_reply_with_approval_request_persists_interaction (tests.test_meeting_executor.MeetingExecutorTests.test_reply_with
+_approval_request_persists_interaction) ... ok
+test_summarize_history_parses_json (tests.test_meeting_executor.MeetingExecutorTests.test_summarize_history_parses_json
+) ... ok
+test_unique_seq_constraint (tests.test_meeting_executor.MeetingExecutorTests.test_unique_seq_constraint) ... ok
+test_full_loop_with_approval_and_finish (tests.test_meeting_free_e2e.FreeMeetingE2ETests.test_full_loop_with_approval_a
+nd_finish) ... ok
+----------------------------------------------------------------------
+Ran 24 tests in 3.982s
+OK
+
+2026-08-12T14:30:36.635986Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 110.6 seconds
+Output:
+
+test_novel_knowledge_list_and_upsert (test_web_api.WebApiTests.test_novel_knowledge_list_and_upsert) ... ok
+test_panel_token_required_for_non_browser_post (test_web_api.WebApiTests.test_panel_token_required_for_non_browser_post
+) ... ok
+test_text_plain_post_rejected (test_web_api.WebApiTests.test_text_plain_post_rejected) ... ok
+test_close_completed_when_no_pending (test_workday.WorkdayTests.test_close_completed_when_no_pending) ... ok
+test_close_completed_with_pending_actions (test_workday.WorkdayTests.test_close_completed_with_pending_actions) ... ok
+test_close_org_workday_is_completed_not_failed (test_workday.WorkdayTests.test_close_org_workday_is_completed_not_faile
+d) ... ok
+test_close_partial_when_published_some (test_workday.WorkdayTests.test_close_partial_when_published_some) ... ok
+test_milestone_broadcast_fires_once (test_workday.WorkdayTests.test_milestone_broadcast_fires_once) ... ok
+test_open_blocked_by_existing_lock (test_workday.WorkdayTests.test_open_blocked_by_existing_lock) ... ok
+test_open_broadcasts_workday_start (test_workday.WorkdayTests.test_open_broadcasts_workday_start) ... ok
+test_open_org_skips_produce (test_workday.WorkdayTests.test_open_org_skips_produce) ... ok
+test_open_persists_one_workday_row (test_workday.WorkdayTests.test_open_persists_one_workday_row) ... ok
+test_open_rejects_unclosed_workday (test_workday.WorkdayTests.test_open_rejects_unclosed_workday) ... ok
+test_open_write_reaches_awaiting_close (test_workday.WorkdayTests.test_open_write_reaches_awaiting_close) ... ok
+test_resume_blocked_by_existing_lock (test_workday.WorkdayTests.test_resume_blocked_by_existing_lock) ... ok
+test_resume_returns_to_awaiting_close (test_workday.WorkdayTests.test_resume_returns_to_awaiting_close) ... ok
+test_config_defaults_match_env_example (__main__.EnvConfigContractTests.test_config_defaults_match_env_example) ... ok
+test_env_example_keys_are_all_consumed (__main__.EnvConfigContractTests.test_env_example_keys_are_all_consumed) ... ok
+Ran 574 tests in 108.439s
+OK
+
+
+
+ exited 1 in 110574ms:
+
+test_novel_knowledge_list_and_upsert (test_web_api.WebApiTests.test_novel_knowledge_list_and_upsert) ... ok
+test_panel_token_required_for_non_browser_post (test_web_api.WebApiTests.test_panel_token_required_for_non_browser_post
+) ... ok
+test_text_plain_post_rejected (test_web_api.WebApiTests.test_text_plain_post_rejected) ... ok
+test_close_completed_when_no_pending (test_workday.WorkdayTests.test_close_completed_when_no_pending) ... ok
+test_close_completed_with_pending_actions (test_workday.WorkdayTests.test_close_completed_with_pending_actions) ... ok
+test_close_org_workday_is_completed_not_failed (test_workday.WorkdayTests.test_close_org_workday_is_completed_not_faile
+d) ... ok
+test_close_partial_when_published_some (test_workday.WorkdayTests.test_close_partial_when_published_some) ... ok
+test_milestone_broadcast_fires_once (test_workday.WorkdayTests.test_milestone_broadcast_fires_once) ... ok
+test_open_blocked_by_existing_lock (test_workday.WorkdayTests.test_open_blocked_by_existing_lock) ... ok
+test_open_broadcasts_workday_start (test_workday.WorkdayTests.test_open_broadcasts_workday_start) ... ok
+test_open_org_skips_produce (test_workday.WorkdayTests.test_open_org_skips_produce) ... ok
+test_open_persists_one_workday_row (test_workday.WorkdayTests.test_open_persists_one_workday_row) ... ok
+test_open_rejects_unclosed_workday (test_workday.WorkdayTests.test_open_rejects_unclosed_workday) ... ok
+test_open_write_reaches_awaiting_close (test_workday.WorkdayTests.test_open_write_reaches_awaiting_close) ... ok
+test_resume_blocked_by_existing_lock (test_workday.WorkdayTests.test_resume_blocked_by_existing_lock) ... ok
+test_resume_returns_to_awaiting_close (test_workday.WorkdayTests.test_resume_returns_to_awaiting_close) ... ok
+test_config_defaults_match_env_example (__main__.EnvConfigContractTests.test_config_defaults_match_env_example) ... ok
+test_env_example_keys_are_all_consumed (__main__.EnvConfigContractTests.test_env_example_keys_are_all_consumed) ... ok
+Ran 574 tests in 108.439s
+OK
+
+
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; rg -n \"meeting_messages|UNIQUE\" novel_editorial/db.py | Select-Object -First 30; Write-Host '---SCHEMA---'; rg -n \"CREATE TABLE IF NOT EXISTS meeting_messages\" -A 20 novel_editorial/db.py" in E:\code\novel-editorial
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; rg -n \"def reply_to_mention|MAX\\(seq\\)|seq\" tools/meeting_executor.py | Select-Object -First 30" in E:\code\novel-editorial
+ succeeded in 857ms:
+228:    UNIQUE(novel_id, category, entity)
+297:    UNIQUE(agent, other, novel_id)
+325:    run_id TEXT NOT NULL UNIQUE,
+345:CREATE TABLE IF NOT EXISTS meeting_messages (
+358:CREATE INDEX IF NOT EXISTS idx_meeting_messages_session
+359:    ON meeting_messages(session_id, id);
+360:CREATE UNIQUE INDEX IF NOT EXISTS idx_meeting_messages_session_seq
+361:    ON meeting_messages(session_id, seq);
+478:    msg_cols = {r["name"] for r in conn.execute("PRAGMA table_info(meeting_messages)")}
+480:        conn.execute("ALTER TABLE meeting_messages ADD COLUMN compressed_at TEXT DEFAULT ''")
+569:        "CREATE UNIQUE INDEX IF NOT EXISTS idx_chapters_novel_seq_unique "
+---SCHEMA---
+345:CREATE TABLE IF NOT EXISTS meeting_messages (
+346-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+347-    session_id INTEGER NOT NULL,
+348-    novel_id INTEGER DEFAULT 0,
+349-    seq INTEGER DEFAULT 0,
+350-    from_agent TEXT NOT NULL,
+351-    role TEXT DEFAULT 'user',
+352-    kind TEXT DEFAULT 'message',
+353-    body TEXT NOT NULL,
+354-    mentions TEXT DEFAULT '[]',
+355-    status TEXT DEFAULT 'active',
+356-    created_at TEXT DEFAULT ''
+357-);
+358-CREATE INDEX IF NOT EXISTS idx_meeting_messages_session
+359-    ON meeting_messages(session_id, id);
+360-CREATE UNIQUE INDEX IF NOT EXISTS idx_meeting_messages_session_seq
+361-    ON meeting_messages(session_id, seq);
+362-
+363-CREATE TABLE IF NOT EXISTS pending_interactions (
+364-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+365-    session_id INTEGER NOT NULL,
+
+ succeeded in 825ms:
+182:def reply_to_mention(conn, session_id, agent, event, dry_run=False, mock_text="", tail=20):
+250:        seq_row = conn.execute(
+251:            "SELECT COALESCE(MAX(seq), 0) + 1 AS s FROM meeting_messages "
+257:                "INSERT INTO meeting_messages(session_id, novel_id, seq, from_agent, "
+263:                    int(seq_row["s"]),
+275:            # 并发发言竞争同一 seq：重算后重试。
+284:            detail={"agent": agent, "error": "seq conflict after 3 attempts"},
+287:        return {"ok": False, "spoken": False, "error": "seq conflict after 3 attempts"}
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content tools/meeting_executor.py -Encoding UTF8 | Select-Object -Skip 240 -First 60' in E:\code\novel-editorial
+ succeeded in 767ms:
+            target_id=session_id,
+            detail={"agent": agent, "reason": parsed.get("reason")},
+        )
+        conn.commit()
+        return {"ok": True, "spoken": False, "reason": parsed.get("reason")}
+
+    now = __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    inserted = None
+    for _ in range(3):
+        seq_row = conn.execute(
+            "SELECT COALESCE(MAX(seq), 0) + 1 AS s FROM meeting_messages "
+            "WHERE session_id=?",
+            (session_id,),
+        ).fetchone()
+        try:
+            inserted = conn.execute(
+                "INSERT INTO meeting_messages(session_id, novel_id, seq, from_agent, "
+                "role, kind, body, mentions, status, created_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (
+                    session_id,
+                    session["novel_id"],
+                    int(seq_row["s"]),
+                    agent,
+                    "assistant",
+                    "speech",
+                    parsed["speech"],
+                    "[]",
+                    "active",
+                    now,
+                ),
+            )
+            break
+        except sqlite3.IntegrityError:
+            # 并发发言竞争同一 seq：重算后重试。
+            continue
+    if inserted is None:
+        audit.log(
+            conn,
+            "meeting",
+            "no_speech",
+            target_type="session",
+            target_id=session_id,
+            detail={"agent": agent, "error": "seq conflict after 3 attempts"},
+        )
+        conn.commit()
+        return {"ok": False, "spoken": False, "error": "seq conflict after 3 attempts"}
+    audit.log(
+        conn,
+        "meeting",
+        "speech",
+        target_type="session",
+        target_id=session_id,
+        detail={"agent": agent, "message_id": inserted.lastrowid},
+    )
+    conn.commit()
+    interaction_id = None
+    approval = parsed.get("approval_request")
+    if isinstance(approval, dict) and str(approval.get("question") or "").strip():
+        created = meeting_interactions.request_interaction(
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$env:PYTHONIOENCODING='"'utf-8'; .\\.venv\\Scripts\\python.exe -c \"import json; d=json.load(open('ai_words.json', encoding='utf-8')); print('ai_words.json OK, keys:', list(d.keys())); print('flavor count:', len(d['ai_flavor'])); print('dup check:', len(d['ai_flavor'])==len(set(d['ai_flavor'])))\"" in E:\code\novel-editorial
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; rg -n "ai_words|ai_flavor|compliance_words" --glob "*.py" -g "!*.venv*" -g "!tests/__pycache__/*" | Select-Object -First 40' in E:\code\novel-editorial
+ succeeded in 652ms:
+ai_words.json OK, keys: ['_note', 'ai_flavor']
+flavor count: 21
+dup check: True
+
+ succeeded in 892ms:
+tools\editorial_steps.py:325:        data = json.loads((Path(root) / "ai_words.json").read_text(encoding="utf-8"))
+tools\editorial_steps.py:326:        words = data.get("ai_flavor")
+tools\editorial_steps.py:332:# 唯一权威来源是仓库根目录 ai_words.json（与 novel_editorial/quality_gate.py
+tests\test_editorial_steps.py:211:    def test_ai_words_fail(self):
+novel_editorial\compliance.py:4:1. `compliance_words.txt`（仓库根，每行一词，# 开头为注释）——正式启用前按
+novel_editorial\compliance.py:14:WORDS_FILE = ROOT / "compliance_words.txt"
+novel_editorial\compliance.py:17:    "compliance_words.txt 为空或全为注释，未加载任何自定义词；"
+novel_editorial\compliance.py:21:    "compliance_words.txt 不存在，仅使用内置 DEFAULT_SENSITIVE_KEYWORDS"
+novel_editorial\compliance.py:24:    "compliance_words.txt 读取或解码失败，仅使用内置 DEFAULT_SENSITIVE_KEYWORDS"
+novel_editorial\compliance.py:66:    """Return custom words from compliance_words.txt (comments skipped).
+novel_editorial\compliance.py:123:        "note": "词库 = 内置通用违规词 + compliance_words.txt 自定义项，按平台规则持续补充",
+novel_editorial\quality_gate.py:15:# 常见 AI 味模板词（去 AI 味专项治理用；与 ai_words.json、tools/editorial_steps.py 同源）
+novel_editorial\quality_gate.py:21:_WORDS_FILE = Path(__file__).resolve().parent.parent / "ai_words.json"
+novel_editorial\quality_gate.py:24:def _load_ai_flavor_words():
+novel_editorial\quality_gate.py:25:    """读取 ai_words.json 的 ai_flavor；缺失/损坏时告警并回退内置词表。"""
+novel_editorial\quality_gate.py:30:            f"ai_words.json 读取失败（{exc}），回退内置 AI 味词表",
+novel_editorial\quality_gate.py:37:            "ai_words.json 解析失败（JSON 损坏或编码异常），回退内置 AI 味词表",
+novel_editorial\quality_gate.py:42:    words = data.get("ai_flavor", _DEFAULT_AI_FLAVOR_WORDS)
+novel_editorial\quality_gate.py:45:            "ai_words.json 的 ai_flavor 不是列表，回退内置 AI 味词表",
+novel_editorial\quality_gate.py:53:AI_FLAVOR_WORDS = _load_ai_flavor_words()
+novel_editorial\quality_gate.py:73:def ai_flavor_density(text):
+novel_editorial\quality_gate.py:108:                  ai_flavor_limit=6.0, prev_tail=None):
+novel_editorial\quality_gate.py:115:    density = ai_flavor_density(text)
+novel_editorial\quality_gate.py:118:    elif density <= ai_flavor_limit:
+novel_editorial\quality_gate.py:121:        style_score = max(0.0, 10.0 - (density - ai_flavor_limit) * 2.0)
+novel_editorial\quality_gate.py:140:        "ai_flavor_density": round(density, 2),
+tests\test_quality_gate.py:19:    def test_ai_flavor_density_detects_templates(self):
+tests\test_quality_gate.py:20:        density = quality_gate.ai_flavor_density("他突然冷笑一声，顿时沉默。")
+tests\test_quality_gate.py:23:    def test_ai_flavor_density_overlap_counts_once(self):
+tests\test_quality_gate.py:25:            density = quality_gate.ai_flavor_density("他缓缓说道。")
+tests\test_quality_gate.py:31:    def test_ai_flavor_density_empty_word_list_returns_zero(self):
+tests\test_quality_gate.py:33:            density = quality_gate.ai_flavor_density("他突然冷笑一声，顿时沉默。")
+tests\test_quality_gate.py:36:    def test_missing_ai_words_file_warns_and_falls_back(self):
+tests\test_quality_gate.py:37:        missing = Path(tempfile.mkdtemp()) / "missing_ai_words.json"
+tests\test_quality_gate.py:41:                words = quality_gate._load_ai_flavor_words()
+tests\test_quality_gate.py:45:    def test_corrupt_ai_words_file_warns_and_falls_back(self):
+tests\test_quality_gate.py:46:        corrupt = Path(tempfile.mkdtemp()) / "corrupt_ai_words.json"
+tests\test_quality_gate.py:51:                words = quality_gate._load_ai_flavor_words()
+tests\test_quality_gate.py:55:    def test_real_ai_words_file_is_valid(self):
+tests\test_quality_gate.py:58:        words = data["ai_flavor"]
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content novel_editorial/compliance.py -Encoding UTF8 | Select-Object -First 100' in E:\code\novel-editorial
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content tests/test_compliance.py -Encoding UTF8 -Raw; Write-Host '---QUALITY_GATE_LOAD---'; Get-Content novel_editorial/quality_gate.py -Encoding UTF8 | Select-Object -First 60" in E:\code\novel-editorial
+ succeeded in 752ms:
+"""合规门：平台规则清单 + 敏感词扫描 + AI 声明状态。
+
+词库来源（合并去重）：
+1. `compliance_words.txt`（仓库根，每行一词，# 开头为注释）——正式启用前按
+   目标平台规则补充/裁剪；
+2. 内置 `DEFAULT_SENSITIVE_KEYWORDS`：通用明显违规词，覆盖常见平台红线
+   （违禁品/赌博/诈骗/暴恐/色情露骨/代充广告引流）。
+"""
+
+import warnings
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+WORDS_FILE = ROOT / "compliance_words.txt"
+
+EMPTY_WORDS_WARNING = (
+    "compliance_words.txt 为空或全为注释，未加载任何自定义词；"
+    "仅使用内置 DEFAULT_SENSITIVE_KEYWORDS"
+)
+MISSING_WORDS_WARNING = (
+    "compliance_words.txt 不存在，仅使用内置 DEFAULT_SENSITIVE_KEYWORDS"
+)
+READ_WORDS_WARNING = (
+    "compliance_words.txt 读取或解码失败，仅使用内置 DEFAULT_SENSITIVE_KEYWORDS"
+)
+
+DEFAULT_SENSITIVE_KEYWORDS = [
+    # 违禁品 / 涉毒
+    "冰毒",
+    "海洛因",
+    "摇头丸",
+    "制毒",
+    "贩毒",
+    # 赌博 / 博彩
+    "赌博网站",
+    "博彩平台",
+    "网络赌场",
+    "赌博攻略",
+    # 诈骗 / 传销
+    "电信诈骗",
+    "诈骗教程",
+    "传销组织",
+    "裸贷",
+    # 暴恐 / 危险品
+    "自制炸药",
+    "恐怖袭击策划",
+    "枪支交易",
+    # 色情露骨
+    "色情直播",
+    "裸聊",
+    "约炮",
+    "卖淫",
+    # 代充 / 广告引流
+    "代充值",
+    "刷单兼职",
+    "日结兼职",
+    "加微信领福利",
+    "私聊发资源",
+]
+
+# Backwards-compatible alias for any existing reference.
+SENSITIVE_KEYWORDS = DEFAULT_SENSITIVE_KEYWORDS
+
+
+def _read_custom_words():
+    """Return custom words from compliance_words.txt (comments skipped).
+
+    Returns None when the file exists but cannot be read/decoded
+    (a RuntimeWarning is emitted and only built-in words are used).
+    """
+    if not WORDS_FILE.exists():
+        return []
+    try:
+        content = WORDS_FILE.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        warnings.warn(READ_WORDS_WARNING, RuntimeWarning, stacklevel=2)
+        return None
+    words = []
+    for line in content.splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            words.append(line)
+    return words
+
+
+_UNREAD = object()
+
+
+def _load_words(custom_words=_UNREAD):
+    words = list(DEFAULT_SENSITIVE_KEYWORDS)
+    if custom_words is _UNREAD:
+        custom_words = _read_custom_words()
+    if custom_words:
+        words.extend(custom_words)
+    seen = set()
+    out = []
+    for w in words:
+        if w not in seen:
+            seen.add(w)
+            out.append(w)
+
+ succeeded in 897ms:
+"""Compliance gate tests: built-in words, custom file merging, AI declaration."""
+
+import tempfile
+import unittest
+import warnings
+from pathlib import Path
+from unittest import mock
+
+from novel_editorial import compliance
+
+
+class ComplianceTests(unittest.TestCase):
+    def _check_with_warnings(self, tmp_words_file, text):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with mock.patch.object(compliance, "WORDS_FILE", tmp_words_file):
+                result = compliance.check(text)
+        return result, caught
+
+    def test_hits_builtin_word(self):
+        result = compliance.check("本章出现冰毒交易描写")
+        self.assertFalse(result["passed"])
+        self.assertIn("冰毒", result["sensitive_hits"])
+
+    def test_clean_text_passes(self):
+        result = compliance.check("他推开门走进院子，风从巷口吹来。")
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["sensitive_hits"], [])
+        self.assertTrue(result["ai_declared"])
+
+    def test_missing_words_file_warns(self):
+        missing = Path(tempfile.mkdtemp()) / "missing_words.txt"
+        result, caught = self._check_with_warnings(missing, "他推开门走进院子，风从巷口吹来。")
+        self.assertIn(compliance.MISSING_WORDS_WARNING, result["warnings"])
+        self.assertTrue(any(
+            w.category is RuntimeWarning and str(w.message) == compliance.MISSING_WORDS_WARNING
+            for w in caught
+        ))
+
+    def test_empty_words_file_warns(self):
+        tmp = Path(tempfile.mkdtemp()) / "words.txt"
+        tmp.write_text("", encoding="utf-8")
+        result, caught = self._check_with_warnings(tmp, "他推开门走进院子，风从巷口吹来。")
+        self.assertIn(compliance.EMPTY_WORDS_WARNING, result["warnings"])
+        self.assertTrue(any(
+            w.category is RuntimeWarning and str(w.message) == compliance.EMPTY_WORDS_WARNING
+            for w in caught
+        ))
+
+    def test_all_comments_words_file_warns(self):
+        tmp = Path(tempfile.mkdtemp()) / "words.txt"
+        tmp.write_text("# 注释行一\n# 注释行二\n", encoding="utf-8")
+        result, caught = self._check_with_warnings(tmp, "他推开门走进院子，风从巷口吹来。")
+        self.assertIn(compliance.EMPTY_WORDS_WARNING, result["warnings"])
+        self.assertTrue(any(
+            w.category is RuntimeWarning and str(w.message) == compliance.EMPTY_WORDS_WARNING
+            for w in caught
+        ))
+
+    def test_bad_encoding_words_file_warns_and_falls_back(self):
+        tmp = Path(tempfile.mkdtemp()) / "words.txt"
+        tmp.write_bytes(b"\xff\xfe\x00\xd6\xd0\xce\xc4")
+        result, caught = self._check_with_warnings(tmp, "他推开门走进院子，风从巷口吹来。")
+        self.assertIn(compliance.READ_WORDS_WARNING, result["warnings"])
+        self.assertTrue(any(
+            w.category is RuntimeWarning and str(w.message) == compliance.READ_WORDS_WARNING
+            for w in caught
+        ))
+        self.assertTrue(result["passed"])
+
+    def test_custom_words_file_is_merged(self):
+        tmp = Path(tempfile.mkdtemp()) / "words.txt"
+        tmp.write_text("# 注释\n自定义红线词\n", encoding="utf-8")
+        result, caught = self._check_with_warnings(tmp, "正文包含自定义红线词")
+        self.assertFalse(result["passed"])
+        self.assertIn("自定义红线词", result["sensitive_hits"])
+        self.assertEqual(result["warnings"], [])
+        self.assertEqual(caught, [])
+
+    def test_real_words_file_check_runs(self):
+        self.assertTrue(compliance.WORDS_FILE.exists())
+        custom_words = compliance._read_custom_words()
+        self.assertIsInstance(custom_words, list)
+        result = compliance.check("他推开门走进院子，风从巷口吹来。")
+        self.assertTrue(result["passed"])
+        self.assertIn("warnings", result)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+---QUALITY_GATE_LOAD---
+"""质量门（确定性部分）。
+
+五维评分：字数 / 情节 / 文笔 / 规范 / 衔接。
+情节、文笔、衔接的严格评估需要 LLM ReviewerAgent 完成，此处先提供
+可测试的确定性代理值，保证骨架能端到端运行；正式版接入 LLM 后替换。
+"""
+
+import re
+import json
+import warnings
+from pathlib import Path
+
+CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+
+# 常见 AI 味模板词（去 AI 味专项治理用；与 ai_words.json、tools/editorial_steps.py 同源）
+_DEFAULT_AI_FLAVOR_WORDS = [
+    "突然", "顿时", "仿佛", "缓缓", "不由得", "微微一", "嘴角", "眼神一凝", "低沉",
+    "冷哼一声", "心中一动", "不禁", "瞬间", "面无表情", "淡淡", "不由自主", "情不自禁",
+    "微微一愣", "缓缓说道", "与此同时", "一股强大的气息",
+]
+_WORDS_FILE = Path(__file__).resolve().parent.parent / "ai_words.json"
+
+
+def _load_ai_flavor_words():
+    """读取 ai_words.json 的 ai_flavor；缺失/损坏时告警并回退内置词表。"""
+    try:
+        data = json.loads(_WORDS_FILE.read_text(encoding="utf-8"))
+    except OSError as exc:
+        warnings.warn(
+            f"ai_words.json 读取失败（{exc}），回退内置 AI 味词表",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return _DEFAULT_AI_FLAVOR_WORDS
+    except ValueError:
+        warnings.warn(
+            "ai_words.json 解析失败（JSON 损坏或编码异常），回退内置 AI 味词表",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return _DEFAULT_AI_FLAVOR_WORDS
+    words = data.get("ai_flavor", _DEFAULT_AI_FLAVOR_WORDS)
+    if not isinstance(words, list):
+        warnings.warn(
+            "ai_words.json 的 ai_flavor 不是列表，回退内置 AI 味词表",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return _DEFAULT_AI_FLAVOR_WORDS
+    return words
+
+
+AI_FLAVOR_WORDS = _load_ai_flavor_words()
+
+
+def count_chinese_chars(text):
+    """统计中文字符数（平台计字通常以此为准）。"""
+    return len(CJK_RE.findall(text))
+
+
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "@'
+import os, tempfile, threading
+from novel_editorial import db
+
+fails = 0
+for trial in range(20):
+    tmpdir = tempfile.mkdtemp()
+    db_path = os.path.join(tmpdir, \"t.db\")
+    conn = db.connect(db_path)
+    cur = conn.execute(
+        \"INSERT INTO meeting_sessions(kind,topic,status,mode,novel_id,db_path,attendees,heartbeat_at,created_at,updated_at) \"
+        \"VALUES('topic','t','running','free',0,?,'[]',datetime('now','localtime'),datetime('now','localtime'),datetime('now','localtime'))\",
+        (db_path,),
+    )
+    conn.commit()
+    session_id = cur.lastrowid
+    conn.close()
+    errors = []
+
+    def fake_reply(agent):
+        c = db.connect(db_path)
+        try:
+            seq = c.execute(
+                \"SELECT COALESCE(MAX(seq),0)+1 AS s FROM meeting_messages WHERE session_id=?\", (session_id,)
+            ).fetchone()[\"s\"]
+            c.execute(
+                \"INSERT INTO meeting_messages(session_id, novel_id, seq, from_agent, role, kind, body, status, created_at) \"
+                \"VALUES(?,0,?,?,'assistant','speech',?,'active',datetime('now','localtime'))\",
+                (session_id, seq, agent, f\"{agent} de shu\"),
+            )
+            c.commit()
+        except Exception as e:
+            errors.append((agent, type(e).__name__))
+        finally:
+            c.close()
+
+    threads = [threading.Thread(target=fake_reply, args=(a,)) for a in (\"planner\", \"reviewer\")]
+    for t in threads: t.start()
+    for t in threads: t.join()
+    c2 = db.connect(db_path)
+    count = c2.execute(\"SELECT COUNT(*) AS c FROM meeting_messages WHERE session_id=?\", (session_id,)).fetchone()[\"c\"]
+    c2.close()
+    if errors or count < 2:
+        fails += 1
+        print(f\"trial {trial}: count={count} errors={errors}\")
+print(f\"total trials with conflict: {fails}/20\")
+'@ | .\\.venv\\Scripts\\python.exe -" in E:\code\novel-editorial
+ succeeded in 4167ms:
+total trials with conflict: 0/20
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "@'
+import os, tempfile, threading
+from novel_editorial import db
+
+def run_trial(with_barrier):
+    tmpdir = tempfile.mkdtemp()
+    db_path = os.path.join(tmpdir, \"t.db\")
+    conn = db.connect(db_path)
+    cur = conn.execute(
+        \"INSERT INTO meeting_sessions(kind,topic,status,mode,novel_id,db_path,attendees,heartbeat_at,created_at,updated_at) \"
+        \"VALUES('topic','t','running','free',0,?,'[]',datetime('now','localtime'),datetime('now','localtime'),datetime('now','localtime'))\",
+        (db_path,),
+    )
+    conn.commit()
+    session_id = cur.lastrowid
+    conn.close()
+
+    barrier = threading.Barrier(2)
+    errors = []
+    seqs = []
+
+    def fake_reply(agent):
+        c = db.connect(db_path, timeout=0)  # no wait on lock
+        try:
+            seq = c.execute(
+                \"SELECT COALESCE(MAX(seq),0)+1 AS s FROM meeting_messages WHERE session_id=?\", (session_id,)
+            ).fetchone()[\"s\"]
+            seqs.append(seq)
+            if with_barrier:
+                barrier.wait()
+            c.execute(
+                \"INSERT INTO meeting_messages(session_id, novel_id, seq, from_agent, role, kind, body, status, created_at) \"
+                \"VALUES(?,0,?,?,'assistant','speech',?,'active',datetime('now','localtime'))\",
+                (session_id, seq, agent, f\"{agent} de shu\"),
+            )
+            c.commit()
+        except Exception as e:
+            errors.append((agent, type(e).__name__))
+        finally:
+            c.close()
+
+    threads = [threading.Thread(target=fake_reply, args=(a,)) for a in (\"planner\", \"reviewer\")]
+    for t in threads: t.start()
+    for t in threads: t.join()
+    c2 = db.connect(db_path)
+    count = c2.execute(\"SELECT COUNT(*) AS c FROM meeting_messages WHERE session_id=?\", (session_id,)).fetchone()[\"c\"]
+    c2.close()
+    return count, errors, seqs
+
+count, errors, seqs = run_trial(with_barrier=True)
+print(f\"barrier: count={count} errors={errors} seqs={seqs}\")
+'@ | .\\.venv\\Scripts\\python.exe -" in E:\code\novel-editorial
+ succeeded in 925ms:
+barrier: count=0 errors=[] seqs=[]
+Exception in thread Thread-1 (fake_reply):
+Traceback (most recent call last):
+  File "C:\Users\Administrator\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045, in _bootstrap_inner
+Exception in thread Thread-2 (fake_reply):
+Traceback (most recent call last):
+  File "C:\Users\Administrator\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045, in _bootstrap_inner
+    self.run()
+  File "C:\Users\Administrator\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982, in run
+    self.run()
+  File "C:\Users\Administrator\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982, in run
+    self._target(*self._args, **self._kwargs)
+  File "<stdin>", line 22, in fake_reply
+TypeError: connect() got an unexpected keyword argument 'timeout'
+    self._target(*self._args, **self._kwargs)
+  File "<stdin>", line 22, in fake_reply
+TypeError: connect() got an unexpected keyword argument 'timeout'
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; rg -n "def connect" -A 25 novel_editorial/db.py' in E:\code\novel-editorial
+ succeeded in 607ms:
+385:def connect(db_path):
+386-    """Connect to the SQLite database.
+387-
+388-    Schema creation/migration runs exactly once per database path (process
+389-    lifetime); subsequent connects are lightweight and set per-connection
+390-    pragmas. WAL mode is enabled once and persists in the database file.
+391-    In-memory databases run the schema on every fresh connection, because each
+392-    ``:memory:`` connection owns a distinct database.
+393-    """
+394-    if _is_memory_db(db_path):
+395-        conn = sqlite3.connect(
+396-            str(db_path), timeout=15, uri=str(db_path).startswith("file:")
+397-        )
+398-        conn.row_factory = sqlite3.Row
+399-        with _INIT_LOCK:
+400-            conn.executescript(SCHEMA)
+401-            _migrate(conn)
+402-        conn.execute("PRAGMA foreign_keys=ON")
+403-        return conn
+404-
+405-    key = str(Path(db_path).resolve())
+406-    with _INIT_LOCK:
+407-        if key not in _INITIALIZED:
+408-            conn = sqlite3.connect(str(db_path))
+409-            conn.row_factory = sqlite3.Row
+410-            conn.executescript(SCHEMA)
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "@'
+import os, tempfile, threading
+from novel_editorial import db
+
+def run_trial():
+    tmpdir = tempfile.mkdtemp()
+    db_path = os.path.join(tmpdir, \"t.db\")
+    conn = db.connect(db_path)
+    cur = conn.execute(
+        \"INSERT INTO meeting_sessions(kind,topic,status,mode,novel_id,db_path,attendees,heartbeat_at,created_at,updated_at) \"
+        \"VALUES('topic','t','running','free',0,?,'[]',datetime('now','localtime'),datetime('now','localtime'),datetime('now','localtime'))\",
+        (db_path,),
+    )
+    conn.commit()
+    session_id = cur.lastrowid
+    conn.close()
+
+    barrier = threading.Barrier(2)
+    errors = []
+    seqs = []
+
+    def fake_reply(agent):
+        c = db.connect(db_path)
+        try:
+            seq = c.execute(
+                \"SELECT COALESCE(MAX(seq),0)+1 AS s FROM meeting_messages WHERE session_id=?\", (session_id,)
+            ).fetchone()[\"s\"]
+            seqs.append(seq)
+            barrier.wait()
+            c.execute(
+                \"INSERT INTO meeting_messages(session_id, novel_id, seq, from_agent, role, kind, body, status, created_at) \"
+                \"VALUES(?,0,?,?,'assistant','speech',?,'active',datetime('now','localtime'))\",
+                (session_id, seq, agent, f\"{agent} de shu\"),
+            )
+            c.commit()
+        except Exception as e:
+            errors.append((agent, type(e).__name__))
+        finally:
+            c.close()
+
+    threads = [threading.Thread(target=fake_reply, args=(a,)) for a in (\"planner\", \"reviewer\")]
+    for t in threads: t.start()
+    for t in threads: t.join()
+    c2 = db.connect(db_path)
+    count = c2.execute(\"SELECT COUNT(*) AS c FROM meeting_messages WHERE session_id=?\", (session_id,)).fetchone()[\"c\"]
+    c2.close()
+    return count, errors, seqs
+
+fails = 0
+for i in range(10):
+    count, errors, seqs = run_trial()
+    if errors or count < 2:
+        fails += 1
+        print(f\"trial {i}: count={count} errors={errors} seqs={seqs}\")
+print(f\"conflicts: {fails}/10\")
+'@ | .\\.venv\\Scripts\\python.exe -" in E:\code\novel-editorial
+ succeeded in 2758ms:
+trial 0: count=1 errors=[('planner', 'IntegrityError')] seqs=[1, 1]
+trial 1: count=1 errors=[('planner', 'IntegrityError')] seqs=[1, 1]
+trial 2: count=1 errors=[('reviewer', 'IntegrityError')] seqs=[1, 1]
+trial 3: count=1 errors=[('planner', 'IntegrityError')] seqs=[1, 1]
+trial 4: count=1 errors=[('reviewer', 'IntegrityError')] seqs=[1, 1]
+trial 5: count=1 errors=[('reviewer', 'IntegrityError')] seqs=[1, 1]
+trial 6: count=1 errors=[('planner', 'IntegrityError')] seqs=[1, 1]
+trial 7: count=1 errors=[('planner', 'IntegrityError')] seqs=[1, 1]
+trial 8: count=1 errors=[('reviewer', 'IntegrityError')] seqs=[1, 1]
+trial 9: count=1 errors=[('planner', 'IntegrityError')] seqs=[1, 1]
+conflicts: 10/10
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; rg -n \"def _env_int|os\\.environ\\.get|os\\.getenv|environ\\[|env_value\" novel_editorial/config.py | Select-Object -First 60" in E:\code\novel-editorial
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; rg -n "get_loop|submit_event" novel_editorial/web_api.py tools/*.py -g "*.py" | Select-Object -First 30' in E:\code\novel-editorial
+ succeeded in 757ms:
+9:RUNTIME_ROOT = Path(os.environ.get("NOVEL_DATA_DIR") or ROOT)
+12:def _env_int(key, default):
+14:        return int(os.environ.get(key, str(default)))
+33:N8N_BASE = os.environ.get("N8N_BASE", "http://127.0.0.1:5678")
+34:N8N_WORKFLOW_DAILY = os.environ.get("N8N_WORKFLOW_DAILY", "your-daily-workflow-id")
+35:N8N_WORKFLOW_WEEKLY = os.environ.get("N8N_WORKFLOW_WEEKLY", "your-weekly-workflow-id")
+36:N8N_WORKFLOW_KEEPER = os.environ.get("N8N_WORKFLOW_KEEPER", "your-keeper-workflow-id")
+61:DISPATCH_MODE = os.environ.get("DISPATCH_MODE", "editorial")
+63:MEETING_MODE = os.environ.get("MEETING_MODE", "rounds")
+64:CLAIM_INJECT = os.environ.get("CLAIM_INJECT", "on") != "off"
+65:TOPIC_REQUEST_ACTIONS = os.environ.get("TOPIC_REQUEST_ACTIONS", "on") != "off"
+66:TASK_RESPONSE_MODE = os.environ.get("TASK_RESPONSE_MODE", "on")
+67:RELATION_WEIGHT = os.environ.get("RELATION_WEIGHT", "on") != "off"
+68:AGENCY_ENABLED = os.environ.get("AGENCY_ENABLED", "on") != "off"
+115:def env_value(key, default=""):
+
+2026-08-12T14:32:37.627615Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 0.8 seconds
+Output:
+rg: tools/*.py: 文件名、目录名或卷标语法不正确。 (os error 123)
+
+ exited 1 in 788ms:
+rg: tools/*.py: 文件名、目录名或卷标语法不正确。 (os error 123)
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; rg -n "get_loop|submit_event" novel_editorial/web_api.py tools/ -g "*.py" | Select-Object -First 30' in E:\code\novel-editorial
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content novel_editorial/config.py -Encoding UTF8 | Select-Object -First 115' in E:\code\novel-editorial
+ succeeded in 771ms:
+tools/meeting_free_loop.py:47:    def submit_event(self, session_id, event):
+tools/meeting_free_loop.py:430:def get_loop(db_path=""):
+
+ succeeded in 757ms:
+"""Central configuration: paths, env loading, and pipeline constants."""
+
+import os
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+# Writable runtime root: the desktop app sets NOVEL_DATA_DIR to the per-user
+# data directory, so read-only install dirs never receive runtime writes.
+RUNTIME_ROOT = Path(os.environ.get("NOVEL_DATA_DIR") or ROOT)
+
+
+def _env_int(key, default):
+    try:
+        return int(os.environ.get(key, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+AGENTS_DIR = ROOT / "prompts" / "agents"
+N8N_DIR = ROOT / "n8n"
+TOOLS_DIR = ROOT / "tools"
+TMP_DIR = RUNTIME_ROOT / "n8n_tmp"
+EXPORTS_DIR = RUNTIME_ROOT / "exports"
+DATA_DIR = RUNTIME_ROOT / "demo_data"
+
+WORKFLOW_JSON = N8N_DIR / "novel_workflow.json"
+WEEKLY_WORKFLOW_JSON = N8N_DIR / "architect_weekly.json"
+VALIDATE_JS = TOOLS_DIR / "validate_workflow_deep.mjs"
+ALERTS_LOG = RUNTIME_ROOT / "alerts.log"
+HOT_TOPICS_JSON = RUNTIME_ROOT / "hot_topics.json"
+READER_CSV = DATA_DIR / "reader_stats.csv"
+DB_PATH = ROOT / "demo.db"
+
+N8N_BASE = os.environ.get("N8N_BASE", "http://127.0.0.1:5678")
+N8N_WORKFLOW_DAILY = os.environ.get("N8N_WORKFLOW_DAILY", "your-daily-workflow-id")
+N8N_WORKFLOW_WEEKLY = os.environ.get("N8N_WORKFLOW_WEEKLY", "your-weekly-workflow-id")
+N8N_WORKFLOW_KEEPER = os.environ.get("N8N_WORKFLOW_KEEPER", "your-keeper-workflow-id")
+N8N_ENV_FILE = Path.home() / ".n8n" / ".env"
+
+AGENT_NAMES = [
+    "planner",
+    "guard",
+    "writer",
+    "editor",
+    "reviewer",
+    "reader",
+    "memory",
+    "work_meta",
+    "eic",
+    "ending_judge",
+    "knowledge_keeper",
+]
+
+# Editorial context injection (S3): how much collaboration context each LLM
+# call carries. Truncation bounds the token overhead; see the master plan.
+AGENT_CTX_MESSAGES = _env_int("AGENT_CTX_MESSAGES", 8)
+AGENT_CTX_MEMORIES = _env_int("AGENT_CTX_MEMORIES", 3)
+AGENT_CTX_RELATIONS = _env_int("AGENT_CTX_RELATIONS", 3)
+AGENT_CTX_PROMISES = _env_int("AGENT_CTX_PROMISES", 3)
+AGENT_CTX_ACTIONS = _env_int("AGENT_CTX_ACTIONS", 3)
+AGENT_CTX_TRUNCATE = _env_int("AGENT_CTX_TRUNCATE", 200)
+DISPATCH_MODE = os.environ.get("DISPATCH_MODE", "editorial")
+REVIEW_RETRY_MAX = _env_int("REVIEW_RETRY_MAX", 1)
+MEETING_MODE = os.environ.get("MEETING_MODE", "rounds")
+CLAIM_INJECT = os.environ.get("CLAIM_INJECT", "on") != "off"
+TOPIC_REQUEST_ACTIONS = os.environ.get("TOPIC_REQUEST_ACTIONS", "on") != "off"
+TASK_RESPONSE_MODE = os.environ.get("TASK_RESPONSE_MODE", "on")
+RELATION_WEIGHT = os.environ.get("RELATION_WEIGHT", "on") != "off"
+AGENCY_ENABLED = os.environ.get("AGENCY_ENABLED", "on") != "off"
+REWORK_MAX = _env_int("REWORK_MAX", 1)
+MEMORY_CATEGORY_MAP = {
+    "writer": ("plot", "character", "feedback", "opinion"),
+    "reviewer": ("feedback", "quality", "collaboration"),
+    "reader": ("feedback", "quality"),
+    "eic": ("meeting", "decision", "collaboration"),
+    "planner": ("plot", "character", "decision"),
+    "guard": ("world", "character", "feedback"),
+    "editor": ("feedback", "quality"),
+    "memory": (),
+    "work_meta": (),
+    "ending_judge": ("plot", "character"),
+    "knowledge_keeper": (),
+}
+
+
+def _strip_inline_comment(value):
+    """Cut a trailing ``#`` comment that follows whitespace.
+
+    A ``#`` glued to the value (token/URL) is kept, so ``a=b#c`` stays
+    ``b#c`` while ``a=b # c`` becomes ``b``.
+    """
+    cut = len(value)
+    for sep in (" #", "\t#"):
+        idx = value.find(sep)
+        if idx != -1:
+            cut = min(cut, idx)
+    return value[:cut].strip() if cut < len(value) else value.strip()
+
+
+def load_env():
+    """Load ~/.n8n/.env into a dict (without mutating os.environ), merged
+    with already-set process environment variables."""
+    # Process environment wins; ~/.n8n/.env only fills missing keys.
+    # This matches preflight.load_env and keeps explicit env overrides usable.
+    env = dict(os.environ)
+    if N8N_ENV_FILE.exists():
+        for line in N8N_ENV_FILE.read_text(encoding="utf-8").splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                # strip() does not remove U+FEFF (UTF-8 BOM), which breaks
+                # the first key when the env file has a BOM.
+                env.setdefault(k.strip().lstrip("\ufeff"), _strip_inline_comment(v))
+    return env
+
+
+def env_value(key, default=""):
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$env:PYTHONIOENCODING='"'utf-8'; .\\.venv\\Scripts\\python.exe -m pytest --collect-only -q 2>&1 | Select-Object -Last 5" in E:\code\novel-editorial
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content tools/editorial_steps.py -Encoding UTF8 | Select-Object -Skip 310 -First 35' in E:\code\novel-editorial
+ succeeded in 795ms:
+    }
+    t = str(text or "").replace("```json", "").replace("```", "").strip()
+    summary = robust_json(t)
+    if summary is None:
+        m = re.search(r"\{[\s\S]*\}", t)
+        if m:
+            summary = robust_json(m.group(0))
+    return summary or default
+
+
+def _load_flavor_words(root):
+    try:
+        from pathlib import Path
+
+        data = json.loads((Path(root) / "ai_words.json").read_text(encoding="utf-8"))
+        words = data.get("ai_flavor")
+        return words if isinstance(words, list) and words else DEFAULT_FLAVOR_WORDS
+    except (OSError, ValueError, TypeError):
+        return DEFAULT_FLAVOR_WORDS
+
+
+# 唯一权威来源是仓库根目录 ai_words.json（与 novel_editorial/quality_gate.py
+# 同源）；此内置表只是读取失败时的回退副本，禁止单独扩充，避免两处词表漂移。
+DEFAULT_FLAVOR_WORDS = [
+    "突然", "顿时", "仿佛", "缓缓", "不由得", "微微一", "嘴角", "眼神一凝", "低沉",
+    "冷哼一声", "心中一动", "不禁", "瞬间", "面无表情", "淡淡", "不由自主", "情不自禁",
+    "微微一愣", "缓缓说道", "与此同时", "一股强大的气息",
+]
+
+
+def _safe_float(value):
+    """Best-effort numeric parse; returns None for non-numeric input."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+
+ succeeded in 2858ms:
+tests/test_workday.py::WorkdayTests::test_open_write_reaches_awaiting_close
+tests/test_workday.py::WorkdayTests::test_resume_blocked_by_existing_lock
+tests/test_workday.py::WorkdayTests::test_resume_returns_to_awaiting_close
+
+572 tests collected in 1.71s
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; rg -n \"_load_flavor_words\" tools/editorial_steps.py; Write-Host '---'; rg -n \"PIPELINE_ROOT|def .*root\" tools/editorial_steps.py | Select-Object -First 15" in E:\code\novel-editorial
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content tests/test_ai_taste_check.py -Encoding UTF8 -Raw; Write-Host '---EDITORIAL_STEPS TEST---'; rg -n \"ai_words|flavor\" tests/test_editorial_steps.py" in E:\code\novel-editorial
+ succeeded in 752ms:
+321:def _load_flavor_words(root):
+364:    flavor = _load_flavor_words(root)
+---
+321:def _load_flavor_words(root):
+
+ succeeded in 871ms:
+"""Tests for AI-taste detection rules."""
+
+import unittest
+
+from tools.ai_taste_check import (
+    EXCLAMATION_PATTERN,
+    count_non_overlap,
+    count_occurrences,
+    density_per_window,
+    detect,
+)
+
+
+class AiTasteTests(unittest.TestCase):
+    def test_full_width_exclamation_patterns_detected(self):
+        samples = [
+            "？？", "！？", "？！", "？？？",
+        ]
+        for sample in samples:
+            self.assertTrue(
+                EXCLAMATION_PATTERN.search(sample),
+                f"pattern must match {sample}",
+            )
+
+    def test_detect_reports_exclamations(self):
+        result = detect("他愣住了？？怎么可能！？！？！？")
+        self.assertTrue(
+            any("连续感叹/问号" in n for n in result.get("notes", [])),
+            result.get("notes"),
+        )
+
+    def test_exclamation_pattern_ignores_single_marks(self):
+        self.assertIsNone(EXCLAMATION_PATTERN.search("他说了一句！然后问？"))
+
+    def test_detect_empty_and_falsy_inputs(self):
+        empty_report = {
+            "score": 0,
+            "flowery": {},
+            "filler": {},
+            "density": 0,
+            "notes": [],
+            "chars": 0,
+        }
+        for value in ("", None, 0):
+            self.assertEqual(detect(value), empty_report)
+
+    def test_detect_plain_text_has_no_notes(self):
+        text = "他推门走进教室，把书包放在桌上。"
+        result = detect(text)
+        self.assertEqual(result["score"], 0)
+        self.assertEqual(result["flowery"], {})
+        self.assertEqual(result["filler"], {})
+        self.assertEqual(result["density"], 0)
+        self.assertEqual(result["notes"], [])
+        self.assertEqual(result["chars"], len(text))
+
+    def test_non_overlap_counting_shared_words(self):
+        words = ["微微一", "微微一愣"]
+        self.assertEqual(count_non_overlap("微微一怔", words), 1)
+        self.assertEqual(count_occurrences("微微一怔", words), {"微微一": 1})
+        self.assertEqual(count_non_overlap("微微一怔，微微一怔", words), 2)
+
+    def test_density_per_window_basis(self):
+        self.assertEqual(density_per_window(2, 500), 2.0)
+        self.assertEqual(density_per_window(2, 1000), 1.0)
+        self.assertEqual(density_per_window(1, 1500), 0.33)
+
+    def test_detect_flowery_density_notes_and_details(self):
+        text = "璀璨耀眼磅礴深邃浩瀚凛冽"
+        result = detect(text)
+        self.assertEqual(
+            result["flowery"],
+            {
+                "璀璨": 1,
+                "耀眼": 1,
+                "磅礴": 1,
+                "深邃": 1,
+                "浩瀚": 1,
+                "凛冽": 1,
+            },
+        )
+        self.assertGreater(result["density"], 2)
+        self.assertTrue(
+            any("华丽辞藻密度" in n and "超过阈值" in n for n in result["notes"])
+        )
+        self.assertGreaterEqual(result["score"], 48)
+        self.assertEqual(result["chars"], len(text))
+
+    def test_detect_low_flowery_density_still_notes(self):
+        result = detect("璀璨" + "好" * 1000)
+        self.assertEqual(result["flowery"], {"璀璨": 1})
+        self.assertGreater(result["density"], 0)
+        self.assertLessEqual(result["density"], 2)
+        self.assertTrue(
+            any("华丽辞藻密度" in n and "可接受但留意" in n for n in result["notes"])
+        )
+
+    def test_detect_filler_overflow_note(self):
+        text = "突然，他不由自主地停下了；与此同时，仿佛隐约听见什么，微微一愣，缓缓说道：“走吧。”"
+        result = detect(text)
+        self.assertEqual(result["filler"]["突然"], 1)
+        self.assertEqual(result["filler"]["微微一愣"], 1)
+        self.assertTrue(
+            any("AI 味短语命中 7 次" in n for n in result["notes"]),
+            result.get("notes"),
+        )
+
+    def test_detect_exclamation_threshold_note(self):
+        result = detect("？！？！？！？！")
+        self.assertTrue(
+            any("连续感叹/问号 4 处" in n for n in result["notes"]),
+            result.get("notes"),
+        )
+
+    def test_detect_four_char_stacking_note(self):
+        text = "璀璨耀眼磅礴深邃，璀璨耀眼磅礴深邃"
+        result = detect(text)
+        self.assertTrue(
+            any("疑似四字排比堆砌 2 处" in n for n in result["notes"]),
+            result.get("notes"),
+        )
+
+---EDITORIAL_STEPS TEST---
+211:    def test_ai_words_fail(self):
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content tools/editorial_steps.py -Encoding UTF8 | Select-Object -Skip 340 -First 45; Write-Host '---TEST 211---'; Get-Content tests/test_editorial_steps.py -Encoding UTF8 | Select-Object -Skip 200 -First 30" in E:\code\novel-editorial
+ succeeded in 740ms:
+def _safe_float(value):
+    """Best-effort numeric parse; returns None for non-numeric input."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def quality_gate(
+    edited_text,
+    review_text,
+    reader_text,
+    editor_text,
+    title_obj,
+    target_words=2000,
+    root=None,
+):
+    """Mirror `质量门A/B`: mechanical checks + reader/editor verdicts."""
+    if not edited_text or not str(edited_text).strip():
+        return {"passed": False, "errors": ["润色正文为空"], "review": None, "reader": None}
+    edited = str(edited_text)
+    chars = len(re.findall(r"[\u4e00-\u9fff]", edited))
+    target = int(target_words or 2000)
+    flavor = _load_flavor_words(root)
+    esc = lambda w: re.escape(w)  # noqa: E731
+    cnt = lambda pat: len(re.findall(pat, edited))  # noqa: E731
+    mech = []
+    sudden = cnt(r"突然")
+    banned = cnt(re.compile("|".join(esc(w) for w in flavor)))
+    exclaim = cnt(r"！")
+    ellipsis = cnt(r"……")
+    double_q = cnt(r"[！？]{2,}")
+    if sudden > 1:
+        mech.append("突然×" + str(sudden) + "（限1）")
+    if banned > 3:
+        mech.append("AI高频词×" + str(banned))
+    if double_q > 0:
+        mech.append("连续问号/感叹号")
+    if exclaim > 8:
+        mech.append("感叹号×" + str(exclaim) + "（限8）")
+    if ellipsis > 5:
+        mech.append("省略号×" + str(ellipsis) + "（限5）")
+    if chars < int(target * 0.75):
+        mech.append("字数不足 " + str(chars) + "（目标" + str(target) + "）")
+    if mech:
+---TEST 211---
+
+
+class QualityGateTests(unittest.TestCase):
+    LONG = "他推开门走进院子，风从巷口吹来，远处传来吆喝声。" * 100
+
+    def test_too_short_fails(self):
+        gate = steps.quality_gate("短", "{}", None, None, {}, 2000)
+        self.assertFalse(gate["passed"])
+        self.assertTrue(any("字数不足" in e for e in gate["errors"]))
+
+    def test_ai_words_fail(self):
+        text = "突然" * 5 + "顿时" * 5 + self.LONG
+        gate = steps.quality_gate(text, "{}", None, None, {}, 2000)
+        self.assertFalse(gate["passed"])
+        self.assertTrue(any("AI高频词" in e for e in gate["errors"]))
+
+    def test_passes_with_verdicts(self):
+        gate = steps.quality_gate(
+            self.LONG,
+            json.dumps({"passed": True}),
+            json.dumps({"would_read_next": True, "score": 9, "hook_rating": 9}),
+            json.dumps({"verdict": "pass"}),
+            {"title": "第一章"},
+            2000,
+        )
+        self.assertTrue(gate["passed"])
+        self.assertEqual(gate["title"]["title"], "第一章")
+
+    def test_editor_missing_degrades_on_review(self):
+        gate = steps.quality_gate(
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; rg -n -i \"(api[_-]?key|token|password|cookie|secret)\\s*[=:]\\s*['\\\"][A-Za-z0-9_\\-]{12,}['\\\"]\" tests run_tests.py .env.example 2>"'$null | Select-Object -First 25' in E:\code\novel-editorial
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; rg -n \"demo\\.db|publish_queue\\.jsonl|alerts\\.log|hot_topics\\.json|exports|demo_data\" tests -g \"*.py\" | Select-Object -First 30" in E:\code\novel-editorial
+2026-08-12T14:33:18.431011Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 0.7 seconds
+Output:
+At line:2 char:144
++ ... oken|password|cookie|secret)\s*[=:]\s*['\"][A-Za-z0-9_\-]{12,}['\"]"  ...
++                                                                  ~
+Missing expression after ','.
+At line:2 char:146
++ ... -9_\-]{12,}['\"]" tests run_tests.py .env.example 2>$null | Select-Ob ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The string is missing the terminator: '.
+At line:2 char:217
++ ... "]" tests run_tests.py .env.example 2>$null | Select-Object -First 25
++                                                                          ~
+Missing ']' after array index expression.
+    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : MissingExpressionAfterToken
+ 
+
+ exited 1 in 685ms:
+At line:2 char:144
++ ... oken|password|cookie|secret)\s*[=:]\s*['\"][A-Za-z0-9_\-]{12,}['\"]"  ...
++                                                                  ~
+Missing expression after ','.
+At line:2 char:146
++ ... -9_\-]{12,}['\"]" tests run_tests.py .env.example 2>$null | Select-Ob ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The string is missing the terminator: '.
+At line:2 char:217
++ ... "]" tests run_tests.py .env.example 2>$null | Select-Object -First 25
++                                                                          ~
+Missing ']' after array index expression.
+    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : MissingExpressionAfterToken
+ 
+
+ succeeded in 929ms:
+tests\test_autopilot.py:58:        self.queue_file = os.path.join(self.tmpdir, "publish_queue.jsonl")
+tests\test_hot_topics.py:39:        out = os.path.join(tmpdir, "hot_topics.json")
+tests\test_hot_topics.py:52:        out = os.path.join(tmpdir, "hot_topics.json")
+tests\test_preflight_guard.py:33:        alert_file = os.path.join(tempfile.mkdtemp(), "alerts.log")
+tests\test_web_api.py:327:        alert_file = os.path.join(tempfile.mkdtemp(), "alerts.log")
+tests\test_review_v4.py:214:        alert_file = os.path.join(tmp, "alerts.log")
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; rg -n -i '(api_key|token|password|cookie|secret)\\s*[=:]\\s*[\"'\"'][A-Za-z0-9_\\-]{12,}[\"'\"']' tests run_tests.py .env.example | Select-Object -First 25" in E:\code\novel-editorial
+2026-08-12T14:33:22.447762Z ERROR codex_core::tools::router: error=Exit code: 1
+Wall time: 0.7 seconds
+Output:
+The string is missing the terminator: '.
+    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : TerminatorExpectedAtEndOfString
+ 
+
+ exited 1 in 676ms:
+The string is missing the terminator: '.
+    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : TerminatorExpectedAtEndOfString
+ 
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; rg -n 'test_' tests -g '*.py' -o --no-filename | Measure-Object | Select-Object Count; Write-Host '---files with zero test methods---'; Get-ChildItem tests -Filter 'test_*.py' | ForEach-Object { "'$c = (Select-String -Path $_.FullName -Pattern '"'"'^'"\\s*def test_' -AllMatches).Count; if ("'$c -eq 0) { $_.Name } }' in E:\code\novel-editorial
+ succeeded in 1046ms:
+
+---files with zero test methods---
+Count
+-----
+  576
+
+
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; rg -n -i '(api_key|token|password|cookie|secret)\\s*[=:]\\s*\"[A-Za-z0-9_\\-]{12,}\"' tests run_tests.py .env.example; if ("'$LASTEXITCODE -eq 1) { Write-Host '"'no long literal secrets found' }" in E:\code\novel-editorial
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; rg -n 'TOMATO_COOKIE|FANQIE_COOKIE|PANEL_TOKEN|N8N_API_KEY|DEEPSEEK|LLM_API_KEY' tests -g '*.py' | Select-Object -First 25" in E:\code\novel-editorial
+ succeeded in 770ms:
+no long literal secrets found
+
+ succeeded in 777ms:
+tests\test_autopilot.py:57:        self.env = {"TOMATO_COOKIE": "c", "TOMATO_CSRF_TOKEN": "t"}
+tests\test_create_book.py:118:            "FANQIE_COOKIE=cookie=1\nFANQIE_CSRF_TOKEN=tok\nFANQIE_BOOK_ID=old\n",
+tests\test_create_book.py:193:            with mock.patch("tools.create_book.load_env", return_value={"FANQIE_COOKIE": "x"}):
+tests\test_create_book.py:210:            with mock.patch("tools.create_book.load_env", return_value={"FANQIE_COOKIE": "x"}):
+tests\test_create_book.py:222:            with mock.patch("tools.create_book.load_env", return_value={"FANQIE_COOKIE": "x"}):
+tests\test_create_book.py:235:            with mock.patch("tools.create_book.load_env", return_value={"FANQIE_COOKIE": "x"}):
+tests\test_create_book.py:249:            self.assertIn("FANQIE_COOKIE", result["error"])
+tests\test_create_book.py:262:            with mock.patch("tools.create_book.load_env", return_value={"FANQIE_COOKIE": "x"}):
+tests\test_delete_book.py:35:        return_value={"FANQIE_COOKIE": "cookie=1", "FANQIE_CSRF_TOKEN": "tok"},
+tests\test_monitor.py:15:        env = {"TOMATO_COOKIE": "c", "TOMATO_CSRF_TOKEN": "t"}
+tests\test_monitor.py:31:            self.conn, env={"TOMATO_COOKIE": "c", "TOMATO_CSRF_TOKEN": "t"}
+tests\test_monitor.py:36:        env = {"TOMATO_COOKIE": "c", "TOMATO_CSRF_TOKEN": "t"}
+tests\test_monitor.py:46:        env = {"TOMATO_COOKIE": "c", "TOMATO_CSRF_TOKEN": "t"}
+tests\test_preflight_guard.py:32:        env = {"FANQIE_COOKIE": "c", "FANQIE_CSRF_TOKEN": "t"}
+tests\test_publish_stock.py:52:        env = {"FANQIE_COOKIE": "c", "FANQIE_CSRF_TOKEN": "t", "FANQIE_BOOK_ID": "b1"}
+tests\test_publish_stock.py:74:        env = {"FANQIE_COOKIE": "c", "FANQIE_CSRF_TOKEN": "t", "FANQIE_BOOK_ID": "b1"}
+tests\test_publish_stock.py:158:        env = {"FANQIE_COOKIE": "c", "FANQIE_CSRF_TOKEN": "t", "FANQIE_BOOK_ID": "b1"}
+tests\test_publish_stock.py:181:        env = {"FANQIE_COOKIE": "c", "FANQIE_CSRF_TOKEN": "t", "FANQIE_BOOK_ID": "b1"}
+tests\test_publish_stock.py:205:        env = {"FANQIE_COOKIE": "c", "FANQIE_CSRF_TOKEN": "t", "FANQIE_BOOK_ID": "b1"}
+tests\test_publish_stock.py:225:        env = {"FANQIE_COOKIE": "c", "FANQIE_CSRF_TOKEN": "t", "FANQIE_BOOK_ID": "b1"}
+tests\test_render_workflow.py:30:                                {"name": "Authorization", "value": "=Bearer {{ $env.DEEPSEEK_API_KEY }}"},
+tests\test_render_workflow.py:79:        self.assertIn("$env.PANEL_TOKEN", auth["value"])
+tests\test_review_v4.py:105:                with mock.patch("tools.publish_stock.load_env", return_value={"FANQIE_COOKIE": "c"}):
+tests\test_review_v4.py:135:                with mock.patch("tools.publish_stock.load_env", return_value={"FANQIE_COOKIE": "c"}):
+tests\test_review_v4.py:235:                with mock.patch("tools.publish_stock.load_env", return_value={"FANQIE_COOKIE": "c"}):
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command 'npm run build 2>&1 | Select-Object -Last 15' in E:\code\novel-editorial\webapp
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Content conftest.py -Encoding UTF8 -Raw' in E:\code\novel-editorial
+ succeeded in 789ms:
+"""pytest collection hygiene: ignore vendored/archived/build directories.
+
+These directories are git-ignored third-party code, archived copies, or
+build outputs; their tests must not break project-wide collection.
+"""
+
+collect_ignore = [
+    "n8n_tmp",
+    "docs/research/skills",
+    "desktop/release",
+    "exports/archive",
+    "tools/archive",
+]
+
+
+ succeeded in 8998ms:
+[32m✓[39m 5813 modules transformed.
+rendering chunks...
+computing gzip size...
+[2mdist/[22m[32mindex.html                 [39m[1m[2m  0.67 kB[22m[1m[22m[2m │ gzip:   0.41 kB[22m
+[2mdist/[22m[35massets/index-BA_dBWfG.css  [39m[1m[2m 45.28 kB[22m[1m[22m[2m │ gzip:   9.17 kB[22m
+[2mdist/[22m[36massets/react-l0sNRNKZ.js   [39m[1m[2m  0.00 kB[22m[1m[22m[2m │ gzip:   0.02 kB[22m
+[2mdist/[22m[36massets/charts-huGvxykj.js  [39m[1m[2m396.88 kB[22m[1m[22m[2m │ gzip: 116.30 kB[22m
+[2mdist/[22m[36massets/index-628EPOvt.js   [39m[1m[33m853.06 kB[39m[22m[2m │ gzip: 270.57 kB[22m
+[32m✓ built in 7.19s[39m
+node.exe : [33mGenerated an empty chunk: "react".[39m
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([33mGenerated ...: "react".[39m:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[33m
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-m
+anualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '$env:PYTHONIOENCODING='"'utf-8'; @'
+import json, re
+from pathlib import Path
+words = json.loads(Path(\"ai_words.json\").read_text(encoding=\"utf-8\"))[\"ai_flavor\"]
+n8n = Path(\"n8n/novel_workflow.json\").read_text(encoding=\"utf-8\")
+hits = [w for w in words if w not in n8n]
+print(\"words not found in n8n/novel_workflow.json:\", hits if hits else \"NONE (all present)\")
+'@ | .\\.venv\\Scripts\\python.exe -" in E:\code\novel-editorial
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; rg -n "def fake_reply|def fake_speakers|assertGreaterEqual|deadline" tests/test_meeting_free_e2e.py' in E:\code\novel-editorial
+ succeeded in 890ms:
+words not found in n8n/novel_workflow.json: NONE (all present)
+
+ succeeded in 597ms:
+21:        def fake_reply(conn_, session_id, agent, event, **kwargs):
+44:        def fake_speakers(conn_, session, event, agent_pool, **kwargs):
+86:            deadline = time.time() + 8
+103:                if count >= 2 or time.time() > deadline:
+106:            self.assertGreaterEqual(count, 2)
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $i=0; Get-Content run_tests.py -Encoding UTF8 | ForEach-Object { $i++; if ($i -ge 105 -and $i -le 130) { "{0}: {1}" -f $i, $_ } }' in E:\code\novel-editorial
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $i=0; Get-Content tests/test_meeting_free_e2e.py -Encoding UTF8 | ForEach-Object { $i++; if ($i -ge 21 -and $i -le 43) { "{0}: {1}" -f $i, $_ } }' in E:\code\novel-editorial
+ succeeded in 755ms:
+105:         )
+106:         self.assertEqual(
+107:             actual,
+108:             expected,
+109:             "env contract drift: every .env.example key must be consumed by "
+110:             "config.py or registered in EXTERNAL_CONSUMERS, and every "
+111:             "registered/config key must stay in .env.example",
+112:         )
+113:         for key, (rel, evidence) in self.EXTERNAL_CONSUMERS.items():
+114:             self.assertIn(
+115:                 evidence,
+116:                 (ROOT / rel).read_text(encoding="utf-8"),
+117:                 f"consumer file for {key} no longer references it",
+118:             )
+119: 
+120:     def test_config_defaults_match_env_example(self):
+121:         entries = self._env_example_entries()
+122:         mismatches = []
+123:         for key, default in self._config_consumed_keys().items():
+124:             if default is None or key not in entries:
+125:                 continue
+126:             if str(default) != entries[key]:
+127:                 mismatches.append(f"{key}: config={default!r} example={entries[key]!r}")
+128:         self.assertEqual(mismatches, [])
+129: 
+130: 
+
+ succeeded in 768ms:
+21:         def fake_reply(conn_, session_id, agent, event, **kwargs):
+22:             self.reply_calls.append((agent, event.get("kind")))
+23:             seq = conn_.execute(
+24:                 "SELECT COALESCE(MAX(seq),0)+1 AS s FROM meeting_messages "
+25:                 "WHERE session_id=?",
+26:                 (session_id,),
+27:             ).fetchone()["s"]
+28:             cur = conn_.execute(
+29:                 "INSERT INTO meeting_messages(session_id, novel_id, seq, from_agent, "
+30:                 "role, kind, body, status, created_at) "
+31:                 "VALUES(?,0,?,?,'assistant','speech',?,'active',"
+32:                 "datetime('now','localtime'))",
+33:                 (session_id, seq, agent, f"{agent} 的发言"),
+34:             )
+35:             conn_.commit()
+36:             return {
+37:                 "ok": True,
+38:                 "spoken": True,
+39:                 "message_id": cur.lastrowid,
+40:                 "speech": f"{agent} 的发言",
+41:                 "interaction_id": None,
+42:             }
+43: 
+
+exec
+"C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $i=0; Get-Content run_tests.py -Encoding UTF8 | ForEach-Object { $i++; if ($i -ge 94 -and $i -le 106) { "{0}: {1}" -f $i, $_ } }' in E:\code\novel-editorial
+ succeeded in 665ms:
+94:         return consumed
+95: 
+96:     def test_env_example_keys_are_all_consumed(self):
+97:         entries = self._env_example_entries()
+98:         consumed = self._config_consumed_keys()
+99:         actual = set(entries)
+100:         expected = set(consumed) | set(self.EXTERNAL_CONSUMERS)
+101:         self.assertEqual(
+102:             len(entries),
+103:             len(actual),
+104:             "duplicate KEY= lines in .env.example",
+105:         )
+106:         self.assertEqual(
+
+codex
+基线验证中 python run_tests.py 出现一次真实失败（test_meeting_free_e2e 的并发 seq 冲突，已用 barrier 模拟 10/10 复现 IntegrityError），即现有测试并非稳定全绿，按'现有测试不会 break'的标准不能判定正确；其余范围（webapp 45/45、build 通过、ai_words.json/compliance_words.txt/.env.example 与消费方契约一致、无硬编码 secret、无 fake-green 漏收集）均无问题。修复 flaky 测试后应重跑完整基线确认。
+
+Full review comments:
+
+- 修复 fake_reply 缺失的并发 seq 冲突重试（flaky 测试） — E:\code\novel-editorial\tests\test_meeting_free_e2e.py:21-42
+  完整套件首次运行 `python run_tests.py` 时 `test_full_loop_with_approval_and_finish` 失败（`AssertionError: 1 not greater than or equal to 2`，test_meeting_free_e2e.py:106），单文件、按序运行、二次完整运行均通过，属概率性 flaky。根因：kickoff 事件经 `_run_candidates` 并发派发 planner/reviewer 两个 speaker，`fake_reply`（本文件 21-42 行）直接 `SELECT MAX(seq)+1` 后 INSERT，两个连接读到相同 seq 时后者必触发 `idx_meeting_messages_session_seq` UNIQUE 冲突（novel_editorial/db.py:360-361）；用 barrier 强制两线程越过 SELECT 后并发 INSERT 可 10/10 复现 `sqlite3.IntegrityError` 且 count=1，与失败观测一致。生产实现 `reply_to_mention`（tools/meeting_executor.py:250-287）为此专门做了最多 3 次重算重试，而 `fake_reply` 未模拟该行为。建议在 `fake_reply` 中捕获 IntegrityError 重算 seq 重试（与生产一致），否则高负载或 CI 下测试间歇假红，掩盖真实回归。
+
+- 移除 run_tests.py 中恒真的重复 key 检测断言 — E:\code\novel-editorial\run_tests.py:101-105
+  `_env_example_entries()` 用 dict 存储，重复 `KEY=` 行在解析时已被后者覆盖，因此 `len(entries) == len(actual)`（dict 与其键集合）恒成立，此断言永远无法检测 .env.example 中的重复 key 行，是无效断言（dead assertion）。若要真正检测重复，应在解析时保留原始行序列并比对 key 出现次数。

@@ -1,0 +1,6 @@
+审查范围：prompts/agents/*.md 与 tools/{novel_knowledge, knowledge_keeper, distill_lessons, clean_novel_knowledge, ai_taste_check, export_agent_prompts}.py；基线：compileall 通过（exit 0），切片相关测试 34 passed，knowledge_keeper/clean_novel_knowledge --dry-run 均正常退出，export_agent_prompts 正确识别工作流 proxy 模式并退出 0。prompts 与消费方（editorial_steps/editorial_daily/record_work/web_api）的 JSON 契约核对一致，clean_novel_knowledge 的合并/去重/备份链路在合成数据上验证无异常。唯一确认缺陷是 novel_knowledge._add_conflict_draft 的去重 SQL 使同一小说第二条起的冲突草稿被静默丢弃（含复现脚本），属功能性数据丢失缺陷，故判定整体不正确；其余候选问题（历史版本语义、密度归一化、keeper 失败审计）均为设计取舍或低影响边界，未列入。
+
+Review comment:
+
+- Fix auto-conflict draft dedupe so each entity conflict gets a draft — E:\code\novel-editorial\tools\novel_knowledge.py:154-159
+  `_add_conflict_draft`（tools/novel_knowledge.py:154-159）的去重谓词是 `AND (novel_id=? OR (novel_id IS NULL AND title IN (?, ?)))`，而新写入的草稿行 novel_id 恒非空，因此 `novel_id=?` 这一支会命中该小说任意一条已存在的 auto_conflict 草稿，导致同一部小说从第二条冲突开始被静默跳过——冲突信号不会进入 knowledge_drafts 供人工审查。复现：向同一 novel 写入「火系规则」「冰系规则」后，用 `upsert_ex(..., check_similar=True)` 依次提交与二者冲突的「火系规则改」「冰系规则改」，期望 2 条草稿，实际只有 1 条（测试 test_novel_knowledge.py 只断言 `drafts >= 1`，未覆盖多条冲突）。Web 端 `/api/novel_knowledge` upsert 走的就是 `check_similar=True` 路径，首个冲突之后的全部冲突都会无声丢失。应改为按标题去重：`(novel_id=? AND title=?) OR (novel_id IS NULL AND title IN (?, ?))`。
