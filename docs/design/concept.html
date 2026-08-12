@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>文学编辑部 · 概念稿</title>
+<title>文学编辑部 · 概念稿 v2</title>
 <style>
-/* ============ 设计 token v0（概念稿） ============
-   最终实现时将迁移到 src/styles/tokens.css + Tailwind @theme。
-   图标为概念稿占位 SVG，生产实现使用 @phosphor-icons/react。 */
+/* ============ 设计 token v0.2 ============
+   暖单色 + 单一 accent；图标实现用 @phosphor-icons/react。
+   布局原则：不对称主列 + 侧栏；用分割线与留白分组，少卡片容器。 */
 :root {
   --bg: #f6f5f1;
   --surface: #ffffff;
@@ -27,8 +27,8 @@
   --warn-soft: #fbf3db;
   --bad: #9f2f2d;
   --bad-soft: #fdebec;
-  --radius-card: 10px;
-  --radius-control: 6px;
+  --radius: 10px;
+  --radius-sm: 6px;
   --shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.04);
   --font-ui: "Segoe UI Variable Text", "Microsoft YaHei UI", "PingFang SC", "Helvetica Neue", sans-serif;
   --font-mono: "Cascadia Mono", "SF Mono", "JetBrains Mono", monospace;
@@ -36,7 +36,7 @@
 [data-theme="dark"] {
   --bg: #171614;
   --surface: #1e1d1a;
-  --surface-2: #22211e;
+  --surface-2: #23221e;
   --border: #2e2c27;
   --border-strong: #3a3831;
   --text: #edeae4;
@@ -68,49 +68,41 @@ button { font-family: inherit; }
 
 /* 顶栏 */
 .titlebar {
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 10px 0 14px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-  user-select: none;
+  height: 40px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 10px 0 14px; border-bottom: 1px solid var(--border);
+  background: var(--surface); user-select: none;
 }
 .brand { display: flex; align-items: center; gap: 9px; }
 .brand-mark {
-  width: 22px; height: 22px; border-radius: 6px;
-  background: var(--text); color: var(--bg);
+  width: 22px; height: 22px; border-radius: 6px; background: var(--text); color: var(--bg);
   display: grid; place-items: center; font-size: 12px; font-weight: 700;
 }
-.brand-name { font-size: 13px; font-weight: 650; letter-spacing: 0.01em; }
+.brand-name { font-size: 13px; font-weight: 650; }
 .brand-sub { font-size: 11px; color: var(--text-3); font-family: var(--font-mono); }
-.titlebar-controls { display: flex; align-items: center; gap: 4px; }
+.titlebar-controls { display: flex; gap: 4px; }
 .win-btn {
-  width: 34px; height: 28px; border: 0; background: transparent;
-  color: var(--text-2); border-radius: 5px; cursor: pointer; font-size: 13px;
+  width: 34px; height: 28px; border: 0; background: transparent; color: var(--text-2);
+  border-radius: 5px; cursor: pointer; font-size: 13px;
 }
 .win-btn:hover { background: var(--surface-2); color: var(--text); }
 
-/* 布局 */
+/* 骨架 */
 .app-body { display: flex; height: calc(100vh - 40px); }
 .sidebar {
-  width: 224px; flex-shrink: 0; border-right: 1px solid var(--border);
-  background: var(--surface); display: flex; flex-direction: column; padding: 12px 10px;
+  width: 216px; flex-shrink: 0; border-right: 1px solid var(--border);
+  background: var(--surface); display: flex; flex-direction: column; padding: 14px 10px;
 }
-.nav-group { margin-bottom: 14px; }
+.nav-group { margin-bottom: 16px; }
 .nav-label {
   font-size: 10.5px; letter-spacing: 0.08em; color: var(--text-3);
-  text-transform: uppercase; padding: 0 8px 5px;
+  text-transform: uppercase; padding: 0 8px 6px;
 }
 .nav-item {
-  display: flex; align-items: center; gap: 9px;
-  padding: 6px 8px; border-radius: 6px; color: var(--text-2);
-  cursor: pointer; font-size: 13px; margin-bottom: 1px;
+  display: flex; align-items: center; gap: 9px; padding: 5px 8px;
+  border-radius: 6px; color: var(--text-2); cursor: pointer; font-size: 13px;
 }
 .nav-item:hover { background: var(--surface-2); color: var(--text); }
 .nav-item.active { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
-.nav-item svg { flex-shrink: 0; }
 .sidebar-foot {
   margin-top: auto; border-top: 1px solid var(--border); padding: 10px 8px 2px;
   display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2);
@@ -118,113 +110,247 @@ button { font-family: inherit; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
 
 /* 主区 */
-.main { flex: 1; overflow-y: auto; padding: 22px 26px 40px; }
-.page-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 18px; }
-.page-title { font-size: 20px; font-weight: 680; letter-spacing: -0.01em; }
-.page-desc { color: var(--text-2); font-size: 13px; margin-top: 2px; }
-.page-actions { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-2); }
-
-.card {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius-card); padding: 18px 20px;
-}
-.card + .card { margin-top: 16px; }
-.card-title { font-size: 13px; font-weight: 650; }
-.card-sub { font-size: 12px; color: var(--text-2); margin-top: 2px; }
-
-/* 状态横幅 */
-.status-banner {
-  display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 1px;
-  background: var(--border); border: 1px solid var(--border); border-radius: var(--radius-card);
-  overflow: hidden; margin-bottom: 16px;
-}
-.status-cell { background: var(--surface); padding: 16px 20px; }
-.status-label { font-size: 11px; color: var(--text-3); letter-spacing: 0.04em; }
-.status-main { display: flex; align-items: center; gap: 10px; margin-top: 6px; font-size: 17px; font-weight: 680; }
-.status-main .dot { width: 9px; height: 9px; }
-.status-desc { font-size: 12px; color: var(--text-2); margin-top: 4px; }
-.status-num { font-size: 24px; font-weight: 720; letter-spacing: -0.02em; }
-
-/* 开工控制 */
-.workday-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 14px; }
-.workday-btn {
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  height: 42px; border-radius: var(--radius-control); border: 1px solid var(--border);
-  background: var(--surface); color: var(--text); font-size: 13px; font-weight: 600;
-  cursor: pointer; transition: border-color 120ms ease, background 120ms ease;
-}
-.workday-btn:hover { border-color: var(--border-strong); background: var(--surface-2); }
-.workday-btn.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
-.workday-btn.primary:hover { background: #3a372f; border-color: #3a372f; }
-.workday-row { display: flex; gap: 10px; margin-top: 10px; }
-.workday-select {
-  height: 34px; border-radius: var(--radius-control); border: 1px solid var(--border);
-  background: var(--surface); color: var(--text); padding: 0 10px; font-size: 13px; outline: none;
-}
-.workday-input {
-  flex: 1; height: 34px; border-radius: var(--radius-control); border: 1px solid var(--border);
-  background: var(--surface); color: var(--text); padding: 0 12px; font-size: 13px; outline: none;
-}
-.workday-input::placeholder { color: var(--text-3); }
-.workday-input:focus, .workday-select:focus { border-color: var(--accent); }
-
-/* KPI */
-.kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 16px; }
-.kpi { padding: 15px 18px; }
-.kpi-label { font-size: 11.5px; color: var(--text-2); }
-.kpi-value { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-top: 3px; }
-.kpi-value.ok { color: var(--ok); }
-.kpi-value.warn { color: var(--warn); }
-.kpi-value.bad { color: var(--bad); }
-.kpi-sub { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
-
-/* 双列 */
-.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
-.budget-num { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-top: 8px; }
-.budget-track {
-  height: 6px; border-radius: 3px; background: var(--surface-2);
-  border: 1px solid var(--border); overflow: hidden; margin-top: 10px;
-}
-.budget-fill { height: 100%; width: 12%; background: var(--accent); border-radius: 3px; }
-.health-item { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ok); margin-top: 8px; }
-.health-empty { color: var(--text-2); font-size: 12.5px; margin-top: 10px; }
-
-/* 图表区 */
-.chart-box { height: 190px; margin-top: 12px; position: relative; }
-.chart-grid-line { position: absolute; left: 0; right: 0; height: 1px; background: var(--border); }
-.chart-svg { width: 100%; height: 100%; }
-.chart-legend { display: flex; gap: 14px; margin-top: 8px; font-size: 12px; color: var(--text-2); }
-.legend-dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; margin-right: 5px; vertical-align: -1px; }
-
-/* 表格 */
-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12.5px; }
-th { text-align: left; color: var(--text-3); font-weight: 550; font-size: 11px; padding: 6px 8px; border-bottom: 1px solid var(--border); }
-td { padding: 8px; border-bottom: 1px solid var(--border); color: var(--text); }
-tr:last-child td { border-bottom: 0; }
+.main { flex: 1; overflow-y: auto; padding: 28px 34px 48px; }
+.page-head { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 22px; }
+.page-title { font-size: 22px; font-weight: 700; letter-spacing: -0.015em; }
+.page-desc { color: var(--text-2); font-size: 13px; margin-top: 3px; }
+.page-meta { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--text-2); }
 .tag {
-  display: inline-flex; align-items: center; height: 20px; padding: 0 9px;
-  border-radius: 999px; font-size: 10.5px; font-weight: 600;
-  letter-spacing: 0.05em; text-transform: uppercase;
+  display: inline-flex; align-items: center; height: 20px; padding: 0 9px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em;
 }
 .tag-ok { background: var(--ok-soft); color: var(--ok); }
-.tag-bad { background: var(--bad-soft); color: var(--bad); }
+.tag-warn { background: var(--warn-soft); color: var(--warn); }
 
-/* 热点 */
-.hot-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+/* 状态带：一条横带，不做三栏 */
+.status-band {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 18px 24px; margin-bottom: 20px;
+}
+.status-left { display: flex; align-items: center; gap: 14px; }
+.status-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ok); }
+.status-title { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+.status-sub { font-size: 12.5px; color: var(--text-2); margin-top: 3px; }
+.status-right { text-align: right; }
+.status-num { font-size: 26px; font-weight: 720; letter-spacing: -0.02em; }
+.status-num-label { font-size: 12px; color: var(--text-2); }
+.status-right-sub { font-size: 11.5px; color: var(--text-3); margin-top: 3px; }
+
+/* 不对称布局：主列 2fr + 侧栏 1fr */
+.workspace { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 28px; }
+.side-col { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
+
+/* 区块：不用卡片容器，用标题 + 分割线分组 */
+.block { min-width: 0; }
+.block-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
+.block-title { font-size: 12px; font-weight: 650; letter-spacing: 0.02em; color: var(--text); }
+.block-link { font-size: 12px; color: var(--accent-text); background: none; border: 0; cursor: pointer; padding: 0; }
+
+/* 开工主操作：一条主按钮带，不铺按钮墙 */
+.open-row { display: flex; align-items: center; gap: 12px; padding: 16px 0; border-top: 1px solid var(--border); }
+.mode-seg {
+  display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  overflow: hidden; background: var(--surface); flex-shrink: 0;
+}
+.seg {
+  height: 36px; padding: 0 15px; border: 0; background: transparent; color: var(--text-2);
+  font-size: 13px; cursor: pointer; border-right: 1px solid var(--border);
+}
+.seg:last-child { border-right: 0; }
+.seg:hover { color: var(--text); background: var(--surface-2); }
+.seg.active { background: var(--text); color: var(--bg); font-weight: 600; }
+.chapter-stepper {
+  display: inline-flex; align-items: center; height: 36px; flex-shrink: 0;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+}
+.step-btn {
+  width: 32px; height: 100%; border: 0; background: transparent; color: var(--text-2);
+  font-size: 15px; cursor: pointer;
+}
+.step-btn:hover { color: var(--text); background: var(--surface-2); }
+.step-num {
+  min-width: 34px; text-align: center; font-size: 14px; font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.step-unit { font-size: 11px; color: var(--text-3); margin-right: 6px; }
+.boss-input {
+  flex: 1; min-width: 140px; height: 36px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  padding: 0 12px; font-size: 13px; outline: none;
+}
+.boss-input::placeholder { color: var(--text-3); }
+.boss-input:focus { border-color: var(--accent); }
+.open-primary {
+  display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 20px;
+  border-radius: var(--radius-sm); border: 1px solid var(--text); background: var(--text); color: var(--bg);
+  font-size: 13.5px; font-weight: 650; cursor: pointer; flex-shrink: 0;
+}
+.open-primary:hover { opacity: 0.88; }
+.open-note { font-size: 11.5px; color: var(--text-3); margin-top: 10px; }
+
+/* 今日时间线 */
+.timeline { border-top: 1px solid var(--border); }
+.tl-row {
+  display: flex; align-items: baseline; gap: 14px; padding: 9px 0;
+  border-bottom: 1px solid var(--border); font-size: 12.5px;
+}
+.tl-row:last-child { border-bottom: 0; }
+.tl-time { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-3); width: 52px; flex-shrink: 0; }
+.tl-text { color: var(--text-2); }
+.tl-text strong { color: var(--text); font-weight: 600; }
+.tl-tag { margin-left: auto; }
+.tl-tag.ok { color: var(--ok); background: var(--ok-soft); }
+
+/* 图表 */
+.chart-area { border-top: 1px solid var(--border); padding-top: 14px; }
+.chart-box { height: 170px; position: relative; }
+.chart-svg { width: 100%; height: 100%; }
+.chart-legend { display: flex; gap: 14px; margin-top: 10px; font-size: 11.5px; color: var(--text-2); }
+.legend-line { width: 14px; height: 2px; display: inline-block; margin-right: 5px; vertical-align: middle; }
+
+/* 侧栏小块：分隔线分组 */
+.side-block { min-width: 0; }
+.side-title { font-size: 12px; font-weight: 650; margin-bottom: 10px; }
+.side-empty { font-size: 12.5px; color: var(--text-3); line-height: 1.6; }
+.side-item { padding: 10px 0; border-top: 1px solid var(--border); }
+.side-item:first-of-type { border-top: 0; }
+.side-item-title { font-size: 13px; font-weight: 600; }
+.side-item-desc { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+.side-item-meta { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+.side-action { font-size: 12px; color: var(--accent-text); background: none; border: 0; cursor: pointer; padding: 0; margin-top: 4px; }
+.budget-row { display: flex; align-items: baseline; justify-content: space-between; margin-top: 4px; }
+.budget-num { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
+.budget-track { height: 5px; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--border); margin-top: 10px; overflow: hidden; }
+.budget-fill { height: 100%; width: 12%; background: var(--accent); }
+.metric-line { display: flex; justify-content: space-between; font-size: 12.5px; padding: 7px 0; border-top: 1px solid var(--border); }
+.metric-line:first-of-type { border-top: 0; }
+.metric-label { color: var(--text-2); }
+.metric-value { font-weight: 650; }
+.metric-value.ok { color: var(--ok); }
+.hot-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .hot-chip {
-  height: 24px; padding: 0 10px; border-radius: 999px; font-size: 11.5px;
+  height: 22px; padding: 0 9px; border-radius: 999px; font-size: 11px;
   background: var(--accent-soft); color: var(--accent-text); display: inline-flex; align-items: center;
 }
-.hot-list { margin-top: 12px; font-size: 12.5px; color: var(--text-2); display: grid; gap: 6px; }
 
-/* 小控件 */
-.btn {
-  height: 30px; padding: 0 12px; border-radius: var(--radius-control);
-  border: 1px solid var(--border); background: var(--surface); color: var(--text-2);
-  font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+/* ============ 多页概念稿通用样式 ============ */
+.page { display: none; }
+.page.active { display: block; }
+
+/* 表格 */
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th {
+  text-align: left; color: var(--text-3); font-weight: 550; font-size: 11px;
+  padding: 7px 10px; border-bottom: 1px solid var(--border);
 }
-.btn:hover { background: var(--surface-2); color: var(--text); }
-.text-btn { background: none; border: 0; color: var(--accent-text); cursor: pointer; font-size: 12px; padding: 0; }
+td { padding: 9px 10px; border-bottom: 1px solid var(--border); }
+tr:last-child td { border-bottom: 0; }
+tr:hover td { background: var(--surface-2); }
+
+/* 表单 */
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 24px; }
+.field { min-width: 0; }
+.field-label { font-size: 12px; color: var(--text-2); margin-bottom: 6px; }
+.field-input, .field-select {
+  width: 100%; height: 34px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); padding: 0 10px; font-size: 13px; outline: none;
+}
+.field-input:focus, .field-select:focus { border-color: var(--accent); }
+.field-textarea {
+  width: 100%; min-height: 96px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); padding: 10px; font-size: 13px; outline: none;
+  resize: vertical; font-family: inherit; line-height: 1.6;
+}
+.field-textarea:focus { border-color: var(--accent); }
+
+/* 分段 tabs */
+.tabs { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.tab {
+  height: 32px; padding: 0 14px; border: 0; background: transparent; color: var(--text-2);
+  font-size: 12.5px; cursor: pointer; border-right: 1px solid var(--border);
+}
+.tab:last-child { border-right: 0; }
+.tab.active { background: var(--text); color: var(--bg); font-weight: 600; }
+
+/* agent 列表与消息 */
+.agent-list { border-top: 1px solid var(--border); }
+.agent-item {
+  display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border);
+  cursor: pointer; font-size: 13px;
+}
+.agent-item.active { color: var(--accent-text); font-weight: 600; }
+.agent-avatar {
+  width: 28px; height: 28px; border-radius: 8px; background: var(--accent-soft);
+  color: var(--accent-text); display: grid; place-items: center; font-size: 12px; font-weight: 650;
+  flex-shrink: 0;
+}
+.agent-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); margin-left: auto; flex-shrink: 0; }
+.badge-num {
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--bad-soft);
+  color: var(--bad); font-size: 10.5px; font-weight: 650; display: grid; place-items: center; margin-left: auto;
+}
+.msg-list { border-top: 1px solid var(--border); }
+.msg-row {
+  display: grid; grid-template-columns: 56px 1fr auto; gap: 12px; align-items: start;
+  padding: 12px 0; border-bottom: 1px solid var(--border);
+}
+.msg-avatars { display: flex; align-items: center; }
+.msg-avatars .agent-avatar { width: 24px; height: 24px; font-size: 11px; }
+.msg-avatars .agent-avatar + .agent-avatar { margin-left: -6px; }
+.msg-subject { font-size: 13px; font-weight: 600; }
+.msg-body { font-size: 12px; color: var(--text-2); margin-top: 2px; line-height: 1.6; }
+.msg-time { font-size: 11px; color: var(--text-3); font-family: var(--font-mono); }
+
+/* 会议 */
+.meet-row { padding: 14px 0; border-top: 1px solid var(--border); }
+.meet-row:first-of-type { border-top: 0; }
+.meet-title { font-size: 13.5px; font-weight: 650; }
+.meet-meta { font-size: 12px; color: var(--text-2); margin-top: 3px; }
+.meet-summary { font-size: 12px; color: var(--text-3); margin-top: 5px; line-height: 1.6; }
+
+/* 作品库 */
+.project-row {
+  display: flex; align-items: center; gap: 12px; padding: 11px 0;
+  border-bottom: 1px solid var(--border); cursor: pointer; font-size: 13px;
+}
+.project-cover {
+  width: 34px; height: 44px; border-radius: 4px; background: var(--accent-soft);
+  border: 1px solid var(--border); flex-shrink: 0;
+}
+.project-meta { min-width: 0; }
+.project-name { font-weight: 600; }
+.project-sub { font-size: 11.5px; color: var(--text-3); }
+
+/* 成本柱状 */
+.bar-chart { display: flex; align-items: flex-end; gap: 8px; height: 120px; margin-top: 14px; border-bottom: 1px solid var(--border); }
+.bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end; }
+.bar {
+  width: 100%; max-width: 30px; border-radius: 3px 3px 0 0; background: var(--accent-soft);
+  border: 1px solid var(--accent); border-bottom: 0;
+}
+.bar.hot { background: var(--accent); }
+.bar-label { font-size: 10px; color: var(--text-3); font-family: var(--font-mono); }
+
+/* 链路画布 */
+.flow-canvas {
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+  padding: 24px; margin-top: 14px; overflow: hidden;
+}
+.flow-line { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.flow-node {
+  height: 30px; padding: 0 13px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text-2); font-size: 12px;
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+}
+.flow-node.ok { border-color: var(--ok); color: var(--ok); background: var(--ok-soft); }
+.flow-node.run { border-color: var(--accent); color: var(--accent-text); background: var(--accent-soft); }
+.flow-arrow { color: var(--text-3); font-size: 12px; flex-shrink: 0; }
+.flow-legend { display: flex; gap: 16px; margin-top: 16px; font-size: 11.5px; color: var(--text-2); }
+.flow-legend .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+
+/* 筛选行 */
+.filter-row { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-top: 1px solid var(--border); }
 </style>
 </head>
 <body>
@@ -247,33 +373,33 @@ tr:last-child td { border-bottom: 0; }
       <nav>
         <div class="nav-group">
           <div class="nav-label">总览</div>
-          <div class="nav-item active">
+          <div class="nav-item active" data-page="dashboard">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
             仪表盘
           </div>
         </div>
         <div class="nav-group">
           <div class="nav-label">编辑部</div>
-          <div class="nav-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 6h16M4 12h10M4 18h7"/></svg>消息流</div>
-          <div class="nav-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c1-3.5 3.8-5 7-5s6 1.5 7 5"/></svg>Agent 管理</div>
-          <div class="nav-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 6h16M4 12h16M4 18h10"/></svg>会议中心</div>
+          <div class="nav-item" data-page="editorial"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 6h16M4 12h10M4 18h7"/></svg>消息流</div>
+          <div class="nav-item" data-page="agents"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c1-3.5 3.8-5 7-5s6 1.5 7 5"/></svg>Agent 管理</div>
+          <div class="nav-item" data-page="meetings"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 6h16M4 12h16M4 18h10"/></svg>会议中心</div>
         </div>
         <div class="nav-group">
           <div class="nav-label">创作</div>
-          <div class="nav-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 4h14v16H5zM9 8h6M9 12h6"/></svg>作品库</div>
-          <div class="nav-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 5h14M5 12h14M5 19h9"/></svg>章节管理</div>
-          <div class="nav-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg>阅读数据</div>
+          <div class="nav-item" data-page="works"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 4h14v16H5zM9 8h6M9 12h6"/></svg>作品库</div>
+          <div class="nav-item" data-page="chapters"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 5h14M5 12h14M5 19h9"/></svg>章节管理</div>
+          <div class="nav-item" data-page="reader"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg>阅读数据</div>
         </div>
         <div class="nav-group">
           <div class="nav-label">运营</div>
-          <div class="nav-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 3"/></svg>成本中心</div>
-          <div class="nav-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1"/></svg>执行记录</div>
-          <div class="nav-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 4h6v6H4zM14 14h6v6h-6zM14 4h6v6h-6zM4 14h6v6H4z"/></svg>链路</div>
+          <div class="nav-item" data-page="cost"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 3"/></svg>成本中心</div>
+          <div class="nav-item" data-page="executions"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1"/></svg>执行记录</div>
+          <div class="nav-item" data-page="flow"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 4h6v6H4zM14 14h6v6h-6zM14 4h6v6h-6zM4 14h6v6H4z"/></svg>链路</div>
         </div>
         <div class="nav-group">
           <div class="nav-label">系统</div>
-          <div class="nav-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 00-.2-1.7l2-1.5-2-3.4-2.3 1a7 7 0 00-3-1.7L13 2h-4l-.5 2.7a7 7 0 00-3 1.7l-2.3-1-2 3.4 2 1.5A7 7 0 005 12a7 7 0 00.2 1.7l-2 1.5 2 3.4 2.3-1a7 7 0 003 1.7L9 22h4l.5-2.7a7 7 0 003-1.7l2.3 1 2-3.4-2-1.5A7 7 0 0019 12z"/></svg>系统设置</div>
-          <div class="nav-item"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 12h6M12 9v6M5 20l1-3M4 8l3-1M16 5l3 1M19 12v3l-2 3H7l-2-3v-3"/></svg>留痕档案</div>
+          <div class="nav-item" data-page="settings"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 00-.2-1.7l2-1.5-2-3.4-2.3 1a7 7 0 00-3-1.7L13 2h-4l-.5 2.7a7 7 0 00-3 1.7l-2.3-1-2 3.4 2 1.5A7 7 0 005 12a7 7 0 00.2 1.7l-2 1.5 2 3.4 2.3-1a7 7 0 003 1.7L9 22h4l.5-2.7a7 7 0 003-1.7l2.3 1 2-3.4-2-1.5A7 7 0 0019 12z"/></svg>系统设置</div>
+          <div class="nav-item" data-page="audit"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 12h6M12 9v6M5 20l1-3M4 8l3-1M16 5l3 1M19 12v3l-2 3H7l-2-3v-3"/></svg>留痕档案</div>
         </div>
       </nav>
       <div class="sidebar-foot">
@@ -283,147 +409,745 @@ tr:last-child td { border-bottom: 0; }
     </aside>
 
     <main class="main">
+      <section class="page active" data-page="dashboard">
       <div class="page-head">
         <div>
           <div class="page-title">仪表盘</div>
-          <div class="page-desc">编辑部实时总览：状态、产出、成本与健康</div>
+          <div class="page-desc">编辑部现在的状态，和需要您留意的事</div>
         </div>
-        <div class="page-actions">
+        <div class="page-meta">
           <span>2026-08-12 18:04</span>
           <span class="tag tag-ok">实时</span>
-          <button class="btn">刷新</button>
+          <button style="background:none;border:0;color:var(--text-2);cursor:pointer;font-size:12px">刷新</button>
         </div>
       </div>
 
-      <div class="status-banner">
-        <div class="status-cell">
-          <div class="status-label">编辑部状态</div>
-          <div class="status-main"><span class="dot"></span>待命</div>
-          <div class="status-desc">每日 08:00 自动更新，可随时手动开工</div>
-        </div>
-        <div class="status-cell">
-          <div class="status-label">今日任务</div>
-          <div class="status-main"><span class="status-num">2</span><span style="font-size:13px;color:var(--text-2);font-weight:500">章已发布</span></div>
-          <div class="status-desc">今天已完成日更，存稿 3 章</div>
-        </div>
-        <div class="status-cell">
-          <div class="status-label">上次执行</div>
-          <div class="status-main" style="font-size:15px">日更 · 成功</div>
-          <div class="status-desc">2026-08-12 08:03 · 发布 2 章</div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">编辑部开工</div>
-        <div class="card-sub">开工即上班：晨会 → 主产出 → 决策点（收工 / 开会 / 继续）</div>
-        <div class="workday-grid">
-          <button class="workday-btn primary">写稿 2 章</button>
-          <button class="workday-btn">整理日</button>
-          <button class="workday-btn">开会日</button>
-          <button class="workday-btn">自由安排</button>
-        </div>
-        <div class="workday-row">
-          <select class="workday-select">
-            <option>2 章</option>
-            <option>3 章</option>
-            <option>4 章</option>
-            <option>5 章</option>
-          </select>
-          <input class="workday-input" placeholder="老板指令（可选），如：今天赶两章" />
-        </div>
-      </div>
-
-      <div class="kpi-grid">
-        <div class="card kpi"><div class="kpi-label">连载作品</div><div class="kpi-value">1</div><div class="kpi-sub">1 本在更</div></div>
-        <div class="card kpi"><div class="kpi-label">章节总数</div><div class="kpi-value">42</div><div class="kpi-sub">含 2 章草稿</div></div>
-        <div class="card kpi"><div class="kpi-label">已发布</div><div class="kpi-value ok">40</div><div class="kpi-sub">番茄平台</div></div>
-        <div class="card kpi"><div class="kpi-label">待发布</div><div class="kpi-value warn">2</div><div class="kpi-sub">存稿池</div></div>
-        <div class="card kpi"><div class="kpi-label">质量通过率</div><div class="kpi-value ok">96%</div><div class="kpi-sub">近 50 次审稿</div></div>
-        <div class="card kpi"><div class="kpi-label">发布失败</div><div class="kpi-value ok">0</div><div class="kpi-sub">近 7 天</div></div>
-        <div class="card kpi"><div class="kpi-label">本月成本</div><div class="kpi-value">¥12.4</div><div class="kpi-sub">预算 ¥100</div></div>
-        <div class="card kpi"><div class="kpi-label">健康问题</div><div class="kpi-value ok">0</div><div class="kpi-sub">全部正常</div></div>
-      </div>
-
-      <div class="two-col">
-        <div class="card">
-          <div class="card-title">月度预算</div>
-          <div class="budget-num">¥12.4 <span style="font-size:12px;color:var(--text-3);font-weight:500">/ ¥100 · 12%</span></div>
-          <div class="budget-track"><div class="budget-fill"></div></div>
-          <div class="card-sub" style="margin-top:12px">预算来自系统设置；成本按日与节点明细见「成本中心」。</div>
-        </div>
-        <div class="card">
-          <div class="card-title">健康检查</div>
-          <div class="health-empty">全部正常，无需干预。最近一次预检 2 分钟前通过。</div>
-        </div>
-      </div>
-
-      <div class="two-col">
-        <div class="card">
-          <div class="card-title">完读率 / 追读率</div>
-          <div class="chart-box">
-            <svg class="chart-svg" viewBox="0 0 480 190" preserveAspectRatio="none">
-              <line x1="0" y1="20" x2="480" y2="20" stroke="var(--border)" stroke-width="1"/>
-              <line x1="0" y1="70" x2="480" y2="70" stroke="var(--border)" stroke-width="1"/>
-              <line x1="0" y1="120" x2="480" y2="120" stroke="var(--border)" stroke-width="1"/>
-              <line x1="0" y1="170" x2="480" y2="170" stroke="var(--border)" stroke-width="1"/>
-              <polyline points="0,150 60,138 120,142 180,118 240,122 300,104 360,110 420,88 480,92" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              <polyline points="0,165 60,160 120,156 180,150 240,146 300,140 360,136 420,128 480,124" fill="none" stroke="var(--ok)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </div>
-          <div class="chart-legend">
-            <span><span class="legend-dot" style="background:var(--accent)"></span>完读率</span>
-            <span><span class="legend-dot" style="background:var(--ok)"></span>追读率</span>
-            <span style="margin-left:auto;color:var(--text-3)">第 1 – 40 章</span>
+      <div class="status-band">
+        <div class="status-left">
+          <span class="status-dot"></span>
+          <div>
+            <div class="status-title">待命</div>
+            <div class="status-sub">08:00 自动更新 · 随时可手动开工</div>
           </div>
         </div>
-        <div class="card">
-          <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
-            最近发布
-            <button class="text-btn">查看全部</button>
+        <div class="status-right">
+          <span class="status-num">2</span>
+          <span class="status-num-label">章已发布</span>
+          <div class="status-right-sub">存稿 3 章 · 上次运行成功</div>
+        </div>
+      </div>
+
+      <div class="workspace">
+        <div class="side-col">
+          <div class="block">
+            <div class="block-head">
+              <span class="block-title">编辑部开工</span>
+              <span class="block-link">查看运行链路</span>
+            </div>
+            <div class="open-row">
+              <div class="mode-seg">
+                <button class="seg active">写稿</button>
+                <button class="seg">整理日</button>
+                <button class="seg">开会日</button>
+                <button class="seg">自由安排</button>
+              </div>
+              <div class="chapter-stepper">
+                <button class="step-btn">−</button>
+                <span class="step-num">2</span>
+                <span class="step-unit">章</span>
+                <button class="step-btn">+</button>
+              </div>
+              <input class="boss-input" placeholder="老板指令（可选），如：今天赶两章" />
+              <button class="open-primary">开工</button>
+            </div>
+            <div class="open-note">开工即上班：晨会 → 主产出 → 决策点（收工 / 开会 / 继续）</div>
           </div>
+
+          <div class="block">
+            <div class="block-head">
+              <span class="block-title">今日记录</span>
+              <button class="block-link">全部执行记录</button>
+            </div>
+            <div class="timeline">
+              <div class="tl-row">
+                <span class="tl-time">08:03</span>
+                <span class="tl-text"><strong>#42</strong> 已发布至番茄，AI 声明已附</span>
+                <span class="tl-tag tag-ok">成功</span>
+              </div>
+              <div class="tl-row">
+                <span class="tl-time">08:01</span>
+                <span class="tl-text"><strong>#41</strong> 已发布至番茄</span>
+                <span class="tl-tag tag-ok">成功</span>
+              </div>
+              <div class="tl-row">
+                <span class="tl-time">07:50</span>
+                <span class="tl-text"><strong>晨会</strong> 今日安排：双轨写稿，墨白 × 阿读</span>
+              </div>
+              <div class="tl-row">
+                <span class="tl-time">07:42</span>
+                <span class="tl-text"><strong>预检</strong> 设定、存稿、预算检查通过</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="block">
+            <div class="block-head">
+              <span class="block-title">行动项</span>
+              <button class="block-link">全部行动项</button>
+            </div>
+            <div class="timeline">
+              <div class="tl-row">
+                <span class="tl-time">墨白</span>
+                <span class="tl-text"><strong>整理规则台账模板</strong> · 本周完成</span>
+                <span class="tl-tag tag-ok">进行中</span>
+              </div>
+              <div class="tl-row">
+                <span class="tl-time">博闻</span>
+                <span class="tl-text"><strong>知识库维护草案</strong> · 待人工采纳</span>
+                <span class="tl-tag tag-warn">待办</span>
+              </div>
+              <div class="tl-row">
+                <span class="tl-time">文策</span>
+                <span class="tl-text"><strong>下周选题方向初稿</strong></span>
+                <span class="tl-tag tag-warn">待办</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="side-col">
+          <div class="side-block">
+            <div class="side-title">需要您决定</div>
+            <div class="side-empty">暂无待决定事项，编辑部运行平稳。</div>
+          </div>
+
+          <div class="side-block">
+            <div class="side-title">本月</div>
+            <div class="budget-row">
+              <span class="budget-num">¥12.4</span>
+              <span style="font-size:12px;color:var(--text-3)">预算 ¥100 · 12%</span>
+            </div>
+            <div class="budget-track"><div class="budget-fill"></div></div>
+            <div class="metric-line"><span class="metric-label">质量通过率</span><span class="metric-value ok">96%</span></div>
+            <div class="metric-line"><span class="metric-label">健康问题</span><span class="metric-value ok">0</span></div>
+            <div class="metric-line"><span class="metric-label">发布失败（近 7 天）</span><span class="metric-value ok">0</span></div>
+          </div>
+
+          <div class="side-block">
+            <div class="side-title">最近会议</div>
+            <div class="side-item">
+              <div class="side-item-title">周会 #17 · 规则怪谈选题</div>
+              <div class="side-item-desc">决定新书方向与开篇三连击，3 项行动项已分派。</div>
+              <div class="side-item-meta">08-11 20:00 · 6 人参会</div>
+              <button class="side-action">查看纪要</button>
+            </div>
+          </div>
+
+          <div class="side-block">
+            <div class="side-title">热点选题</div>
+            <div class="hot-chips">
+              <span class="hot-chip">规则怪谈 ×12</span>
+              <span class="hot-chip">无限流 ×9</span>
+              <span class="hot-chip">克苏鲁 ×7</span>
+            </div>
+            <div class="side-item-meta" style="margin-top:8px">番茄 / 起点 / 纵横 · 更新于 08:00</div>
+          </div>
+        </div>
+      </div>
+      </section>
+
+      <!-- 运营 · 成本中心 -->
+      <section class="page" data-page="cost">
+        <div class="page-head">
+          <div>
+            <div class="page-title">成本中心</div>
+            <div class="page-desc">API 花费与预算控制</div>
+          </div>
+          <div class="page-meta"><span class="tag tag-ok">预算内</span></div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+          <div style="border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);padding:14px 18px">
+            <div style="font-size:11.5px;color:var(--text-2)">本月成本</div>
+            <div style="font-size:20px;font-weight:700;margin-top:3px">¥12.4</div>
+          </div>
+          <div style="border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);padding:14px 18px">
+            <div style="font-size:11.5px;color:var(--text-2)">预算</div>
+            <div style="font-size:20px;font-weight:700;margin-top:3px">¥100</div>
+          </div>
+          <div style="border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);padding:14px 18px">
+            <div style="font-size:11.5px;color:var(--text-2)">日均</div>
+            <div style="font-size:20px;font-weight:700;margin-top:3px">¥1.03</div>
+          </div>
+          <div style="border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);padding:14px 18px">
+            <div style="font-size:11.5px;color:var(--text-2)">今日</div>
+            <div style="font-size:20px;font-weight:700;margin-top:3px">¥0.42</div>
+          </div>
+        </div>
+        <div class="block" style="margin-top:24px">
+          <div class="block-head">
+            <span class="block-title">近 14 天</span>
+            <span style="font-size:11.5px;color:var(--text-3)">单位 ¥</span>
+          </div>
+          <div class="bar-chart">
+            <div class="bar-col"><div class="bar" style="height:18%"></div><span class="bar-label">1</span></div>
+            <div class="bar-col"><div class="bar" style="height:32%"></div><span class="bar-label">3</span></div>
+            <div class="bar-col"><div class="bar" style="height:24%"></div><span class="bar-label">5</span></div>
+            <div class="bar-col"><div class="bar" style="height:45%"></div><span class="bar-label">7</span></div>
+            <div class="bar-col"><div class="bar" style="height:36%"></div><span class="bar-label">9</span></div>
+            <div class="bar-col"><div class="bar hot" style="height:58%"></div><span class="bar-label">11</span></div>
+            <div class="bar-col"><div class="bar" style="height:28%"></div><span class="bar-label">13</span></div>
+          </div>
+        </div>
+        <div class="block" style="margin-top:24px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);padding:6px 16px">
           <table>
-            <thead><tr><th>章节</th><th>平台</th><th>动作</th><th>结果</th><th>AI 声明</th></tr></thead>
+            <thead><tr><th>日期</th><th>节点</th><th>调用</th><th>模型</th><th>金额</th></tr></thead>
             <tbody>
-              <tr><td>#42</td><td>番茄</td><td>发布</td><td><span class="tag tag-ok">成功</span></td><td>是</td></tr>
-              <tr><td>#41</td><td>番茄</td><td>发布</td><td><span class="tag tag-ok">成功</span></td><td>是</td></tr>
-              <tr><td>#40</td><td>番茄</td><td>发布</td><td><span class="tag tag-ok">成功</span></td><td>是</td></tr>
-              <tr><td>#39</td><td>番茄</td><td>发布</td><td><span class="tag tag-ok">成功</span></td><td>是</td></tr>
+              <tr><td>08-12</td><td>写稿 A 轨</td><td>2</td><td>flash</td><td>¥0.21</td></tr>
+              <tr><td>08-12</td><td>审稿</td><td>2</td><td>flash</td><td>¥0.09</td></tr>
+              <tr><td>08-12</td><td>晨会</td><td>1</td><td>pro</td><td>¥0.12</td></tr>
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
-      <div class="card" style="margin-top:16px">
-        <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
-          热点选题
-          <button class="btn">采集</button>
+      <!-- 运营 · 执行记录 -->
+      <section class="page" data-page="executions">
+        <div class="page-head">
+          <div>
+            <div class="page-title">执行记录</div>
+            <div class="page-desc">每次运行的完整留痕与失败详情</div>
+          </div>
+          <div class="page-meta"><span class="tag tag-ok">30 秒自动刷新</span></div>
         </div>
-        <div class="hot-row">
-          <span class="hot-chip">规则怪谈 ×12</span>
-          <span class="hot-chip">无限流 ×9</span>
-          <span class="hot-chip">克苏鲁 ×7</span>
-          <span class="hot-chip">系统流 ×6</span>
-          <span class="hot-chip">基建种田 ×5</span>
+        <div class="block">
+          <div class="meet-row">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span class="tag tag-ok">成功</span>
+              <span style="font-size:13px;font-weight:650">日更 · 手动开工</span>
+              <span style="font-size:12px;color:var(--text-3)">发布 2 章</span>
+            </div>
+            <div class="meet-meta">08-12 08:03 · 用时 11 分 42 秒</div>
+            <button class="side-action" style="margin-top:6px">查看详情</button>
+          </div>
+          <div class="meet-row">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span class="tag tag-warn">部分成功</span>
+              <span style="font-size:13px;font-weight:650">日更 · 定时</span>
+              <span style="font-size:12px;color:var(--text-3)">发布 1 章 · B 轨失败</span>
+            </div>
+            <div class="meet-meta">08-11 08:00 · 失败节点：质量门 B</div>
+            <button class="side-action" style="margin-top:6px">查看详情</button>
+          </div>
         </div>
-        <div class="hot-list">
-          <span>番茄 · browser · 40 本 · 更新于 08:00</span>
-          <span>起点 · browser · 36 本 · 更新于 08:00</span>
-          <span>纵横 · html · 40 本 · 更新于 08:00</span>
+      </section>
+
+      <!-- 运营 · 链路 -->
+      <section class="page" data-page="flow">
+        <div class="page-head">
+          <div>
+            <div class="page-title">链路</div>
+            <div class="page-desc">调度全链路拓扑，不运行也能人工审查</div>
+          </div>
         </div>
-      </div>
-    </main>
+        <div class="flow-canvas">
+          <div class="flow-line">
+            <span class="flow-node run">触发</span><span class="flow-arrow">→</span>
+            <span class="flow-node ok">预检</span><span class="flow-arrow">→</span>
+            <span class="flow-node ok">分派</span><span class="flow-arrow">→</span>
+            <span class="flow-node ok">晨会</span><span class="flow-arrow">→</span>
+            <span class="flow-node">大纲</span>
+          </div>
+          <div class="flow-line">
+            <span class="flow-node">写稿 A</span><span class="flow-arrow">→</span>
+            <span class="flow-node">润色</span><span class="flow-arrow">→</span>
+            <span class="flow-node">审稿</span><span class="flow-arrow">→</span>
+            <span class="flow-node">读者审</span><span class="flow-arrow">→</span>
+            <span class="flow-node">终审</span><span class="flow-arrow">→</span>
+            <span class="flow-node ok">质量门</span>
+          </div>
+          <div class="flow-line">
+            <span class="flow-node">写稿 B</span><span class="flow-arrow">→</span>
+            <span class="flow-node">润色</span><span class="flow-arrow">→</span>
+            <span class="flow-node">审稿</span><span class="flow-arrow">→</span>
+            <span class="flow-node">质量门</span>
+          </div>
+          <div class="flow-line">
+            <span class="flow-node ok">发布</span><span class="flow-arrow">→</span>
+            <span class="flow-node">归档</span><span class="flow-arrow">→</span>
+            <span class="flow-node">日记</span><span class="flow-arrow">→</span>
+            <span class="flow-node">知识同步</span><span class="flow-arrow">→</span>
+            <span class="flow-node">收工</span>
+          </div>
+          <div class="flow-legend">
+            <span><span class="dot" style="background:var(--accent)"></span>运行中</span>
+            <span><span class="dot" style="background:var(--ok)"></span>上次成功</span>
+            <span><span class="dot" style="background:var(--warn)"></span>上次失败</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 系统 · 系统设置 -->
+      <section class="page" data-page="settings">
+        <div class="page-head">
+          <div>
+            <div class="page-title">系统设置</div>
+            <div class="page-desc">运行、预算、模型与风格</div>
+          </div>
+          <div class="page-meta"><button class="open-primary" style="height:30px;font-size:12px">保存</button></div>
+        </div>
+        <div class="workspace" style="grid-template-columns:minmax(0,1fr) minmax(0,2.2fr)">
+          <div class="side-col">
+            <div class="side-block">
+              <div class="agent-list">
+                <div class="agent-item active">运行</div>
+                <div class="agent-item">预算</div>
+                <div class="agent-item">模型</div>
+                <div class="agent-item">风格</div>
+                <div class="agent-item">高级</div>
+              </div>
+            </div>
+          </div>
+          <div class="side-col">
+            <div class="side-block" style="border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);padding:20px">
+              <div class="form-grid">
+                <div class="field">
+                  <div class="field-label">手动开工</div>
+                  <div class="mode-seg"><button class="seg active">开启</button><button class="seg">关闭</button></div>
+                </div>
+                <div class="field">
+                  <div class="field-label">自动定时</div>
+                  <div class="mode-seg"><button class="seg">开启</button><button class="seg active">关闭</button></div>
+                </div>
+                <div class="field">
+                  <div class="field-label">调度时间</div>
+                  <input class="field-input" value="08:00" />
+                </div>
+                <div class="field">
+                  <div class="field-label">默认章数</div>
+                  <input class="field-input" value="2" />
+                </div>
+                <div class="field">
+                  <div class="field-label">月预算（¥）</div>
+                  <input class="field-input" value="100" />
+                </div>
+                <div class="field">
+                  <div class="field-label">目标字数 / 章</div>
+                  <input class="field-input" value="2400" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 系统 · 留痕档案 -->
+      <section class="page" data-page="audit">
+        <div class="page-head">
+          <div>
+            <div class="page-title">留痕档案</div>
+            <div class="page-desc">编辑部全量事件审计</div>
+          </div>
+        </div>
+        <div class="filter-row">
+          <select class="field-select" style="width:150px"><option>全部类别</option><option>设置</option><option>操作</option><option>Agent</option><option>发布</option></select>
+          <input class="boss-input" style="max-width:200px" placeholder="起始日期" value="2026-08-01" />
+          <span style="font-size:12px;color:var(--text-3)">至</span>
+          <input class="boss-input" style="max-width:200px" placeholder="结束日期" value="2026-08-12" />
+          <input class="boss-input" style="max-width:240px;margin-left:auto" placeholder="搜索事件" />
+        </div>
+        <div class="block" style="border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);padding:6px 16px">
+          <table>
+            <thead><tr><th>时间</th><th>类别</th><th>操作者</th><th>事件</th><th>结果</th></tr></thead>
+            <tbody>
+              <tr><td>08-12 08:03</td><td>发布</td><td>调度器</td><td>发布第 42 章</td><td><span class="tag tag-ok">成功</span></td></tr>
+              <tr><td>08-12 07:42</td><td>预检</td><td>调度器</td><td>设定 / 存稿 / 预算检查</td><td><span class="tag tag-ok">通过</span></td></tr>
+              <tr><td>08-11 20:12</td><td>Agent</td><td>掌印</td><td>采纳文策提案「开篇三连击」</td><td><span class="tag tag-ok">已登记</span></td></tr>
+              <tr><td>08-11 09:00</td><td>设置</td><td>老板</td><td>月预算调整为 ¥100</td><td><span class="tag tag-ok">已生效</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 创作 · 作品库 -->
+      <section class="page" data-page="works">
+        <div class="page-head">
+          <div>
+            <div class="page-title">作品库</div>
+            <div class="page-desc">每个项目的完整设定：大纲、角色与世界规则</div>
+          </div>
+          <div class="page-meta">
+            <button class="open-primary" style="height:30px;font-size:12px">新建项目</button>
+          </div>
+        </div>
+        <div class="workspace" style="grid-template-columns:minmax(0,1fr) minmax(0,2.2fr)">
+          <div class="side-col">
+            <div class="side-block">
+              <div class="side-title">项目</div>
+              <div class="project-row">
+                <span class="project-cover"></span>
+                <div class="project-meta">
+                  <div class="project-name">雾港怪谈</div>
+                  <div class="project-sub">连载中 · 42 章</div>
+                </div>
+                <span class="tag tag-ok" style="margin-left:auto">在更</span>
+              </div>
+              <div class="project-row">
+                <span class="project-cover" style="background:var(--warn-soft)"></span>
+                <div class="project-meta">
+                  <div class="project-name">星海拾遗</div>
+                  <div class="project-sub">大纲阶段 · 0 章</div>
+                </div>
+                <span class="tag tag-warn" style="margin-left:auto">孵化</span>
+              </div>
+            </div>
+          </div>
+          <div class="side-col">
+            <div class="side-block" style="border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);padding:20px">
+              <div style="display:flex;align-items:baseline;justify-content:space-between">
+                <div style="font-size:16px;font-weight:700">雾港怪谈</div>
+                <span class="tag tag-ok">连载中</span>
+              </div>
+              <div class="tabs" style="margin-top:16px">
+                <button class="tab active">大纲</button>
+                <button class="tab">主角</button>
+                <button class="tab">角色卡</button>
+                <button class="tab">世界规则</button>
+                <button class="tab">知识库</button>
+              </div>
+              <div style="margin-top:16px;border-top:1px solid var(--border)">
+                <div class="tl-row"><span class="tl-time">卷 1</span><span class="tl-text"><strong>雾起</strong> · 1–14 章</span></div>
+                <div class="tl-row"><span class="tl-time">卷 2</span><span class="tl-text"><strong>潮声</strong> · 15–28 章</span></div>
+                <div class="tl-row"><span class="tl-time">卷 3</span><span class="tl-text"><strong>灯塔</strong> · 29–42 章</span></div>
+              </div>
+              <div class="field" style="margin-top:14px">
+                <div class="field-label">世界观一句话</div>
+                <textarea class="field-textarea" style="min-height:56px">临海小城每逢雾夜，规则会改写现实；主角凭借记录规则的手账，在怪谈中寻找失踪的妹妹。</textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 创作 · 章节管理 -->
+      <section class="page" data-page="chapters">
+        <div class="page-head">
+          <div>
+            <div class="page-title">章节管理</div>
+            <div class="page-desc">全部章节的写作状态、质量分与发布进度</div>
+          </div>
+        </div>
+        <div class="filter-row">
+          <div class="tabs">
+            <button class="tab active">全部</button>
+            <button class="tab">草稿</button>
+            <button class="tab">待发布</button>
+            <button class="tab">已发布</button>
+          </div>
+          <input class="boss-input" style="max-width:260px" placeholder="搜索章节" />
+          <span style="margin-left:auto;font-size:12px;color:var(--text-3)">存稿 3 章 · 今日待发 2 章</span>
+        </div>
+        <div class="block" style="border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);padding:6px 16px">
+          <table>
+            <thead><tr><th>章节</th><th>标题</th><th>状态</th><th>字数</th><th>质量</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr><td>#42</td><td>雾夜来客</td><td><span class="tag tag-ok">已发布</span></td><td>2,480</td><td>96</td><td><button class="block-link">查看</button></td></tr>
+              <tr><td>#43</td><td>手账第一页</td><td><span class="tag tag-warn">待发布</span></td><td>2,512</td><td>93</td><td><button class="block-link">查看</button></td></tr>
+              <tr><td>#44</td><td>灯塔守夜人</td><td><span class="tag tag-warn">待发布</span></td><td>2,390</td><td>91</td><td><button class="block-link">查看</button></td></tr>
+              <tr><td>#45</td><td>潮声之下</td><td>草稿</td><td>1,860</td><td>—</td><td><button class="block-link">查看</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 创作 · 阅读数据 -->
+      <section class="page" data-page="reader">
+        <div class="page-head">
+          <div>
+            <div class="page-title">阅读数据</div>
+            <div class="page-desc">读者表现与反馈</div>
+          </div>
+        </div>
+        <div class="kpi-row" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+          <div style="border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);padding:14px 18px">
+            <div style="font-size:11.5px;color:var(--text-2)">总读者</div>
+            <div style="font-size:20px;font-weight:700;margin-top:3px">1,284</div>
+          </div>
+          <div style="border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);padding:14px 18px">
+            <div style="font-size:11.5px;color:var(--text-2)">完读率</div>
+            <div style="font-size:20px;font-weight:700;margin-top:3px;color:var(--accent-text)">62%</div>
+          </div>
+          <div style="border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);padding:14px 18px">
+            <div style="font-size:11.5px;color:var(--text-2)">追读率</div>
+            <div style="font-size:20px;font-weight:700;margin-top:3px;color:var(--ok)">41%</div>
+          </div>
+          <div style="border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);padding:14px 18px">
+            <div style="font-size:11.5px;color:var(--text-2)">评论</div>
+            <div style="font-size:20px;font-weight:700;margin-top:3px">76</div>
+          </div>
+        </div>
+        <div class="workspace" style="margin-top:24px">
+          <div class="side-col">
+            <div class="block">
+              <div class="block-head">
+                <span class="block-title">完读率趋势</span>
+                <span style="font-size:11.5px;color:var(--text-3)">第 1 – 40 章</span>
+              </div>
+              <div class="chart-box" style="border-top:1px solid var(--border);padding-top:14px">
+                <svg class="chart-svg" viewBox="0 0 520 170" preserveAspectRatio="none">
+                  <line x1="0" y1="20" x2="520" y2="20" stroke="var(--border)" stroke-width="1"/>
+                  <line x1="0" y1="70" x2="520" y2="70" stroke="var(--border)" stroke-width="1"/>
+                  <line x1="0" y1="120" x2="520" y2="120" stroke="var(--border)" stroke-width="1"/>
+                  <line x1="0" y1="170" x2="520" y2="170" stroke="var(--border)" stroke-width="1"/>
+                  <polyline points="0,150 60,138 120,142 180,118 240,122 300,104 360,110 420,88 520,92" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+            </div>
+          </div>
+          <div class="side-col">
+            <div class="side-block">
+              <div class="side-title">近期反馈</div>
+              <div class="side-item">
+                <div class="side-item-title">节奏不错，就是更新少了</div>
+                <div class="side-item-meta">08-11 · 追读读者</div>
+              </div>
+              <div class="side-item">
+                <div class="side-item-title">第 38 章转场有点突兀</div>
+                <div class="side-item-meta">08-10 · 完读读者</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 编辑部 · 消息流 -->
+      <section class="page" data-page="editorial">
+        <div class="page-head">
+          <div>
+            <div class="page-title">消息流</div>
+            <div class="page-desc">编辑之间的协作消息与今日任务</div>
+          </div>
+          <div class="page-meta">
+            <span class="tag tag-ok">3 条未读</span>
+            <button style="background:none;border:0;color:var(--text-2);cursor:pointer;font-size:12px">全部标已读</button>
+          </div>
+        </div>
+        <div class="workspace">
+          <div class="side-col">
+            <div class="block">
+              <div class="block-head">
+                <span class="block-title">收件箱</span>
+                <button class="block-link">全部消息</button>
+              </div>
+              <div class="msg-list">
+                <div class="msg-row">
+                  <div class="msg-avatars">
+                    <span class="agent-avatar">守</span>
+                    <span class="agent-avatar">墨</span>
+                  </div>
+                  <div>
+                    <div class="msg-subject">审稿打回 · 第 42 章</div>
+                    <div class="msg-body">逻辑承接生硬，追读会断。已附批注，改完回传再审。</div>
+                  </div>
+                  <span class="msg-time">09:12</span>
+                </div>
+                <div class="msg-row">
+                  <div class="msg-avatars"><span class="agent-avatar">掌</span></div>
+                  <div>
+                    <div class="msg-subject">提案采纳 · 开篇三连击</div>
+                    <div class="msg-body">文策的提案已采纳，行动项已登记，明天晨会确认排期。</div>
+                  </div>
+                  <span class="msg-time">08:47</span>
+                </div>
+                <div class="msg-row">
+                  <div class="msg-avatars"><span class="agent-avatar">阿</span></div>
+                  <div>
+                    <div class="msg-subject">读者视角反馈 · 第 40 章</div>
+                    <div class="msg-body">爽点密度合适，但配角动机本周偏弱，建议补一段内心戏。</div>
+                  </div>
+                  <span class="msg-time">08:20</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="side-col">
+            <div class="side-block">
+              <div class="side-title">今日任务</div>
+              <div class="side-item">
+                <div class="side-item-title">重写第 42 章过渡段</div>
+                <div class="side-item-meta">墨白 · 截止今天 12:00</div>
+              </div>
+              <div class="side-item">
+                <div class="side-item-title">知识库维护草案</div>
+                <div class="side-item-meta">博闻 · 待人工采纳</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 编辑部 · Agent 管理 -->
+      <section class="page" data-page="agents">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Agent 管理</div>
+            <div class="page-desc">人格档案、模型参数与写作模式</div>
+          </div>
+          <div class="page-meta">
+            <span class="tag tag-ok">11 位编辑</span>
+            <button class="open-primary" style="height:30px;font-size:12px">保存并部署</button>
+          </div>
+        </div>
+        <div class="workspace" style="grid-template-columns:minmax(0,1fr) minmax(0,2.2fr)">
+          <div class="side-col">
+            <div class="side-block">
+              <div class="side-title">编辑名录</div>
+              <div class="agent-list">
+                <div class="agent-item active"><span class="agent-avatar">掌</span>掌印<span class="agent-dot"></span></div>
+                <div class="agent-item"><span class="agent-avatar">文</span>文策<span class="agent-dot"></span></div>
+                <div class="agent-item"><span class="agent-avatar">墨</span>墨白<span class="agent-dot"></span></div>
+                <div class="agent-item"><span class="agent-avatar">润</span>润物<span class="agent-dot"></span></div>
+                <div class="agent-item"><span class="agent-avatar">守</span>守正<span class="agent-dot"></span></div>
+                <div class="agent-item"><span class="agent-avatar">阿</span>阿读<span class="badge-num">2</span></div>
+                <div class="agent-item"><span class="agent-avatar">录</span>录事<span class="agent-dot"></span></div>
+                <div class="agent-item"><span class="agent-avatar">博</span>博闻<span class="agent-dot"></span></div>
+              </div>
+            </div>
+          </div>
+          <div class="side-col">
+            <div class="side-block" style="border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);padding:20px">
+              <div style="display:flex;align-items:center;gap:12px">
+                <span class="agent-avatar" style="width:40px;height:40px;font-size:16px">掌</span>
+                <div>
+                  <div style="font-size:16px;font-weight:700">掌印</div>
+                  <div style="font-size:12px;color:var(--text-2)">主编 · 分派与终审 · 情绪基线 沉稳</div>
+                </div>
+                <span class="tag tag-ok" style="margin-left:auto">日常 pro</span>
+              </div>
+              <div class="tabs" style="margin-top:18px">
+                <button class="tab active">人格档案</button>
+                <button class="tab">日记</button>
+                <button class="tab">周记</button>
+                <button class="tab">会议</button>
+              </div>
+              <div class="form-grid" style="margin-top:16px">
+                <div class="field">
+                  <div class="field-label">身份</div>
+                  <input class="field-input" value="编辑部主编" />
+                </div>
+                <div class="field">
+                  <div class="field-label">性格</div>
+                  <input class="field-input" value="沉稳、果断、护短" />
+                </div>
+                <div class="field">
+                  <div class="field-label">说话风格</div>
+                  <input class="field-input" value="简练、爱下结论" />
+                </div>
+                <div class="field">
+                  <div class="field-label">模型</div>
+                  <select class="field-select"><option>deepseek-v4-pro</option><option>deepseek-v4-flash</option></select>
+                </div>
+                <div class="field">
+                  <div class="field-label">温度</div>
+                  <input class="field-input" value="0.7" />
+                </div>
+                <div class="field">
+                  <div class="field-label">核心关注点</div>
+                  <input class="field-input" value="节奏、决策落地、团队士气" />
+                </div>
+              </div>
+              <div class="field" style="margin-top:14px">
+                <div class="field-label">人格档案正文</div>
+                <textarea class="field-textarea">你是掌印，编辑部的主编……分派任务时考虑每位编辑的擅长与近期状态；终审时先看节奏再看细节。</textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 编辑部 · 会议中心 -->
+      <section class="page" data-page="meetings">
+        <div class="page-head">
+          <div>
+            <div class="page-title">会议中心</div>
+            <div class="page-desc">发起专题会议、围观讨论、查看纪要</div>
+          </div>
+        </div>
+        <div class="block" style="border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);padding:18px 20px">
+          <div class="block-title">发起会议</div>
+          <div class="open-row">
+            <input class="boss-input" placeholder="会议主题，如：讨论下一卷的剧情走向" />
+            <div class="mode-seg">
+              <button class="seg active">全员</button>
+              <button class="seg">核心 6 人</button>
+              <button class="seg">自定义</button>
+            </div>
+            <button class="open-primary">发起</button>
+          </div>
+        </div>
+        <div class="block" style="margin-top:24px">
+          <div class="block-head">
+            <span class="block-title">最近会议</span>
+            <button class="block-link">全部纪要</button>
+          </div>
+          <div class="meet-row">
+            <div class="meet-title">周会 #17 · 下一卷选题方向</div>
+            <div class="meet-meta">08-11 20:00 · 6 人参会 · 3 轮讨论</div>
+            <div class="meet-summary">决定继续规则怪谈方向，开篇三连击方案通过，3 项行动项已分派。</div>
+            <button class="side-action" style="margin-top:6px">查看纪要</button>
+          </div>
+          <div class="meet-row">
+            <div class="meet-title">专题 · 主角成长线冲突</div>
+            <div class="meet-meta">08-10 15:30 · 4 人参会</div>
+            <div class="meet-summary">明确中期成长与黑化节奏，人物卡更新 2 处。</div>
+            <button class="side-action" style="margin-top:6px">查看纪要</button>
+          </div>
+        </div>
+      </section>
   </div>
 
 <script>
   (function () {
-    var t = location.hash === "#dark" ? "dark" : "light";
     var root = document.documentElement;
+    var sections = document.querySelectorAll(".page");
+    var navItems = document.querySelectorAll(".nav-item");
+
+    function showPage(id) {
+      sections.forEach(function (p) {
+        p.classList.toggle("active", p.getAttribute("data-page") === id);
+      });
+      navItems.forEach(function (n) {
+        n.classList.toggle("active", n.getAttribute("data-page") === id);
+      });
+      document.querySelector(".main").scrollTop = 0;
+    }
+
+    function applyHash() {
+      var h = (location.hash || "").replace("#", "");
+      if (h === "dark") {
+        root.setAttribute("data-theme", "dark");
+        showPage("dashboard");
+        return;
+      }
+      if (!document.querySelector('.page[data-page="' + h + '"]')) h = "dashboard";
+      showPage(h);
+    }
+
+    navItems.forEach(function (n) {
+      n.addEventListener("click", function () {
+        location.hash = n.getAttribute("data-page");
+      });
+    });
+    window.addEventListener("hashchange", applyHash);
+
+    var t = location.hash === "#dark" ? "dark" : "light";
     if (t === "dark") root.setAttribute("data-theme", "dark");
+    applyHash();
+
     var btn = document.getElementById("themeBtn");
     btn.addEventListener("click", function () {
       var next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
       root.setAttribute("data-theme", next);
-      location.hash = next === "dark" ? "dark" : "";
     });
   })();
 </script>
