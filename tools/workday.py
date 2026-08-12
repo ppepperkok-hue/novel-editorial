@@ -24,7 +24,7 @@ sys.path.insert(0, str(ROOT))
 
 from novel_editorial import config, db  # noqa: E402
 from novel_editorial.services import audit  # noqa: E402
-from tools import editorial_daily, preflight  # noqa: E402
+from tools import preflight, producers  # noqa: E402
 
 MODES = ("write", "org", "meeting", "free")
 
@@ -96,22 +96,37 @@ def _recover_stale_open(conn, stale_hours=12):
 def _morning_plan(conn, run_id, mode, boss_instruction, dry_run, db_path):
     """Editor-in-chief (or deterministic fallback) sets today's plan."""
     if mode == "write":
-        plan = {"produce": True, "chapters": None, "meeting": False, "focus": "按计划写稿"}
+        plan = {
+            "produce": True, "producer": "novel", "target": None,
+            "chapters": None, "meeting": False, "focus": "按计划写稿",
+        }
     elif mode == "org":
-        plan = {"produce": False, "chapters": 0, "meeting": False, "focus": "整理日：知识库/人物卡/消息/议题"}
+        plan = {
+            "produce": False, "producer": "none", "target": 0,
+            "chapters": 0, "meeting": False,
+            "focus": "整理日：知识库/人物卡/消息/议题",
+        }
     elif mode == "meeting":
-        plan = {"produce": False, "chapters": 0, "meeting": True, "focus": "开会日：启动会议"}
+        plan = {
+            "produce": False, "producer": "none", "target": 0,
+            "chapters": 0, "meeting": True, "focus": "开会日：启动会议",
+        }
     else:
-        plan = {"produce": True, "chapters": None, "meeting": False, "focus": "主编现场决定"}
+        plan = {
+            "produce": True, "producer": "novel", "target": None,
+            "chapters": None, "meeting": False, "focus": "主编现场决定",
+        }
     if mode == "free" or (boss_instruction and mode not in ("org", "meeting")):
         task = (
             "你是主编。今日老板指令：" + str(boss_instruction or "自由安排")
-            + "。请只输出 JSON：{produce(bool), chapters(整数或null), "
+            + "。请只输出 JSON：{produce(bool), producer(产出器名，默认 novel), "
+            "target(整数或null), "
             "meeting(bool), focus(一句话)}。"
         )
         if dry_run:
             text = (
-                '{"produce": true, "chapters": null, "meeting": false, '
+                '{"produce": true, "producer": "novel", "target": null, '
+                '"meeting": false, '
                 '"focus": "按存稿与任务板安排今日"}'
             )
         else:
@@ -129,7 +144,9 @@ def _morning_plan(conn, run_id, mode, boss_instruction, dry_run, db_path):
             if isinstance(parsed, dict):
                 plan = {
                     "produce": bool(parsed.get("produce", plan["produce"])),
-                    "chapters": parsed.get("chapters") or None,
+                    "producer": str(parsed.get("producer") or "novel"),
+                    "target": parsed.get("target") or parsed.get("chapters") or None,
+                    "chapters": parsed.get("target") or parsed.get("chapters") or None,
                     "meeting": bool(parsed.get("meeting", False)),
                     "focus": str(parsed.get("focus") or plan["focus"])[:200],
                 }
@@ -210,9 +227,18 @@ def open(conn, chapters=None, trigger="manual", mode="write", boss_instruction="
         if plan.get("produce"):
             if not dry_run:
                 _update(conn, run_id, phase="producing")
-            produce = editorial_daily.daily(
+            producer = plan.get("producer") or "novel"
+            if producer not in producers.PRODUCERS:
+                audit.log(
+                    conn, "workday", "producer_fallback",
+                    target_type="run", target_id=run_id,
+                    detail={"requested": producer, "fallback": "novel"},
+                )
+                producer = "novel"
+            produce = producers.run_producer(
+                producer,
                 conn,
-                chapters=chapters or plan.get("chapters"),
+                target=chapters or plan.get("target"),
                 trigger=trigger,
                 dry_run=dry_run,
                 db_path=db_path,
@@ -261,9 +287,22 @@ def resume(conn, run_id, chapters=None, dry_run=False, db_path=None):
     try:
         if not dry_run:
             _update(conn, run_id, phase="producing", status="running")
-        result = editorial_daily.daily(
-            conn, chapters=chapters, trigger="manual", dry_run=dry_run,
-            db_path=db_path, workday_run_id=run_id, lock_held=True,
+        try:
+            plan = json.loads(row["today_plan"] or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            plan = {}
+        producer = plan.get("producer") or "novel"
+        if producer not in producers.PRODUCERS:
+            producer = "novel"
+        result = producers.run_producer(
+            producer,
+            conn,
+            target=chapters or plan.get("target"),
+            trigger="manual",
+            dry_run=dry_run,
+            db_path=db_path,
+            workday_run_id=run_id,
+            lock_held=True,
             skip_diaries=_diaries_written(conn, row["novel_id"], row["started_at"]),
         )
         if not dry_run:

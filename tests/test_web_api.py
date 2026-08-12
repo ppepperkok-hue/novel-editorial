@@ -5,11 +5,13 @@ import threading
 import unittest
 import urllib.request
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 from unittest import mock
 from urllib.error import HTTPError
 from urllib.request import urlopen
 
 from novel_editorial import db
+from novel_editorial.services import knowledge
 from novel_editorial.web_api import make_handler
 
 
@@ -178,9 +180,18 @@ class WebApiTests(unittest.TestCase):
         did = cur.lastrowid
         conn.close()
 
+        kdir = Path(tempfile.mkdtemp()) / "knowledge"
+        kdir.mkdir(exist_ok=True)
+        for i in range(6):
+            (kdir / f"pack-{i}.md").write_text(
+                f"---\ntitle: 知识包{i}\nagents: [\"writer\"]\n"
+                f"keywords: [\"主题{i}\"]\ntype: craft\n---\n第 {i} 个知识包内容。\n",
+                encoding="utf-8",
+            )
         body = json.dumps({"action": "list"}).encode("utf-8")
-        with urlopen(f"{self.base}/api/knowledge", data=body, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        with mock.patch.object(knowledge, "KNOWLEDGE_DIR", kdir):
+            with urlopen(f"{self.base}/api/knowledge", data=body, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
         self.assertTrue(data["ok"])
         self.assertGreaterEqual(len(data["knowledge"]), 6)
 

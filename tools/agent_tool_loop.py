@@ -102,8 +102,11 @@ def build_system(agent, target_words=None):
         "确认，禁止凭记忆编造或遗忘设定。\n"
         "根据任务需要自主选择调用，可多次调用不同主题；调用后基于返回内容输出最终结果。"
     )
+    # Tool rule is shell capability and must always be present, even when the
+    # knowledge directory is empty; only the index lines are conditional.
+    body += tool_rule
     if index:
-        body += tool_rule + "\n\n" + index
+        body += "\n\n" + index
     return meta, body
 
 

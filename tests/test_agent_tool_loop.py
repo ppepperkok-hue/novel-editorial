@@ -2,9 +2,11 @@ import json
 import os
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from novel_editorial import db
+from novel_editorial.services import knowledge
 from tools import agent_tool_loop
 
 
@@ -29,6 +31,25 @@ class AgentToolLoopTests(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
         self.db_path = os.path.join(self.tmpdir, "t.db")
+        self.kdir = Path(self.tmpdir) / "knowledge"
+        self.kdir.mkdir(exist_ok=True)
+        with open(
+            self.kdir / "opening-hooks.md",
+            "w",
+            encoding="utf-8",
+        ) as f:
+            f.write(
+                "---\n"
+                "title: 开篇钩子\n"
+                'agents: ["writer", "planner"]\n'
+                'keywords: ["钩子", "开篇"]\n'
+                "type: craft\n"
+                "---\n"
+                "开篇钩子：第一章结尾要留悬念，钩子越具体越好。\n"
+            )
+        self._kp = mock.patch.object(knowledge, "KNOWLEDGE_DIR", self.kdir)
+        self._kp.start()
+        self.addCleanup(self._kp.stop)
 
     def test_unwrap_keeps_collaboration_fields(self):
         raw = '{"text": "正文", "outbox": [{"to": "eic", "body": "留言"}]}'

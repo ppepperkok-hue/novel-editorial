@@ -4,12 +4,14 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from novel_editorial import db  # noqa: E402
+from novel_editorial.services import knowledge  # noqa: E402
 
 
 def make_db():
@@ -324,10 +326,23 @@ class RoundSpeechRetryTests(unittest.TestCase):
                 )
                 return text, {"prompt_tokens": 1, "completion_tokens": 1}, "mock", []
 
-            with mock.patch("tools.agent_meeting.ask", side_effect=fake_ask):
-                speech = agent_meeting.round_speech(
-                    conn, 1, "planner", materials, [], 1, dry_run=False
-                )
+            kdir = Path(tempfile.mkdtemp()) / "knowledge"
+            kdir.mkdir(exist_ok=True)
+            (kdir / "opening-hooks.md").write_text(
+                "---\n"
+                "title: 开篇钩子\n"
+                'agents: ["writer", "planner"]\n'
+                'keywords: ["钩子", "开篇"]\n'
+                "type: craft\n"
+                "---\n"
+                "开篇钩子：第一章结尾要留悬念，钩子越具体越好。\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(knowledge, "KNOWLEDGE_DIR", kdir):
+                with mock.patch("tools.agent_meeting.ask", side_effect=fake_ask):
+                    speech = agent_meeting.round_speech(
+                        conn, 1, "planner", materials, [], 1, dry_run=False
+                    )
             self.assertEqual(calls["n"], 1)
             self.assertEqual(calls["first_tools"][0]["function"]["name"], "get_knowledge")
             self.assertIn("可用工具", calls["first_system"])
