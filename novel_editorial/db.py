@@ -357,6 +357,8 @@ CREATE TABLE IF NOT EXISTS meeting_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_meeting_messages_session
     ON meeting_messages(session_id, id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_meeting_messages_session_seq
+    ON meeting_messages(session_id, seq);
 
 CREATE TABLE IF NOT EXISTS pending_interactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

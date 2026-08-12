@@ -204,6 +204,49 @@ class MeetingExecutorTests(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_reply_normalizes_md_suffix(self):
+        conn = self._conn()
+        try:
+            result = meeting_executor.reply_to_mention(
+                conn,
+                self.session_id,
+                "reviewer.md",
+                {"kind": "user_message", "content": "@守正 回应"},
+                dry_run=True,
+                mock_text='{"speech": "收到"}',
+            )
+            self.assertTrue(result["ok"])
+            row = conn.execute(
+                "SELECT from_agent FROM meeting_messages WHERE id=?",
+                (result["message_id"],),
+            ).fetchone()
+            self.assertEqual(row["from_agent"], "reviewer")
+        finally:
+            conn.close()
+
+    def test_unique_seq_constraint(self):
+        conn = self._conn()
+        try:
+            conn.execute(
+                "INSERT INTO meeting_messages(session_id, novel_id, seq, from_agent, "
+                "role, kind, body, status, created_at) "
+                "VALUES(?,7,99,'planner','assistant','speech','x','active',"
+                "datetime('now','localtime'))",
+                (self.session_id,),
+            )
+            conn.commit()
+            with self.assertRaises(Exception):
+                conn.execute(
+                    "INSERT INTO meeting_messages(session_id, novel_id, seq, "
+                    "from_agent, role, kind, body, status, created_at) "
+                    "VALUES(?,7,99,'writer','assistant','speech','y','active',"
+                    "datetime('now','localtime'))",
+                    (self.session_id,),
+                )
+                conn.commit()
+        finally:
+            conn.close()
+
 
 if __name__ == "__main__":
     unittest.main()

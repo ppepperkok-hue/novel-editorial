@@ -8,6 +8,7 @@ and every failure is explicit (audit + `no_speech`).
 from __future__ import annotations
 
 import json
+import sqlite3
 
 from novel_editorial.services import audit
 from tools import agent_context, agent_meeting, agent_tool_loop
@@ -118,18 +119,22 @@ def parse_speech(raw):
 
 def reply_to_mention(conn, session_id, agent, event, dry_run=False, mock_text="", tail=20):
     """一个 agent 对会议事件的发言。失败重试一次，再失败显式留痕。"""
+    agent = str(agent or "").replace(".md", "")
     session = conn.execute(
         "SELECT * FROM meeting_sessions WHERE id=?", (session_id,)
     ).fetchone()
     if not session:
         return {"ok": False, "error": "session not found"}
 
-    system = agent_tool_loop.build_system(agent)[1]
-    user = build_meeting_user(conn, session, agent, event, tail=tail)
+    system = None
+    user = None
     raw = None
     last_error = ""
     for attempt in range(2):
         try:
+            if system is None:
+                system = agent_tool_loop.build_system(agent)[1]
+                user = build_meeting_user(conn, session, agent, event, tail=tail)
             ask_result = agent_meeting.ask(
                 conn,
                 session["novel_id"],
@@ -175,41 +180,59 @@ def reply_to_mention(conn, session_id, agent, event, dry_run=False, mock_text=""
         conn.commit()
         return {"ok": True, "spoken": False, "reason": parsed.get("reason")}
 
-    seq_row = conn.execute(
-        "SELECT COALESCE(MAX(seq), 0) + 1 AS s FROM meeting_messages "
-        "WHERE session_id=?",
-        (session_id,),
-    ).fetchone()
     now = __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cur = conn.execute(
-        "INSERT INTO meeting_messages(session_id, novel_id, seq, from_agent, role, "
-        "kind, body, mentions, status, created_at) "
-        "VALUES(?,?,?,?,?,?,?,?,?,?)",
-        (
-            session_id,
-            session["novel_id"],
-            int(seq_row["s"]),
-            agent,
-            "assistant",
-            "speech",
-            parsed["speech"],
-            "[]",
-            "active",
-            now,
-        ),
-    )
+    inserted = None
+    for _ in range(3):
+        seq_row = conn.execute(
+            "SELECT COALESCE(MAX(seq), 0) + 1 AS s FROM meeting_messages "
+            "WHERE session_id=?",
+            (session_id,),
+        ).fetchone()
+        try:
+            inserted = conn.execute(
+                "INSERT INTO meeting_messages(session_id, novel_id, seq, from_agent, "
+                "role, kind, body, mentions, status, created_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (
+                    session_id,
+                    session["novel_id"],
+                    int(seq_row["s"]),
+                    agent,
+                    "assistant",
+                    "speech",
+                    parsed["speech"],
+                    "[]",
+                    "active",
+                    now,
+                ),
+            )
+            break
+        except sqlite3.IntegrityError:
+            # 并发发言竞争同一 seq：重算后重试。
+            continue
+    if inserted is None:
+        audit.log(
+            conn,
+            "meeting",
+            "no_speech",
+            target_type="session",
+            target_id=session_id,
+            detail={"agent": agent, "error": "seq conflict after 3 attempts"},
+        )
+        conn.commit()
+        return {"ok": False, "spoken": False, "error": "seq conflict after 3 attempts"}
     audit.log(
         conn,
         "meeting",
         "speech",
         target_type="session",
         target_id=session_id,
-        detail={"agent": agent, "message_id": cur.lastrowid},
+        detail={"agent": agent, "message_id": inserted.lastrowid},
     )
     conn.commit()
     return {
         "ok": True,
         "spoken": True,
-        "message_id": cur.lastrowid,
+        "message_id": inserted.lastrowid,
         "speech": parsed["speech"],
     }
