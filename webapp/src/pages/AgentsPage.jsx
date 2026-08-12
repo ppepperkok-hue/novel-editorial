@@ -15,7 +15,9 @@ import {
   avatarColorOf,
   avatarTextOf,
   displayNameOf,
+  exportCustomAgents,
   getCustomAgent,
+  importCustomAgents,
   saveCustomAgent,
 } from "../lib/agent-custom.js";
 import { cn } from "../lib/utils.js";
@@ -99,6 +101,35 @@ export default function AgentsPage() {
     toast.success("自定义资料已保存");
   };
 
+  const exportCustom = () => {
+    const blob = new Blob([exportCustomAgents()], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "agent-custom.json";
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("自定义资料已导出");
+  };
+
+  const importCustom = async (file) => {
+    if (!file) return;
+    let text;
+    try {
+      text = await file.text();
+    } catch {
+      toast.error("文件读取失败");
+      return;
+    }
+    const result = importCustomAgents(text);
+    if (result.ok) {
+      setCustomTick((t) => t + 1);
+      toast.success(`已导入 ${result.count} 条${result.skipped ? `，跳过 ${result.skipped} 条非法条目` : ""}`);
+    } else {
+      toast.error(`导入失败：${result.error}`);
+    }
+  };
+
   return (
     <>
       <PageHeader
@@ -107,6 +138,23 @@ export default function AgentsPage() {
         actions={
           <>
             <Badge tone="ok">{agents.length} 位编辑</Badge>
+            <Button variant="outline" size="sm" onClick={exportCustom}>
+              导出资料
+            </Button>
+            <label className="cursor-pointer">
+              <span className="inline-flex h-8 items-center justify-center rounded-control border border-line bg-surface px-3 text-xs text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink">
+                导入资料
+              </span>
+              <input
+                type="file"
+                accept=".json,application/json"
+                className="hidden"
+                onChange={(e) => {
+                  importCustom(e.target.files?.[0]);
+                  e.target.value = "";
+                }}
+              />
+            </label>
             <Button size="sm" disabled={busy || !draft} onClick={save}>
               {busy ? "保存中…" : "保存并部署"}
             </Button>

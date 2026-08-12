@@ -35,6 +35,53 @@ export function saveCustomAgent(file, data) {
   return all[file];
 }
 
+/** 导出全部自定义资料为 JSON 字符串。@stable */
+export function exportCustomAgents() {
+  return JSON.stringify(loadCustomAgents(), null, 2);
+}
+
+/**
+ * 从 JSON 字符串导入自定义资料；非法条目跳过并计数，失败显式返回。
+ * @returns {{ok: boolean, count: number, skipped: number, error?: string}}
+ */
+export function importCustomAgents(json) {
+  let parsed;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return { ok: false, count: 0, skipped: 0, error: "不是有效的 JSON" };
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { ok: false, count: 0, skipped: 0, error: "导入内容必须是对象" };
+  }
+  const all = loadCustomAgents();
+  let count = 0;
+  let skipped = 0;
+  for (const [file, data] of Object.entries(parsed)) {
+    if (
+      !file ||
+      typeof data !== "object" ||
+      typeof data.displayName !== "string" ||
+      typeof data.avatarText !== "string" ||
+      typeof data.avatarColor !== "string"
+    ) {
+      skipped += 1;
+      continue;
+    }
+    all[file] = {
+      displayName: data.displayName.slice(0, 40),
+      avatarText: data.avatarText.slice(0, 1),
+      avatarColor: data.avatarColor,
+    };
+    count += 1;
+  }
+  if (count === 0) {
+    return { ok: false, count: 0, skipped, error: "没有可导入的有效条目" };
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+  return { ok: true, count, skipped };
+}
+
 export function avatarColorOf(file, index = 0) {
   const custom = getCustomAgent(file);
   if (custom?.avatarColor) return custom.avatarColor;
