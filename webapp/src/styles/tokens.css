@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+/* ============ 设计 token v1 ============
+   来源：docs/design/concept.html（用户确认的 v4 概念稿）
+   约束：taste-skill / minimalist-skill —— 单一 accent、暖单色、
+   无渐变、无重阴影、无 emoji、圆角刻度统一。 */
+
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #171614;
+  --surface: #1e1d1a;
+  --surface-2: #23221e;
+  --line: #2e2c27;
+  --line-strong: #3a3831;
+  --ink: #edeae4;
+  --ink-2: #a5a098;
+  --ink-3: #6e6a62;
+  --accent: #7fb0d9;
+  --accent-strong: #96c1e6;
+  --accent-soft: rgba(127, 176, 217, 0.14);
+  --accent-ink: #96c1e6;
+  --ok: #8fbf92;
+  --ok-soft: rgba(143, 191, 146, 0.13);
+  --warn: #d3a94f;
+  --warn-soft: rgba(211, 169, 79, 0.13);
+  --bad: #d98c89;
+  --bad-soft: rgba(217, 140, 137, 0.13);
+  --radius-card: 10px;
+  --radius-control: 6px;
+  --radius-sm: 4px;
+  --radius-pill: 9999px;
+  --shadow-hover: 0 2px 10px rgba(0, 0, 0, 0.22);
+  --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.34);
+  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  --font-ui:
+    "Geist Sans", "Segoe UI Variable Text", "Microsoft YaHei UI", "PingFang SC",
+    "Helvetica Neue", sans-serif;
+  --font-mono:
+    "Geist Mono", "Cascadia Mono", "SF Mono", "JetBrains Mono", monospace;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --canvas: #f6f5f1;
+  --surface: #ffffff;
+  --surface-2: #fbfaf7;
+  --line: #e8e6e0;
+  --line-strong: #dcd9d1;
+  --ink: #23201c;
+  --ink-2: #6f6b64;
+  --ink-3: #9a958c;
+  --accent: #1f6c9f;
+  --accent-strong: #1a5b86;
+  --accent-soft: #e1f3fe;
+  --accent-ink: #1f6c9f;
+  --ok: #346538;
+  --ok-soft: #edf3ec;
+  --warn: #956400;
+  --warn-soft: #fbf3db;
+  --bad: #9f2f2d;
+  --bad-soft: #fdebec;
+  --shadow-hover: 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-pop: 0 8px 24px rgba(15, 20, 28, 0.12);
+}
+
+/* Tailwind v4 语义映射：让工具类跟随运行时 token */
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --radius-card: var(--radius-card);
+  --radius-control: var(--radius-control);
+  --radius-sm: var(--radius-sm);
+  --radius-pill: var(--radius-pill);
+  --shadow-hover: var(--shadow-hover);
+  --shadow-pop: var(--shadow-pop);
+  --font-ui: var(--font-ui);
+  --font-mono: var(--font-mono);
+  --ease-out-soft: var(--ease-out-soft);
+}
