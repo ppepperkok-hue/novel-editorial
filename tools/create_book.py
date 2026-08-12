@@ -277,6 +277,137 @@ def _get_volume_id(env, book_id):
     return ""
 
 
+def _get_book_list(env):
+    """Fetch the author's Fanqie book list (all pages, capped at 400)."""
+    books = []
+    for page in range(20):
+        res = http_json(
+            "GET",
+            "/api/author/book/book_list/v0",
+            {"page_index": str(page), "page_count": "20"},
+            env,
+        )
+        if res.get("code") != 0:
+            raise RuntimeError(f"book_list: {res.get('message') or res}")
+        data = res.get("data") or {}
+        page_books = (
+            data.get("book_list", [])
+            if isinstance(data, dict) and isinstance(data.get("book_list"), list)
+            else []
+        )
+        books.extend(page_books)
+        if len(page_books) < 20:
+            break
+    return books
+
+
+def _existing_book_id(env, title):
+    """Return the book_id of an existing Fanqie book with the same title.
+
+    Idempotency guard: a previous create POST may have succeeded even when
+    its response was lost (timeout/parse failure). The platform allows at
+    most one new book per day, so an existing same-title book is recovered
+    by binding instead of creating a duplicate.
+    """
+    for book in _get_book_list(env):
+        if str(book.get("book_name") or "").strip() == title:
+            return str(book.get("book_id") or "")
+    return ""
+
+
+def _pending_path(novel_id):
+    return config.TMP_DIR / f"create_book_pending_{novel_id}.json"
+
+
+def _read_pending(novel_id):
+    try:
+        data = json.loads(_pending_path(novel_id).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _write_pending(novel_id, title, fields, error):
+    """Leave a trace when a create POST outcome is unknown (the book may
+    already exist on Fanqie). I/O failure must not crash the run."""
+    try:
+        path = _pending_path(novel_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "novel_id": novel_id,
+                    "title": title,
+                    "fields": fields,
+                    "error": error,
+                    "note": "create POST 结果不确定，可能已在番茄建书；"
+                    "重跑本工具会先按同名书核对并绑定，不会重复建书",
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+
+
+def _clear_pending(novel_id):
+    try:
+        _pending_path(novel_id).unlink()
+    except OSError:
+        pass
+
+
+def _bind_created(conn, env, novel_id, book_id, title, detail=None, recovered=False):
+    """Fetch the volume, bind the Fanqie book and audit the result."""
+    if recovered:
+        dup = conn.execute(
+            "SELECT id FROM novels WHERE book_id=? AND id<>?",
+            (book_id, novel_id),
+        ).fetchone()
+        if dup:
+            return {
+                "ok": False,
+                "error": f"番茄同名书 book_id={book_id} 已绑定到本地作品 {dup['id']}，请人工核对",
+            }
+    volume_id = ""
+    try:
+        volume_id = _get_volume_id(env, book_id)
+    except (urllib.error.URLError, urllib.error.HTTPError, RuntimeError, ValueError):
+        volume_id = ""
+    bound = ending.bind_book(conn, novel_id, book_id, volume_id)
+    if not bound.get("ok"):
+        prefix = "检测到同名书但绑定失败" if recovered else "建书成功但绑定失败"
+        return {"ok": False, "error": f"{prefix}：{bound.get('error')}", "book_id": book_id}
+    audit.log(
+        conn,
+        "ending",
+        "create_book",
+        target_type="novel",
+        target_id=novel_id,
+        detail={
+            **(detail or {}),
+            "book_id": book_id,
+            "volume_id": volume_id,
+            "recovered": bool(recovered),
+        },
+    )
+    conn.commit()
+    _clear_pending(novel_id)
+    if recovered:
+        note = f"检测到番茄已存在同名书《{title}》（book_id={book_id}），直接绑定，未重复建书"
+    else:
+        note = f"已在番茄创建《{title}》并绑定 book_id={book_id}"
+    return {
+        "ok": True,
+        "book_id": book_id,
+        "volume_id": volume_id,
+        "note": note,
+    }
+
+
 def create_book_on_fanqie(conn, novel_id):
     """Create the book on Fanqie and bind it to the local novel row."""
     row = conn.execute(
@@ -289,6 +420,7 @@ def create_book_on_fanqie(conn, novel_id):
     if row["status"] != "ready":
         return {"ok": False, "error": f"状态不是 ready（当前 {row['status']}），请先确认创意"}
     if row["book_id"]:
+        _clear_pending(novel_id)
         return {"ok": False, "error": f"已绑定 book_id={row['book_id']}，无需重复建书"}
 
     env = load_env()
@@ -299,6 +431,24 @@ def create_book_on_fanqie(conn, novel_id):
     genre = str(row["genre"] or "").strip()
     if not title or not genre:
         return {"ok": False, "error": "书名或类型为空，无法建书"}
+
+    # Idempotency: a previous POST may have created the book even though its
+    # response was lost. When a trace exists, verify by title on Fanqie first
+    # and bind the existing book instead of creating a duplicate.
+    if _read_pending(novel_id):
+        try:
+            existing_book_id = _existing_book_id(env, title)
+        except (urllib.error.URLError, urllib.error.HTTPError, RuntimeError, ValueError) as exc:
+            return {
+                "ok": False,
+                "error": "上次建书结果不确定，且暂时无法核对番茄书单："
+                f"{exc}；请稍后重试（重试会自动绑定同名书）",
+            }
+        _clear_pending(novel_id)
+        if existing_book_id:
+            return _bind_created(
+                conn, env, novel_id, existing_book_id, title, recovered=True
+            )
 
     tags = []
     try:
@@ -339,9 +489,18 @@ def create_book_on_fanqie(conn, novel_id):
         }
         if activity_id:
             fields["group_category_id"] = str(_category_id(main))
+    except (urllib.error.URLError, urllib.error.HTTPError, RuntimeError, ValueError) as exc:
+        return {"ok": False, "error": f"建书准备失败（尚未发起建书请求，可安全重试）：{exc}"}
+
+    try:
         res = http_json("POST", "/api/author/book/create/v0/", fields, env)
     except (urllib.error.URLError, urllib.error.HTTPError, RuntimeError, ValueError) as exc:
-        return {"ok": False, "error": f"建书请求失败：{exc}"}
+        _write_pending(novel_id, title, fields, str(exc))
+        return {
+            "ok": False,
+            "error": f"建书请求失败：{exc}（请求可能已在番茄建书成功，现场已留痕；"
+            "请勿重复建书，稍后重试会自动按同名书绑定）",
+        }
 
     if res.get("code") != 0:
         msg = str(res.get("message") or res)
@@ -354,34 +513,20 @@ def create_book_on_fanqie(conn, novel_id):
     if not book_id:
         return {"ok": False, "error": f"建书响应缺少 book_id：{res}"}
 
-    volume_id = ""
-    try:
-        volume_id = _get_volume_id(env, book_id)
-    except (urllib.error.URLError, urllib.error.HTTPError, RuntimeError, ValueError):
-        volume_id = ""
-
-    bound = ending.bind_book(conn, novel_id, book_id, volume_id)
-    if not bound.get("ok"):
-        return {"ok": False, "error": f"建书成功但绑定失败：{bound.get('error')}", "book_id": book_id}
-
-    audit.log(
+    return _bind_created(
         conn,
-        "ending",
-        "create_book",
-        target_type="novel",
-        target_id=novel_id,
-        detail={"book_id": book_id, "volume_id": volume_id, "gender": gender,
-                "category": fields["category"],
-                "group_category_id": fields.get("group_category_id", ""),
-                "activity_id": activity_id, "thumb_uri": DEFAULT_THUMB_URI},
+        env,
+        novel_id,
+        book_id,
+        title,
+        detail={
+            "gender": gender,
+            "category": fields["category"],
+            "group_category_id": fields.get("group_category_id", ""),
+            "activity_id": activity_id,
+            "thumb_uri": DEFAULT_THUMB_URI,
+        },
     )
-    conn.commit()
-    return {
-        "ok": True,
-        "book_id": book_id,
-        "volume_id": volume_id,
-        "note": f"已在番茄创建《{title}》并绑定 book_id={book_id}",
-    }
 
 
 def main():

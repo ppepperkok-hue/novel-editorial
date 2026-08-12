@@ -255,7 +255,7 @@ class EditorialDailyTests(unittest.TestCase):
     def test_review_tone_follows_friction(self):
         self.conn.execute(
             "INSERT INTO agent_relations(agent,other,novel_id,familiarity,trust,friction,updated_at) "
-            "VALUES('writer','reviewer',?,0,0,0.4,datetime('now','localtime'))",
+            "VALUES('reviewer','writer',?,0,0,0.4,datetime('now','localtime'))",
             (self.novel_id,),
         )
         self.conn.commit()

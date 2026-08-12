@@ -71,6 +71,7 @@ export default function CommandPalette({ onRefresh, pushToast, go, changeTheme, 
             : `启动失败：${r.error || "未知"}`,
           r.ok ? "ok" : "bad",
         );
+        onRefresh();
         return;
       }
       const [action, workflow] = cmd.id.split("-");

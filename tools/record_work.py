@@ -18,6 +18,8 @@ sys.path.insert(0, str(ROOT))
 
 from novel_editorial import config, db  # noqa: E402
 
+ALERTS_LOG = config.ALERTS_LOG
+
 
 def _j(value, fallback):
     try:
@@ -33,7 +35,7 @@ def _to_int(value, default=0, field=""):
         return int(value)
     except (TypeError, ValueError):
         try:
-            with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+            with ALERTS_LOG.open("a", encoding="utf-8") as f:
                 f.write(
                     f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
                     f"record_work: {field}={value!r} 非整数，使用默认 {default}\n"
@@ -46,7 +48,7 @@ def _to_int(value, default=0, field=""):
 def _trace(message):
     """Append a trace line to alerts.log; I/O failure must not crash the run."""
     try:
-        with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+        with ALERTS_LOG.open("a", encoding="utf-8") as f:
             f.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {message}\n")
     except OSError:
         pass
@@ -66,9 +68,18 @@ def upsert_novel(conn, payload):
 
     row = None
     if book_id:
-        row = conn.execute("SELECT id, outline FROM novels WHERE book_id=?", (book_id,)).fetchone()
-    if row is None:
-        row = conn.execute("SELECT id, outline FROM novels WHERE title=?", (title,)).fetchone()
+        row = conn.execute(
+            "SELECT id, outline FROM novels WHERE book_id=? ORDER BY id DESC LIMIT 1",
+            (book_id,),
+        ).fetchone()
+    # Same-title merge requires an explicit opt-in and an active book; a new
+    # book must never silently overwrite an older same-title row.
+    if row is None and payload.get("merge_by_title"):
+        row = conn.execute(
+            "SELECT id, outline FROM novels WHERE title=? "
+            "AND status IN ('publishing','finishing') ORDER BY id DESC LIMIT 1",
+            (title,),
+        ).fetchone()
 
     old_outline = _j(row["outline"], {}) if row else {}
     new_outline = payload.get("outline") or {}
@@ -169,7 +180,7 @@ def _upsert_summary(conn, novel_id, chapter_id, seq, ch, run_id=""):
         character_states = raw_character_states
     elif raw_character_states is not None:
         try:
-            with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+            with ALERTS_LOG.open("a", encoding="utf-8") as f:
                 f.write(
                     f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
                     f"record_work: chapter {seq} character_updates "
@@ -214,7 +225,7 @@ def _upsert_summary(conn, novel_id, chapter_id, seq, ch, run_id=""):
             state = {"changes": state}
         if not isinstance(state, dict):
             try:
-                with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+                with ALERTS_LOG.open("a", encoding="utf-8") as f:
                     f.write(
                         f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
                         f"record_work: chapter {seq} character {name!r} 的 state "
@@ -308,7 +319,7 @@ def _upsert_summary(conn, novel_id, chapter_id, seq, ch, run_id=""):
         except (TypeError, ValueError):
             expected = seq + 10
             try:
-                with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+                with ALERTS_LOG.open("a", encoding="utf-8") as f:
                     f.write(
                         f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
                         f"record_work: 章节 {seq} expected_recover="
@@ -354,7 +365,7 @@ def upsert_chapters(conn, novel_id, chapters, run_id=""):
     for idx, ch in enumerate(chapters or []):
         if not isinstance(ch, dict):
             try:
-                with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+                with ALERTS_LOG.open("a", encoding="utf-8") as f:
                     f.write(
                         f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
                         f"record_work: chapters[{idx}] ({type(ch).__name__}) 非 dict，已跳过\n"

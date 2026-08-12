@@ -622,22 +622,30 @@ def main():
             topics = [topic] + [t for t in (topics or []) if t != topic]
         # Create a replayable session so the panel can show the full
         # transcript for scheduled weekly meetings too (not only interactive
-        # topic meetings).
-        cur = conn.execute(
-            "INSERT INTO meeting_sessions(kind,topic,status,novel_id,attendees,current_round,created_at,updated_at) "
-            "VALUES(?,?,?,?,?,0,?,?)",
-            (
-                args.kind,
-                topic or "周会",
-                "running",
-                novel_id,
-                json.dumps(attendees, ensure_ascii=False),
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            ),
-        )
-        conn.commit()
-        session_id = cur.lastrowid
+        # topic meetings). Go through meeting_session.create_session so the
+        # running-session guard applies and the CLI cannot double-open with
+        # web_api; dry-run never touches the database.
+        if not args.dry_run:
+            from novel_editorial.services import meeting_session  # noqa: PLC0415
+
+            created = meeting_session.create_session(
+                conn, topic or "周会", novel_id=novel_id,
+                db_path=str(db_path), kind=args.kind,
+            )
+            if not created.get("ok"):
+                print(
+                    json.dumps(
+                        {"ok": False, "error": created.get("error") or "create_session failed"},
+                        ensure_ascii=False,
+                    )
+                )
+                return 1
+            session_id = created["session_id"]
+            conn.execute(
+                "UPDATE meeting_sessions SET attendees=?, current_round=0 WHERE id=?",
+                (json.dumps(attendees, ensure_ascii=False), session_id),
+            )
+            conn.commit()
         transcript = []
         for round_no in range(1, args.rounds + 1):
             for agent in attendees:
@@ -697,33 +705,35 @@ def main():
         report.setdefault("writing_directives", [])
         report["kind"] = args.kind
 
-        # archive
-        cur = conn.execute(
-            "INSERT INTO weekly_meetings(held_at,novel_id,attendees,topics,report,status,kind,session_id) "
-            "VALUES(?,?,?,?,?,?,?,?)",
-            (
-                report["date"],
-                novel_id,
-                json.dumps(attendees, ensure_ascii=False),
-                json.dumps(topics, ensure_ascii=False),
-                json.dumps(report, ensure_ascii=False),
-                "completed",
-                args.kind,
-                session_id,
-            ),
-        )
-        conn.commit()
-        weekly_id = cur.lastrowid
-        conn.execute(
-            "UPDATE meeting_sessions SET status='finished', report=?, transcript=?, updated_at=? WHERE id=?",
-            (
-                json.dumps(report, ensure_ascii=False),
-                json.dumps(transcript, ensure_ascii=False),
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                session_id,
-            ),
-        )
-        conn.commit()
+        # archive (dry-run 不落任何库，与全链无副作用一致)
+        weekly_id = None
+        if not args.dry_run:
+            cur = conn.execute(
+                "INSERT INTO weekly_meetings(held_at,novel_id,attendees,topics,report,status,kind,session_id) "
+                "VALUES(?,?,?,?,?,?,?,?)",
+                (
+                    report["date"],
+                    novel_id,
+                    json.dumps(attendees, ensure_ascii=False),
+                    json.dumps(topics, ensure_ascii=False),
+                    json.dumps(report, ensure_ascii=False),
+                    "completed",
+                    args.kind,
+                    session_id,
+                ),
+            )
+            conn.commit()
+            weekly_id = cur.lastrowid
+            conn.execute(
+                "UPDATE meeting_sessions SET status='finished', report=?, transcript=?, updated_at=? WHERE id=?",
+                (
+                    json.dumps(report, ensure_ascii=False),
+                    json.dumps(transcript, ensure_ascii=False),
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    session_id,
+                ),
+            )
+            conn.commit()
         if not args.dry_run:
             activity.log_activity(
                 conn,

@@ -94,6 +94,19 @@
 | L-068 | R11 | 锁与告警路径硬编码 ROOT | control/editorial_daily/preflight | 待处理 |
 | L-069 | R11 | desktop api-error 通道未桥接 preload/webapp | desktop | 待处理 |
 | L-070 | R11 | export 全节点缺失 exit 0 / distill 元素缺字段静默 | export_agent_prompts/distill_lessons | 待处理 |
+
+## 第十二轮遗留更新（20260812）
+
+| 编号 | 来源 | 遗留项 | 文件 | 状态 |
+| --- | --- | --- | --- | --- |
+| L-065 | R11 | 会议创建未收敛单一入口 | agent_meeting | 已修（R12-A2-05） |
+| L-066 | R11 | knowledge upsert 错误语义 | web_api.py | 已修（R12-A1-02） |
+| L-068 | R11 | 锁/告警路径硬编码 ROOT | 多文件 | 部分已修（R12-D1-06/B-01），editorial_daily/control/autopilot 待处理 |
+| L-069 | R11 | api-error 通道死代码 | desktop | 已修（R12-B-04 删除） |
+| L-071 | R12 | merge_blueprints 无 seq 更新幂等缺陷 | apply_architect.py | 待处理 |
+| L-072 | R12 | create_session 跨进程 TOCTOU | meeting_session.py | 待处理 |
+| L-073 | R12 | CLI no-novel 退出码不一致 / 不传 compressed_history | agent_meeting.py | 待处理 |
+| L-074 | R12 | 测试共用 n8n_tmp/t.lock 顺序敏感 | tests/ | 待处理 |
 | L-036 | R6 | config.load_env 只 strip 不剥行内注释 | config.py | 已修（R7-A1-08） |
 | L-037 | R5 | bind_book env 写成功后 DB 提交异常的小概率半更新 | ending.py | 不处理（小概率，方向已修正） |
 | L-038 | R5 | _normalize_action_items 不含全角逗号 | activity.py | 不处理（既有行为） |

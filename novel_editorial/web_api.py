@@ -1026,6 +1026,7 @@ def make_handler(db_path):
                                 )
                             except ValueError as exc:
                                 result = {"ok": False, "error": str(exc)}
+                                http_status = 400
                             else:
                                 audit_service.log(
                                     conn, "knowledge", "novel_knowledge_upsert",

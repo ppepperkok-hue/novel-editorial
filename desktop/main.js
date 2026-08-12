@@ -87,10 +87,6 @@ function dataDirProblems() {
     path.join(base, "exports"),
     path.join(base, "demo_data"),
     path.join(base, "n8n_tmp"),
-    // The backend still resolves weekly/daily locks against ROOT
-    // (services/control.py, tools/editorial_daily.py), so the install dir
-    // itself must remain writable for those lock files.
-    path.join(ROOT, "n8n_tmp"),
   ];
   for (const dir of dirs) {
     try {
@@ -123,9 +119,6 @@ function spawnApiProcess() {
     apiProc = null;
     const msg = `无法启动后端服务（${PYTHONW}）：${(err && err.message) || err}`;
     console.error("pythonw spawn failed:", err);
-    if (win) {
-      win.webContents.send("api-error", msg);
-    }
     notifyIssue(msg);
   });
   child.on("exit", (code, signal) => {
@@ -139,9 +132,6 @@ function spawnApiProcess() {
     lastApiCrashAt = now;
     const reason = `后端服务异常退出（code=${code}${signal ? `, signal=${signal}` : ""}）`;
     console.error(reason);
-    if (win) {
-      win.webContents.send("api-error", reason);
-    }
     if (apiRestartCount >= API_RESTART_MAX) {
       notifyIssue(`后端服务异常退出，自动重启已达上限（${API_RESTART_MAX} 次），请重启应用。`);
       return;
@@ -471,12 +461,6 @@ ipcMain.handle("app:set-auto-launch", (e, enabled) => {
 
 ipcMain.handle("app:get-auto-launch", () => {
   return app.getLoginItemSettings().openAtLogin;
-});
-
-ipcMain.on("app:close-to-tray", () => {
-  if (win) {
-    win.hide();
-  }
 });
 
 ipcMain.on("app:quit", () => {

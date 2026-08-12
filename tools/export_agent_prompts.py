@@ -2,6 +2,11 @@
 
 Each agent becomes a markdown file with frontmatter (model, temperature) and
 the system prompt as body. Edit those files, then run render_workflow.py.
+
+Proxy mode: when the workflow only carries agent name/model/temperature/task
+(jsonBody contains "{agent:'"), this tool intentionally exports nothing and
+exits 0 — that is an unsupported-but-normal state, not a failure. The prompt
+assets are maintained directly under prompts/agents/*.md in that mode.
 """
 
 import json
@@ -65,7 +70,7 @@ def main():
             "PROXY_MODE=True：本工具不导出任何文件；提示词资产直接维护在 "
             "prompts/agents/*.md（工作流只携带 agent 名/模型/温度/task）。"
         )
-        return False
+        return 0
     OUT.mkdir(parents=True, exist_ok=True)
     written = set()
     for node_name, filename in AGENT_FILES.items():
@@ -114,8 +119,8 @@ def main():
         (OUT / filename).write_text(content, encoding="utf-8")
         written.add(filename)
     print("exported:", sorted(written))
-    return True
+    return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(0 if main() else 1)
+    raise SystemExit(main())

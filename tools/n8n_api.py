@@ -93,7 +93,30 @@ def request(method, path, body=None):
         raise
 
 
+_USAGE = (
+    "usage: python tools/n8n_api.py <list|delete|archive|create|update|run|exec> [args]\n"
+    "  list                          list workflows\n"
+    "  delete|archive <workflow-id>  delete or archive a workflow\n"
+    "  create <payload-json-or-file> create a workflow\n"
+    "  update <workflow-id> <payload-json-or-file>  update a workflow\n"
+    "  run [workflow-id]             run a workflow (default N8N_WORKFLOW_DAILY)\n"
+    "  exec <execution-id>           show execution status"
+)
+
+
+def _arg(index, label):
+    """Return sys.argv[index] or print usage and exit 1 when missing."""
+    if len(sys.argv) <= index:
+        print(f"missing argument: {label}")
+        print(_USAGE)
+        sys.exit(1)
+    return sys.argv[index]
+
+
 if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print(_USAGE)
+        sys.exit(1)
     action = sys.argv[1]
     if action == "list":
         status, body = request("GET", "/rest/workflows")
@@ -102,23 +125,23 @@ if __name__ == "__main__":
         for w in items:
             print("-", w["id"], w["name"], "active=", w["active"])
     elif action == "delete":
-        wf_id = sys.argv[2]
+        wf_id = _arg(2, "workflow id")
         status, body = request("DELETE", "/rest/workflows/" + wf_id)
         print("delete status:", status, body)
     elif action == "archive":
-        wf_id = sys.argv[2]
+        wf_id = _arg(2, "workflow id")
         status, body = request("POST", "/rest/workflows/" + wf_id + "/archive")
         print("archive status:", status, body)
     elif action == "create":
-        raw = sys.argv[2]
+        raw = _arg(2, "payload JSON or file path")
         payload = json.loads(raw) if raw.lstrip().startswith("{") else json.load(open(raw, encoding="utf-8"))
         status, body = request("POST", "/rest/workflows", payload)
         print("create status:", status)
         print("id:", body["data"]["id"], "name:", body["data"]["name"])
         print("nodes:", [n["name"] for n in body["data"]["nodes"]])
     elif action == "update":
-        wf_id = sys.argv[2]
-        raw = sys.argv[3]
+        wf_id = _arg(2, "workflow id")
+        raw = _arg(3, "payload JSON or file path")
         payload = json.loads(raw) if raw.lstrip().startswith("{") else json.load(open(raw, encoding="utf-8"))
         status, body = request("PATCH", "/rest/workflows/" + wf_id, payload)
         print("update status:", status)
@@ -144,7 +167,7 @@ if __name__ == "__main__":
         status, body = request("POST", "/rest/workflows/" + wf_id + "/run", run_payload)
         print("run status:", status, body)
     elif action == "exec":
-        exec_id = sys.argv[2]
+        exec_id = _arg(2, "execution id")
         status, body = request("GET", "/rest/executions/" + exec_id)
         d = body["data"]
         print("status:", d.get("status"))
@@ -160,3 +183,7 @@ if __name__ == "__main__":
         error = rd.get("error")
         print("lastNodeExecuted:", last)
         print("error:", json.dumps(error, ensure_ascii=False)[:1000] if error else None)
+    else:
+        print(f"unknown action: {action}")
+        print(_USAGE)
+        sys.exit(1)

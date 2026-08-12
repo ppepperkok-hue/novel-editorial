@@ -942,14 +942,18 @@ def _relation_other_match(conn):
 
 
 def _review_tone(conn, writer_agent, reviewer_agent, novel_id):
-    """R2-1-3: soften or sharpen rejection wording with relationship friction."""
+    """R2-1-3: soften or sharpen rejection wording with relationship friction.
+
+    Friction is written as reviewer -> writer (see _rel call sites), so the
+    lookup must use the reviewer as the row's agent side.
+    """
     if not config.RELATION_WEIGHT:
         return ""
     other_match, n = _relation_other_match(conn)
     row = conn.execute(
         "SELECT friction FROM agent_relations "
         f"WHERE agent=? AND novel_id=? AND {other_match}",
-        [writer_agent, novel_id] + [reviewer_agent] * n,
+        [reviewer_agent, novel_id] + [writer_agent] * n,
     ).fetchone()
     friction = float(row["friction"] or 0) if row else 0.0
     if friction >= 0.3:
@@ -1668,15 +1672,27 @@ def _generate(ctx, conn, stock, env, run_id, out_file):
 
     _load_claimed_writer_notes(ctx, conn)
     track_a = _run_track(ctx, conn, 0, outline, guard, meta, target_words, env)
-    track_b = _run_track(ctx, conn, 1, outline, guard, meta, target_words, env, track_a)
     pub_a = _publish_track(ctx, 0, track_a, outline, meta, target_words, env)
-    pub_b = _publish_track(ctx, 1, track_b, outline, meta, target_words, env)
     track_a.update(pub_a)
-    track_b.update(pub_b)
+    if target > 1:
+        track_b = _run_track(ctx, conn, 1, outline, guard, meta, target_words, env, track_a)
+        pub_b = _publish_track(ctx, 1, track_b, outline, meta, target_words, env)
+        track_b.update(pub_b)
+    else:
+        # R12-A2-02: a one-chapter target must not produce a second track.
+        track_b = {"gate": None, "summary": {}, "editor_text": "", "failed": False}
 
     payload = steps.build_payload(
         run_id, meta, outline, track_a, track_b, ctx.costs, ctx.failed_nodes
     )
+    if target <= 1:
+        # Drop any phantom track-B row (e.g. K2 failure filler) so a
+        # one-chapter run records exactly one chapter.
+        start_num = int(meta.get("start_num") or 1)
+        payload["chapters"] = [
+            c for c in (payload.get("chapters") or [])
+            if int(c.get("seq") or 0) != start_num + 1
+        ]
     if not ctx.dry_run:
         out_path = Path(out_file) if out_file else ROOT / "n8n_tmp" / "daily_result.json"
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1788,6 +1804,16 @@ def daily(conn, chapters=None, trigger="manual", dry_run=False, db_path=None, en
         # next scheduled run falls back to daily_chapters.
         if not dry_run:
             set_many(conn, {"pending_publish": "0"})
+        elif chapters:
+            # R12-A2-02: dry-run mirrors the override in memory (never writes
+            # settings) so --chapters also drives the generation target here.
+            try:
+                n = max(1, min(int(chapters), 10))
+            except (TypeError, ValueError):
+                n = 0
+            if n:
+                stock["target"] = n
+                stock["need"] = max(0, n - int(stock.get("stock") or 0))
         payload = None
         published = 0
         if stock["need"] <= 0:

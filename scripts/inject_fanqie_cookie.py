@@ -1,24 +1,23 @@
 """Inject the saved Fanqie cookies into the debug Chrome via CDP."""
 
 import json
-import re
 import sys
 import time
 import urllib.request
 import websocket  # websocket-client
 from pathlib import Path
 
-ENV_FILE = Path.home() / ".n8n" / ".env"
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from novel_editorial import config  # noqa: E402
+
 CDP = "http://127.0.0.1:9222"
 
 
 def load_env():
-    env = {}
-    for line in Path(ENV_FILE).read_text(encoding="utf-8").splitlines():
-        m = re.match(r"^\s*([A-Z0-9_]+)\s*=\s*(.*)$", line)
-        if m:
-            env[m.group(1)] = m.group(2).strip().strip('"').strip("'")
-    return env
+    """Shared env loader: ~/.n8n/.env filled in by config.load_env()."""
+    return config.load_env()
 
 
 def parse_cookie(header):

@@ -109,11 +109,6 @@ def sync_from_n8n(conn, limit=20):
     try:
         for ex in executions:
             run_id = str(ex["id"])
-            exists = conn.execute(
-                "SELECT id FROM daily_runs WHERE run_id=?", (run_id,)
-            ).fetchone()
-            if exists:
-                continue
             status = str(ex.get("status") or "running")
             failed_nodes = []
             run_error = ""
@@ -125,6 +120,25 @@ def sync_from_n8n(conn, limit=20):
                 "SELECT id FROM novels WHERE status='publishing' AND book_id!='' "
                 "ORDER BY id LIMIT 1"
             ).fetchone()
+            exists = conn.execute(
+                "SELECT id FROM daily_runs WHERE run_id=?", (run_id,)
+            ).fetchone()
+            if exists:
+                conn.execute(
+                    "UPDATE daily_runs SET status=?, started_at=?, finished_at=?, "
+                    "failed_nodes=?, error=?, published=?, "
+                    "updated_at=datetime('now','localtime') WHERE run_id=?",
+                    (
+                        status,
+                        started,
+                        finished,
+                        json.dumps(failed_nodes, ensure_ascii=False),
+                        run_error,
+                        published_of(conn, started, finished),
+                        run_id,
+                    ),
+                )
+                continue
             conn.execute(
                 "INSERT INTO daily_runs(run_id,novel_id,trigger,source,status,started_at,"
                 "finished_at,failed_nodes,error,published,detail,created_at) "

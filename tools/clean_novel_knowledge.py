@@ -111,13 +111,22 @@ def _plan_dup_golden_finger(conn):
                 "id": r["id"],
                 "novel_id": r["novel_id"],
                 "keep_id": item["id"] if item else None,
+                # No item/金手指 row exists: keep the unique power record by
+                # reclassifying it under item instead of deleting it (R12-C-03).
+                "keep_as": "item" if item is None else None,
             }
         )
     return out
 
 
 def _plan_similar_rules(conn):
-    """Merge near-duplicate world_rule rows within the same novel."""
+    """Merge near-duplicate world_rule rows within the same novel.
+
+    Similar pairs are grouped with union-find so chained rules (A~B~C) are
+    planned as one keep row absorbing every other row. Applying a chained plan
+    in order would delete a row that is still referenced as a later keep
+    target and silently drop its content (R12-C-02).
+    """
     out = []
     novels = conn.execute(
         "SELECT DISTINCT novel_id FROM novel_knowledge WHERE category='world_rule'"
@@ -128,6 +137,20 @@ def _plan_similar_rules(conn):
             "WHERE novel_id=? AND category='world_rule' ORDER BY entity",
             (nid,),
         ).fetchall()
+        parent = {}
+
+        def find(x):
+            parent.setdefault(x, x)
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        def union(a, b):
+            ra, rb = find(a), find(b)
+            if ra != rb:
+                parent[rb] = ra
+
         for i in range(len(rows)):
             for j in range(i + 1, len(rows)):
                 a, b = rows[i], rows[j]
@@ -136,18 +159,28 @@ def _plan_similar_rules(conn):
                 ratio = _similarity(a["entity"], b["entity"])
                 prefix = _common_prefix_len(a["entity"], b["entity"])
                 if ratio >= 0.7 or (prefix >= 6 and ratio >= 0.55):
-                    keep, drop = (a, b) if a["version"] >= b["version"] else (b, a)
-                    out.append(
-                        {
-                            "kind": "merge_similar_rule",
-                            "novel_id": nid,
-                            "keep_id": keep["id"],
-                            "keep_entity": keep["entity"],
-                            "drop_id": drop["id"],
-                            "drop_entity": drop["entity"],
-                            "ratio": round(ratio, 3),
-                        }
-                    )
+                    union(a["id"], b["id"])
+        groups = {}
+        for r in rows:
+            groups.setdefault(find(r["id"]), []).append(r)
+        for members in groups.values():
+            if len(members) < 2:
+                continue
+            keep = max(members, key=lambda r: r["version"])
+            for drop in members:
+                if drop["id"] == keep["id"]:
+                    continue
+                out.append(
+                    {
+                        "kind": "merge_similar_rule",
+                        "novel_id": nid,
+                        "keep_id": keep["id"],
+                        "keep_entity": keep["entity"],
+                        "drop_id": drop["id"],
+                        "drop_entity": drop["entity"],
+                        "ratio": round(_similarity(keep["entity"], drop["entity"]), 3),
+                    }
+                )
     return out
 
 
@@ -212,7 +245,8 @@ def _merge_history(conn, keep_id, drop_id):
         merged = drop_content if not keep_content else f"{keep_content}\n\n{drop_content}"
         if keep_content:
             conn.execute(
-                "INSERT INTO novel_knowledge_history(knowledge_id,content,version,change_note,created_at) "
+                "INSERT OR IGNORE INTO novel_knowledge_history("
+                "knowledge_id,content,version,change_note,created_at) "
                 "VALUES(?,?,?,?,?)",
                 (keep_id, keep_content, keep["version"], f"merged:{drop['entity']}", _now()),
             )
@@ -220,9 +254,22 @@ def _merge_history(conn, keep_id, drop_id):
             "UPDATE novel_knowledge SET content=?, version=version+1, updated_at=? WHERE id=?",
             (merged, _now(), keep_id),
         )
+    drop_history = conn.execute(
+        "SELECT content, version, change_note, created_at "
+        "FROM novel_knowledge_history WHERE knowledge_id=?",
+        (drop_id,),
+    ).fetchall()
+    for h in drop_history:
+        # Move each history row to the keep row. INSERT OR IGNORE skips a
+        # version already present on the keep side (keeps the unique
+        # knowledge_id/version guard from R12-C-01 intact).
+        conn.execute(
+            "INSERT OR IGNORE INTO novel_knowledge_history("
+            "knowledge_id,content,version,change_note,created_at) VALUES(?,?,?,?,?)",
+            (keep_id, h["content"], h["version"], h["change_note"], h["created_at"]),
+        )
     conn.execute(
-        "UPDATE novel_knowledge_history SET knowledge_id=? WHERE knowledge_id=?",
-        (keep_id, drop_id),
+        "DELETE FROM novel_knowledge_history WHERE knowledge_id=?", (drop_id,)
     )
     conn.execute("DELETE FROM novel_knowledge WHERE id=?", (drop_id,))
 
@@ -266,6 +313,13 @@ def apply_clean(conn, plan):
     for item in plan["golden_finger_dups"]:
         if item["keep_id"]:
             _merge_history(conn, item["keep_id"], item["id"])
+        elif item.get("keep_as"):
+            # No item/金手指 row exists: preserve the unique power record
+            # under item instead of silently deleting it (R12-C-03).
+            conn.execute(
+                "UPDATE novel_knowledge SET category=?, updated_at=? WHERE id=?",
+                (item["keep_as"], _now(), item["id"]),
+            )
         else:
             conn.execute(
                 "DELETE FROM novel_knowledge_history WHERE knowledge_id=?",

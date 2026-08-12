@@ -34,15 +34,14 @@ def check_stock(conn, novel_id=0):
             "SELECT id, book_id, title, genre, premise, tags FROM novels "
             "WHERE status IN ('publishing','finishing') ORDER BY id DESC LIMIT 1"
         ).fetchone()
-    stock_sql = "SELECT COUNT(*) c FROM chapters WHERE status='reviewed'"
-    params = ()
-    if novel_id:
-        stock_sql += " AND novel_id=?"
-        params = (int(novel_id),)
-    elif book:
-        stock_sql += " AND novel_id=?"
-        params = (book["id"],)
-    stock = conn.execute(stock_sql, params).fetchone()["c"]
+    # Without an active book (or a resolvable novel_id) there is no valid
+    # stock scope; counting the whole library would mislead the caller.
+    stock = 0
+    if book is not None:
+        stock = conn.execute(
+            "SELECT COUNT(*) c FROM chapters WHERE status='reviewed' AND novel_id=?",
+            (book["id"],),
+        ).fetchone()["c"]
     def _parse_int(raw, fallback):
         if raw in (None, ""):
             return fallback
@@ -71,7 +70,7 @@ def check_stock(conn, novel_id=0):
         genre = settings.get("novel_genre", "")
     if not keywords:
         keywords = settings.get("novel_keywords", "")
-    return {
+    result = {
         "scope": "novel" if novel_id else ("active_book" if book else "none"),
         "stock": stock,
         "target": target,
@@ -83,6 +82,9 @@ def check_stock(conn, novel_id=0):
         "novel_keywords": keywords,
         "novel_genre": genre,
     }
+    if book is None:
+        result["warning"] = "没有活跃连载作品，未统计库存"
+    return result
 
 
 def main():

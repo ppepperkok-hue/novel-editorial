@@ -20,6 +20,8 @@ from novel_editorial import config, db  # noqa: E402
 from novel_editorial.services import audit  # noqa: E402
 from tools.preflight import acquire_lock, release_lock  # noqa: E402
 
+ALERTS_LOG = config.ALERTS_LOG
+
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
@@ -88,8 +90,7 @@ def _safe_int_setting(key, value, default):
         return int(value)
     except (TypeError, ValueError):
         try:
-            alerts = ROOT / "alerts.log"
-            with alerts.open("a", encoding="utf-8") as f:
+            with ALERTS_LOG.open("a", encoding="utf-8") as f:
                 f.write(
                     f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
                     f"publish_stock: settings[{key}]={value!r} 非整数，"
@@ -98,6 +99,15 @@ def _safe_int_setting(key, value, default):
         except OSError:
             pass
         return default
+
+
+def _alert(message):
+    """Append a trace line to alerts.log; I/O failure must not crash the run."""
+    try:
+        with ALERTS_LOG.open("a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {message}\n")
+    except OSError:
+        pass
 
 
 def publish_chapter(conn, chapter, env):
@@ -295,12 +305,7 @@ def publish_batch(conn, novel_id, target, env):
         if ok:
             if error:
                 warnings.append({"chapter": ch["seq"], "warning": error})
-                alerts = ROOT / "alerts.log"
-                with alerts.open("a", encoding="utf-8") as f:
-                    f.write(
-                        f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
-                        f"章节 {ch['seq']} 发布复核警告：{error}\n"
-                    )
+                _alert(f"章节 {ch['seq']} 发布复核警告：{error}")
             conn.execute(
                 "UPDATE chapters SET status='published', fanqie_item_id=?, "
                 "published_at=? WHERE id=?",
@@ -323,12 +328,7 @@ def publish_batch(conn, novel_id, target, env):
                         "INSERT OR REPLACE INTO settings(key,value) "
                         "VALUES('daily_enabled','false')"
                     )
-                    alerts = ROOT / "alerts.log"
-                    with alerts.open("a", encoding="utf-8") as f:
-                        f.write(
-                            f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
-                            "小说已完结：收尾完成，日更已自动停止，请到番茄后台标记完结\n"
-                        )
+                    _alert("小说已完结：收尾完成，日更已自动停止，请到番茄后台标记完结")
                     conn.commit()
                     break
                 else:
@@ -375,7 +375,7 @@ def main():
     db_path = Path(args.db)
     if not db_path.is_absolute():
         db_path = ROOT / db_path
-    lock_path = ROOT / "n8n_tmp" / (db_path.stem + ".lock")
+    lock_path = config.TMP_DIR / (db_path.stem + ".lock")
     locked, lock_reason = acquire_lock(lock_path)
     if not locked:
         print(

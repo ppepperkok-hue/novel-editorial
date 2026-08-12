@@ -15,6 +15,7 @@ import argparse
 import difflib
 import json
 import re
+import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -31,6 +32,26 @@ _SENTENCE_SPLIT = re.compile(r"[:：,，。！？;；、\s]+")
 
 def _now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _ensure_history_version_unique(conn):
+    """Idempotently guard history against duplicate (knowledge_id, version).
+
+    Legacy databases may already contain pre-fix duplicate rows; the unique
+    index is only created when no duplicates exist so existing stores keep
+    working. New writes are protected by the transactional NOT EXISTS check
+    in upsert_ex either way.
+    """
+    dup = conn.execute(
+        "SELECT knowledge_id, version FROM novel_knowledge_history "
+        "GROUP BY knowledge_id, version HAVING COUNT(*) > 1 LIMIT 1"
+    ).fetchone()
+    if dup:
+        return
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_novel_knowledge_history_kid_version "
+        "ON novel_knowledge_history(knowledge_id, version)"
+    )
 
 
 def normalize_entity(category, entity):
@@ -192,7 +213,13 @@ def upsert_ex(
         similar = find_similar(conn, novel_id, category, entity) if check_similar else []
         if similar and auto_merge:
             best = similar[0]
-            if _similarity(content, best["content"] or "") >= 0.6:
+            best_row = conn.execute(
+                "SELECT content FROM novel_knowledge WHERE id=?", (best["id"],)
+            ).fetchone()
+            best_content = (best_row["content"] if best_row else "") or ""
+            # Compare against the full stored content, not the 120-char
+            # preview from find_similar, so long facts can still merge.
+            if _similarity(content, best_content) >= 0.6:
                 return {
                     **upsert_ex(
                         conn,
@@ -217,26 +244,57 @@ def upsert_ex(
     else:
         kid = row["id"]
         similar = []
-        if row["content"] == content:
-            # Same content: idempotent upsert, no version/history churn.
-            # change_note is only persisted when content actually changes.
-            conn.commit()
-            return {
-                "id": kid,
-                "entity": entity,
-                "merged_into": None,
-                "similar": similar,
-            }
-        old_version = row["version"]
-        conn.execute(
-            "INSERT INTO novel_knowledge_history(knowledge_id,content,version,change_note,created_at) "
-            "VALUES(?,?,?,?,?)",
-            (kid, row["content"], old_version, change_note, _now()),
-        )
-        conn.execute(
-            "UPDATE novel_knowledge SET content=?, source_chapter=?, version=version+1, updated_at=? "
-            "WHERE id=?",
-            (content, source_chapter, _now(), kid),
+        _ensure_history_version_unique(conn)
+        for _ in range(5):
+            row = conn.execute(
+                "SELECT id, version, content FROM novel_knowledge WHERE id=?",
+                (kid,),
+            ).fetchone()
+            if row is None:
+                break
+            if row["content"] == content:
+                # Same content: idempotent upsert, no version/history churn.
+                # change_note is only persisted when content actually changes.
+                conn.commit()
+                return {
+                    "id": kid,
+                    "entity": entity,
+                    "merged_into": None,
+                    "similar": similar,
+                }
+            old_version = row["version"]
+            try:
+                conn.execute(
+                    "INSERT OR IGNORE INTO novel_knowledge_history("
+                    "knowledge_id,content,version,change_note,created_at) "
+                    "SELECT ?,?,?,?,? WHERE NOT EXISTS ("
+                    "  SELECT 1 FROM novel_knowledge_history "
+                    "  WHERE knowledge_id=? AND version=?)",
+                    (
+                        kid, row["content"], old_version, change_note, _now(),
+                        kid, old_version,
+                    ),
+                )
+                cur = conn.execute(
+                    "UPDATE novel_knowledge SET content=?, source_chapter=?, "
+                    "version=version+1, updated_at=? WHERE id=? AND version=?",
+                    (content, source_chapter, _now(), kid, old_version),
+                )
+                conn.commit()
+            except sqlite3.OperationalError as exc:
+                if "locked" not in str(exc).lower():
+                    raise
+                # Another writer holds the DB; retry with a fresh read.
+                continue
+            if cur.rowcount == 1:
+                return {
+                    "id": kid,
+                    "entity": entity,
+                    "merged_into": None,
+                    "similar": similar,
+                }
+        raise RuntimeError(
+            "upsert_ex 并发写入冲突重试耗尽（5 次），请稍后重试"
         )
     conn.commit()
     return {"id": kid, "entity": entity, "merged_into": None, "similar": similar}

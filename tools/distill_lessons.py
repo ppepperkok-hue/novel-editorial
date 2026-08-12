@@ -82,15 +82,33 @@ def _meeting_material(conn, meeting_id=None, session_id=None):
         if row is None:
             return None
         d = dict(row)
+        warnings = []
         try:
             transcript = json.loads(d.get("transcript") or "[]")
-        except ValueError:
+        except (TypeError, ValueError):
+            transcript = None
+        if not isinstance(transcript, list):
+            warnings.append(
+                "session transcript 非法（"
+                + (
+                    f"类型 {type(transcript).__name__}"
+                    if transcript is not None
+                    else "非 JSON"
+                )
+                + "），已回退空列表"
+            )
             transcript = []
         report = {}
         if d.get("report"):
             try:
                 report = json.loads(d["report"])
-            except ValueError:
+            except (TypeError, ValueError):
+                warnings.append("session report 不是合法 JSON，已回退空对象")
+                report = {}
+            if not isinstance(report, dict):
+                warnings.append(
+                    f"session report 类型非法（{type(report).__name__}），已回退空对象"
+                )
                 report = {}
         return {
             "id": d["id"],
@@ -101,6 +119,7 @@ def _meeting_material(conn, meeting_id=None, session_id=None):
             "transcript": transcript,
             "report": report,
             "source": f"session:{d['id']}",
+            "warnings": warnings,
         }
     if meeting_id:
         row = conn.execute(
@@ -114,9 +133,21 @@ def _meeting_material(conn, meeting_id=None, session_id=None):
     if row is None:
         return None
     d = dict(row)
+    warnings = []
     try:
         report = json.loads(d.get("report") or "{}")
-    except ValueError:
+    except (TypeError, ValueError):
+        report = None
+    if not isinstance(report, dict):
+        warnings.append(
+            "meeting report 非法（"
+            + (
+                f"类型 {type(report).__name__}"
+                if report is not None
+                else "非 JSON"
+            )
+            + "），已回退空对象"
+        )
         report = {}
     return {
         "id": d["id"],
@@ -129,6 +160,7 @@ def _meeting_material(conn, meeting_id=None, session_id=None):
         "transcript": [],
         "report": report,
         "source": f"meeting:{d['id']}",
+        "warnings": warnings,
     }
 
 
@@ -168,6 +200,7 @@ def distill(conn, meeting_id=None, session_id=None):
     mat = _meeting_material(conn, meeting_id, session_id)
     if mat is None:
         return {"ok": False, "error": "no meeting found to distill"}
+    warnings = list(mat.get("warnings") or [])
     diaries = _weekly_diaries(conn)
     stats = _quality_and_reader(conn)
     prompt = (
@@ -266,6 +299,7 @@ def distill(conn, meeting_id=None, session_id=None):
             "kind": mat["kind"],
             "drafted": drafted,
             "skipped": len(skipped_lessons),
+            "warnings": warnings,
         },
     )
     return {
@@ -274,6 +308,7 @@ def distill(conn, meeting_id=None, session_id=None):
         "drafted": drafted,
         "total_lessons": len(lessons),
         "skipped": len(skipped_lessons),
+        "warnings": warnings,
     }
 
 

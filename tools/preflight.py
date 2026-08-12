@@ -27,7 +27,7 @@ from novel_editorial.services import audit  # noqa: E402
 from tools.app_settings import get_all, get_bool, get_float  # noqa: E402
 
 ENV_FILE = Path.home() / ".n8n" / ".env"
-ALERTS_LOG = ROOT / "alerts.log"
+ALERTS_LOG = config.ALERTS_LOG
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
@@ -52,8 +52,11 @@ def load_env(env_file):
 
 
 def alert(message):
-    with ALERTS_LOG.open("a", encoding="utf-8") as f:
-        f.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {message}\n")
+    try:
+        with ALERTS_LOG.open("a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {message}\n")
+    except OSError:
+        pass
 
 
 def check_cookie():
@@ -124,12 +127,16 @@ def check_active_book(conn):
     return False, "当前没有可发布的连载作品，请先开新书会并完成建书"
 
 
+LOCK_MAX_AGE = 24 * 60 * 60
+
+
 def acquire_lock(lock_path):
     """Atomically claim the daily run lock (O_EXCL) to prevent concurrent
     scheduled + manual runs from both passing preflight and double-publishing.
-    A lock whose PID parses and is still alive is considered held regardless
-    of age; it is reclaimed immediately when that PID is dead. Only when the
-    PID cannot be parsed does the 2h age rule apply (older locks are stale)."""
+    A lock whose PID parses and is still alive is held unless the lock is
+    older than LOCK_MAX_AGE (stale PID reuse safety net); a dead PID is
+    reclaimed immediately. Only when the PID cannot be parsed does the 2h
+    age rule apply (older locks are stale)."""
     lock = Path(lock_path)
     lock.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -151,7 +158,7 @@ def acquire_lock(lock_path):
             age = 0
         stale = False
         if pid is not None:
-            stale = not _pid_alive(pid)
+            stale = (not _pid_alive(pid)) or age > LOCK_MAX_AGE
         elif age > 7200:
             stale = True
         if stale:
@@ -263,7 +270,7 @@ def main():
         # (proceed case); failed preflights keep the request so the user can
         # retry, and a held lock keeps it for the in-flight run.
         if ok and manual_requested:
-            lock_path = ROOT / "n8n_tmp" / (db_path.stem + ".lock")
+            lock_path = config.TMP_DIR / (db_path.stem + ".lock")
             locked, _lock_reason = acquire_lock(lock_path)
             if locked:
                 try:

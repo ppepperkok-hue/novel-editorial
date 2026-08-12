@@ -83,8 +83,11 @@ console.log(`Releasing v${version} (${owner}/${repo})`);
 let latestRemote = "";
 try {
   latestRemote = gh(`release view latest --json tagName --jq .tagName`).replace(/^v/, "");
-} catch {
-  // no release published yet; nothing to compare against
+} catch (err) {
+  throw new Error(
+    `cannot check the latest GitHub release before publishing: ` +
+      `${(err && err.stderr) || (err && err.message) || err}`,
+  );
 }
 if (latestRemote && compareVersions(version, latestRemote) <= 0) {
   throw new Error(

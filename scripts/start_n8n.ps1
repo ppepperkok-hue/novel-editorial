@@ -14,7 +14,20 @@ if (Test-Path $EnvFile) {
     Get-Content $EnvFile | ForEach-Object {
         if ($_ -match '^\s*([A-Za-z0-9_]+)\s*=\s*(.*)$') {
             $name = $matches[1]
-            $value = $matches[2].Trim().Trim('"').Trim("'")
+            $value = $matches[2].Trim()
+            # Align with novel_editorial/config.py:_strip_inline_comment:
+            # only a whitespace-preceded '#' starts a comment ('a=b#c' keeps
+            # '#c'), and quotes stay part of the value (config keeps them).
+            $cut = -1
+            foreach ($sep in @(" #", "`t#")) {
+                $idx = $value.IndexOf($sep)
+                if ($idx -ge 0 -and ($cut -lt 0 -or $idx -lt $cut)) {
+                    $cut = $idx
+                }
+            }
+            if ($cut -ge 0) {
+                $value = $value.Substring(0, $cut).Trim()
+            }
             Set-Item -Path "Env:$name" -Value $value -ErrorAction SilentlyContinue
         }
     }

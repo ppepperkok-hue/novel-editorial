@@ -232,6 +232,7 @@ def run(conn, dry_run=False):
     }
     auto = []
     skipped = []
+    non_market = []
     invalid = []
     for item in parsed.get("auto_updates") or []:
         if not isinstance(item, dict):
@@ -239,7 +240,17 @@ def run(conn, dry_run=False):
             continue
         file = str(item.get("file") or "")
         body = str(item.get("body") or "").strip()
-        if file not in market_files or not body:
+        if not body:
+            continue
+        if file not in market_files:
+            # Leave a trace instead of silently skipping non-market files:
+            # craft packages are updated through drafts, not direct writes.
+            non_market.append(file)
+            audit.log(
+                conn, "knowledge", "keeper_auto_update_skipped_non_market",
+                target_type="knowledge", target_id=file,
+                detail={"reason": "not a market package"},
+            )
             continue
         full = knowledge.read_knowledge(file)
         if full is None:
@@ -313,6 +324,7 @@ def run(conn, dry_run=False):
             "drafts": drafts,
             "deprecations": deprecated,
             "invalid": len(invalid),
+            "non_market_skipped": non_market,
         },
     )
     from novel_editorial.services import activity  # noqa: PLC0415
@@ -326,6 +338,7 @@ def run(conn, dry_run=False):
         {
             "auto_updates": auto,
             "skipped_to_draft": skipped,
+            "non_market_skipped": non_market,
             "draft_suggestions": drafts,
             "deprecations": deprecated,
             "invalid_items": invalid,
@@ -335,6 +348,7 @@ def run(conn, dry_run=False):
         "ok": True,
         "auto_updates": auto,
         "skipped_to_draft": skipped,
+        "skipped_non_market": non_market,
         "draft_suggestions": drafts,
         "deprecations": deprecated,
         "invalid_items": invalid,
