@@ -5,9 +5,10 @@ import os
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 from novel_editorial import db
-from tools import meeting_free_loop
+from tools import meeting_free_loop, meeting_speaker
 
 
 class FreeMeetingLoopTests(unittest.TestCase):
@@ -127,6 +128,153 @@ class FreeMeetingLoopTests(unittest.TestCase):
             self.assertEqual(row["status"], "running")
         finally:
             conn.close()
+
+    def _set_attendees(self, conn, agents):
+        conn.execute(
+            "UPDATE meeting_sessions SET attendees=? WHERE id=?",
+            (json_dumps(agents), self.session_id),
+        )
+        conn.commit()
+
+    def test_event_schedules_candidate_speaker(self):
+        conn = db.connect(self.db_path)
+        try:
+            self._set_attendees(conn, ["planner", "reviewer"])
+        finally:
+            conn.close()
+        loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path, dry_run=True)
+        calls = []
+
+        def fake_speakers(*args, **kwargs):
+            return [{"agent": "planner", "reason": "interest", "score": 1, "mandatory": False}]
+
+        def fake_reply(conn_, session_id, agent, event, **kwargs):
+            calls.append((session_id, agent, event.get("kind")))
+            return {"ok": True, "spoken": True, "message_id": 1, "speech": "好"}
+
+        with mock.patch.object(meeting_speaker, "candidate_speakers", fake_speakers), mock.patch.object(
+            meeting_free_loop.meeting_executor, "reply_to_mention", fake_reply
+        ):
+            loop.submit_event(self.session_id, {"kind": "user_message", "content": "讨论"})
+            deadline = time.time() + 5
+            while not calls and time.time() < deadline:
+                time.sleep(0.05)
+        self.assertEqual(calls, [(self.session_id, "planner", "user_message")])
+        loop.stop(self.session_id)
+
+    def test_breaker_skips_speakers(self):
+        conn = db.connect(self.db_path)
+        try:
+            self._set_attendees(conn, ["planner"])
+            for i in range(2):
+                conn.execute(
+                    "INSERT INTO meeting_messages(session_id, novel_id, seq, "
+                    "from_agent, role, kind, body, status, created_at) "
+                    "VALUES(?,1,?,'planner','assistant','speech','x','active',"
+                    "datetime('now','localtime'))",
+                    (self.session_id, i + 1),
+                )
+            conn.execute(
+                "INSERT OR REPLACE INTO settings(key, value) VALUES('meeting_free_max_calls','2')"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path, dry_run=True)
+        calls = []
+
+        def fake_reply(*args, **kwargs):
+            calls.append(1)
+            return {"ok": True, "spoken": True, "message_id": 1, "speech": "x"}
+
+        with mock.patch.object(
+            meeting_free_loop.meeting_executor, "reply_to_mention", fake_reply
+        ):
+            loop.submit_event(self.session_id, {"kind": "user_message", "content": "讨论"})
+            time.sleep(0.6)
+        self.assertEqual(calls, [])
+        conn = db.connect(self.db_path)
+        try:
+            audit_rows = conn.execute(
+                "SELECT action FROM audit_logs WHERE category='meeting' "
+                "ORDER BY id DESC LIMIT 1"
+            ).fetchall()
+            self.assertEqual(audit_rows[0]["action"], "breaker")
+        finally:
+            conn.close()
+        loop.stop(self.session_id)
+
+    def test_cold_timer_schedules_chair(self):
+        conn = db.connect(self.db_path)
+        try:
+            self._set_attendees(conn, ["eic"])
+            conn.execute(
+                "INSERT OR REPLACE INTO settings(key, value) VALUES('meeting_free_cold_s','0.2')"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path, dry_run=True)
+        calls = []
+
+        def fake_reply(conn_, session_id, agent, event, **kwargs):
+            calls.append((agent, event.get("kind")))
+            return {"ok": True, "spoken": True, "message_id": 1, "speech": "推进"}
+
+        with mock.patch.object(
+            meeting_free_loop.meeting_executor, "reply_to_mention", fake_reply
+        ):
+            loop.submit_event(self.session_id, {"kind": "user_message", "content": "开始"})
+            deadline = time.time() + 6
+            while len(calls) < 2 and time.time() < deadline:
+                time.sleep(0.1)
+        self.assertIn(("eic", "cold_timer"), calls)
+        loop.stop(self.session_id)
+
+    def test_chair_speaks_every_n_messages(self):
+        conn = db.connect(self.db_path)
+        try:
+            self._set_attendees(conn, ["eic", "planner"])
+            conn.execute(
+                "INSERT INTO meeting_messages(session_id, novel_id, seq, "
+                "from_agent, role, kind, body, status, created_at) "
+                "VALUES(?,1,1,'planner','assistant','speech','第一条','active',"
+                "datetime('now','localtime'))"
+                ,
+                (self.session_id,),
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO settings(key, value) "
+                "VALUES('meeting_free_chair_every_n','1')"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path, dry_run=True)
+        calls = []
+
+        def fake_speakers(*args, **kwargs):
+            return []
+
+        def fake_reply(conn_, session_id, agent, event, **kwargs):
+            calls.append(agent)
+            return {"ok": True, "spoken": True, "message_id": 1, "speech": "插话"}
+
+        with mock.patch.object(meeting_speaker, "candidate_speakers", fake_speakers), mock.patch.object(
+            meeting_free_loop.meeting_executor, "reply_to_mention", fake_reply
+        ):
+            loop.submit_event(self.session_id, {"kind": "user_message", "content": "讨论"})
+            deadline = time.time() + 5
+            while "eic" not in calls and time.time() < deadline:
+                time.sleep(0.05)
+        self.assertIn("eic", calls)
+        loop.stop(self.session_id)
+
+
+def json_dumps(agents):
+    import json
+
+    return json.dumps(agents, ensure_ascii=False)
 
 
 if __name__ == "__main__":

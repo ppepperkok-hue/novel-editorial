@@ -8,13 +8,16 @@ owns the queue, the lock, the heartbeat and fail-closed recovery.
 
 from __future__ import annotations
 
+import json
 import queue
 import threading
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 from novel_editorial import db
 from novel_editorial.services import audit
+from tools import app_settings, meeting_executor, meeting_speaker
 
 
 def _now():
@@ -25,12 +28,16 @@ class FreeMeetingLoop:
     """进程内事件循环。重启后事件丢失，但消息持久；running 会话由
     `scan_interrupted` 显式标记，避免「看似在跑实则无线程」的假绿灯。"""
 
-    def __init__(self, db_path=""):
+    def __init__(self, db_path="", dry_run=False):
         self._db_path = db_path
+        self._dry_run = dry_run
         self._queues = {}
         self._workers = {}
         self._seen_events = {}
         self._locks = {}
+        self._running = {}
+        self._running_guard = threading.Lock()
+        self._pool = ThreadPoolExecutor(max_workers=3)
         self._guard = threading.Lock()
 
     # ── 对外接口 ────────────────────────────────────────────
@@ -63,6 +70,10 @@ class FreeMeetingLoop:
         with self._guard:
             return bool(self._locks.get(int(session_id)))
 
+    def running_agents(self, session_id):
+        with self._running_guard:
+            return set(self._running.get(int(session_id), set()))
+
     # ── 内部 ────────────────────────────────────────────────
 
     def _run_worker(self, session_id):
@@ -72,9 +83,16 @@ class FreeMeetingLoop:
         lock = self._locks.setdefault(session_id, threading.Lock())
         while True:
             try:
-                event = q.get(timeout=1.0)
+                conn = db.connect(self._db_path)
+                try:
+                    cold_s = app_settings.get_int(
+                        conn, "meeting_free_cold_s", 30
+                    )
+                finally:
+                    conn.close()
+                event = q.get(timeout=max(0.2, cold_s))
             except queue.Empty:
-                # 冷场计时由调度器接入（步骤 2.3）；此处保持 worker 存活。
+                self._process_cold(session_id)
                 continue
             if event is None:
                 return
@@ -88,6 +106,11 @@ class FreeMeetingLoop:
                 "UPDATE meeting_sessions SET heartbeat_at=?, updated_at=? WHERE id=?",
                 (_now(), _now(), session_id),
             )
+            session = conn.execute(
+                "SELECT * FROM meeting_sessions WHERE id=?", (session_id,)
+            ).fetchone()
+            if not session or session["status"] not in ("running", "awaiting_input"):
+                return
             audit.log(
                 conn,
                 "meeting",
@@ -96,9 +119,179 @@ class FreeMeetingLoop:
                 target_id=session_id,
                 detail={"kind": event.get("kind") or "user_message"},
             )
+            self._schedule_speakers(conn, session, event)
             conn.commit()
         finally:
             conn.close()
+
+    def _process_cold(self, session_id):
+        conn = db.connect(self._db_path)
+        try:
+            session = conn.execute(
+                "SELECT * FROM meeting_sessions WHERE id=?", (session_id,)
+            ).fetchone()
+            if not session or session["status"] != "running":
+                return
+            candidates = self._cold_candidates(conn, session)
+            if not candidates:
+                return
+            audit.log(
+                conn,
+                "meeting",
+                "cold_timer",
+                target_type="session",
+                target_id=session_id,
+                detail={"agents": [c["agent"] for c in candidates]},
+            )
+            self._run_candidates(conn, session, candidates, event={"kind": "cold_timer"})
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _cold_candidates(self, conn, session):
+        attendees = self._attendees(session)
+        busy = self.running_agents(session["id"])
+        cooldown_s = app_settings.get_int(conn, "meeting_free_cooldown_s", 60)
+        if "eic" in attendees and "eic" not in busy:
+            return [{"agent": "eic", "reason": "cold_chair", "score": 0, "mandatory": True}]
+        # 轮转：选最近发言最久的 agent（无发言记录者优先）。
+        rows = conn.execute(
+            "SELECT from_agent, MAX(id) AS last_id FROM meeting_messages "
+            "WHERE session_id=? AND kind='speech' GROUP BY from_agent",
+            (session["id"],),
+        ).fetchall()
+        spoke = {r["from_agent"] for r in rows}
+        for agent in attendees:
+            if agent not in busy and agent not in spoke:
+                return [{"agent": agent, "reason": "cold_rotate", "score": 0, "mandatory": True}]
+        if rows:
+            oldest = min(rows, key=lambda r: r["last_id"])
+            if oldest["from_agent"] not in busy:
+                return [
+                    {
+                        "agent": oldest["from_agent"],
+                        "reason": "cold_rotate",
+                        "score": 0,
+                        "mandatory": True,
+                    }
+                ]
+        return []
+
+    def _schedule_speakers(self, conn, session, event):
+        if self._breaker_hit(conn, session):
+            audit.log(
+                conn,
+                "meeting",
+                "breaker",
+                target_type="session",
+                target_id=session["id"],
+                detail={"reason": "meeting free budget exhausted"},
+            )
+            return
+        attendees = self._attendees(session)
+        if not attendees:
+            return
+        k = app_settings.get_int(conn, "meeting_free_candidate_k", 2)
+        cooldown_s = app_settings.get_int(conn, "meeting_free_cooldown_s", 60)
+        candidates = meeting_speaker.candidate_speakers(
+            conn,
+            session,
+            event,
+            attendees,
+            busy=self.running_agents(session["id"]),
+            k=k,
+            cooldown_s=cooldown_s,
+        )
+        candidates = self._maybe_add_chair(conn, session, candidates)
+        if not candidates:
+            audit.log(
+                conn,
+                "meeting",
+                "no_candidate",
+                target_type="session",
+                target_id=session["id"],
+                detail={"kind": event.get("kind") or "user_message"},
+            )
+            return
+        self._run_candidates(conn, session, candidates, event)
+
+    def _maybe_add_chair(self, conn, session, candidates):
+        """每 N 条发言主席插话一次（N 可配，默认 12）。"""
+        every_n = app_settings.get_int(conn, "meeting_free_chair_every_n", 12)
+        if every_n <= 0:
+            return candidates
+        count = conn.execute(
+            "SELECT COUNT(*) AS c FROM meeting_messages "
+            "WHERE session_id=? AND kind='speech'",
+            (session["id"],),
+        ).fetchone()["c"]
+        if count == 0 or count % every_n != 0:
+            return candidates
+        busy = self.running_agents(session["id"])
+        if "eic" not in busy and "eic" not in {c["agent"] for c in candidates}:
+            candidates.append(
+                {"agent": "eic", "reason": "chair_every_n", "score": 0, "mandatory": True}
+            )
+        return candidates
+
+    def _breaker_hit(self, conn, session):
+        max_calls = app_settings.get_int(conn, "meeting_free_max_calls", 300)
+        max_cost = app_settings.get_float(conn, "meeting_free_max_cost", 20.0)
+        speech = conn.execute(
+            "SELECT COUNT(*) AS c FROM meeting_messages "
+            "WHERE session_id=? AND kind='speech'",
+            (session["id"],),
+        ).fetchone()["c"]
+        if speech >= max_calls:
+            return True
+        cost_row = conn.execute(
+            "SELECT COALESCE(SUM(cost),0) AS s FROM cost_logs "
+            "WHERE created_at >= ?",
+            (session["created_at"] or "",),
+        ).fetchone()
+        return float(cost_row["s"] or 0) >= max_cost
+
+    def _run_candidates(self, conn, session, candidates, event):
+        busy = set()
+        with self._running_guard:
+            busy = set(self._running.get(int(session["id"]), set()))
+        for c in candidates:
+            if c["agent"] in busy:
+                continue
+            with self._running_guard:
+                self._running.setdefault(int(session["id"]), set()).add(c["agent"])
+            self._pool.submit(
+                self._speak,
+                int(session["id"]),
+                c["agent"],
+                event,
+            )
+
+    def _speak(self, session_id, agent, event):
+        try:
+            conn = db.connect(self._db_path)
+            try:
+                meeting_executor.reply_to_mention(
+                    conn,
+                    session_id,
+                    agent,
+                    event,
+                    dry_run=self._dry_run,
+                )
+            finally:
+                conn.close()
+        finally:
+            with self._running_guard:
+                self._running.get(session_id, set()).discard(agent)
+
+    def _attendees(self, session):
+        try:
+            return [
+                str(a).replace(".md", "")
+                for a in json.loads(session["attendees"] or "[]")
+            ]
+        except (TypeError, ValueError):
+            return []
 
     def stop(self, session_id):
         """停止指定会话的 worker（用于测试与收尾）。"""
@@ -112,6 +305,7 @@ class FreeMeetingLoop:
         with self._guard:
             self._queues.pop(int(session_id), None)
             self._workers.pop(int(session_id), None)
+            self._running.pop(int(session_id), None)
 
 
 _LOOP = None
