@@ -82,7 +82,7 @@ function Get-ReviewArgs {
         $a += @("-m", $Model)
     }
     $a += "--ephemeral"
-    if ($Scope -ne "uncommitted") {
+    if ($Scope -ne "uncommitted" -and $Scope -ne "commit") {
         $p = ($persona -replace "`r?`n", " ")
         if ($Focus) {
             $p += " Focus this review on these paths: $Focus."

@@ -189,6 +189,7 @@ CREATE TABLE IF NOT EXISTS meeting_sessions (
     kind TEXT DEFAULT 'topic',
     topic TEXT NOT NULL,
     status TEXT DEFAULT 'running',
+    mode TEXT DEFAULT 'rounds',
     novel_id INTEGER DEFAULT 0,
     current_round INTEGER DEFAULT 0,
     attendees TEXT DEFAULT '[]',
