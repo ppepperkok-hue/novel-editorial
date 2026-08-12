@@ -70,6 +70,7 @@ def produce_article(
     topic = str(boss_instruction or plan.get("focus") or "自由写作").strip()
     target_words = int(target or app_settings.get_int(conn, "article_target_words", 2000))
     steps = []
+    errors = []
 
     # 1. Planner: topic -> structure (free-form JSON or plain outline)
     plan_task = (
@@ -79,7 +80,11 @@ def produce_article(
     plan_res = _call("planner", plan_task, dry_run=dry_run, db_path=db_path,
                      mock_text='{"title": "占位标题", "angle": "占位角度", '
                                '"structure": ["开场", "主体", "收束"], "key_points": []}')
-    steps.append({"step": "plan", "ok": bool(plan_res.get("ok"))})
+    plan_ok = bool(plan_res.get("ok"))
+    steps.append({"step": "plan", "ok": plan_ok,
+                  "error": plan_res.get("error") if not plan_ok else ""})
+    if not plan_ok:
+        errors.append(f"plan: {plan_res.get('error') or 'unknown'}")
     try:
         plan_data = json.loads(plan_res.get("text") or "{}")
     except (TypeError, ValueError, json.JSONDecodeError):
@@ -94,30 +99,43 @@ def produce_article(
     write_res = _call("writer", write_task, dry_run=dry_run, db_path=db_path,
                       target_words=target_words,
                       mock_text="这是占位正文。\n\n第二段占位内容。")
-    steps.append({"step": "write", "ok": bool(write_res.get("ok"))})
+    write_ok = bool(write_res.get("ok"))
+    steps.append({"step": "write", "ok": write_ok,
+                  "error": write_res.get("error") if not write_ok else ""})
     body = str(write_res.get("text") or "").strip()
-    if not write_res.get("ok") or not body:
+    if not write_ok or not body:
+        write_err = write_res.get("error") or ("产出为空" if not body else "unknown")
+        errors.append(f"write: {write_err}")
         return {
             "ok": False,
             "status": "failed",
             "published": 0,
             "files": [],
             "steps": steps,
-            "error": "写稿步骤失败或产出为空，未落盘",
+            "error": f"写稿步骤失败，未落盘：{write_err}",
+            "errors": errors,
             "dry_run": dry_run,
         }
 
     # 3. Editor: polish
     polish_res = _call("editor", "润色下面正文，输出润色后的正文：\n" + body[:20000],
                        dry_run=dry_run, db_path=db_path, mock_text=body)
-    steps.append({"step": "polish", "ok": bool(polish_res.get("ok"))})
+    polish_ok = bool(polish_res.get("ok"))
+    steps.append({"step": "polish", "ok": polish_ok,
+                  "error": polish_res.get("error") if not polish_ok else ""})
+    if not polish_ok:
+        errors.append(f"polish: {polish_res.get('error') or 'unknown'}（降级用原文）")
     polished = str(polish_res.get("text") or body).strip()
 
     # 4. Reviewer: review JSON
     review_res = _call("reviewer", "审稿下面正文，按你的 JSON 契约输出：\n" + polished[:20000],
                        dry_run=dry_run, db_path=db_path,
                        mock_text='{"passed": true, "issues": [], "suggestions": []}')
-    steps.append({"step": "review", "ok": bool(review_res.get("ok"))})
+    review_ok = bool(review_res.get("ok"))
+    steps.append({"step": "review", "ok": review_ok,
+                  "error": review_res.get("error") if not review_ok else ""})
+    if not review_ok:
+        errors.append(f"review: {review_res.get('error') or 'unknown'}（按未通过处理）")
     try:
         review = json.loads(review_res.get("text") or "{}")
     except (TypeError, ValueError, json.JSONDecodeError):
@@ -154,5 +172,6 @@ def produce_article(
         "title": title,
         "steps": steps,
         "review_passed": passed,
+        "errors": errors,
         "dry_run": dry_run,
     }

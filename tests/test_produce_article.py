@@ -79,7 +79,8 @@ class ProduceArticleTests(unittest.TestCase):
         def fake_run(agent, task, **kwargs):
             calls["n"] += 1
             if agent == "writer":
-                return {"ok": False, "text": "", "used_knowledge": [], "attempts": 1}
+                return {"ok": False, "text": "", "error": "mock writer error",
+                        "used_knowledge": [], "attempts": 1}
             return {"ok": True, "text": "占位", "used_knowledge": [], "attempts": 1}
 
         app_settings.set_many(self.conn, {"article_output_dir": self.out_dir})
@@ -88,6 +89,9 @@ class ProduceArticleTests(unittest.TestCase):
         self.assertFalse(r["ok"])
         self.assertEqual(r["status"], "failed")
         self.assertEqual(r["files"], [])
+        self.assertIn("mock writer error", r["error"])
+        self.assertEqual(r["steps"][1]["step"], "write")
+        self.assertIn("mock writer error", r["steps"][1]["error"])
         self.assertFalse(os.path.exists(self.out_dir) and os.listdir(self.out_dir))
 
     def test_slug_sanitizes_dangerous_chars(self):
