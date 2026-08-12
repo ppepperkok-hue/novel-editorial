@@ -227,6 +227,13 @@ class FreeMeetingLoop:
         candidates = self._maybe_add_chair(conn, session, candidates)
         if not candidates:
             candidates = self._kickoff_fallback(conn, session)
+            if candidates:
+                # 开场引导：让被强制点名的编辑必须表态，而非行使沉默权。
+                event = dict(event)
+                base = str(event.get("content") or "").strip()
+                event["content"] = (
+                    f"{base}（会议刚开场，请就主题发表你的开场意见或关注点。）"
+                ).strip()
         if not candidates:
             audit.log(
                 conn,
