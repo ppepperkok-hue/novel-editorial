@@ -1,0 +1,138 @@
+"""Typer CLI: the primary contract for the M1 milestone."""
+
+from __future__ import annotations
+
+import sys
+
+import typer
+from typer.core import TyperGroup
+
+from novel_editorial import __version__
+from novel_editorial.core.config import load_settings
+from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.logging_setup import configure_logging
+from novel_editorial.store.db import DB, seed_default_band
+from novel_editorial.store.models import Agent, Workspace
+
+reconfigure = getattr(sys.stdout, "reconfigure", None)
+if callable(reconfigure):
+    reconfigure(encoding="utf-8", errors="replace")
+
+
+class NovelGroup(TyperGroup):
+    """Translate NovelError to exit code 1 and unexpected errors to exit code 3."""
+
+    def invoke(self, ctx) -> None:
+        try:
+            super().invoke(ctx)
+        except (typer.Exit, typer.Abort):
+            raise
+        except NovelError as exc:
+            typer.echo(f"Error: {exc.message}", err=True)
+            raise typer.Exit(1) from exc
+        except Exception as exc:
+            typer.echo(f"Unexpected error: {exc}", err=True)
+            raise typer.Exit(3) from exc
+
+
+app = typer.Typer(cls=NovelGroup, help="Novel Editorial: a layered AI literary editorial office")
+works_app = typer.Typer(help="Manage workspaces")
+app.add_typer(works_app, name="works")
+
+
+@app.callback(invoke_without_command=True)
+def main(
+    verbose: bool = typer.Option(False, "--verbose", help="Enable debug logging"),
+    show_version: bool = typer.Option(False, "--version", help="Show version and exit"),
+) -> None:
+    if show_version:
+        typer.echo(__version__)
+        raise typer.Exit()
+    settings = load_settings()
+    configure_logging("DEBUG" if verbose else settings.log_level)
+
+
+@app.command("init")
+def init() -> None:
+    """Initialize data directory and configuration."""
+    settings = load_settings()
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    DB(settings).init_schema()
+    if not settings.config_path.exists():
+        settings.config_path.write_text("[defaults]\n", encoding="utf-8")
+    typer.echo(f"initialized: {settings.data_dir}")
+
+
+@app.command()
+def health() -> None:
+    """Check configuration and database connectivity."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    db.ping()
+    typer.echo("ok")
+
+
+@app.command("version")
+def version() -> None:
+    """Print the current version."""
+    typer.echo(__version__)
+
+
+@works_app.command("create")
+def works_create(
+    title: str = typer.Argument(..., help="Work title"),
+    genre: str = typer.Option("", "--genre", help="Genre"),
+    description: str = typer.Option("", "--description", help="Short description"),
+) -> None:
+    """Create a workspace with a default editorial band."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    with db.global_session() as session:
+        workspace = Workspace(title=title, genre=genre, description=description)
+        session.add(workspace)
+        session.commit()
+        workspace_id = workspace.id
+    db.create_workspace_db(workspace_id)
+    seed_default_band(db, workspace_id)
+    typer.echo(f"created workspace {workspace_id}: {title}")
+
+
+@works_app.command("list")
+def works_list() -> None:
+    """List all workspaces."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    with db.global_session() as session:
+        workspaces = session.query(Workspace).order_by(Workspace.created_at).all()
+    for workspace in workspaces:
+        typer.echo(f"{workspace.id}  {workspace.title}  {workspace.genre}")
+    if not workspaces:
+        typer.echo("no workspaces yet")
+
+
+@works_app.command("show")
+def works_show(workspace_id: str = typer.Argument(..., help="Workspace id")) -> None:
+    """Show a workspace and its editorial band."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    with db.global_session() as session:
+        workspace = session.get(Workspace, workspace_id)
+        if workspace is None:
+            raise NovelError(ErrorCode.NOT_FOUND, f"workspace not found: {workspace_id}")
+        title = workspace.title
+        genre = workspace.genre
+        description = workspace.description
+    typer.echo(f"id: {workspace_id}")
+    typer.echo(f"title: {title}")
+    typer.echo(f"genre: {genre}")
+    if description:
+        typer.echo(f"description: {description}")
+    with db.workspace_session(workspace_id) as session:
+        agents = session.query(Agent).order_by(Agent.created_at).all()
+    typer.echo("band:")
+    for agent in agents:
+        typer.echo(f"  {agent.role}: {agent.name}")

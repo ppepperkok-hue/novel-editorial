@@ -1,0 +1,3 @@
+# Novel Editorial configuration template.
+# Copy to config.toml and adjust; keep secrets in environment variables only.
+[defaults]
