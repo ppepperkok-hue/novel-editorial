@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { API_BASE, getMeetingMessages } from "../api.js";
+import { API_BASE, getMeetingMessages, getSession } from "../api.js";
 
 /**
  * 自由会议实时流：SSE 事件 + 初始全量消息拉取。
@@ -11,6 +11,8 @@ export function useMeetingStream(sessionId) {
   const [thinking, setThinking] = useState({});
   const [approvals, setApprovals] = useState([]);
   const [error, setError] = useState("");
+  const [summary, setSummary] = useState("");
+  const [compressing, setCompressing] = useState(false);
   const aliveRef = useRef(true);
 
   useEffect(() => {
@@ -28,6 +30,11 @@ export function useMeetingStream(sessionId) {
       .catch(() => {
         if (aliveRef.current) setError("消息加载失败，请刷新页面");
       });
+    getSession(sessionId)
+      .then((r) => {
+        if (aliveRef.current) setSummary(r.meeting_summary || "");
+      })
+      .catch(() => {});
 
     const es = new EventSource(`${API_BASE}/api/meetings/events?session_id=${sessionId}`);
     es.onmessage = (e) => {
@@ -58,6 +65,13 @@ export function useMeetingStream(sessionId) {
             ...prev.filter((a) => Number(a.id) !== Number(ev.interaction.id)),
             ev.interaction,
           ]);
+        } else if (ev.type === "compress") {
+          setCompressing(ev.status === "compressing");
+          if (ev.status === "done") {
+            getSession(sessionId)
+              .then((r) => aliveRef.current && setSummary(r.meeting_summary || ""))
+              .catch(() => {});
+          }
         }
       } catch {
         /* 忽略无法解析的事件 */
@@ -75,5 +89,5 @@ export function useMeetingStream(sessionId) {
   const removeApproval = (interactionId) =>
     setApprovals((prev) => prev.filter((a) => Number(a.id) !== Number(interactionId)));
 
-  return { messages, thinking, approvals, error, removeApproval };
+  return { messages, thinking, approvals, error, removeApproval, summary, compressing };
 }

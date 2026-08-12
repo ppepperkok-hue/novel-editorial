@@ -16,7 +16,8 @@ import { cn } from "../../../lib/utils.js";
  * @stable
  */
 export function FreeLive({ session, onEnded }) {
-  const { messages, thinking, approvals, error, removeApproval } = useMeetingStream(session.id);
+  const { messages, thinking, approvals, error, removeApproval, summary, compressing } =
+    useMeetingStream(session.id);
   const [text, setText] = useState("");
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
@@ -122,6 +123,20 @@ export function FreeLive({ session, onEnded }) {
       </div>
 
       <div className="max-h-[480px] overflow-y-auto bg-surface-2/60 px-5 py-4">
+        {summary ? (
+          <div className="mb-4 rounded-md border border-accent/40 bg-accent-soft/50 p-2.5">
+            <div className="text-[10.5px] font-semibold uppercase tracking-[0.05em] text-accent-ink">
+              会议摘要锚点
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-ink-2">{summary}</p>
+          </div>
+        ) : null}
+        {compressing ? (
+          <div className="mb-4 flex items-center gap-2 rounded-md border border-line bg-surface p-2 text-xs text-ink-2">
+            <span className="size-1.5 animate-pulse rounded-full bg-accent" />
+            正在压缩长历史，稍后继续…
+          </div>
+        ) : null}
         {messages.length ? (
           messages.map((m) => (
             <div key={m.id} className="mb-4 flex gap-2.5">

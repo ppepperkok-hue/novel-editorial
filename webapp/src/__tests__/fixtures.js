@@ -276,7 +276,9 @@ export function mockFetchFor(overrides = {}) {
     if (path.endsWith("/api/knowledge_drafts")) return jsonResponse(overrides.drafts ?? draftsPayload);
     if (path.endsWith("/api/chapter_content")) return jsonResponse(overrides.chapterContent ?? chapterContentPayload);
     if (path.endsWith("/api/meetings/active")) return jsonResponse({ session: null });
-    if (path.endsWith("/api/meetings/session")) return jsonResponse({ status: "running", transcript: [] });
+    if (path.endsWith("/api/meetings/session")) {
+      return jsonResponse(overrides.session ?? { status: "running", transcript: [], meeting_summary: "" });
+    }
     if (path.endsWith("/api/meetings/messages")) {
       return jsonResponse({ ok: true, messages: overrides.messages ?? [] });
     }

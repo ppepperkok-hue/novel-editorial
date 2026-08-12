@@ -103,4 +103,19 @@ describe("FreeLive", () => {
     fireEvent.click(screen.getByText("守正"));
     expect(input.value).toContain("@守正");
   });
+
+  it("shows summary anchor and compression state", async () => {
+    global.fetch = vi.fn(
+      mockFetchFor({
+        session: { status: "running", transcript: [], meeting_summary: "决定先定方向" },
+      }),
+    );
+    renderFree();
+    await waitFor(() => expect(screen.getByText("会议摘要锚点")).toBeInTheDocument());
+    expect(screen.getByText("决定先定方向")).toBeInTheDocument();
+    eventSource.onmessage({
+      data: JSON.stringify({ type: "compress", status: "compressing" }),
+    });
+    await waitFor(() => expect(screen.getByText(/正在压缩长历史/)).toBeInTheDocument());
+  });
 });

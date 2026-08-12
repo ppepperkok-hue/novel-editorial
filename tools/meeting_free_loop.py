@@ -223,13 +223,19 @@ class FreeMeetingLoop:
         """历史超限且无摘要时生成一次摘要（幂等：有摘要即跳过）。"""
         if session["meeting_summary"]:
             return False
+        limit = app_settings.get_int(conn, "meeting_free_compress_chars", 30000)
         row = conn.execute(
             "SELECT COALESCE(SUM(LENGTH(body)),0) AS s FROM meeting_messages "
             "WHERE session_id=? AND status='active'",
             (session["id"],),
         ).fetchone()
-        if int(row["s"] or 0) <= 30000:
+        if int(row["s"] or 0) <= limit:
             return False
+        hub = meeting_events.get_hub()
+        hub.publish(
+            session["id"],
+            {"type": "compress", "session_id": session["id"], "status": "compressing"},
+        )
         summary = meeting_executor.summarize_history(
             conn, session, dry_run=self._dry_run
         )
@@ -249,6 +255,10 @@ class FreeMeetingLoop:
             target_type="session",
             target_id=session["id"],
             detail={"summary_len": len(summary)},
+        )
+        hub.publish(
+            session["id"],
+            {"type": "compress", "session_id": session["id"], "status": "done"},
         )
         return True
 
