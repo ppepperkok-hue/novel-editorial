@@ -37,6 +37,7 @@ class FreeMeetingLoop:
         self._locks = {}
         self._running = {}
         self._running_guard = threading.Lock()
+        self._futures = {}
         self._pool = ThreadPoolExecutor(max_workers=3)
         self._guard = threading.Lock()
 
@@ -278,12 +279,17 @@ class FreeMeetingLoop:
         ).fetchone()["c"]
         if speech >= max_calls:
             return True
-        cost_row = conn.execute(
-            "SELECT COALESCE(SUM(cost),0) AS s FROM cost_logs "
-            "WHERE created_at >= ?",
-            (session["created_at"] or "",),
-        ).fetchone()
-        return float(cost_row["s"] or 0) >= max_cost
+        # cost_logs 无 session_id，按 novel_id 限定范围（仍可能混入该书的
+        # 日更成本，但避免把其他作品的成本算进本次会议）。
+        if session["created_at"]:
+            cost_row = conn.execute(
+                "SELECT COALESCE(SUM(cost),0) AS s FROM cost_logs "
+                "WHERE created_at >= ? AND novel_id=?",
+                (session["created_at"], session["novel_id"]),
+            ).fetchone()
+            if float(cost_row["s"] or 0) >= max_cost:
+                return True
+        return False
 
     def _run_candidates(self, conn, session, candidates, event):
         busy = set()
@@ -294,12 +300,19 @@ class FreeMeetingLoop:
                 continue
             with self._running_guard:
                 self._running.setdefault(int(session["id"]), set()).add(c["agent"])
-            self._pool.submit(
-                self._speak,
-                int(session["id"]),
-                c["agent"],
-                event,
+            session_id = int(session["id"])
+            future = self._pool.submit(
+                self._speak, session_id, c["agent"], event
             )
+            with self._running_guard:
+                self._futures.setdefault(session_id, set()).add(future)
+            future.add_done_callback(
+                lambda f, sid=session_id: self._drop_future(sid, f)
+            )
+
+    def _drop_future(self, session_id, future):
+        with self._running_guard:
+            self._futures.get(session_id, set()).discard(future)
 
     def _speak(self, session_id, agent, event):
         try:
@@ -329,17 +342,27 @@ class FreeMeetingLoop:
 
     def stop(self, session_id):
         """停止指定会话的 worker（用于测试与收尾）。"""
+        session_id = int(session_id)
         with self._guard:
-            q = self._queues.get(int(session_id))
-            worker = self._workers.get(int(session_id))
+            q = self._queues.get(session_id)
+            worker = self._workers.get(session_id)
+        with self._running_guard:
+            futures = list(self._futures.get(session_id, set()))
         if q is not None:
             q.put(None)
         if worker is not None:
             worker.join(timeout=3)
+        for future in futures:
+            try:
+                future.result(timeout=5)
+            except Exception:  # noqa: BLE001 - stop must not raise on speaker failure
+                pass
         with self._guard:
-            self._queues.pop(int(session_id), None)
-            self._workers.pop(int(session_id), None)
-            self._running.pop(int(session_id), None)
+            self._queues.pop(session_id, None)
+            self._workers.pop(session_id, None)
+        with self._running_guard:
+            self._running.pop(session_id, None)
+            self._futures.pop(session_id, None)
 
 
 _LOOP = None

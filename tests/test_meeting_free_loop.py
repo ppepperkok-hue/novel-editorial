@@ -346,6 +346,62 @@ class FreeMeetingLoopTests(unittest.TestCase):
         self.assertEqual(calls, [])
         loop.stop(self.session_id)
 
+    def test_breaker_scoped_to_novel(self):
+        conn = db.connect(self.db_path)
+        try:
+            conn.execute(
+                "INSERT INTO cost_logs(novel_id, node_name, cost, created_at) "
+                "VALUES(2,'other',100,datetime('now','localtime'))"
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO settings(key, value) "
+                "VALUES('meeting_free_max_cost','50')"
+            )
+            conn.commit()
+            session = conn.execute(
+                "SELECT * FROM meeting_sessions WHERE id=?", (self.session_id,)
+            ).fetchone()
+            loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path)
+            self.assertFalse(loop._breaker_hit(conn, session))
+            conn.execute(
+                "INSERT INTO cost_logs(novel_id, node_name, cost, created_at) "
+                "VALUES(1,'meeting',100,datetime('now','localtime'))"
+            )
+            conn.commit()
+            self.assertTrue(loop._breaker_hit(conn, session))
+        finally:
+            conn.close()
+
+    def test_stop_waits_for_inflight_speakers(self):
+        conn = db.connect(self.db_path)
+        try:
+            self._set_attendees(conn, ["planner"])
+            session = conn.execute(
+                "SELECT * FROM meeting_sessions WHERE id=?", (self.session_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+        loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path, dry_run=True)
+        calls = []
+
+        def slow_reply(*args, **kwargs):
+            time.sleep(0.4)
+            calls.append("spoke")
+            return {"ok": True, "spoken": True, "message_id": 1, "speech": "慢"}
+
+        with mock.patch.object(
+            meeting_free_loop.meeting_executor, "reply_to_mention", slow_reply
+        ):
+            loop._run_candidates(
+                conn,
+                session,
+                [{"agent": "planner", "reason": "test", "score": 1, "mandatory": False}],
+                {"kind": "user_message", "content": "测试"},
+            )
+            loop.stop(self.session_id)
+        self.assertEqual(calls, ["spoke"])
+        self.assertEqual(loop.running_agents(self.session_id), set())
+
 
 def json_dumps(agents):
     import json
