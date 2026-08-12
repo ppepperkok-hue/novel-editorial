@@ -46,8 +46,13 @@ export const getControl = () => getJSON("/api/control");
 export const postControl = (payload) => postJSON("/api/control", payload);
 export const getFlow = () => getJSON("/api/flow");
 export const getEditorialOverview = () => getJSON("/api/editorial/overview");
-export const getMailbox = (agent) =>
-  getJSON("/api/agents/mailbox" + (agent ? "?agent=" + encodeURIComponent(agent) : "?limit=20"));
+export const getMailbox = (agent, limit = 50) =>
+  getJSON(
+    "/api/agents/mailbox?" +
+      (agent ? "agent=" + encodeURIComponent(agent) + "&" : "") +
+      "limit=" +
+      limit,
+  );
 export const getMemories = (agent) =>
   getJSON(
     "/api/agents/memories?agent=" +

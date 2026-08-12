@@ -185,6 +185,27 @@ export const mailboxPayload = {
       status: "unread",
       created_at: "2026-08-12 09:12:00",
     },
+    {
+      id: 2,
+      from_agent: "writer",
+      to_agent: "reviewer",
+      kind: "reply",
+      subject: "回复：审稿打回 · 第 42 章",
+      body: "已重写过渡段，回传再审。",
+      status: "read",
+      reply_to: 1,
+      created_at: "2026-08-12 09:40:00",
+    },
+    {
+      id: 3,
+      from_agent: "planner",
+      to_agent: "eic",
+      kind: "topic_request",
+      subject: "议题：下一卷方向",
+      body: "建议在周会讨论新卷的节奏调整。",
+      status: "unread",
+      created_at: "2026-08-12 10:05:00",
+    },
   ],
 };
 
