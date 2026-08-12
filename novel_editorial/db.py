@@ -340,6 +340,37 @@ CREATE TABLE IF NOT EXISTS daily_runs (
     detail TEXT DEFAULT '{}',
     created_at TEXT DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS meeting_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    novel_id INTEGER DEFAULT 0,
+    seq INTEGER DEFAULT 0,
+    from_agent TEXT NOT NULL,
+    role TEXT DEFAULT 'user',
+    kind TEXT DEFAULT 'message',
+    body TEXT NOT NULL,
+    mentions TEXT DEFAULT '[]',
+    status TEXT DEFAULT 'active',
+    created_at TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_meeting_messages_session
+    ON meeting_messages(session_id, id);
+
+CREATE TABLE IF NOT EXISTS pending_interactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    agent TEXT DEFAULT '',
+    kind TEXT NOT NULL DEFAULT 'approval',
+    payload TEXT DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT DEFAULT '',
+    expires_at TEXT DEFAULT '',
+    resolved_at TEXT DEFAULT '',
+    resolution TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_pending_interactions_session
+    ON pending_interactions(session_id, status);
 """
 
 
@@ -433,6 +464,8 @@ def _migrate(conn):
     session_cols = {r["name"] for r in conn.execute("PRAGMA table_info(meeting_sessions)")}
     if "db_path" not in session_cols:
         conn.execute("ALTER TABLE meeting_sessions ADD COLUMN db_path TEXT DEFAULT ''")
+    if "mode" not in session_cols:
+        conn.execute("ALTER TABLE meeting_sessions ADD COLUMN mode TEXT DEFAULT 'rounds'")
     if "current_agent" not in session_cols:
         conn.execute("ALTER TABLE meeting_sessions ADD COLUMN current_agent TEXT DEFAULT ''")
     if "heartbeat_at" not in session_cols:
