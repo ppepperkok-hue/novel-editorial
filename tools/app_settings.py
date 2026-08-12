@@ -69,6 +69,14 @@ def get_int(conn, key, default=0):
         return default
 
 
+def get_str(conn, key, default=""):
+    """Read a string setting (missing -> default)."""
+    raw = get_all(conn).get(key)
+    if raw is None:
+        return default
+    return str(raw)
+
+
 def set_many(conn, values):
     ensure_defaults(conn)
     for k, v in values.items():

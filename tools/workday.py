@@ -24,7 +24,7 @@ sys.path.insert(0, str(ROOT))
 
 from novel_editorial import config, db  # noqa: E402
 from novel_editorial.services import audit  # noqa: E402
-from tools import preflight, producers  # noqa: E402
+from tools import app_settings, preflight, producers  # noqa: E402
 
 MODES = ("write", "org", "meeting", "free")
 
@@ -59,6 +59,12 @@ def _diaries_written(conn, novel_id, started_at):
         (novel_id or 0, str(started_at or "")),
     ).fetchone()
     return bool(row and row["c"])
+
+
+def _default_producer(conn):
+    """Workday producer from settings; the novel chain remains the default."""
+    name = app_settings.get_str(conn, "workday_producer", "novel")
+    return name if name in producers.PRODUCERS else "novel"
 
 
 def _recover_stale_open(conn, stale_hours=12):
@@ -97,8 +103,9 @@ def _morning_plan(conn, run_id, mode, boss_instruction, dry_run, db_path):
     """Editor-in-chief (or deterministic fallback) sets today's plan."""
     if mode == "write":
         plan = {
-            "produce": True, "producer": "novel", "target": None,
-            "chapters": None, "meeting": False, "focus": "按计划写稿",
+            "produce": True, "producer": _default_producer(conn),
+            "target": None, "chapters": None, "meeting": False,
+            "focus": "按今日产出计划执行",
         }
     elif mode == "org":
         plan = {
@@ -113,8 +120,9 @@ def _morning_plan(conn, run_id, mode, boss_instruction, dry_run, db_path):
         }
     else:
         plan = {
-            "produce": True, "producer": "novel", "target": None,
-            "chapters": None, "meeting": False, "focus": "主编现场决定",
+            "produce": True, "producer": _default_producer(conn),
+            "target": None, "chapters": None, "meeting": False,
+            "focus": "主编现场决定",
         }
     if mode == "free" or (boss_instruction and mode not in ("org", "meeting")):
         task = (
@@ -127,7 +135,7 @@ def _morning_plan(conn, run_id, mode, boss_instruction, dry_run, db_path):
             text = (
                 '{"produce": true, "producer": "novel", "target": null, '
                 '"meeting": false, '
-                '"focus": "按存稿与任务板安排今日"}'
+                '"focus": "按任务板与今日主题安排"}'
             )
         else:
             from tools import agent_tool_loop  # noqa: PLC0415
