@@ -252,6 +252,8 @@ def open(conn, chapters=None, trigger="manual", mode="write", boss_instruction="
                 db_path=db_path,
                 workday_run_id=run_id,
                 lock_held=True,
+                boss_instruction=boss_instruction,
+                plan=plan,
             )
         else:
             if not dry_run:
@@ -311,6 +313,8 @@ def resume(conn, run_id, chapters=None, dry_run=False, db_path=None):
             db_path=db_path,
             workday_run_id=run_id,
             lock_held=True,
+            boss_instruction=str(row["boss_instruction"] or ""),
+            plan=plan,
             skip_diaries=_diaries_written(conn, row["novel_id"], row["started_at"]),
         )
         if not dry_run:

@@ -30,6 +30,7 @@ def produce_novel(
     workday_run_id=None,
     lock_held=False,
     skip_diaries=False,
+    **kwargs,
 ):
     """Net-novel daily production chain (the existing editorial_daily line)."""
     from tools import editorial_daily  # local import keeps module load domain-free
@@ -51,8 +52,16 @@ def produce_none(conn, *, target=None, **kwargs):
     return {"status": "skipped", "published": 0}
 
 
+def produce_article(conn, *, target=None, **kwargs):
+    """Generic article chain: plan -> write -> polish -> review -> save to disk."""
+    from tools import produce_article as _article
+
+    return _article.produce_article(conn, target=target, **kwargs)
+
+
 PRODUCERS = {
     "novel": produce_novel,
+    "article": produce_article,
     "none": produce_none,
 }
 

@@ -21,6 +21,8 @@ DEFAULTS = {
     "style_tweak": "",
     "daily_run_time": "08:00",
     "daily_chapters": "2",
+    "article_output_dir": "",
+    "article_target_words": "2000",
     "pending_publish": "0",
     "target_chapters": "0",
     "novel_premise": "",
