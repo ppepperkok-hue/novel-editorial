@@ -439,6 +439,47 @@ class FreeMeetingLoopTests(unittest.TestCase):
         self.assertEqual(status, "expired")
         loop.stop(self.session_id)
 
+    def test_speech_and_approval_are_broadcast(self):
+        conn = db.connect(self.db_path)
+        try:
+            self._set_attendees(conn, ["planner", "eic"])
+        finally:
+            conn.close()
+        loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path, dry_run=True)
+        published = []
+
+        def fake_reply(*args, **kwargs):
+            return {
+                "ok": True,
+                "spoken": True,
+                "message_id": 1,
+                "speech": "发言",
+                "interaction_id": None,
+            }
+
+        def fake_publish(session_id, event):
+            published.append(event)
+
+        def fake_speakers(*args, **kwargs):
+            return [{"agent": "planner", "reason": "interest", "score": 1, "mandatory": False}]
+
+        with mock.patch.object(
+            meeting_speaker, "candidate_speakers", fake_speakers
+        ), mock.patch.object(
+            meeting_free_loop.meeting_executor, "reply_to_mention", fake_reply
+        ), mock.patch.object(
+            meeting_free_loop.meeting_events, "get_hub", return_value=type(
+                "Hub", (), {"publish": staticmethod(fake_publish)}
+            )()
+        ):
+            loop.submit_event(self.session_id, {"kind": "user_message", "content": "讨论"})
+            deadline = time.time() + 5
+            while not published and time.time() < deadline:
+                time.sleep(0.05)
+        self.assertEqual(published[0]["type"], "message")
+        self.assertEqual(published[0]["speech"], "发言")
+        loop.stop(self.session_id)
+
 
 def json_dumps(agents):
     import json

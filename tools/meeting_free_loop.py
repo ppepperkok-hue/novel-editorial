@@ -17,7 +17,7 @@ from datetime import datetime
 
 from novel_editorial import db
 from novel_editorial.services import audit
-from tools import app_settings, meeting_executor, meeting_speaker
+from tools import app_settings, meeting_events, meeting_executor, meeting_speaker
 from tools import meeting_interactions
 
 
@@ -320,19 +320,57 @@ class FreeMeetingLoop:
         try:
             conn = db.connect(self._db_path)
             try:
-                meeting_executor.reply_to_mention(
+                result = meeting_executor.reply_to_mention(
                     conn,
                     session_id,
                     agent,
                     event,
                     dry_run=self._dry_run,
                 )
+                self._broadcast_result(conn, session_id, agent, result)
             finally:
                 conn.close()
         finally:
             with self._running_guard:
                 self._running.get(session_id, set()).discard(agent)
 
+    def _broadcast_result(self, conn, session_id, agent, result):
+        hub = meeting_events.get_hub()
+        if result.get("ok") and result.get("spoken"):
+            hub.publish(
+                session_id,
+                {
+                    "type": "message",
+                    "session_id": session_id,
+                    "message_id": result.get("message_id"),
+                    "agent": agent,
+                    "speech": result.get("speech"),
+                },
+            )
+        interaction_id = result.get("interaction_id")
+        if interaction_id:
+            row = conn.execute(
+                "SELECT * FROM pending_interactions WHERE id=?", (interaction_id,)
+            ).fetchone()
+            if row:
+                hub.publish(
+                    session_id,
+                    {
+                        "type": "approval",
+                        "session_id": session_id,
+                        "interaction": {
+                            "id": row["id"],
+                            "agent": row["agent"],
+                            "kind": row["kind"],
+                            "question": str(
+                                dict_from_json(row["payload"]).get("question", "")
+                            ),
+                            "choices": dict_from_json(row["payload"]).get("choices", []),
+                            "expires_at": row["expires_at"],
+                            "status": row["status"],
+                        },
+                    },
+                )
     def _attendees(self, session):
         try:
             return [
@@ -403,3 +441,13 @@ def scan_interrupted(conn):
         )
     conn.commit()
     return len(rows)
+
+
+def dict_from_json(text):
+    import json as _json
+
+    try:
+        obj = _json.loads(text or "{}")
+        return obj if isinstance(obj, dict) else {}
+    except (TypeError, ValueError):
+        return {}

@@ -4,6 +4,7 @@ import argparse
 import json
 import mimetypes
 import os
+import queue
 import sys
 import threading
 import time
@@ -303,6 +304,36 @@ def make_handler(db_path):
             conn.close()
         self._json(result)
 
+    def _get_meeting_events(self, parsed):
+        from tools import meeting_events  # noqa: PLC0415
+
+        qs = parse_qs(parsed.query)
+        session_id = _parse_int(qs.get("session_id", [""])[0], 0)
+        if session_id <= 0:
+            self._json({"error": "session_id required"}, status=400)
+            return
+        hub = meeting_events.get_hub()
+        subscriber = hub.subscribe(session_id)
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+            while True:
+                try:
+                    payload = subscriber.get(timeout=15)
+                except queue.Empty:
+                    self.wfile.write(b": ping\n\n")
+                    self.wfile.flush()
+                    continue
+                self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass
+        finally:
+            hub.unsubscribe(session_id, subscriber)
+
     # Route registry: new endpoints go here instead of the legacy if/elif
     # chains in do_GET/do_POST. Old endpoints migrate over incrementally.
     GET_ROUTES = {
@@ -315,6 +346,7 @@ def make_handler(db_path):
         "/api/agents/memories": _get_memories,
         "/api/agents/promises": _get_promises,
         "/api/editorial/overview": _get_editorial_overview,
+        "/api/meetings/events": _get_meeting_events,
     }
     POST_ROUTES = {
         "/api/agent_actions/claim": _post_claim_action,
