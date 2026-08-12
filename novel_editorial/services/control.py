@@ -239,8 +239,12 @@ def _weekly_worker():
     already running, so this invocation is skipped with an explicit alert."""
     from tools import preflight  # noqa: PLC0415
 
-    lock_path = ROOT / "n8n_tmp" / "weekly.lock"
-    locked, lock_reason = preflight.acquire_lock(lock_path)
+    lock_path = config.TMP_DIR / "weekly.lock"
+    try:
+        locked, lock_reason = preflight.acquire_lock(lock_path)
+    except OSError as exc:
+        _alert(f"周会锁获取失败：{str(exc)[:200]}")
+        return
     if not locked:
         _alert(f"周会已在进行中，本次跳过：{lock_reason}")
         return

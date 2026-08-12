@@ -191,7 +191,7 @@ def open(conn, chapters=None, trigger="manual", mode="write", boss_instruction="
             ),
             "locked": False,
         }
-    lock_path = ROOT / "n8n_tmp" / (Path(db_path).stem + ".lock")
+    lock_path = config.TMP_DIR / (Path(db_path).stem + ".lock")
     locked, reason = preflight.acquire_lock(lock_path)
     if not locked:
         return {"ok": False, "error": str(reason), "locked": False}
@@ -290,7 +290,7 @@ def resume(conn, run_id, chapters=None, dry_run=False, db_path=None):
     if db_path is None:
         db_path = conn.execute("PRAGMA database_list").fetchone()[2]
     db_path = str(Path(db_path).resolve())
-    lock_path = ROOT / "n8n_tmp" / (Path(db_path).stem + ".lock")
+    lock_path = config.TMP_DIR / (Path(db_path).stem + ".lock")
     locked, reason = preflight.acquire_lock(lock_path)
     if not locked:
         return {"ok": False, "error": str(reason), "locked": False}
@@ -337,7 +337,7 @@ def close(conn, run_id, dry_run=False, db_path=None):
     if db_path is None:
         db_path = conn.execute("PRAGMA database_list").fetchone()[2]
     db_path = str(Path(db_path).resolve())
-    lock_path = ROOT / "n8n_tmp" / (Path(db_path).stem + ".lock")
+    lock_path = config.TMP_DIR / (Path(db_path).stem + ".lock")
     locked, reason = preflight.acquire_lock(lock_path)
     if not locked:
         return {"ok": False, "error": str(reason), "locked": False}

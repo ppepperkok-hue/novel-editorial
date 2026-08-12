@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = ROOT / "demo.db"
 sys.path.insert(0, str(ROOT))
 
-from novel_editorial import data_feedback, db  # noqa: E402
+from novel_editorial import config, data_feedback, db  # noqa: E402
 from tools.app_settings import get_all  # noqa: E402
 from tools import novel_knowledge  # noqa: E402
 
@@ -28,7 +28,7 @@ def _safe_json(value, fallback, field):
     if not isinstance(parsed, type(fallback)):
         parsed = fallback
         try:
-            with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+            with config.ALERTS_LOG.open("a", encoding="utf-8") as f:
                 f.write(
                     f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
                     f"get_meta: {field} 非合法 JSON（或类型不符），使用默认值\n"
@@ -41,7 +41,7 @@ def _safe_json(value, fallback, field):
 def _trace(message):
     """Append a trace line to alerts.log; I/O failure must not crash the CLI."""
     try:
-        with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+        with config.ALERTS_LOG.open("a", encoding="utf-8") as f:
             f.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {message}\n")
     except OSError:
         pass
@@ -79,14 +79,14 @@ def main():
         blueprints = outline.get("blueprints") or []
 
         hot = {}
-        hot_file = ROOT / "hot_topics.json"
+        hot_file = config.HOT_TOPICS_JSON
         if hot_file.exists():
             try:
                 hot_data = json.loads(hot_file.read_text(encoding="utf-8"))
                 if not isinstance(hot_data, dict):
                     hot_data = None
                     try:
-                        with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+                        with config.ALERTS_LOG.open("a", encoding="utf-8") as f:
                             f.write(
                                 f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
                                 "get_meta: hot_topics.json 非法结构（非对象），使用默认值\n"
@@ -173,7 +173,7 @@ def main():
             for c in bible.get("characters") or []:
                 if not isinstance(c, dict):
                     try:
-                        with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+                        with config.ALERTS_LOG.open("a", encoding="utf-8") as f:
                             f.write(
                                 f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
                                 f"get_meta: bible.characters 元素类型 "
@@ -208,7 +208,7 @@ def main():
         start_seq = (chapters[-1]["seq"] + 1) if chapters else 1
         settings = get_all(conn)
         reader_feedback = {}
-        reader_csv = ROOT / "demo_data" / "reader_stats.csv"
+        reader_csv = config.READER_CSV
         if reader_csv.exists():
             try:
                 rows = data_feedback.load_reader_stats(reader_csv)
@@ -227,7 +227,7 @@ def main():
         if any(not isinstance(t, str) for t in tags):
             tags = []
             try:
-                with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+                with config.ALERTS_LOG.open("a", encoding="utf-8") as f:
                     f.write(
                         f"[{datetime.now():%Y-%m-%d %H:%M:%S}] "
                         f"get_meta: tags 含非字符串元素，已回退默认值\n"
