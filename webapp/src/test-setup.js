@@ -18,6 +18,10 @@ global.ResizeObserver =
     disconnect() {}
   };
 
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {};
+}
+
 class MockEventSource {
   constructor() {
     this.readyState = 0;
