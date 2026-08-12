@@ -190,7 +190,7 @@ def _log_activity(agent, novel_id, activity_type, title, detail, db_path):
         pass
 
 
-def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None,
+def run(agent, task_text, temperature=None, max_tokens=None, target_words=None,
         novel_id=None, db_path=None, model=None):
     stem = _resolve_agent_file(agent)
     canonical = stem.stem if stem is not None else agent
@@ -212,6 +212,13 @@ def run(agent, task_text, temperature=None, max_tokens=1600, target_words=None,
             pass
     model = model or meta.get("model") or "deepseek-v4-flash"
     temp = float(temperature) if temperature is not None else float(meta.get("temperature") or 0.5)
+    if max_tokens is None:
+        try:
+            max_tokens = int(meta.get("max_tokens") or 1600)
+        except (TypeError, ValueError):
+            max_tokens = 1600
+    else:
+        max_tokens = int(max_tokens)
     used_knowledge = []
     degraded = False
     activity_type = _ACTIVITY_TYPES.get(canonical, "agent")

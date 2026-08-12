@@ -44,7 +44,10 @@ def load_env(env_file):
             for line in path.read_text(encoding="utf-8").splitlines():
                 if "=" in line:
                     k, v = line.split("=", 1)
-                    env.setdefault(k.strip(), config._strip_inline_comment(v))
+                    env.setdefault(
+                        k.strip().lstrip("\ufeff"),
+                        config._strip_inline_comment(v),
+                    )
     else:
         env = config.load_env()
     for k, v in env.items():

@@ -74,6 +74,15 @@ class AgentToolLoopTests(unittest.TestCase):
         self.assertIn("可用工具", call.args[1])
         self.assertIn("get_novel_knowledge", call.args[1])
 
+    def test_max_tokens_falls_back_to_agent_frontmatter(self):
+        with mock.patch(
+            "tools.agent_tool_loop.chat_deepseek",
+            return_value=_resp("直接回答"),
+        ) as chat:
+            agent_tool_loop.run("writer", "写正文", db_path=self.db_path)
+        call = chat.call_args
+        self.assertEqual(call.kwargs["max_tokens"], 4000, "writer frontmatter max_tokens must apply")
+
     def test_tool_calls_resolved_and_second_round(self):
         calls = {"n": 0}
 

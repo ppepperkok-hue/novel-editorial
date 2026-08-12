@@ -106,7 +106,9 @@ def load_env():
         for line in N8N_ENV_FILE.read_text(encoding="utf-8").splitlines():
             if "=" in line:
                 k, v = line.split("=", 1)
-                env.setdefault(k.strip(), _strip_inline_comment(v))
+                # strip() does not remove U+FEFF (UTF-8 BOM), which breaks
+                # the first key when the env file has a BOM.
+                env.setdefault(k.strip().lstrip("\ufeff"), _strip_inline_comment(v))
     return env
 
 
