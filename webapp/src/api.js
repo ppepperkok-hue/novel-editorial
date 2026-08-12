@@ -86,8 +86,12 @@ export function subscribeEvents(onSnapshot) {
 
 export const exportNovels = () => getJSON("/api/export/novels");
 export const getMeetings = () => getJSON("/api/meetings");
-export const startMeeting = (topic, kind = "topic") =>
-  postJSON("/api/meetings/start", { topic, kind });
+export const startMeeting = (topic, kind = "topic", mode = "rounds") =>
+  postJSON("/api/meetings/start", { topic, kind, mode });
+export const getMeetingMessages = (sessionId, limit = 200) =>
+  getJSON(`/api/meetings/messages?session_id=${sessionId}&limit=${limit}`);
+export const respondInteraction = (id, resolution) =>
+  postJSON("/api/meetings/interactions/respond", { id, resolution });
 export const getSession = (id) => getJSON("/api/meetings/session?id=" + id);
 export const getActiveSession = () => getJSON("/api/meetings/active");
 export const advanceSession = (id, instruction, finish = false) =>

@@ -9,6 +9,7 @@ import {
   startMeeting,
 } from "../api.js";
 import { AgentAvatar } from "../components/features/agent-avatar.jsx";
+import { FreeLive } from "../components/features/meetings/free-live.jsx";
 import { EmptyState, ErrorState, LoadingState } from "../components/features/states.jsx";
 import { PageHeader } from "../components/layout/page-header.jsx";
 import { Badge } from "../components/ui/badge.jsx";
@@ -16,6 +17,7 @@ import { Button } from "../components/ui/button.jsx";
 import { Input } from "../components/ui/input.jsx";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select.jsx";
 import { displayNameOf } from "../lib/agent-custom.js";
+import { cn } from "../lib/utils.js";
 import { useApi } from "../lib/use-api.js";
 
 const AGENT_NAMES = {
@@ -72,6 +74,7 @@ export default function MeetingsPage() {
   const [session, setSession] = useState(null);
   const [topic, setTopic] = useState("");
   const [kind, setKind] = useState("topic");
+  const [mode, setMode] = useState("rounds");
   const [instruction, setInstruction] = useState("");
   const [busy, setBusy] = useState(false);
   const [pollTick, setPollTick] = useState(0);
@@ -113,9 +116,16 @@ export default function MeetingsPage() {
     if (!topic.trim() || busy) return;
     setBusy(true);
     try {
-      const r = await startMeeting(topic.trim(), kind);
+      const r = await startMeeting(topic.trim(), kind, mode);
       if (r.ok) {
-        setSession({ id: r.session_id, topic: topic.trim(), status: "running", kind });
+        setSession({
+          id: r.session_id,
+          topic: topic.trim(),
+          status: "running",
+          kind,
+          mode,
+          attendees: [],
+        });
         setTopic("");
         toast.success("会议已启动");
       } else {
@@ -189,11 +199,31 @@ export default function MeetingsPage() {
                 ))}
               </SelectContent>
             </Select>
+            <div className="inline-flex overflow-hidden rounded-control border border-line">
+              {[
+                ["rounds", "轮次"],
+                ["free", "自由讨论"],
+              ].map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setMode(id)}
+                  className={cn(
+                    "h-8 border-r border-line px-3.5 text-xs transition-colors last:border-r-0",
+                    mode === id ? "bg-ink font-semibold text-canvas" : "text-ink-2 hover:text-ink",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <Button disabled={busy || !topic.trim()} onClick={start}>
               {busy ? "启动中…" : "发起"}
             </Button>
           </div>
         </section>
+      ) : session?.mode === "free" ? (
+        <FreeLive session={session} onEnded={() => { setSession(null); refresh(); }} />
       ) : (
         <section className="rounded-card border border-line bg-surface">
           <div className="flex flex-wrap items-center gap-2.5 border-b border-line px-5 py-3.5">

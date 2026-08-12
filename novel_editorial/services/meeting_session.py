@@ -32,6 +32,12 @@ def create_session(conn, topic, novel_id=0, db_path="", kind="topic", mode="roun
     mode = str(mode or "rounds").strip()
     if mode not in ("rounds", "free"):
         return {"ok": False, "error": "mode must be rounds or free"}
+    if mode == "free":
+        from tools.meeting_executor import AGENT_PERSONA  # noqa: PLC0415
+
+        attendees = json.dumps(list(AGENT_PERSONA), ensure_ascii=False)
+    else:
+        attendees = "[]"
     if kind not in meeting_kinds.MEETING_KIND_NAMES:
         return {"ok": False, "error": f"kind must be one of {meeting_kinds.MEETING_KIND_NAMES}"}
     if not topic or not str(topic).strip():
@@ -48,8 +54,8 @@ def create_session(conn, topic, novel_id=0, db_path="", kind="topic", mode="roun
             novel_id = row["id"] if row else 0
         cur = conn.execute(
             "INSERT INTO meeting_sessions(kind,topic,status,mode,novel_id,db_path,"
-            "heartbeat_at,created_at,updated_at) "
-            "VALUES(?,?,?,?,?,?,?,?,?)",
+            "attendees,heartbeat_at,created_at,updated_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?)",
             (
                 kind,
                 str(topic).strip(),
@@ -57,6 +63,7 @@ def create_session(conn, topic, novel_id=0, db_path="", kind="topic", mode="roun
                 mode,
                 novel_id,
                 str(db_path or ""),
+                attendees,
                 _now(),
                 _now(),
                 _now(),
@@ -143,10 +150,31 @@ def get_active_session(conn):
 
 def advance_session(conn, session_id, instruction="", finish=False):
     row = conn.execute(
-        "SELECT id, status FROM meeting_sessions WHERE id=?", (session_id,)
+        "SELECT id, status, mode, db_path FROM meeting_sessions WHERE id=?", (session_id,)
     ).fetchone()
     if row is None:
         return {"ok": False, "error": "session not found"}
+    if str(row["mode"] or "rounds") == "free":
+        # 自由会议：指令/消息作为事件投递，不推进轮次。
+        if finish:
+            conn.execute(
+                "UPDATE meeting_sessions SET status='finished', updated_at=? WHERE id=?",
+                (_now(), session_id),
+            )
+            conn.commit()
+            return {"ok": True, "mode": "free", "status": "finished"}
+        from tools import meeting_free_loop  # noqa: PLC0415
+
+        meeting_free_loop.get_loop(str(row["db_path"] or "")).submit_event(
+            session_id,
+            {
+                "kind": "user_message",
+                "content": str(instruction or ""),
+                "from_agent": "boss",
+                "event_id": f"adv-{session_id}-{_now()}",
+            },
+        )
+        return {"ok": True, "mode": "free", "status": row["status"]}
     if row["status"] != "awaiting_input":
         return {"ok": False, "error": f"当前状态不是等待输入（{row['status']}）"}
     if finish:

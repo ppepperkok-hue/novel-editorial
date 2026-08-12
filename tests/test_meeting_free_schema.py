@@ -4,6 +4,8 @@ exist, migration is idempotent, and meeting_sessions gains mode='rounds'."""
 import os
 import tempfile
 import unittest
+import json
+from unittest import mock
 
 from novel_editorial import db
 from novel_editorial.services import meeting_session
@@ -95,12 +97,39 @@ class MeetingFreeSchemaTests(unittest.TestCase):
             result = meeting_session.create_session(conn, "自由讨论测试", mode="free")
             self.assertTrue(result["ok"])
             row = conn.execute(
-                "SELECT mode FROM meeting_sessions WHERE id=?",
+                "SELECT mode, attendees FROM meeting_sessions WHERE id=?",
                 (result["session_id"],),
             ).fetchone()
             self.assertEqual(row["mode"], "free")
+            attendees = json.loads(row["attendees"])
+            self.assertEqual(len(attendees), 11)
+            self.assertIn("eic", attendees)
             bad = meeting_session.create_session(conn, "非法模式", mode="nope")
             self.assertFalse(bad["ok"])
+        finally:
+            conn.close()
+
+    def test_advance_free_mode_submits_event(self):
+        conn = db.connect(self.db_path)
+        try:
+            result = meeting_session.create_session(conn, "自由讨论", mode="free")
+            session_id = result["session_id"]
+            from tools import meeting_free_loop
+
+            loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path)
+            with mock.patch.object(
+                meeting_free_loop, "get_loop", return_value=loop
+            ), mock.patch.object(loop, "submit_event", wraps=loop.submit_event) as submit:
+                advanced = meeting_session.advance_session(
+                    conn, session_id, "大家说说想法"
+                )
+                self.assertTrue(advanced["ok"])
+                self.assertEqual(advanced["mode"], "free")
+                submit.assert_called_once()
+                event = submit.call_args[0][1]
+                self.assertEqual(event["kind"], "user_message")
+                self.assertEqual(event["content"], "大家说说想法")
+                loop.stop(session_id)
         finally:
             conn.close()
 
