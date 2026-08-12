@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT))
 
 from novel_editorial import config, db  # noqa: E402
 
-OUT_CSV = ROOT / "demo_data" / "reader_stats.csv"
+OUT_CSV = config.READER_CSV
 PAGE_SIZE = 200
 MAX_PAGES = 100
 UA = (
@@ -32,7 +32,7 @@ UA = (
 def _trace(message):
     """Append a trace line to alerts.log; I/O failure must not crash the run."""
     try:
-        with (ROOT / "alerts.log").open("a", encoding="utf-8") as f:
+        with config.ALERTS_LOG.open("a", encoding="utf-8") as f:
             f.write(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {message}\n")
     except OSError:
         pass

@@ -15,6 +15,24 @@ export function useMeetingStream(sessionId) {
   const [compressing, setCompressing] = useState(false);
   const aliveRef = useRef(true);
 
+  const loadAll = () => {
+    return getMeetingMessages(sessionId)
+      .then((r) => {
+        if (!aliveRef.current) return;
+        const fresh = r.messages || [];
+        setMessages((prev) => {
+          const byId = new Map(fresh.map((m) => [Number(m.id), m]));
+          for (const m of prev) {
+            if (!byId.has(Number(m.id))) byId.set(Number(m.id), m);
+          }
+          return [...byId.values()].sort((a, b) => Number(a.id) - Number(b.id));
+        });
+      })
+      .catch(() => {
+        if (aliveRef.current) setError("消息加载失败，请刷新页面");
+      });
+  };
+
   useEffect(() => {
     if (!sessionId) return undefined;
     aliveRef.current = true;
@@ -23,13 +41,7 @@ export function useMeetingStream(sessionId) {
     setApprovals([]);
     setError("");
 
-    getMeetingMessages(sessionId)
-      .then((r) => {
-        if (aliveRef.current) setMessages(r.messages || []);
-      })
-      .catch(() => {
-        if (aliveRef.current) setError("消息加载失败，请刷新页面");
-      });
+    loadAll();
     getSession(sessionId)
       .then((r) => {
         if (aliveRef.current) setSummary(r.meeting_summary || "");
@@ -79,6 +91,13 @@ export function useMeetingStream(sessionId) {
     };
     es.onerror = () => {
       if (aliveRef.current) setError("实时连接中断，正在重连…");
+    };
+    es.onopen = () => {
+      // EventSource 自动重连成功：拉全量合并，补上断线期间可能丢失的事件。
+      if (aliveRef.current) {
+        setError("");
+        loadAll();
+      }
     };
     return () => {
       aliveRef.current = false;

@@ -314,6 +314,12 @@ def make_handler(db_path):
             return
         hub = meeting_events.get_hub()
         subscriber = hub.subscribe(session_id)
+        if subscriber is None:
+            self._json(
+                {"ok": False, "error": "too many connections for this session"},
+                status=503,
+            )
+            return
         try:
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream; charset=utf-8")

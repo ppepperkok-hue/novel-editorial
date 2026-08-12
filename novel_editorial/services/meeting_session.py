@@ -131,14 +131,14 @@ def get_active_session(conn):
         # NULL heartbeat means the row never had one written (e.g. legacy
         # rows); treat it as alive instead of comparing None to a string.
         heartbeat = session.get("heartbeat_at") or _now()
-        if heartbeat < cutoff:
+        if heartbeat < cutoff and str(session.get("mode") or "rounds") != "free":
             conn.execute(
                 "UPDATE meeting_sessions SET status='failed', updated_at=? WHERE id=?",
                 (_now(), row["id"]),
             )
             conn.commit()
-        else:
-            return session
+            return None
+        return session
     parked = conn.execute(
         "SELECT id FROM meeting_sessions WHERE status='awaiting_input' "
         "ORDER BY id DESC LIMIT 1"
@@ -165,13 +165,15 @@ def advance_session(conn, session_id, instruction="", finish=False):
             return {"ok": True, "mode": "free", "status": "finished"}
         from tools import meeting_free_loop  # noqa: PLC0415
 
+        import uuid  # noqa: PLC0415
+
         meeting_free_loop.get_loop(str(row["db_path"] or "")).submit_event(
             session_id,
             {
                 "kind": "user_message",
                 "content": str(instruction or ""),
                 "from_agent": "boss",
-                "event_id": f"adv-{session_id}-{_now()}",
+                "event_id": f"adv-{session_id}-{uuid.uuid4().hex[:12]}",
             },
         )
         return {"ok": True, "mode": "free", "status": row["status"]}

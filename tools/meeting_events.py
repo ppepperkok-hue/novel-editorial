@@ -13,15 +13,19 @@ import threading
 
 
 class MeetingEventHub:
-    def __init__(self):
+    def __init__(self, max_per_session=10):
         self._subscribers = {}
+        self._max_per_session = max_per_session
         self._guard = threading.Lock()
 
     def subscribe(self, session_id):
         """注册订阅，返回一个队列（调用方负责读取与退订）。"""
-        q = queue.Queue()
+        q = queue.Queue(maxsize=100)
         with self._guard:
-            self._subscribers.setdefault(int(session_id), set()).add(q)
+            subscribers = self._subscribers.setdefault(int(session_id), set())
+            if len(subscribers) >= self._max_per_session:
+                return None
+            subscribers.add(q)
         return q
 
     def unsubscribe(self, session_id, q):

@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from tools.preflight import _pid_alive  # noqa: E402
+from novel_editorial import config  # noqa: E402
 
 
 def _read_owner(lock):
@@ -56,7 +57,7 @@ def main():
     db_path = Path(args.db)
     if not db_path.is_absolute():
         db_path = ROOT / db_path
-    lock = ROOT / "n8n_tmp" / f"{db_path.stem}.lock"
+    lock = config.TMP_DIR / f"{db_path.stem}.lock"
     if not lock.exists():
         print("no lock to release")
         return 0

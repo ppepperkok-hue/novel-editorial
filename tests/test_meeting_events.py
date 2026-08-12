@@ -27,6 +27,14 @@ class MeetingEventHubTests(unittest.TestCase):
         self.hub.publish(99, {"type": "heartbeat"})
         self.assertEqual(self.hub.subscriber_count(99), 0)
 
+    def test_subscribe_cap_rejects_extra_subscribers(self):
+        hub = meeting_events.MeetingEventHub(max_per_session=2)
+        q1 = hub.subscribe(7)
+        q2 = hub.subscribe(7)
+        self.assertIsNotNone(q1)
+        self.assertIsNotNone(q2)
+        self.assertIsNone(hub.subscribe(7))
+
 
 if __name__ == "__main__":
     unittest.main()

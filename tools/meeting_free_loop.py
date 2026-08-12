@@ -102,31 +102,49 @@ class FreeMeetingLoop:
                 self._process_event(session_id, event)
 
     def _process_event(self, session_id, event):
-        conn = db.connect(self._db_path)
         try:
-            conn.execute(
-                "UPDATE meeting_sessions SET heartbeat_at=?, updated_at=? WHERE id=?",
-                (_now(), _now(), session_id),
-            )
-            session = conn.execute(
-                "SELECT * FROM meeting_sessions WHERE id=?", (session_id,)
-            ).fetchone()
-            if not session or session["status"] not in ("running", "awaiting_input"):
-                return
-            audit.log(
-                conn,
-                "meeting",
-                "free_event",
-                target_type="session",
-                target_id=session_id,
-                detail={"kind": event.get("kind") or "user_message"},
-            )
-            meeting_interactions.expire_interactions(conn)
-            self._maybe_compress(conn, session)
-            self._schedule_speakers(conn, session, event)
-            conn.commit()
-        finally:
-            conn.close()
+            conn = db.connect(self._db_path)
+            try:
+                conn.execute(
+                    "UPDATE meeting_sessions SET heartbeat_at=?, updated_at=? WHERE id=?",
+                    (_now(), _now(), session_id),
+                )
+                session = conn.execute(
+                    "SELECT * FROM meeting_sessions WHERE id=?", (session_id,)
+                ).fetchone()
+                if not session or session["status"] not in ("running", "awaiting_input"):
+                    return
+                audit.log(
+                    conn,
+                    "meeting",
+                    "free_event",
+                    target_type="session",
+                    target_id=session_id,
+                    detail={"kind": event.get("kind") or "user_message"},
+                )
+                meeting_interactions.expire_interactions(conn)
+                self._maybe_compress(conn, session)
+                self._schedule_speakers(conn, session, event)
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as exc:  # noqa: BLE001 - worker must survive event errors
+            try:
+                conn = db.connect(self._db_path)
+                try:
+                    audit.log(
+                        conn,
+                        "meeting",
+                        "free_event_error",
+                        target_type="session",
+                        target_id=session_id,
+                        detail={"error": f"{exc.__class__.__name__}: {exc}"[:300]},
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+            except Exception:  # noqa: BLE001 - audit failure must not kill worker
+                pass
 
     def _process_cold(self, session_id):
         conn = db.connect(self._db_path)
@@ -363,6 +381,7 @@ class FreeMeetingLoop:
                     "message_id": result.get("message_id"),
                     "agent": agent,
                     "speech": result.get("speech"),
+                    "created_at": _now(),
                 },
             )
         interaction_id = result.get("interaction_id")

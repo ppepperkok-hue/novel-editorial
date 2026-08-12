@@ -133,6 +133,51 @@ class MeetingFreeSchemaTests(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_watchdog_skips_idle_free_sessions(self):
+        conn = db.connect(self.db_path)
+        try:
+            result = meeting_session.create_session(conn, "自由讨论", mode="free")
+            session_id = result["session_id"]
+            conn.execute(
+                "UPDATE meeting_sessions SET heartbeat_at='2000-01-01 00:00:00' "
+                "WHERE id=?",
+                (session_id,),
+            )
+            conn.commit()
+            active = meeting_session.get_active_session(conn)
+            self.assertIsNotNone(active)
+            self.assertEqual(active["id"], session_id)
+            row = conn.execute(
+                "SELECT status FROM meeting_sessions WHERE id=?", (session_id,)
+            ).fetchone()
+            self.assertEqual(row["status"], "running")
+        finally:
+            conn.close()
+
+    def test_advance_event_ids_are_unique(self):
+        conn = db.connect(self.db_path)
+        try:
+            result = meeting_session.create_session(conn, "自由讨论", mode="free")
+            session_id = result["session_id"]
+            from tools import meeting_free_loop
+
+            loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path)
+            captured = []
+            with mock.patch.object(
+                meeting_free_loop, "get_loop", return_value=loop
+            ), mock.patch.object(
+                loop,
+                "submit_event",
+                side_effect=lambda sid, event: captured.append(event.get("event_id")),
+            ):
+                meeting_session.advance_session(conn, session_id, "第一条")
+                meeting_session.advance_session(conn, session_id, "第二条")
+                loop.stop(session_id)
+            self.assertEqual(len(captured), 2)
+            self.assertNotEqual(captured[0], captured[1])
+        finally:
+            conn.close()
+
 
 if __name__ == "__main__":
     unittest.main()

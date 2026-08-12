@@ -122,6 +122,9 @@ if ($Scope -eq "slices") {
                 "tools/agent_context.py", "tools/agent_meeting.py", "tools/agent_tool_loop.py",
                 "tools/mailroom.py", "tools/relations.py", "tools/promises.py",
                 "tools/meeting_actions.py", "tools/meeting_kinds.py", "tools/meeting_materials.py",
+                "tools/meeting_free_loop.py", "tools/meeting_executor.py",
+                "tools/meeting_speaker.py", "tools/meeting_mentions.py",
+                "tools/meeting_interactions.py", "tools/meeting_events.py",
                 "tools/write_diaries.py", "tools/architect_weekly.py", "tools/apply_architect.py",
                 "tools/app_settings.py"
             )

@@ -98,6 +98,7 @@ export default function MeetingsPage() {
         );
         if (s.status === "finished" || s.status === "failed") {
           clearInterval(timer);
+          setSession(null);
           refresh();
         }
       } catch {
