@@ -334,6 +334,25 @@ def make_handler(db_path):
         finally:
             hub.unsubscribe(session_id, subscriber)
 
+    def _get_meeting_messages(self, parsed):
+        qs = parse_qs(parsed.query)
+        session_id = _parse_int(qs.get("session_id", [""])[0], 0)
+        limit = _parse_int(qs.get("limit", ["200"])[0], 200)
+        if session_id <= 0:
+            self._json({"error": "session_id required"}, status=400)
+            return
+        conn = db.connect(db_path)
+        try:
+            rows = conn.execute(
+                "SELECT id, session_id, seq, from_agent, role, kind, body, mentions, "
+                "status, created_at FROM meeting_messages WHERE session_id=? "
+                "ORDER BY id DESC LIMIT ?",
+                (session_id, max(1, min(limit, 500))),
+            ).fetchall()
+        finally:
+            conn.close()
+        self._json({"ok": True, "messages": [dict(r) for r in reversed(rows)]})
+
     # Route registry: new endpoints go here instead of the legacy if/elif
     # chains in do_GET/do_POST. Old endpoints migrate over incrementally.
     GET_ROUTES = {
@@ -347,6 +366,7 @@ def make_handler(db_path):
         "/api/agents/promises": _get_promises,
         "/api/editorial/overview": _get_editorial_overview,
         "/api/meetings/events": _get_meeting_events,
+        "/api/meetings/messages": _get_meeting_messages,
     }
     POST_ROUTES = {
         "/api/agent_actions/claim": _post_claim_action,

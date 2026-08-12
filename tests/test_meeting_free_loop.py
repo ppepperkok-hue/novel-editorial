@@ -476,8 +476,11 @@ class FreeMeetingLoopTests(unittest.TestCase):
             deadline = time.time() + 5
             while not published and time.time() < deadline:
                 time.sleep(0.05)
-        self.assertEqual(published[0]["type"], "message")
-        self.assertEqual(published[0]["speech"], "发言")
+        types = [e["type"] for e in published]
+        self.assertIn("status", types)
+        self.assertIn("message", types)
+        message_event = next(e for e in published if e["type"] == "message")
+        self.assertEqual(message_event["speech"], "发言")
         loop.stop(self.session_id)
 
 

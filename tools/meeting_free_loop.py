@@ -303,6 +303,10 @@ class FreeMeetingLoop:
             with self._running_guard:
                 self._running.setdefault(int(session["id"]), set()).add(c["agent"])
             session_id = int(session["id"])
+            meeting_events.get_hub().publish(
+                session_id,
+                {"type": "status", "session_id": session_id, "agent": c["agent"], "status": "thinking"},
+            )
             future = self._pool.submit(
                 self._speak, session_id, c["agent"], event
             )
@@ -333,6 +337,10 @@ class FreeMeetingLoop:
         finally:
             with self._running_guard:
                 self._running.get(session_id, set()).discard(agent)
+            meeting_events.get_hub().publish(
+                session_id,
+                {"type": "status", "session_id": session_id, "agent": agent, "status": "ready"},
+            )
 
     def _broadcast_result(self, conn, session_id, agent, result):
         hub = meeting_events.get_hub()
