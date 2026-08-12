@@ -294,6 +294,32 @@ class MeetingExecutorTests(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_reply_with_approval_request_persists_interaction(self):
+        conn = self._conn()
+        try:
+            result = meeting_executor.reply_to_mention(
+                conn,
+                self.session_id,
+                "eic",
+                {"kind": "user_message", "content": "@掌印 给个结论"},
+                dry_run=True,
+                mock_text=(
+                    '{"speech": "我建议采纳", "approval_request": '
+                    '{"question": "采纳经验卡草案？", "choices": ["同意", "拒绝"]}}'
+                ),
+            )
+            self.assertTrue(result["ok"])
+            self.assertTrue(result["spoken"])
+            self.assertIsNotNone(result["interaction_id"])
+            row = conn.execute(
+                "SELECT kind, status FROM pending_interactions WHERE id=?",
+                (result["interaction_id"],),
+            ).fetchone()
+            self.assertEqual(row["kind"], "approval")
+            self.assertEqual(row["status"], "pending")
+        finally:
+            conn.close()
+
 
 if __name__ == "__main__":
     unittest.main()

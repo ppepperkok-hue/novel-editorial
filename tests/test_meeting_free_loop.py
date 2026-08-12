@@ -402,6 +402,43 @@ class FreeMeetingLoopTests(unittest.TestCase):
         self.assertEqual(calls, ["spoke"])
         self.assertEqual(loop.running_agents(self.session_id), set())
 
+    def test_heartbeat_expires_stale_interactions(self):
+        conn = db.connect(self.db_path)
+        try:
+            from tools import meeting_interactions
+
+            created = meeting_interactions.request_interaction(
+                conn, self.session_id, "eic", "approval", "过期确认"
+            )
+            interaction_id = created["interaction"]["id"]
+            conn.execute(
+                "UPDATE pending_interactions SET expires_at='2000-01-01 00:00:00' "
+                "WHERE id=?",
+                (interaction_id,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path, dry_run=True)
+        loop.submit_event(self.session_id, {"kind": "user_message", "content": "触发心跳"})
+        deadline = time.time() + 5
+        status = ""
+        while time.time() < deadline:
+            conn = db.connect(self.db_path)
+            try:
+                row = conn.execute(
+                    "SELECT status FROM pending_interactions WHERE id=?",
+                    (interaction_id,),
+                ).fetchone()
+                status = row["status"]
+            finally:
+                conn.close()
+            if status == "expired":
+                break
+            time.sleep(0.1)
+        self.assertEqual(status, "expired")
+        loop.stop(self.session_id)
+
 
 def json_dumps(agents):
     import json

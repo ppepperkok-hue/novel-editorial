@@ -12,6 +12,7 @@ import sqlite3
 
 from novel_editorial.services import audit
 from tools import agent_context, agent_meeting, agent_tool_loop
+from tools import meeting_interactions
 
 AGENT_PERSONA = {
     "planner": "文策",
@@ -168,9 +169,14 @@ def parse_speech(raw):
         )
         speech = str(speech or "").strip()
         if speech:
-            return {"spoken": True, "speech": speech, "structured": obj}
+            return {
+                "spoken": True,
+                "speech": speech,
+                "structured": obj,
+                "approval_request": obj.get("approval_request"),
+            }
         return {"spoken": False, "speech": "", "structured": obj, "reason": "no_content"}
-    return {"spoken": True, "speech": str(obj), "structured": None}
+    return {"spoken": True, "speech": str(obj), "structured": None, "approval_request": None}
 
 
 def reply_to_mention(conn, session_id, agent, event, dry_run=False, mock_text="", tail=20):
@@ -224,6 +230,8 @@ def reply_to_mention(conn, session_id, agent, event, dry_run=False, mock_text=""
             }
 
     parsed = parse_speech(raw)
+    if not parsed.get("approval_request"):
+        parsed["approval_request"] = None
     if not parsed["spoken"]:
         audit.log(
             conn,
@@ -286,9 +294,23 @@ def reply_to_mention(conn, session_id, agent, event, dry_run=False, mock_text=""
         detail={"agent": agent, "message_id": inserted.lastrowid},
     )
     conn.commit()
+    interaction_id = None
+    approval = parsed.get("approval_request")
+    if isinstance(approval, dict) and str(approval.get("question") or "").strip():
+        created = meeting_interactions.request_interaction(
+            conn,
+            session_id,
+            agent,
+            str(approval.get("kind") or "approval"),
+            str(approval.get("question") or ""),
+            choices=approval.get("choices") or [],
+        )
+        if created.get("ok"):
+            interaction_id = created["interaction"]["id"]
     return {
         "ok": True,
         "spoken": True,
         "message_id": inserted.lastrowid,
         "speech": parsed["speech"],
+        "interaction_id": interaction_id,
     }

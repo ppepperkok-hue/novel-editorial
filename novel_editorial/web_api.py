@@ -289,6 +289,20 @@ def make_handler(db_path):
             conn.close()
         self._json(result)
 
+    def _post_meeting_interaction_respond(self, parsed, payload):
+        from tools import meeting_interactions  # noqa: PLC0415
+
+        conn = db.connect(db_path)
+        try:
+            result = meeting_interactions.resolve_interaction(
+                conn,
+                _parse_int(payload.get("id"), 0),
+                str(payload.get("resolution") or ""),
+            )
+        finally:
+            conn.close()
+        self._json(result)
+
     # Route registry: new endpoints go here instead of the legacy if/elif
     # chains in do_GET/do_POST. Old endpoints migrate over incrementally.
     GET_ROUTES = {
@@ -304,6 +318,7 @@ def make_handler(db_path):
     }
     POST_ROUTES = {
         "/api/agent_actions/claim": _post_claim_action,
+        "/api/meetings/interactions/respond": _post_meeting_interaction_respond,
     }
 
     class Handler(BaseHTTPRequestHandler):

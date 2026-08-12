@@ -18,6 +18,7 @@ from datetime import datetime
 from novel_editorial import db
 from novel_editorial.services import audit
 from tools import app_settings, meeting_executor, meeting_speaker
+from tools import meeting_interactions
 
 
 def _now():
@@ -120,6 +121,7 @@ class FreeMeetingLoop:
                 target_id=session_id,
                 detail={"kind": event.get("kind") or "user_message"},
             )
+            meeting_interactions.expire_interactions(conn)
             self._maybe_compress(conn, session)
             self._schedule_speakers(conn, session, event)
             conn.commit()
