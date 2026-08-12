@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { PencilSimple } from "@phosphor-icons/react";
+import { ImageSquare, PencilSimple, TrashSimple } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { getAgents, getDiaries, postAgents } from "../api.js";
+import { AgentAvatar } from "../components/features/agent-avatar.jsx";
 import { EmptyState, ErrorState, LoadingState } from "../components/features/states.jsx";
 import { PageHeader } from "../components/layout/page-header.jsx";
 import { Badge } from "../components/ui/badge.jsx";
@@ -13,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs.
 import {
   AVATAR_COLORS,
   avatarColorOf,
-  avatarTextOf,
+  compressAvatarImage,
   displayNameOf,
   exportCustomAgents,
   getCustomAgent,
@@ -101,6 +102,16 @@ export default function AgentsPage() {
     toast.success("自定义资料已保存");
   };
 
+  const uploadAvatar = async (file) => {
+    if (!file || !editDraft) return;
+    try {
+      const dataUrl = await compressAvatarImage(file, editDraft.avatarColor);
+      setEditDraft((d) => ({ ...d, avatarImage: dataUrl }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "头像处理失败");
+    }
+  };
+
   const exportCustom = () => {
     const blob = new Blob([exportCustomAgents()], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -182,12 +193,7 @@ export default function AgentsPage() {
                       : "text-ink-2 hover:text-ink",
                   )}
                 >
-                  <span
-                    className="grid size-7 shrink-0 place-items-center rounded-lg text-xs font-semibold text-white"
-                    style={{ background: avatarColorOf(a.file, agents.indexOf(a)) }}
-                  >
-                    {avatarTextOf(a, agents.indexOf(a))}
-                  </span>
+                  <AgentAvatar file={a.file} name={a.name} index={agents.indexOf(a)} />
                   <span className="min-w-0 flex-1 truncate">{displayNameOf(a, agents.indexOf(a))}</span>
                   <span className={cn("size-1.5 shrink-0 rounded-full", a.synced ? "bg-ok" : "bg-warn")} />
                 </button>
@@ -204,12 +210,7 @@ export default function AgentsPage() {
           ) : (
             <>
               <div className="flex items-center gap-3">
-                <span
-                  className="grid size-10 shrink-0 place-items-center rounded-lg text-base font-semibold text-white"
-                  style={{ background: avatarColorOf(selected.file, agents.indexOf(selected)) }}
-                >
-                  {avatarTextOf(selected, agents.indexOf(selected))}
-                </span>
+                <AgentAvatar file={selected.file} name={selected.name} index={agents.indexOf(selected)} size="lg" />
                 <div className="min-w-0">
                   <div className="text-base font-bold text-ink">{displayNameOf(selected, agents.indexOf(selected))}</div>
                   <div className="truncate text-xs text-ink-2">
@@ -314,10 +315,14 @@ export default function AgentsPage() {
             <div className="flex flex-col gap-4">
               <div className="flex items-center gap-3">
                 <span
-                  className="grid size-12 place-items-center rounded-lg text-lg font-bold text-white"
+                  className="grid size-12 place-items-center overflow-hidden rounded-lg text-lg font-bold text-white"
                   style={{ background: editDraft.avatarColor }}
                 >
-                  {editDraft.avatarText.slice(0, 1) || "编"}
+                  {editDraft.avatarImage ? (
+                    <img src={editDraft.avatarImage} alt="" className="size-full object-cover" />
+                  ) : (
+                    editDraft.avatarText.slice(0, 1) || "编"
+                  )}
                 </span>
                 <div className="text-xs text-ink-3">预览：仅本机面板生效，不影响后端人格与发布。</div>
               </div>
@@ -358,6 +363,35 @@ export default function AgentsPage() {
                   ))}
                 </div>
               </div>
+              <div>
+                <label className="mb-1.5 block text-xs text-ink-2">头像图片</label>
+                <div className="flex gap-2">
+                  <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-control border border-line bg-surface px-3 text-xs text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink">
+                    <ImageSquare className="size-3.5" />
+                    上传图片
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        uploadAvatar(e.target.files?.[0]);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  {editDraft.avatarImage ? (
+                    <button
+                      type="button"
+                      onClick={() => setEditDraft((d) => ({ ...d, avatarImage: "" }))}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-control border border-line bg-surface px-3 text-xs text-bad transition-colors hover:bg-bad-soft"
+                    >
+                      <TrashSimple className="size-3.5" />
+                      移除
+                    </button>
+                  ) : null}
+                  <span className="self-center text-[11px] text-ink-3">自动压缩为 96×96，随导出导入一起备份</span>
+                </div>
+              </div>
             </div>
           ) : null}
           <DialogFooter>
@@ -378,5 +412,6 @@ function getCustomDraft(agent) {
     displayName: custom?.displayName || displayNameOf(agent),
     avatarText: custom?.avatarText || displayNameOf(agent).slice(0, 1),
     avatarColor: custom?.avatarColor || avatarColorOf(agent.file),
+    avatarImage: custom?.avatarImage || "",
   };
 }

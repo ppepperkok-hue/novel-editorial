@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import { getEditorialOverview, getMailbox } from "../api.js";
+import { AgentAvatar } from "../components/features/agent-avatar.jsx";
 import { EmptyState, ErrorState, LoadingState } from "../components/features/states.jsx";
 import { PageHeader } from "../components/layout/page-header.jsx";
 import { Badge } from "../components/ui/badge.jsx";
 import { Input } from "../components/ui/input.jsx";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select.jsx";
-import { avatarColorOf, displayNameOf } from "../lib/agent-custom.js";
+import { displayNameOf } from "../lib/agent-custom.js";
 import { cn } from "../lib/utils.js";
 import { useApi } from "../lib/use-api.js";
 
@@ -25,7 +26,6 @@ const STATUS_META = {
 };
 
 const agentName = (id) => displayNameOf({ file: `${id}.md`, name: id });
-const agentColor = (id) => avatarColorOf(`${id}.md`);
 
 /** 消息流：按主题线程聚合成会话视图。@stable */
 export default function EditorialPage() {
@@ -191,13 +191,12 @@ export default function EditorialPage() {
                   >
                     <div className="flex -space-x-1.5 shrink-0">
                       {t.participants.slice(0, 2).map((p) => (
-                        <span
+                        <AgentAvatar
                           key={p}
-                          className="grid size-7 place-items-center rounded-lg border-2 border-surface text-[11px] font-semibold text-white"
-                          style={{ background: agentColor(p) }}
-                        >
-                          {agentName(p).slice(0, 1)}
-                        </span>
+                          file={`${p}.md`}
+                          name={p}
+                          className="border-2 border-surface"
+                        />
                       ))}
                     </div>
                     <div className="min-w-0 flex-1">
@@ -239,12 +238,7 @@ export default function EditorialPage() {
                     const status = STATUS_META[m.status] || ["—", "neutral"];
                     return (
                       <div key={m.id} className="mb-4 flex gap-2.5">
-                        <span
-                          className="grid size-8 shrink-0 place-items-center rounded-lg text-xs font-semibold text-white"
-                          style={{ background: agentColor(m.from_agent) }}
-                        >
-                          {agentName(m.from_agent).slice(0, 1)}
-                        </span>
+                        <AgentAvatar file={`${m.from_agent}.md`} name={m.from_agent} />
                         <div className="min-w-0 flex-1">
                           <div className="mb-1 flex flex-wrap items-baseline gap-2">
                             <span className="text-[13px] font-semibold text-ink">

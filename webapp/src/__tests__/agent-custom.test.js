@@ -50,4 +50,21 @@ describe("agent-custom import/export", () => {
     expect(result.ok).toBe(false);
     expect(result.error).toContain("有效条目");
   });
+
+  it("keeps avatar images through export and import", () => {
+    saveCustomAgent("eic.md", {
+      displayName: "大主编",
+      avatarText: "掌",
+      avatarColor: "#5B8DB8",
+      avatarImage: "data:image/jpeg;base64,abc",
+    });
+    const exported = exportCustomAgents();
+    expect(exported).toContain("data:image/jpeg;base64,abc");
+    localStorage.clear();
+    const result = importCustomAgents(exported);
+    expect(result.ok).toBe(true);
+    expect(JSON.parse(localStorage.getItem("agent_custom_v1"))["eic.md"].avatarImage).toBe(
+      "data:image/jpeg;base64,abc",
+    );
+  });
 });

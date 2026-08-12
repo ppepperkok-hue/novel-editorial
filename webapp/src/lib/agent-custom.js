@@ -30,7 +30,12 @@ export function getCustomAgent(file) {
 
 export function saveCustomAgent(file, data) {
   const all = loadCustomAgents();
-  all[file] = { displayName: data.displayName, avatarText: data.avatarText, avatarColor: data.avatarColor };
+  all[file] = {
+    displayName: data.displayName,
+    avatarText: data.avatarText,
+    avatarColor: data.avatarColor,
+    avatarImage: data.avatarImage || "",
+  };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
   return all[file];
 }
@@ -72,6 +77,7 @@ export function importCustomAgents(json) {
       displayName: data.displayName.slice(0, 40),
       avatarText: data.avatarText.slice(0, 1),
       avatarColor: data.avatarColor,
+      avatarImage: typeof data.avatarImage === "string" ? data.avatarImage : "",
     };
     count += 1;
   }
@@ -114,3 +120,39 @@ export const AGENT_DEFAULT_NAMES = {
   ending_judge: "终局",
   knowledge_keeper: "博闻",
 };
+
+/**
+ * 把图片文件压缩为 96×96 的头像 DataURL（JPEG，背景用头像色填充）。
+ * @returns {Promise<string>} data URL
+ */
+export function compressAvatarImage(file, bgColor) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const size = 96;
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = bgColor || "#5B8DB8";
+        ctx.fillRect(0, 0, size, size);
+        const scale = Math.max(size / img.width, size / img.height);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        resolve(canvas.toDataURL("image/jpeg", 0.85));
+      } catch (err) {
+        reject(err);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("图片读取失败"));
+    };
+    img.src = url;
+  });
+}

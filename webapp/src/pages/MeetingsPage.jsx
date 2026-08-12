@@ -8,13 +8,14 @@ import {
   getSession,
   startMeeting,
 } from "../api.js";
+import { AgentAvatar } from "../components/features/agent-avatar.jsx";
 import { EmptyState, ErrorState, LoadingState } from "../components/features/states.jsx";
 import { PageHeader } from "../components/layout/page-header.jsx";
 import { Badge } from "../components/ui/badge.jsx";
 import { Button } from "../components/ui/button.jsx";
 import { Input } from "../components/ui/input.jsx";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select.jsx";
-import { avatarColorOf, displayNameOf } from "../lib/agent-custom.js";
+import { displayNameOf } from "../lib/agent-custom.js";
 import { useApi } from "../lib/use-api.js";
 
 const AGENT_NAMES = {
@@ -44,7 +45,6 @@ const KIND_LABELS = {
 };
 
 const agentName = (id) => displayNameOf({ file: `${id}.md`, name: AGENT_NAMES[id] || id });
-const agentColor = (id) => avatarColorOf(`${id}.md`);
 
 function speechText(raw) {
   if (typeof raw !== "string") return "";
@@ -219,12 +219,7 @@ export default function MeetingsPage() {
             {(session.transcript || []).length ? (
               session.transcript.map((m, i) => (
                 <div key={i} className="mb-4 flex gap-2.5">
-                  <span
-                    className="grid size-8 shrink-0 place-items-center rounded-lg text-xs font-semibold text-white"
-                    style={{ background: agentColor(m.agent) }}
-                  >
-                    {agentName(m.agent).slice(0, 1)}
-                  </span>
+                  <AgentAvatar file={`${m.agent}.md`} name={m.agent} />
                   <div className="min-w-0 flex-1">
                     <div className="mb-1 flex items-baseline gap-2">
                       <span className="text-[13px] font-semibold text-ink">{agentName(m.agent)}</span>
