@@ -63,3 +63,18 @@ webapp 前端自多轮迭代后结构膨胀：巨型组件、单文件全局样�
 - API 契约与 `webapp/dist` 路径冻结；Electron 壳不改造。
 - 开发过程本地提交到 `codex/frontend-redesign`，不推送、不合并、不写 README，直到用户确认成品。
 - 敏感信息（路径、账号、密钥）不进任何新增文档。
+
+## 7. 阶段 1 结果（2026-08-12）
+
+**技能**：taste-skill（`~/.codex/skills/taste-skill`）、minimalist-skill（`~/.codex/skills/minimalist-skill`）、impeccable（`~/.codex/skills/impeccable` + `~/.agents/skills/impeccable`）已安装到用户级；impeccable 的 `.codex/hooks.json` 因 Windows shell 兼容性暂缓启用，用 CLI `detect` 代替，记录在案。
+
+**概念稿**：`docs/design/concept.html` 多页可交互概念（12 页 + 亮暗主题），截图在 `docs/design/shots/`。图像生成内置工具与 OpenAI key 不可用，改用「可运行 HTML 概念稿 + Edge headless 截图 + qwen-vl 视觉验收」流程，等价达到概念确认目的。
+
+**用户确认的设计决策**：
+- 首页为「编辑部工作台」：状态带 + 主列（开工指令行 / 今日记录 / 行动项）+ 侧栏（待您决定 / 本月 / 最近会议 / 热点）。
+- 开工模块为「指令行」：模式分段（写稿/整理日/开会日/自由安排）+ 章数步进 + 老板指令输入 + 单一「开工」按钮。
+- 首页不放完读率折线图（泛化要求，网文专属指标移入阅读数据页）。
+- 全部 12 页统一设计语言：分割线分组 > 卡片容器、单一主操作、不对称主从布局。
+- 图标用 @phosphor-icons/react（taste-skill 约束，弃用 lucide）；字体禁用 Inter，拉丁用 Geist 自托管、中文走系统 UI 栈；无 emoji、无重阴影、无渐变、单一 accent（深蓝 #1f6c9f / 暗色 #7fb0d9）。
+
+**待实现时吸收的验收反馈**：统一圆角刻度（卡片 10px / 控件 6px / 标签 pill）、KPI 与表格列头对齐、表单保存反馈、图表坐标轴、链路节点状态标注与间距、四态完整。
