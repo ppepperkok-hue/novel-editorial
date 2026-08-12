@@ -16,7 +16,7 @@
 | 发布平台 | 番茄小说（Cookie + CSRF 鉴权） | `~/.n8n/.env` 的 `FANQIE_COOKIE` / `FANQIE_CSRF_TOKEN` |
 | 发布方式 | 存稿池优先：有存稿发存稿，没存稿现造 | `tools/check_stock.py` + `tools/publish_stock.py` |
 | 健康线 | 存稿 < 3 章触发断更预警 | `novel_editorial/scheduler.py` 的 `SAFE_BACKLOG` |
-| 测试基线 | 487 个后端 unittest + 16 个前端 Vitest（数量以 run_tests.py 输出为准） | `python run_tests.py` / `cd webapp && npm test` |
+| 测试基线 | 578 个后端 unittest + 45 个前端 Vitest（数量以 run_tests.py 输出为准） | `python run_tests.py` / `cd webapp && npm test` |
 
 ## 编辑部的一天
 
@@ -63,8 +63,9 @@
 
 - **周会**：主席点将 → 三轮通气（先回应他人再发言）→ 主席总结报告 → 蒸馏经验 → 落盘决策（蓝图/卷目标/封面）。发言六段结构：本周小结 → 感受 → 意见 → 顾虑 → 提案 → 优先级。
 - **专题会议**：一键发起、按轮推进、每轮之间可插入你的指示、随时手动总结；无作品也能开（讨论第一本书写什么）；历史过长由记忆官增量压缩。
+- **自由讨论**：事件驱动的自主发言模式——无需点名，编辑按「话题 × 个人关注点」自主接话、有权沉默、可主动抛议题；老板可 @指定必答、随时插话；冷场由编辑主动推进或主席拉回；agent 请求拍板时面板弹审批卡；长历史自动压缩为摘要锚点。与轮次模式一键切换。
 - **九类会议**：编辑部例会、剧情碰头会、选题会、单章会诊、数据复盘会、收尾会、危机处理会、知识分享会、茶水间闲聊。材料、议程、会后动作按类型路由：事故会产经验草稿、学习会产知识草案、收尾会记录建议，写作指令注入下一章上下文。
-- 完整对话写入 `meeting_sessions.transcript`，前端可逐轮回放；未消费的议题提议自动转成行动项。
+- 轮次会议对话写入 `meeting_sessions.transcript`，自由会议消息写入 `meeting_messages`（增量、可流式），SSE 实时推送直播；未消费的议题提议自动转成行动项。
 
 ## 创作链路（主产出）
 
@@ -107,7 +108,8 @@
 | agent_relations / agent_messages / agent_promises | 关系/消息/承诺 |
 | agent_actions / agent_activity | 会后任务 + 全量活动日志 |
 | daily_runs | 工作日状态机与运行留痕 |
-| weekly_meetings / meeting_sessions | 会议档案 + 会议状态机（含完整 transcript） |
+| weekly_meetings / meeting_sessions | 会议档案 + 状态机（rounds/free 两种模式、摘要锚点） |
+| meeting_messages / pending_interactions | 自由会议消息流（增量 + 索引）+ 审批/澄清待办 |
 | knowledge_drafts | 经验卡/知识包更新草案 |
 | audit_logs | 全量留痕 |
 
@@ -125,7 +127,7 @@ React 面板 + Electron 原生窗口（托盘常驻、关窗隐藏、执行通�
 | 执行记录 | 工作日留痕（状态/发布数/失败节点/错误详情），后端离线也可回看 |
 | 链路 | React Flow 渲染创作链路拓扑 + 最近运行状态着色，导出离线 HTML |
 | 阅读数据 | 完读率/追读率趋势、逐章数据、低表现章节反馈 |
-| 会议中心 | 九类会议发起、直播围观、插话/总结/取消、档案回放 |
+| 会议中心 | 九类会议发起（轮次/自由讨论）、实时直播（SSE）、@指定、审批弹窗、插话/总结/取消、档案回放 |
 | 系统设置 | 日更开关、预算、目标字数、风格微调、自动建书 |
 | 留痕档案 | 全量事件审计，按类别筛选 |
 
@@ -188,8 +190,8 @@ python tools/editorial_daily.py --db demo.db --trigger manual  # 兼容旧入口
 ### 测试
 
 ```bash
-python run_tests.py                # 487 个后端测试（数量以 run_tests.py 输出为准）
-cd webapp && npm test              # 16 个前端测试
+python run_tests.py                # 578 个后端测试（数量以 run_tests.py 输出为准）
+cd webapp && npm test              # 45 个前端测试
 ```
 
 ## 目录结构
@@ -209,7 +211,9 @@ novel-editorial/
 ├── tools/
 │   ├── workday.py           # 编辑部工作日状态机（R4-1 核心）
 │   ├── editorial_daily.py   # 主产出调度器（单入口）
-│   ├── agent_meeting.py / meeting_kinds.py / meeting_materials.py / meeting_actions.py  # 会议
+│   ├── agent_meeting.py / meeting_kinds.py / meeting_materials.py / meeting_actions.py  # 轮次会议
+│   ├── meeting_free_loop.py / meeting_executor.py / meeting_speaker.py  # 自由会议调度（事件驱动）
+│   ├── meeting_mentions.py / meeting_interactions.py / meeting_events.py  # @路由 / 审批 / SSE 广播
 │   ├── agent_tool_loop.py / agent_context.py / mailroom.py / relations.py / agency.py   # 协作
 │   ├── novel_knowledge.py / knowledge_keeper.py / distill_lessons.py  # 知识体系
 │   ├── preflight.py / check_stock.py / publish_stock.py / record_work.py ...
@@ -219,7 +223,7 @@ novel-editorial/
 ├── n8n/                     # 遗留工作流 JSON（回退备份）
 ├── scripts/                 # install_autostart.ps1 / install_daily_task.ps1 / inject_fanqie_cookie.py / watch_daily.py ...
 ├── docs/                    # evolution / planning / research / engineering / reviews
-├── tests/                   # 487 个后端测试（unittest）
+├── tests/                   # 578 个后端测试（unittest）
 └── demo.db                  # 运行数据库（gitignore）
 ```
 
