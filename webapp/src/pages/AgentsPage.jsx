@@ -1,29 +1,25 @@
 import { useEffect, useRef, useState } from "react";
+import { PencilSimple } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { getAgents, getDiaries, postAgents } from "../api.js";
 import { EmptyState, ErrorState, LoadingState } from "../components/features/states.jsx";
 import { PageHeader } from "../components/layout/page-header.jsx";
 import { Badge } from "../components/ui/badge.jsx";
 import { Button } from "../components/ui/button.jsx";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog.jsx";
 import { Input } from "../components/ui/input.jsx";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select.jsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs.jsx";
+import {
+  AVATAR_COLORS,
+  avatarColorOf,
+  avatarTextOf,
+  displayNameOf,
+  getCustomAgent,
+  saveCustomAgent,
+} from "../lib/agent-custom.js";
 import { cn } from "../lib/utils.js";
 import { useApi } from "../lib/use-api.js";
-
-const AGENT_NAMES = {
-  planner: "文策",
-  guard: "守界",
-  writer: "墨白",
-  editor: "润物",
-  reviewer: "守正",
-  reader: "阿读",
-  memory: "录事",
-  work_meta: "书案",
-  eic: "掌印",
-  ending_judge: "终局",
-  knowledge_keeper: "博闻",
-};
 
 const modelOptions = ["deepseek-v4-pro", "deepseek-v4-flash"];
 
@@ -35,6 +31,9 @@ export default function AgentsPage() {
   const [draft, setDraft] = useState(null);
   const [diaries, setDiaries] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editDraft, setEditDraft] = useState(null);
+  const [customTick, setCustomTick] = useState(0);
   const agentsRef = useRef([]);
   agentsRef.current = agents;
 
@@ -85,6 +84,21 @@ export default function AgentsPage() {
     }
   };
 
+  const openEdit = () => {
+    if (!selected) return;
+    const custom = selected ? getCustomDraft(selected) : null;
+    setEditDraft(custom);
+    setEditOpen(true);
+  };
+
+  const saveCustom = () => {
+    if (!selected || !editDraft) return;
+    saveCustomAgent(selected.file, editDraft);
+    setEditOpen(false);
+    setCustomTick((t) => t + 1);
+    toast.success("自定义资料已保存");
+  };
+
   return (
     <>
       <PageHeader
@@ -120,10 +134,13 @@ export default function AgentsPage() {
                       : "text-ink-2 hover:text-ink",
                   )}
                 >
-                  <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-accent-soft text-xs font-semibold text-accent-ink">
-                    {(AGENT_NAMES[a.file.replace(/\.md$/, "")] || a.name || a.file).slice(0, 1)}
+                  <span
+                    className="grid size-7 shrink-0 place-items-center rounded-lg text-xs font-semibold text-white"
+                    style={{ background: avatarColorOf(a.file, agents.indexOf(a)) }}
+                  >
+                    {avatarTextOf(a, agents.indexOf(a))}
                   </span>
-                  <span className="min-w-0 flex-1 truncate">{a.name || a.file}</span>
+                  <span className="min-w-0 flex-1 truncate">{displayNameOf(a, agents.indexOf(a))}</span>
                   <span className={cn("size-1.5 shrink-0 rounded-full", a.synced ? "bg-ok" : "bg-warn")} />
                 </button>
               ))}
@@ -139,18 +156,25 @@ export default function AgentsPage() {
           ) : (
             <>
               <div className="flex items-center gap-3">
-                <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-accent-soft text-base font-semibold text-accent-ink">
-                  {(AGENT_NAMES[selected.file.replace(/\.md$/, "")] || selected.name || "?").slice(0, 1)}
+                <span
+                  className="grid size-10 shrink-0 place-items-center rounded-lg text-base font-semibold text-white"
+                  style={{ background: avatarColorOf(selected.file, agents.indexOf(selected)) }}
+                >
+                  {avatarTextOf(selected, agents.indexOf(selected))}
                 </span>
                 <div className="min-w-0">
-                  <div className="text-base font-bold text-ink">{selected.name || selected.file}</div>
+                  <div className="text-base font-bold text-ink">{displayNameOf(selected, agents.indexOf(selected))}</div>
                   <div className="truncate text-xs text-ink-2">
                     {selected.file} · 节点：{(selected.nodes || []).join("、") || "未映射"}
                   </div>
                 </div>
-                <Badge tone="accent" className="ml-auto">
-                  {draft?.model}
-                </Badge>
+                <div className="ml-auto flex items-center gap-2">
+                  <Badge tone="accent">{draft?.model}</Badge>
+                  <Button variant="outline" size="sm" onClick={openEdit}>
+                    <PencilSimple className="size-3.5" />
+                    编辑资料
+                  </Button>
+                </div>
               </div>
 
               <Tabs defaultValue="persona" className="mt-4">
@@ -232,6 +256,79 @@ export default function AgentsPage() {
           )}
         </section>
       </div>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-bold text-ink">自定义资料</DialogTitle>
+          </DialogHeader>
+          {editDraft ? (
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center gap-3">
+                <span
+                  className="grid size-12 place-items-center rounded-lg text-lg font-bold text-white"
+                  style={{ background: editDraft.avatarColor }}
+                >
+                  {editDraft.avatarText.slice(0, 1) || "编"}
+                </span>
+                <div className="text-xs text-ink-3">预览：仅本机面板生效，不影响后端人格与发布。</div>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs text-ink-2">显示名</label>
+                <Input
+                  value={editDraft.displayName}
+                  onChange={(e) => setEditDraft((d) => ({ ...d, displayName: e.target.value }))}
+                  placeholder="如：掌印"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs text-ink-2">头像文字（取第一个字）</label>
+                <Input
+                  maxLength={1}
+                  value={editDraft.avatarText}
+                  onChange={(e) => setEditDraft((d) => ({ ...d, avatarText: e.target.value }))}
+                  placeholder="掌"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs text-ink-2">头像颜色</label>
+                <div className="flex gap-2">
+                  {AVATAR_COLORS.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      aria-label={`颜色 ${color}`}
+                      onClick={() => setEditDraft((d) => ({ ...d, avatarColor: color }))}
+                      className={cn(
+                        "size-7 rounded-full border-2 transition-transform",
+                        editDraft.avatarColor === color
+                          ? "scale-110 border-ink"
+                          : "border-transparent hover:scale-105",
+                      )}
+                      style={{ background: color }}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>
+              取消
+            </Button>
+            <Button onClick={saveCustom}>保存</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
+}
+
+function getCustomDraft(agent) {
+  const custom = getCustomAgent(agent.file);
+  return {
+    displayName: custom?.displayName || displayNameOf(agent),
+    avatarText: custom?.avatarText || displayNameOf(agent).slice(0, 1),
+    avatarColor: custom?.avatarColor || avatarColorOf(agent.file),
+  };
 }

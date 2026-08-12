@@ -2,6 +2,7 @@ import { getEditorialOverview, getMailbox } from "../api.js";
 import { EmptyState, ErrorState, LoadingState } from "../components/features/states.jsx";
 import { PageHeader } from "../components/layout/page-header.jsx";
 import { Badge } from "../components/ui/badge.jsx";
+import { avatarColorOf, displayNameOf } from "../lib/agent-custom.js";
 import { useApi } from "../lib/use-api.js";
 
 const AGENT_NAMES = {
@@ -18,7 +19,8 @@ const AGENT_NAMES = {
   knowledge_keeper: "博闻",
 };
 
-const agentName = (id) => AGENT_NAMES[id] || id;
+const agentName = (id) => displayNameOf({ file: `${id}.md`, name: AGENT_NAMES[id] || id });
+const agentColor = (id) => avatarColorOf(`${id}.md`);
 
 /** 消息流：协作消息 + 今日任务。@stable */
 export default function EditorialPage() {
@@ -57,11 +59,17 @@ export default function EditorialPage() {
               {messages.slice(0, 30).map((m) => (
                 <div key={m.id} className="grid grid-cols-[56px_1fr_auto] items-start gap-3 border-b border-line py-3">
                   <div className="flex items-center">
-                    <span className="grid size-6 shrink-0 place-items-center rounded-md bg-accent-soft text-[11px] font-semibold text-accent-ink">
+                    <span
+                      className="grid size-6 shrink-0 place-items-center rounded-md text-[11px] font-semibold text-white"
+                      style={{ background: agentColor(m.from_agent) }}
+                    >
                       {agentName(m.from_agent).slice(0, 1)}
                     </span>
                     <span className="ml-1 text-[11px] text-ink-3">→</span>
-                    <span className="grid size-6 shrink-0 place-items-center rounded-md bg-surface-2 text-[11px] font-semibold text-ink-2">
+                    <span
+                      className="grid size-6 shrink-0 place-items-center rounded-md text-[11px] font-semibold text-white"
+                      style={{ background: agentColor(m.to_agent) }}
+                    >
                       {agentName(m.to_agent).slice(0, 1)}
                     </span>
                   </div>
