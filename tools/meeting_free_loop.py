@@ -13,7 +13,7 @@ import queue
 import threading
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from novel_editorial import db
 from novel_editorial.services import audit
@@ -226,6 +226,8 @@ class FreeMeetingLoop:
         )
         candidates = self._maybe_add_chair(conn, session, candidates)
         if not candidates:
+            candidates = self._kickoff_fallback(conn, session)
+        if not candidates:
             audit.log(
                 conn,
                 "meeting",
@@ -236,6 +238,49 @@ class FreeMeetingLoop:
             )
             return
         self._run_candidates(conn, session, candidates, event)
+
+    def _kickoff_fallback(self, conn, session):
+        """开场事件无兴趣候选时，强制前 2 位未忙碌/未冷却的编辑发言，
+        避免老板起题后冷场无人接话。"""
+        speech = conn.execute(
+            "SELECT COUNT(*) AS c FROM meeting_messages "
+            "WHERE session_id=? AND kind='speech'",
+            (session["id"],),
+        ).fetchone()["c"]
+        if speech > 0:
+            return []
+        attendees = self._attendees(session)
+        busy = self.running_agents(session["id"])
+        cooldown_s = app_settings.get_int(conn, "meeting_free_cooldown_s", 60)
+        picked = []
+        for agent in attendees:
+            if agent in busy:
+                continue
+            last = conn.execute(
+                "SELECT created_at FROM meeting_messages WHERE session_id=? "
+                "AND from_agent=? AND kind='speech' ORDER BY id DESC LIMIT 1",
+                (session["id"], agent),
+            ).fetchone()
+            if last and last["created_at"]:
+                try:
+                    spoke_at = datetime.strptime(
+                        str(last["created_at"]), "%Y-%m-%d %H:%M:%S"
+                    )
+                    if datetime.now() - spoke_at < timedelta(seconds=cooldown_s):
+                        continue
+                except ValueError:
+                    pass
+            picked.append(
+                {
+                    "agent": agent,
+                    "reason": "kickoff_fallback",
+                    "score": 0,
+                    "mandatory": True,
+                }
+            )
+            if len(picked) >= 2:
+                break
+        return picked
 
     def _maybe_compress(self, conn, session):
         """历史超限且无摘要时生成一次摘要（幂等：有摘要即跳过）。"""

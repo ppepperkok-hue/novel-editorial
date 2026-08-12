@@ -439,6 +439,34 @@ class FreeMeetingLoopTests(unittest.TestCase):
         self.assertEqual(status, "expired")
         loop.stop(self.session_id)
 
+    def test_kickoff_fallback_picks_two_editors(self):
+        conn = db.connect(self.db_path)
+        try:
+            self._set_attendees(conn, ["planner", "reviewer", "eic"])
+            session = conn.execute(
+                "SELECT * FROM meeting_sessions WHERE id=?", (self.session_id,)
+            ).fetchone()
+            loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path, dry_run=True)
+            picked = loop._kickoff_fallback(conn, session)
+            self.assertEqual(len(picked), 2)
+            self.assertEqual(picked[0]["reason"], "kickoff_fallback")
+            self.assertTrue(picked[0]["mandatory"])
+            conn.execute(
+                "INSERT INTO meeting_messages(session_id, novel_id, seq, from_agent, "
+                "role, kind, body, status, created_at) "
+                "VALUES(?,1,1,'planner','assistant','speech','已发言','active',"
+                "datetime('now','localtime'))",
+                (self.session_id,),
+            )
+            conn.commit()
+            session = conn.execute(
+                "SELECT * FROM meeting_sessions WHERE id=?", (self.session_id,)
+            ).fetchone()
+            self.assertEqual(loop._kickoff_fallback(conn, session), [])
+            loop.stop(self.session_id)
+        finally:
+            conn.close()
+
     def test_speech_and_approval_are_broadcast(self):
         conn = db.connect(self.db_path)
         try:
