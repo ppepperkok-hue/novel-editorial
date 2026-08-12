@@ -119,6 +119,7 @@ class FreeMeetingLoop:
                 target_id=session_id,
                 detail={"kind": event.get("kind") or "user_message"},
             )
+            self._maybe_compress(conn, session)
             self._schedule_speakers(conn, session, event)
             conn.commit()
         finally:
@@ -214,6 +215,39 @@ class FreeMeetingLoop:
             )
             return
         self._run_candidates(conn, session, candidates, event)
+
+    def _maybe_compress(self, conn, session):
+        """历史超限且无摘要时生成一次摘要（幂等：有摘要即跳过）。"""
+        if session["meeting_summary"]:
+            return False
+        row = conn.execute(
+            "SELECT COALESCE(SUM(LENGTH(body)),0) AS s FROM meeting_messages "
+            "WHERE session_id=? AND status='active'",
+            (session["id"],),
+        ).fetchone()
+        if int(row["s"] or 0) <= 30000:
+            return False
+        summary = meeting_executor.summarize_history(
+            conn, session, dry_run=self._dry_run
+        )
+        conn.execute(
+            "UPDATE meeting_sessions SET meeting_summary=?, updated_at=? WHERE id=?",
+            (summary, _now(), session["id"]),
+        )
+        conn.execute(
+            "UPDATE meeting_messages SET compressed_at=? "
+            "WHERE session_id=? AND compressed_at=''",
+            (_now(), session["id"]),
+        )
+        audit.log(
+            conn,
+            "meeting",
+            "history_compressed",
+            target_type="session",
+            target_id=session["id"],
+            detail={"summary_len": len(summary)},
+        )
+        return True
 
     def _maybe_add_chair(self, conn, session, candidates):
         """每 N 条发言主席插话一次（N 可配，默认 12）。"""

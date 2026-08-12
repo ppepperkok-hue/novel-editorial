@@ -270,6 +270,82 @@ class FreeMeetingLoopTests(unittest.TestCase):
         self.assertIn("eic", calls)
         loop.stop(self.session_id)
 
+    def test_history_compress_runs_once_and_is_idempotent(self):
+        conn = db.connect(self.db_path)
+        try:
+            self._set_attendees(conn, ["planner"])
+            for i in range(20):
+                conn.execute(
+                    "INSERT INTO meeting_messages(session_id, novel_id, seq, "
+                    "from_agent, role, kind, body, status, created_at) "
+                    "VALUES(?,1,?,'planner','assistant','speech',?,'active',"
+                    "datetime('now','localtime'))",
+                    (self.session_id, i + 1, "长" * 2000),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+        loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path, dry_run=True)
+        with mock.patch.object(
+            meeting_free_loop.meeting_executor,
+            "summarize_history",
+            return_value="会议要点摘要",
+        ):
+            loop.submit_event(self.session_id, {"kind": "user_message", "content": "讨论"})
+            deadline = time.time() + 6
+            summary = ""
+            while time.time() < deadline:
+                conn = db.connect(self.db_path)
+                try:
+                    row = conn.execute(
+                        "SELECT meeting_summary FROM meeting_sessions WHERE id=?",
+                        (self.session_id,),
+                    ).fetchone()
+                    summary = row["meeting_summary"] or ""
+                finally:
+                    conn.close()
+                if summary:
+                    break
+                time.sleep(0.1)
+            self.assertEqual(summary, "会议要点摘要")
+            conn = db.connect(self.db_path)
+            compressed = conn.execute(
+                "SELECT COUNT(*) AS c FROM meeting_messages "
+                "WHERE session_id=? AND compressed_at!=''",
+                (self.session_id,),
+            ).fetchone()["c"]
+            conn.close()
+            self.assertEqual(compressed, 20)
+        loop.stop(self.session_id)
+
+    def test_compress_skipped_when_summary_exists(self):
+        conn = db.connect(self.db_path)
+        try:
+            conn.execute(
+                "UPDATE meeting_sessions SET meeting_summary='已有摘要' WHERE id=?",
+                (self.session_id,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        loop = meeting_free_loop.FreeMeetingLoop(db_path=self.db_path, dry_run=True)
+        calls = []
+        conn = db.connect(self.db_path)
+        with mock.patch.object(
+            meeting_free_loop.meeting_executor,
+            "summarize_history",
+            side_effect=lambda *a, **k: calls.append(1) or "x",
+        ):
+            try:
+                session = conn.execute(
+                    "SELECT * FROM meeting_sessions WHERE id=?", (self.session_id,)
+                ).fetchone()
+                self.assertFalse(loop._maybe_compress(conn, session))
+            finally:
+                conn.close()
+        self.assertEqual(calls, [])
+        loop.stop(self.session_id)
+
 
 def json_dumps(agents):
     import json

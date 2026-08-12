@@ -469,10 +469,15 @@ def _migrate(conn):
         conn.execute("ALTER TABLE meeting_sessions ADD COLUMN db_path TEXT DEFAULT ''")
     if "mode" not in session_cols:
         conn.execute("ALTER TABLE meeting_sessions ADD COLUMN mode TEXT DEFAULT 'rounds'")
+    if "meeting_summary" not in session_cols:
+        conn.execute("ALTER TABLE meeting_sessions ADD COLUMN meeting_summary TEXT DEFAULT ''")
     if "current_agent" not in session_cols:
         conn.execute("ALTER TABLE meeting_sessions ADD COLUMN current_agent TEXT DEFAULT ''")
     if "heartbeat_at" not in session_cols:
         conn.execute("ALTER TABLE meeting_sessions ADD COLUMN heartbeat_at TEXT DEFAULT ''")
+    msg_cols = {r["name"] for r in conn.execute("PRAGMA table_info(meeting_messages)")}
+    if "compressed_at" not in msg_cols:
+        conn.execute("ALTER TABLE meeting_messages ADD COLUMN compressed_at TEXT DEFAULT ''")
     weekly_cols = {r["name"] for r in conn.execute("PRAGMA table_info(weekly_meetings)")}
     if "session_id" not in weekly_cols:
         conn.execute("ALTER TABLE weekly_meetings ADD COLUMN session_id INTEGER DEFAULT 0")

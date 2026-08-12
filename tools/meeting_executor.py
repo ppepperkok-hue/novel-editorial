@@ -27,6 +27,10 @@ AGENT_PERSONA = {
     "knowledge_keeper": "博闻",
 }
 
+HISTORY_CHAR_LIMIT = 30000
+HISTORY_HEAD_CHARS = 800
+HISTORY_TAIL_ROWS = 15
+
 
 def agent_label(agent: str) -> str:
     """人格名（与前端 AGENT_DEFAULT_NAMES 一致），用于会议上下文显示。"""
@@ -51,17 +55,30 @@ def _event_text(event: dict) -> str:
     return f"老板说：{content}"
 
 
-def build_meeting_user(conn, session, agent, event, tail=20):
-    """组装会议发言输入：事件 + 最近历史 + 周记/心情 + 协作快照。"""
+def _history_text(conn, session_id, tail=20):
     rows = conn.execute(
         "SELECT from_agent, body FROM meeting_messages "
         "WHERE session_id=? AND status='active' ORDER BY id DESC LIMIT ?",
-        (session["id"], tail),
+        (session_id, tail),
     ).fetchall()
-    history = list(reversed(rows))
-    history_text = "\n".join(
-        f"{agent_label(r['from_agent'])}：{r['body']}" for r in history
-    ) or "（还没有发言）"
+    rows = list(reversed(rows))
+    text = "\n".join(f"{agent_label(r['from_agent'])}：{r['body']}" for r in rows)
+    if len(text) <= HISTORY_CHAR_LIMIT:
+        return text
+    head = text[:HISTORY_HEAD_CHARS]
+    tail_rows = rows[-HISTORY_TAIL_ROWS:]
+    tail_text = "\n".join(
+        f"{agent_label(r['from_agent'])}：{r['body']}" for r in tail_rows
+    )
+    return head + "\n…（中间发言已压缩）…\n" + tail_text
+
+
+def build_meeting_user(conn, session, agent, event, tail=20):
+    """组装会议发言输入：事件 + 最近历史 + 周记/心情 + 协作快照。"""
+    history_text = _history_text(conn, session["id"], tail=tail) or "（还没有发言）"
+    summary_text = ""
+    if session["meeting_summary"]:
+        summary_text = f"\n【会议摘要】{str(session['meeting_summary'])[:2000]}"
 
     weekly = agent_meeting.latest_weekly(conn, session["novel_id"], agent)
     weekly_text = ""
@@ -78,6 +95,7 @@ def build_meeting_user(conn, session, agent, event, tail=20):
     return (
         f"【会议】{session['topic']}\n"
         f"【事件】{_event_text(event)}\n"
+        f"{summary_text}\n"
         f"【最近发言】\n{history_text}"
         f"{weekly_text}"
         f"{snapshot_text}\n"
@@ -85,6 +103,44 @@ def build_meeting_user(conn, session, agent, event, tail=20):
         '{"speak": false}。开口则输出 JSON：{"speech": "你的发言"}；'
         "正式提案可扩展为 {\"speech\", \"proposals\", \"priority\"}。"
     )
+
+
+def summarize_history(conn, session, dry_run=False, mock_text='{"summary": "（摘要）"}'):
+    """把会议历史压缩为要点摘要（保留决策/分歧/待办/伏笔）。"""
+    rows = conn.execute(
+        "SELECT from_agent, body FROM meeting_messages "
+        "WHERE session_id=? AND kind='speech' ORDER BY id",
+        (session["id"],),
+    ).fetchall()
+    transcript = "\n".join(
+        f"{agent_label(r['from_agent'])}：{r['body']}" for r in rows
+    )
+    user = (
+        "请把以下会议发言压缩成要点摘要，保留决策、分歧、待办与伏笔。"
+        '只输出 JSON：{"summary": "..."}。\n\n'
+        f"{transcript[:40000]}"
+    )
+    system = agent_tool_loop.build_system("eic")[1]
+    raw = agent_meeting.ask(
+        conn,
+        session["novel_id"],
+        "eic",
+        user,
+        temperature=0.2,
+        dry_run=dry_run,
+        mock_text=mock_text,
+        max_tokens=1200,
+        system_override=system,
+    )[0]
+    text = str(raw or "").strip()
+    if "```json" in text:
+        text = text.split("```json", 1)[1].split("```", 1)[0].strip()
+    try:
+        obj = json.loads(text)
+        summary = str(obj.get("summary") or "").strip()
+    except (TypeError, ValueError):
+        summary = text
+    return summary or "（摘要生成失败）"
 
 
 def parse_speech(raw):

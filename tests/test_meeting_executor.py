@@ -247,6 +247,53 @@ class MeetingExecutorTests(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_history_truncated_when_over_limit(self):
+        conn = self._conn()
+        try:
+            for i in range(25):
+                conn.execute(
+                    "INSERT INTO meeting_messages(session_id, novel_id, seq, "
+                    "from_agent, role, kind, body, status, created_at) "
+                    "VALUES(?,7,?,'planner','assistant','speech',?,'active',"
+                    "datetime('now','localtime'))",
+                    (self.session_id, 100 + i, "长" * 2000),
+                )
+            conn.commit()
+            session = conn.execute(
+                "SELECT * FROM meeting_sessions WHERE id=?", (self.session_id,)
+            ).fetchone()
+            user = meeting_executor.build_meeting_user(
+                conn, session, "reviewer", {"kind": "user_message", "content": "测试"}
+            )
+            self.assertIn("中间发言已压缩", user)
+            self.assertLess(len(user), 40000)
+        finally:
+            conn.close()
+
+    def test_summarize_history_parses_json(self):
+        conn = self._conn()
+        try:
+            conn.execute(
+                "INSERT INTO meeting_messages(session_id, novel_id, seq, "
+                "from_agent, role, kind, body, status, created_at) "
+                "VALUES(?,7,2,'planner','assistant','speech','先定方向','active',"
+                "datetime('now','localtime'))",
+                (self.session_id,),
+            )
+            conn.commit()
+            session = conn.execute(
+                "SELECT * FROM meeting_sessions WHERE id=?", (self.session_id,)
+            ).fetchone()
+            summary = meeting_executor.summarize_history(
+                conn,
+                session,
+                dry_run=True,
+                mock_text='{"summary": "决定先定方向，待办：建台账"}',
+            )
+            self.assertEqual(summary, "决定先定方向，待办：建台账")
+        finally:
+            conn.close()
+
 
 if __name__ == "__main__":
     unittest.main()
