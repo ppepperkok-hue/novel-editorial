@@ -63,7 +63,7 @@ def test_writer_view_includes_own_notes_only(tmp_path: Path, monkeypatch) -> Non
     assert packed.output == viewed.output
 
 
-@pytest.mark.parametrize("role", ["主编", "责编"])
+@pytest.mark.parametrize("role", ["总编", "主编", "责编"])
 def test_editor_view_profile_and_conversation_without_private_memory(
     tmp_path: Path, monkeypatch, role: str
 ) -> None:

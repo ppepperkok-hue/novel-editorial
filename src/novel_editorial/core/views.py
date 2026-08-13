@@ -27,11 +27,12 @@ BOSS_VIEW = "boss"
 VIEW_ROLE_ALIASES: dict[str, str] = {
     "写手": WRITER_VIEW,
     "主编": EDITOR_VIEW,
+    "总编": EDITOR_VIEW,
     "责编": EDITOR_VIEW,
     "作者": BOSS_VIEW,
 }
 
-VIEW_ROLE_LABELS: tuple[str, ...] = ("写手", "主编", "责编", "作者")
+VIEW_ROLE_LABELS: tuple[str, ...] = ("写手", "主编", "总编", "责编", "作者")
 
 RECENT_CONVERSATION_LIMIT = 10
 RECENT_SUMMARY_LIMIT = 5
