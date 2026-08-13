@@ -42,6 +42,7 @@ from novel_editorial.core.logging_setup import configure_logging
 from novel_editorial.core.memory import add_memory_note, delete_memory_note, list_memory_notes
 from novel_editorial.core.review import add_review, list_reviews, resolve_reviewer
 from novel_editorial.core.style import get_style_anchor, set_style_anchor
+from novel_editorial.core.views import build_role_view, search_memory
 from novel_editorial.core.workspace import create_workspace
 from novel_editorial.llm.client import LLMMessage, build_client
 from novel_editorial.quality.gate import check_quality
@@ -357,6 +358,34 @@ def memory_pack(workspace_id: str = typer.Argument(..., help="Workspace id")) ->
     db = DB(settings)
     db.init_schema()
     typer.echo(build_memory_pack(db, workspace_id))
+
+
+@memory_app.command("view")
+def memory_view(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+    as_role: str = typer.Option(
+        "写手",
+        "--as",
+        help="View role: 写手/主编/责编/作者 (default: 写手)",
+    ),
+) -> None:
+    """Show the default layered view for one role."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    typer.echo(build_role_view(db, workspace_id, as_role))
+
+
+@memory_app.command("search")
+def memory_search(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+    keyword: str = typer.Argument(..., help="Search keyword"),
+) -> None:
+    """Search archive, messages, reviews, versions, and notes with source citations."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    typer.echo(search_memory(db, workspace_id, keyword))
 
 
 def _agent_names(db: DB, workspace_id: str) -> dict[str, str]:

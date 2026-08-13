@@ -12,6 +12,7 @@ from novel_editorial.core.chat import (
     get_workspace_or_raise,
 )
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.memory import list_memory_notes
 from novel_editorial.core.review import list_reviews
 from novel_editorial.core.style import get_style_anchor
 from novel_editorial.llm.client import LLMClient, LLMMessage
@@ -32,6 +33,12 @@ def build_memory_pack(db: DB, workspace_id: str) -> str:
     if anchor.forbidden_words:
         lines.append(f"禁忌词：{anchor.forbidden_words}")
     lines.append("章纲：暂无（占位）")
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+    notes = list_memory_notes(db, workspace_id, agent_id=writer.id)
+    if notes:
+        lines.append("私有记忆：")
+        for note in notes:
+            lines.append(f"- {note.content}")
     return "\n".join(lines)
 
 
