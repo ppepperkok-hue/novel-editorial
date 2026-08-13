@@ -15,12 +15,15 @@ def extract_style_keywords(description: str) -> frozenset[str]:
 
     Separator-delimited descriptions (顿号/逗号/空格 etc.) yield each separated
     token as one keyword; an unseparated run of text yields every consecutive
-    2-4 character substring. Empty or blank descriptions yield an empty set.
+    2-4 character substring. Empty, blank, or separator-only descriptions yield
+    an empty set.
     """
     text = (description or "").strip()
     if not text:
         return frozenset()
     tokens = [token for token in _KEYWORD_SEPARATOR_RE.split(text) if token]
+    if not tokens:
+        return frozenset()
     if len(tokens) > 1:
         return frozenset(token for token in tokens if len(token) >= 2)
     run = tokens[0]

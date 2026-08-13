@@ -7,7 +7,7 @@ from novel_editorial.core.config import load_settings
 from novel_editorial.core.style import extract_style_keywords
 from novel_editorial.llm.client import MockLLMClient
 from novel_editorial.quality.explain import CLEAN_MESSAGE, explain_quality, render_explanation
-from novel_editorial.quality.gate import check_quality
+from novel_editorial.quality.gate import STYLE_MISS_WEIGHT, check_quality
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import Draft
 
@@ -56,6 +56,29 @@ def test_extract_style_keywords_continuous_ngrams() -> None:
     assert {"白描", "克制", "留白"} <= keywords
     assert "描克制" in keywords
     assert all(2 <= len(keyword) <= 4 for keyword in keywords)
+
+
+def test_extract_style_keywords_separator_only_returns_empty() -> None:
+    assert extract_style_keywords("，") == frozenset()
+    assert extract_style_keywords("、、") == frozenset()
+    assert extract_style_keywords("，、 ") == frozenset()
+
+
+def test_long_continuous_description_does_not_fail_clean_text() -> None:
+    keywords = extract_style_keywords("克制留白短句利落干净")
+    assert len(keywords) >= 18
+    report = check_quality(CLEAN_TEXT, style_keywords=keywords)
+    assert report.passed is True
+    assert report.score < 1
+    assert report.score <= report.details["threshold"]
+
+
+def test_style_missing_penalty_is_normalized_by_keyword_count() -> None:
+    few = frozenset({"克制", "留白"})
+    many = frozenset({"克制", "留白", "短句", "利落", "干净", "强画面感"})
+    few_report = check_quality(CLEAN_TEXT, style_keywords=few)
+    many_report = check_quality(CLEAN_TEXT, style_keywords=many)
+    assert few_report.score == many_report.score == STYLE_MISS_WEIGHT
 
 
 def test_explain_lists_positions_types_and_suggestions() -> None:
@@ -123,7 +146,9 @@ def test_quality_check_shows_new_dimensions(tmp_path: Path, monkeypatch) -> None
 
 def test_generate_passes_style_keywords_into_gate(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
-    monkeypatch.setenv("NOVEL_QUALITY_THRESHOLD", "1")
+    # The normalized miss penalty caps at STYLE_MISS_WEIGHT (0.5), so a clean
+    # reply missing every keyword only fails a threshold below that value.
+    monkeypatch.setenv("NOVEL_QUALITY_THRESHOLD", "0")
     styled = runner.invoke(
         app,
         ["style", "set", workspace_id, "--description", "利落、短句、强画面感"],

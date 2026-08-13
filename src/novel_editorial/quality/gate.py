@@ -107,11 +107,14 @@ def check_quality(
     style_hits = sorted(keyword for keyword in style_keywords if keyword in text)
     missing_style = len(style_keywords) - len(style_hits)
     consistency = len(style_hits) / len(style_keywords) if style_keywords else 1.0
+    style_penalty = (
+        STYLE_MISS_WEIGHT * missing_style / len(style_keywords) if style_keywords else 0.0
+    )
     score = (
         len(ai_hits) * AI_WORD_WEIGHT
         + len(modifier_hits) * MODIFIER_WEIGHT
         + repetition * REPETITION_WEIGHT
-        + missing_style * STYLE_MISS_WEIGHT
+        + style_penalty
     )
     details: dict[str, Any] = {
         "ai_word_hits": ai_hits,
