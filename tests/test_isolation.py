@@ -29,12 +29,15 @@ def test_workspaces_are_isolated(tmp_path: Path, monkeypatch) -> None:
         ["style", "set", workspace_a, "--description", "甲书专属风格", "--forbidden", "甲词"],
     )
     created = runner.invoke(app, ["draft", "generate", workspace_a, "--title", "甲书第一章"])
+    assert created.exit_code == 0, created.output
     draft_a = created.output.split()[1]
-    runner.invoke(
+    reviewed = runner.invoke(
         app,
         ["review", "add", draft_a, "--from", "作者", "--content", "甲书意见"],
     )
-    runner.invoke(app, ["decision", "accept", draft_a])
+    assert reviewed.exit_code == 0, reviewed.output
+    decided = runner.invoke(app, ["decision", "accept", draft_a])
+    assert decided.exit_code == 0, decided.output
 
     settings = load_settings()
     db = DB(settings)
