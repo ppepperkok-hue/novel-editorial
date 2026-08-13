@@ -13,10 +13,11 @@ novel-editorial/
 │   ├── core/                # 领域基础层
 │   │   ├── config.py        # 配置加载（NOVEL_* 环境变量 + config.toml）
 │   │   ├── errors.py        # NovelError 错误体系与错误码
+│   │   ├── memory.py        # 伙伴私有记忆服务（U18）
 │   │   └── logging_setup.py # 系统日志（stderr）
 │   ├── store/               # 数据访问层
 │   │   ├── db.py            # 全局库 + 每作品库引擎管理
-│   │   └── models.py        # SQLAlchemy 模型（Workspace / Agent）
+│   │   └── models.py        # SQLAlchemy 模型（Workspace / Agent / AgentMemory）
 │   ├── llm/                 # LLM 客户端层（U5 完善）
 │   │   └── client.py        # LLMClient 协议 + MockLLMClient
 │   └── quality/             # 质量门层（U13 完善）

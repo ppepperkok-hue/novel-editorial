@@ -37,6 +37,7 @@ from novel_editorial.core.draft import (
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.log import build_workspace_log
 from novel_editorial.core.logging_setup import configure_logging
+from novel_editorial.core.memory import add_memory_note, delete_memory_note, list_memory_notes
 from novel_editorial.core.review import add_review, list_reviews, resolve_reviewer
 from novel_editorial.core.style import get_style_anchor, set_style_anchor
 from novel_editorial.core.workspace import create_workspace
@@ -351,6 +352,70 @@ def memory_pack(workspace_id: str = typer.Argument(..., help="Workspace id")) ->
     db = DB(settings)
     db.init_schema()
     typer.echo(build_memory_pack(db, workspace_id))
+
+
+def _agent_names(db: DB, workspace_id: str) -> dict[str, str]:
+    with db.workspace_session(workspace_id) as session:
+        agents = session.query(Agent).filter_by(workspace_id=workspace_id).all()
+    return {agent.id: agent.name for agent in agents}
+
+
+@memory_app.command("note")
+def memory_note(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+    target: str = typer.Argument(..., help="Agent id or role alias (总编/责编/写手/审稿)"),
+    content: str = typer.Option(..., "--content", help="Private note content"),
+) -> None:
+    """Write a private note for one partner (the note belongs to that partner)."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    get_workspace_or_raise(db, workspace_id)
+    agent = resolve_agent(db, workspace_id, target)
+    add_memory_note(db, workspace_id, agent.id, content=content)
+    typer.echo(f"note added to {agent.name}")
+
+
+@memory_app.command("notes")
+def memory_notes(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+    target: str | None = typer.Argument(None, help="Agent id or role alias (omit for all)"),
+) -> None:
+    """List private notes; omit the agent to see every partner's notes."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    get_workspace_or_raise(db, workspace_id)
+    agent_id: str | None = None
+    agent_name: str | None = None
+    if target is not None:
+        agent = resolve_agent(db, workspace_id, target)
+        agent_id = agent.id
+        agent_name = agent.name
+    notes = list_memory_notes(db, workspace_id, agent_id=agent_id)
+    if not notes:
+        if agent_name is not None:
+            typer.echo(f"no notes for {agent_name}")
+        else:
+            typer.echo("no memory notes yet")
+        return
+    names = _agent_names(db, workspace_id)
+    for note in notes:
+        typer.echo(f"[{names.get(note.agent_id, note.agent_id)}] {note.content}")
+
+
+@memory_app.command("delete")
+def memory_delete(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+    memory_id: str = typer.Argument(..., help="Memory note id"),
+) -> None:
+    """Delete one private note."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    get_workspace_or_raise(db, workspace_id)
+    delete_memory_note(db, workspace_id, memory_id)
+    typer.echo(f"note deleted: {memory_id}")
 
 
 @draft_app.command("generate")
