@@ -43,6 +43,8 @@ def _build_writer_prompt(
         f"你是作品《{workspace.title}》的{writer.name}。\n"
         f"你的性格：{writer.personality}\n"
         f"你的立场：{writer.stance}\n"
+        f"你的价值观：{writer.values}\n"
+        f"你的审美：{writer.aesthetic}\n"
         f"写作记忆包：\n{memory_pack}\n"
         f"请为章节《{title}》产出正文，符合上述风格，不要出现禁忌词。"
     ]

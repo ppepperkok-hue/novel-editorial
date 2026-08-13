@@ -24,6 +24,35 @@ ROLE_ALIASES: dict[str, str] = {
     "审稿": AgentRole.REVIEWER,
 }
 
+REFUSAL_RULES: dict[str, list[tuple[tuple[str, ...], str]]] = {
+    AgentRole.WRITER: [
+        (
+            ("违背人设", "强行降智", "无视设定", "乱改设定"),
+            "这个我写不了。违背人物逻辑的剧情，写出来也是假的，我的立场不允许。",
+        ),
+    ],
+    AgentRole.REVIEWER: [
+        (
+            ("放行", "忽略矛盾", "别管矛盾", "忽略逻辑", "别查伏笔", "直接过", "别较真"),
+            "这个我不能放行。前后矛盾不修就过稿，等于砸审稿的招牌。",
+        ),
+    ],
+    AgentRole.EDITOR: [
+        (
+            ("删掉钩子", "删钩子", "钩子全删", "不要钩子", "平铺直叙", "不要节奏"),
+            "钩子删光、节奏放平，读者留不住。这稿我不接，先改回来再说。",
+        ),
+    ],
+}
+
+
+def check_refusal(agent: Agent, message: str) -> str | None:
+    """Return a refusal text if the message conflicts with the agent's stance."""
+    for keywords, refusal in REFUSAL_RULES.get(agent.role, []):
+        if any(keyword in message for keyword in keywords):
+            return refusal
+    return None
+
 def get_workspace_or_raise(db: DB, workspace_id: str) -> Workspace:
     with db.global_session() as session:
         workspace = session.get(Workspace, workspace_id)
@@ -101,6 +130,9 @@ def build_agent_prompt(
         f"你是作品《{workspace.title}》的{agent.name}（{agent.role}）。",
         f"你的性格：{agent.personality}",
         f"你的立场：{agent.stance}",
+        f"你的价值观：{agent.values}",
+        f"你的审美：{agent.aesthetic}",
+        f"你的工作习惯：{agent.work_habits}",
         f"作品简介：{workspace.title}（{workspace.genre}）{workspace.description}".rstrip(),
         "最近对话：",
     ]

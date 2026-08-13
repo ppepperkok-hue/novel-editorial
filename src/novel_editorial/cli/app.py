@@ -14,6 +14,7 @@ from novel_editorial.core.chat import (
     PROACTIVE_PAYLOAD,
     PROACTIVE_QUESTION,
     build_agent_prompt,
+    check_refusal,
     get_agent,
     get_workspace_or_raise,
     has_proactive_message,
@@ -268,6 +269,18 @@ def talk_send(
 
     target_role = resolve_target_role(message)
     agent = get_agent(db, workspace_id, target_role)
+    refusal = check_refusal(agent, message)
+    if refusal:
+        record_message(
+            db,
+            workspace_id,
+            role="agent",
+            actor=agent.name,
+            content=refusal,
+            payload={"kind": "refusal"},
+        )
+        typer.echo(f"{agent.name}: {refusal}")
+        return
     history = list_messages(db, workspace_id)
     client = build_client(settings)
     prompt = build_agent_prompt(workspace, agent, history, latest_message=message)
