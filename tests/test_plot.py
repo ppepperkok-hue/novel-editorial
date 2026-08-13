@@ -94,11 +94,11 @@ def test_plot_recover_marks_recovered_and_is_idempotent(
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     thread_id = _plant(workspace_id)
 
-    recovered = runner.invoke(app, ["plot", "recover", thread_id])
+    recovered = runner.invoke(app, ["plot", "recover", workspace_id, thread_id])
     assert recovered.exit_code == 0, recovered.output
     assert f"recovered {thread_id}" in recovered.output
 
-    again = runner.invoke(app, ["plot", "recover", thread_id])
+    again = runner.invoke(app, ["plot", "recover", workspace_id, thread_id])
     assert again.exit_code == 0, again.output
     assert "already recovered" in again.output
 
@@ -108,6 +108,25 @@ def test_plot_recover_marks_recovered_and_is_idempotent(
         thread = session.get(PlotThread, thread_id)
         assert thread is not None
         assert thread.status == "recovered"
+
+
+def test_plot_recover_wrong_workspace_leaves_thread_untouched(
+    tmp_path: Path, monkeypatch
+) -> None:
+    first_id = _create_workspace(tmp_path, monkeypatch, title="甲书")
+    second_id = _create_workspace(tmp_path, monkeypatch, title="乙书")
+    thread_id = _plant(first_id, kind="foreshadow", content="只属于甲书的线索")
+
+    wrong = runner.invoke(app, ["plot", "recover", second_id, thread_id])
+    assert wrong.exit_code == 1, wrong.output
+    assert "plot thread not found" in wrong.output
+
+    settings = load_settings()
+    db = DB(settings)
+    with db.workspace_session(first_id) as session:
+        thread = session.get(PlotThread, thread_id)
+        assert thread is not None
+        assert thread.status == "planted"
 
 
 def test_plot_plant_rejects_invalid_kind_and_empty_content(
@@ -127,14 +146,32 @@ def test_plot_plant_rejects_invalid_kind_and_empty_content(
     assert "must not be empty" in empty.output
 
 
+def test_plot_plant_rejects_multiline_content(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    for content in ("第一行\n第二行", "第一行\r第二行", "第一行\u2028第二行"):
+        result = runner.invoke(
+            app, ["plot", "plant", workspace_id, "--kind", "foreshadow", "--content", content]
+        )
+        assert result.exit_code == 2, result.output
+        assert "must not contain newlines" in result.output
+
+    settings = load_settings()
+    db = DB(settings)
+    with db.workspace_session(workspace_id) as session:
+        threads = session.query(PlotThread).filter_by(workspace_id=workspace_id).all()
+    assert threads == []
+
+
 def test_plot_unknown_workspace_and_thread_not_found(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("NOVEL_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("NOVEL_CONFIG", str(tmp_path / "config.toml"))
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
     missing_workspace = runner.invoke(app, ["plot", "list", "nope"])
     assert missing_workspace.exit_code == 1
     assert "workspace not found" in missing_workspace.output
 
-    missing_thread = runner.invoke(app, ["plot", "recover", "deadbeefdeadbeefdeadbeefdeadbeef"])
+    missing_thread = runner.invoke(
+        app,
+        ["plot", "recover", workspace_id, "deadbeefdeadbeefdeadbeefdeadbeef"],
+    )
     assert missing_thread.exit_code == 1
     assert "plot thread not found" in missing_thread.output
 
@@ -144,7 +181,7 @@ def test_memory_pack_includes_open_threads_only(tmp_path: Path, monkeypatch) -> 
     _plant(workspace_id, kind="foreshadow", content="旧案的钥匙藏在钟楼", chapter="第三章")
     _plant(workspace_id, kind="goal", content="查出旧案真凶", chapter=None)
     recovered_id = _plant(workspace_id, kind="hook", content="雨夜的敲门声")
-    assert runner.invoke(app, ["plot", "recover", recovered_id]).exit_code == 0
+    assert runner.invoke(app, ["plot", "recover", workspace_id, recovered_id]).exit_code == 0
 
     pack = runner.invoke(app, ["memory", "pack", workspace_id])
     assert pack.exit_code == 0, pack.output
@@ -167,7 +204,7 @@ def test_reviewer_prompt_includes_open_threads(tmp_path: Path, monkeypatch) -> N
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     _plant(workspace_id, kind="foreshadow", content="第三章出现的红伞", chapter="第三章")
     recovered_id = _plant(workspace_id, kind="hook", content="开场的不明脚步声")
-    assert runner.invoke(app, ["plot", "recover", recovered_id]).exit_code == 0
+    assert runner.invoke(app, ["plot", "recover", workspace_id, recovered_id]).exit_code == 0
 
     settings = load_settings()
     db = DB(settings)

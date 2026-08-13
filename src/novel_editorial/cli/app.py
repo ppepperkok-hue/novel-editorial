@@ -688,12 +688,15 @@ def plot_list(workspace_id: str = typer.Argument(..., help="Workspace id")) -> N
 
 
 @plot_app.command("recover")
-def plot_recover(thread_id: str = typer.Argument(..., help="Plot thread id")) -> None:
+def plot_recover(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+    thread_id: str = typer.Argument(..., help="Plot thread id"),
+) -> None:
     """Mark a narrative thread as recovered."""
     settings = load_settings()
     db = DB(settings)
     db.init_schema()
-    thread, changed = recover_thread(db, thread_id)
+    thread, changed = recover_thread(db, workspace_id, thread_id)
     label = KIND_LABELS.get(thread.kind, thread.kind)
     if changed:
         typer.echo(f"recovered {thread.id} [{label}]")

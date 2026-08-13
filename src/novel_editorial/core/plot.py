@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from novel_editorial.core.errors import ErrorCode, NovelError
-from novel_editorial.store.db import DB, list_workspace_ids
+from novel_editorial.store.db import DB
 from novel_editorial.store.models import PlotThread, Workspace
 
 KIND_FORESHADOW = "foreshadow"
@@ -47,6 +47,8 @@ def plant_thread(
         )
     if not content.strip():
         raise NovelError(ErrorCode.USAGE_ERROR, "thread content must not be empty")
+    if len(content.splitlines()) > 1:
+        raise NovelError(ErrorCode.USAGE_ERROR, "thread content must not contain newlines")
     _ensure_workspace(db, workspace_id)
     with db.workspace_session(workspace_id) as session:
         thread = PlotThread(
@@ -73,19 +75,22 @@ def list_threads(db: DB, workspace_id: str) -> list[PlotThread]:
         )
 
 
-def recover_thread(db: DB, thread_id: str) -> tuple[PlotThread, bool]:
-    """Mark a thread recovered across workspaces; returns (thread, changed)."""
-    for workspace_id in list_workspace_ids(db.settings):
-        with db.workspace_session(workspace_id) as session:
-            thread = session.query(PlotThread).filter_by(id=thread_id).first()
-            if thread is None:
-                continue
-            if thread.status == STATUS_RECOVERED:
-                return thread, False
-            thread.status = STATUS_RECOVERED
-            session.commit()
-            return thread, True
-    raise NovelError(ErrorCode.NOT_FOUND, f"plot thread not found: {thread_id}")
+def recover_thread(db: DB, workspace_id: str, thread_id: str) -> tuple[PlotThread, bool]:
+    """Mark a thread recovered in one workspace; returns (thread, changed)."""
+    _ensure_workspace(db, workspace_id)
+    with db.workspace_session(workspace_id) as session:
+        thread = (
+            session.query(PlotThread)
+            .filter_by(workspace_id=workspace_id, id=thread_id)
+            .first()
+        )
+        if thread is None:
+            raise NovelError(ErrorCode.NOT_FOUND, f"plot thread not found: {thread_id}")
+        if thread.status == STATUS_RECOVERED:
+            return thread, False
+        thread.status = STATUS_RECOVERED
+        session.commit()
+        return thread, True
 
 
 def open_thread_lines(db: DB, workspace_id: str) -> list[str]:
