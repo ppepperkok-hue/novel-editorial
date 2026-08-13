@@ -51,6 +51,13 @@ class Agent(Base):
     role: Mapped[str] = mapped_column(String(50))
     personality: Mapped[str] = mapped_column(Text, default="")
     stance: Mapped[str] = mapped_column(Text, default="")
+    values: Mapped[str] = mapped_column(Text, default="")
+    aesthetic: Mapped[str] = mapped_column(Text, default="")
+    emotion_baseline: Mapped[str] = mapped_column(Text, default="")
+    work_habits: Mapped[str] = mapped_column(Text, default="")
+    weaknesses: Mapped[str] = mapped_column(Text, default="")
+    relationship_presets: Mapped[str] = mapped_column(Text, default="")
+    private_motive: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

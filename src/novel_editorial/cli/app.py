@@ -8,6 +8,7 @@ import typer
 from typer.core import TyperGroup
 
 from novel_editorial import __version__
+from novel_editorial.core.agents import resolve_agent, update_agent_field
 from novel_editorial.core.chat import (
     AUTHOR_ACTOR,
     PROACTIVE_PAYLOAD,
@@ -228,6 +229,30 @@ def agents_show(workspace_id: str = typer.Argument(..., help="Workspace id")) ->
         typer.echo(f"[{agent.role}] {agent.name}")
         typer.echo(f"  性格: {agent.personality}")
         typer.echo(f"  立场: {agent.stance}")
+        typer.echo(f"  价值观: {agent.values}")
+        typer.echo(f"  审美: {agent.aesthetic}")
+        typer.echo(f"  情绪基线: {agent.emotion_baseline}")
+        typer.echo(f"  工作习惯: {agent.work_habits}")
+        typer.echo(f"  弱点: {agent.weaknesses}")
+        typer.echo(f"  人际预设: {agent.relationship_presets}")
+        typer.echo(f"  私心: {agent.private_motive}")
+
+
+@agents_app.command("edit")
+def agents_edit(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+    target: str = typer.Argument(..., help="Agent id or alias (总编/责编/写手/审稿)"),
+    field: str = typer.Option(..., "--field", help="Profile field to edit"),
+    value: str = typer.Option(..., "--value", help="New value"),
+) -> None:
+    """Edit one profile field of an agent."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    get_workspace_or_raise(db, workspace_id)
+    agent = resolve_agent(db, workspace_id, target)
+    update_agent_field(db, workspace_id, agent.id, field=field, value=value)
+    typer.echo(f"{agent.name} {field} updated")
 
 
 @talk_app.command("send")

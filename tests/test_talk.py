@@ -118,6 +118,16 @@ def test_talk_upgrades_pre_migration_workspace(tmp_path: Path, monkeypatch) -> N
     ]
     for table in tables:
         connection.execute(f"DROP TABLE IF EXISTS {table}")
+    for column in (
+        "values",
+        "aesthetic",
+        "emotion_baseline",
+        "work_habits",
+        "weaknesses",
+        "relationship_presets",
+        "private_motive",
+    ):
+        connection.execute(f'ALTER TABLE agents DROP COLUMN "{column}"')
     connection.execute("DELETE FROM alembic_version")
     connection.execute("INSERT INTO alembic_version (version_num) VALUES ('3b05b83f8953')")
     connection.commit()
