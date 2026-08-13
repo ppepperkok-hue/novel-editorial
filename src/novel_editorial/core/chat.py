@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import re
 
+from sqlalchemy.orm import Session
+
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import Agent, AgentRole, Message, Workspace
@@ -89,6 +91,27 @@ def get_agent(db: DB, workspace_id: str, role: str) -> Agent:
     return agent
 
 
+def _record_message_in_session(
+    session: Session,
+    workspace_id: str,
+    *,
+    role: str,
+    actor: str,
+    content: str,
+    payload: dict | None = None,
+) -> Message:
+    """Add one message inside an open session; the caller owns the commit."""
+    message = Message(
+        workspace_id=workspace_id,
+        role=role,
+        actor=actor,
+        content=content,
+        payload=json.dumps(payload or {}, ensure_ascii=False),
+    )
+    session.add(message)
+    return message
+
+
 def record_message(
     db: DB,
     workspace_id: str,
@@ -99,43 +122,54 @@ def record_message(
     payload: dict | None = None,
 ) -> Message:
     with db.workspace_session(workspace_id) as session:
-        message = Message(
+        message = _record_message_in_session(
+            session,
             workspace_id=workspace_id,
             role=role,
             actor=actor,
             content=content,
-            payload=json.dumps(payload or {}, ensure_ascii=False),
+            payload=payload,
         )
-        session.add(message)
         session.commit()
         return message
 
 
-def update_agent_mood(db: DB, workspace_id: str, agent: Agent, mood: str) -> Message | None:
-    """Persist one partner's mood change and leave a mood_change message trace."""
+def _update_agent_mood_in_session(
+    session: Session,
+    workspace_id: str,
+    agent_id: str,
+    mood: str,
+) -> Message | None:
+    """Apply one mood change inside an open session; returns the trace or None if unchanged."""
     if not mood:
         raise NovelError(ErrorCode.USAGE_ERROR, "mood must not be empty")
-    with db.workspace_session(workspace_id) as session:
-        row = (
-            session.query(Agent)
-            .filter_by(workspace_id=workspace_id, id=agent.id)
-            .first()
-        )
-        if row is None:
-            raise NovelError(ErrorCode.NOT_FOUND, f"agent not found: {agent.id}")
-        previous = row.mood
-        if previous == mood:
-            return None
-        row.mood = mood
-        session.commit()
-    return record_message(
-        db,
+    row = (
+        session.query(Agent)
+        .filter_by(workspace_id=workspace_id, id=agent_id)
+        .first()
+    )
+    if row is None:
+        raise NovelError(ErrorCode.NOT_FOUND, f"agent not found: {agent_id}")
+    previous = row.mood
+    if previous == mood:
+        return None
+    row.mood = mood
+    return _record_message_in_session(
+        session,
         workspace_id,
         role="system",
-        actor=agent.name,
-        content=f"{agent.name} 的状态从「{previous}」变为「{mood}」",
-        payload={"kind": "mood_change", "from": previous, "to": mood, "agent": agent.name},
+        actor=row.name,
+        content=f"{row.name} 的状态从「{previous}」变为「{mood}」",
+        payload={"kind": "mood_change", "from": previous, "to": mood, "agent": row.name},
     )
+
+
+def update_agent_mood(db: DB, workspace_id: str, agent: Agent, mood: str) -> Message | None:
+    """Persist one partner's mood change and its trace in a single transaction."""
+    with db.workspace_session(workspace_id) as session:
+        trace = _update_agent_mood_in_session(session, workspace_id, agent.id, mood)
+        session.commit()
+        return trace
 
 
 def list_messages(db: DB, workspace_id: str) -> list[Message]:
@@ -167,6 +201,17 @@ def resolve_target_role(message: str) -> str:
     return role
 
 
+def _is_conversation_message(message: Message) -> bool:
+    """Keep real dialogue for the prompt; system status traces are not conversation."""
+    if message.role == "system":
+        return False
+    try:
+        payload = json.loads(message.payload or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    return payload.get("kind") != "mood_change"
+
+
 def build_agent_prompt(
     workspace: Workspace,
     agent: Agent,
@@ -183,7 +228,8 @@ def build_agent_prompt(
         f"作品简介：{workspace.title}（{workspace.genre}）{workspace.description}".rstrip(),
         "最近对话：",
     ]
-    for message in history[-6:]:
+    conversation = [message for message in history if _is_conversation_message(message)]
+    for message in conversation[-6:]:
         lines.append(f"{message.actor}: {message.content}")
     if latest_message:
         lines.append(f"{AUTHOR_ACTOR}刚刚说：{latest_message}")

@@ -6,10 +6,10 @@ from difflib import unified_diff
 
 from novel_editorial.core.chat import (
     MOOD_REVISING,
+    _record_message_in_session,
+    _update_agent_mood_in_session,
     get_agent,
     get_workspace_or_raise,
-    record_message,
-    update_agent_mood,
 )
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.review import list_reviews
@@ -156,20 +156,20 @@ def revise_draft(
                 reason=reason or "revision",
             )
         )
+        _update_agent_mood_in_session(session, workspace_id, writer.id, MOOD_REVISING)
+        if any(r.role == "agent" for r in reviews):
+            _record_message_in_session(
+                session,
+                workspace_id,
+                role="agent",
+                actor=writer.name,
+                content=(
+                    f"写手反驳：我看了意见后重新修订了正文。修订理由：{reason or 'revision'}。"
+                    "这版针对反馈做了调整，请再审。"
+                ),
+                payload={"initiator": "agent", "kind": "rebuttal"},
+            )
         session.commit()
-    update_agent_mood(db, workspace_id, writer, MOOD_REVISING)
-    if any(r.role == "agent" for r in reviews):
-        record_message(
-            db,
-            workspace_id,
-            role="agent",
-            actor=writer.name,
-            content=(
-                f"写手反驳：我看了意见后重新修订了正文。修订理由：{reason or 'revision'}。"
-                "这版针对反馈做了调整，请再审。"
-            ),
-            payload={"initiator": "agent", "kind": "rebuttal"},
-        )
     return draft
 
 

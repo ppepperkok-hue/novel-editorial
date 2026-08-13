@@ -5,13 +5,12 @@ from __future__ import annotations
 from novel_editorial.core.chat import (
     MOOD_ACCEPTED,
     MOOD_REJECTED,
-    get_agent,
-    update_agent_mood,
+    _update_agent_mood_in_session,
 )
 from novel_editorial.core.draft import get_draft
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.store.db import DB
-from novel_editorial.store.models import AgentRole, Decision, Draft
+from novel_editorial.store.models import Agent, AgentRole, Decision, Draft
 
 DRAFT_STATUS = "draft"
 ACCEPTED_STATUS = "accepted"
@@ -63,11 +62,18 @@ def decide(
                 content=content,
             )
         )
+        if action in ("accept", "reject"):
+            writer = (
+                session.query(Agent)
+                .filter_by(workspace_id=workspace_id, role=AgentRole.WRITER)
+                .first()
+            )
+            if writer is None:
+                raise NovelError(
+                    ErrorCode.NOT_FOUND,
+                    f"agent not found in workspace: {AgentRole.WRITER}",
+                )
+            mood = MOOD_ACCEPTED if action == "accept" else MOOD_REJECTED
+            _update_agent_mood_in_session(session, workspace_id, writer.id, mood)
         session.commit()
-    if action == "accept":
-        writer = get_agent(db, workspace_id, AgentRole.WRITER)
-        update_agent_mood(db, workspace_id, writer, MOOD_ACCEPTED)
-    elif action == "reject":
-        writer = get_agent(db, workspace_id, AgentRole.WRITER)
-        update_agent_mood(db, workspace_id, writer, MOOD_REJECTED)
     return draft
