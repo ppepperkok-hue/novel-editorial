@@ -42,7 +42,8 @@ class NovelGroup(TyperGroup):
             raise
         except NovelError as exc:
             typer.echo(f"Error: {exc.message}", err=True)
-            raise typer.Exit(1) from exc
+            exit_code = 2 if exc.code is ErrorCode.USAGE_ERROR else 1
+            raise typer.Exit(exit_code) from exc
         except Exception as exc:
             typer.echo(f"Unexpected error: {exc}", err=True)
             raise typer.Exit(3) from exc
@@ -189,13 +190,13 @@ def talk_send(
     db.init_schema()
     workspace = get_workspace_or_raise(db, workspace_id)
 
-    record_message(db, workspace_id, role="author", actor=AUTHOR_ACTOR, content=message)
     target_role = resolve_target_role(message)
     agent = get_agent(db, workspace_id, target_role)
     history = list_messages(db, workspace_id)
     client = build_client(settings)
-    prompt = build_agent_prompt(workspace, agent, history)
+    prompt = build_agent_prompt(workspace, agent, history, latest_message=message)
     reply = client.complete([LLMMessage(role="user", content=prompt)]).content
+    record_message(db, workspace_id, role="author", actor=AUTHOR_ACTOR, content=message)
     record_message(db, workspace_id, role="agent", actor=agent.name, content=reply)
 
     typer.echo(f"{AUTHOR_ACTOR}: {message}")

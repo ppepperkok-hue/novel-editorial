@@ -7,6 +7,8 @@ from typer.testing import CliRunner
 from novel_editorial.cli.app import app
 from novel_editorial.core.chat import has_proactive_message, list_messages
 from novel_editorial.core.config import load_settings
+from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.llm.client import LLMClient, LLMMessage, LLMResult
 from novel_editorial.store.db import DB, workspace_db_path
 
 runner = CliRunner()
@@ -46,6 +48,13 @@ def test_talk_send_routes_at_mention(tmp_path: Path, monkeypatch) -> None:
     assert "写手: （模拟回复）" in result.output
 
 
+def test_talk_send_routes_at_mention_with_cjk_punctuation(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    result = runner.invoke(app, ["talk", "send", workspace_id, "@写手，写一段雨夜开场"])
+    assert result.exit_code == 0, result.output
+    assert "写手: （模拟回复）" in result.output
+
+
 def test_talk_proactive_happens_only_once(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     runner.invoke(app, ["talk", "send", workspace_id, "第一句"])
@@ -61,8 +70,37 @@ def test_talk_proactive_happens_only_once(tmp_path: Path, monkeypatch) -> None:
 def test_talk_send_unknown_alias(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     result = runner.invoke(app, ["talk", "send", workspace_id, "@主编大人 你好"])
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "unknown partner alias" in result.output
+
+
+def test_talk_send_failure_leaves_no_messages(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = DB(settings)
+
+    result = runner.invoke(app, ["talk", "send", workspace_id, "@主编大人 你好"])
+    assert result.exit_code == 2
+    assert list_messages(db, workspace_id) == []
+
+
+class _RaisingLLMClient(LLMClient):
+    def complete(self, messages: list[LLMMessage]) -> LLMResult:
+        raise NovelError(ErrorCode.LLM_ERROR, "boom")
+
+
+def test_talk_send_llm_failure_leaves_no_messages(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "novel_editorial.cli.app.build_client",
+        lambda settings: _RaisingLLMClient(),
+    )
+    settings = load_settings()
+    db = DB(settings)
+
+    result = runner.invoke(app, ["talk", "send", workspace_id, "正常消息"])
+    assert result.exit_code == 1
+    assert list_messages(db, workspace_id) == []
 
 
 def test_talk_upgrades_pre_migration_workspace(tmp_path: Path, monkeypatch) -> None:

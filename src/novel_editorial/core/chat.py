@@ -24,7 +24,6 @@ _ROLE_ALIASES: dict[str, str] = {
     "审稿": AgentRole.REVIEWER,
 }
 
-
 def get_workspace_or_raise(db: DB, workspace_id: str) -> Workspace:
     with db.global_session() as session:
         workspace = session.get(Workspace, workspace_id)
@@ -82,16 +81,22 @@ def has_proactive_message(db: DB, workspace_id: str) -> bool:
 
 
 def resolve_target_role(message: str) -> str:
-    match = re.search(r"@(\S+)", message)
+    match = re.search(r"@([^，。：；！？、,.;:!?\s]+)", message)
     if match is None:
         return AgentRole.EDITOR_IN_CHIEF
-    role = _ROLE_ALIASES.get(match.group(1))
+    alias = match.group(1)
+    role = _ROLE_ALIASES.get(alias)
     if role is None:
-        raise NovelError(ErrorCode.USAGE_ERROR, f"unknown partner alias: {match.group(1)}")
+        raise NovelError(ErrorCode.USAGE_ERROR, f"unknown partner alias: {alias}")
     return role
 
 
-def build_agent_prompt(workspace: Workspace, agent: Agent, history: list[Message]) -> str:
+def build_agent_prompt(
+    workspace: Workspace,
+    agent: Agent,
+    history: list[Message],
+    latest_message: str | None = None,
+) -> str:
     lines = [
         f"你是作品《{workspace.title}》的{agent.name}（{agent.role}）。",
         f"你的性格：{agent.personality}",
@@ -101,5 +106,7 @@ def build_agent_prompt(workspace: Workspace, agent: Agent, history: list[Message
     ]
     for message in history[-6:]:
         lines.append(f"{message.actor}: {message.content}")
+    if latest_message:
+        lines.append(f"{AUTHOR_ACTOR}刚刚说：{latest_message}")
     lines.append(f"请以{agent.name}的身份回应，不要超出你的立场。")
     return "\n".join(lines)
