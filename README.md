@@ -4,6 +4,8 @@
 
 当前版本 `0.1.0`，纯命令行界面（CLI）。图形面板（三扇窗）是后置项，尚未实现。
 
+仓库：[ppepperkok-hue/novel-editorial](https://github.com/ppepperkok-hue/novel-editorial)
+
 ## 这是什么
 
 Novel Editorial 把一个文学编辑部的运作方式做成了本地 CLI：你以作者（老板）身份下达方向，四个 AI 伙伴按自己的岗位与立场协作，讨论、写作、返工、拍板都留有记录，随时可以穿透查看。
@@ -198,6 +200,7 @@ draft accepted. Run `novel-editorial log <workspace_id>` to review the flow.
 
 - 配置、环境变量清单与常见问题：[docs/usage.md](docs/usage.md)
 - 核心目标与里程碑：[docs/project-plan/03-core-goals.md](docs/project-plan/03-core-goals.md)、[docs/project-plan/05-executable-units.md](docs/project-plan/05-executable-units.md)
+- 仓库与反馈：[ppepperkok-hue/novel-editorial](https://github.com/ppepperkok-hue/novel-editorial)（提 Issue / 提 PR 都在这里）
 
 开发与验证命令：
 
