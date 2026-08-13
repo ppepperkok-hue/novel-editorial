@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, text
+from sqlalchemy.orm import Session
 
 from novel_editorial.core.chat import (
     _is_conversation_message,
@@ -160,12 +161,49 @@ def _like_contains(column: Any, needle: str) -> Any:
     return func.lower(column).like(f"%{escaped}%", escape="\\")
 
 
-def search_memory(db: DB, workspace_id: str, keyword: str) -> str:
+FTS_MIN_CHARS = 3
+
+# FTS5 trigram shadow tables created by migration 9c3a71b5d2e4. Table names
+# come from this mapping (never from user input), so interpolating them into
+# the MATCH statement below is safe.
+FTS_TABLE_BY_LAYER: dict[str, str] = {
+    "message": "message_fts",
+    "review": "review_fts",
+    "draft_version": "draft_version_fts",
+    "agent_memory": "agent_memory_fts",
+    "plot_thread": "plot_thread_fts",
+}
+
+
+def _fts_phrase(keyword: str) -> str:
+    """Render a keyword as one FTS5 phrase with embedded double-quotes escaped.
+
+    FTS5 phrase syntax doubles a `"` inside the phrase, so a keyword like
+    `a"b` stays a single literal substring instead of closing the phrase early
+    or injecting FTS5 query syntax.
+    """
+    return '"' + keyword.replace('"', '""') + '"'
+
+
+def _content_hit_ids(session: Session, fts_table: str, keyword: str) -> list[str]:
+    """Return source-row ids whose content matches the keyword in the FTS index."""
+    statement = text(f"SELECT id FROM {fts_table} WHERE {fts_table} MATCH :phrase")
+    return list(session.execute(statement, {"phrase": _fts_phrase(keyword)}).scalars())
+
+
+def search_memory(
+    db: DB,
+    workspace_id: str,
+    keyword: str,
+    *,
+    _force_fts: bool | None = None,
+) -> str:
     """Case-insensitive substring search with source citations across one workspace."""
     if not keyword.strip():
         raise NovelError(ErrorCode.USAGE_ERROR, "search keyword must not be empty")
     workspace = get_workspace_or_raise(db, workspace_id)
     needle = keyword.lower()
+    use_fts = _force_fts if _force_fts is not None else len(keyword) >= FTS_MIN_CHARS
     lines: list[str] = []
 
     profile_fields = (
@@ -181,17 +219,36 @@ def search_memory(db: DB, workspace_id: str, keyword: str) -> str:
             )
 
     with db.workspace_session(workspace_id) as session:
+        if use_fts:
+            message_content = Message.id.in_(
+                _content_hit_ids(session, FTS_TABLE_BY_LAYER["message"], keyword)
+            )
+            review_content = Review.id.in_(
+                _content_hit_ids(session, FTS_TABLE_BY_LAYER["review"], keyword)
+            )
+            version_content = DraftVersion.id.in_(
+                _content_hit_ids(session, FTS_TABLE_BY_LAYER["draft_version"], keyword)
+            )
+            note_content = AgentMemory.id.in_(
+                _content_hit_ids(session, FTS_TABLE_BY_LAYER["agent_memory"], keyword)
+            )
+        else:
+            message_content = _like_contains(Message.content, needle)
+            review_content = _like_contains(Review.content, needle)
+            version_content = _like_contains(DraftVersion.content, needle)
+            note_content = _like_contains(AgentMemory.content, needle)
+
         messages = (
             session.query(Message)
             .filter_by(workspace_id=workspace_id)
-            .filter(_like_contains(Message.content, needle))
+            .filter(message_content)
             .order_by(Message.created_at, Message.id)
             .all()
         )
         reviews = (
             session.query(Review)
             .filter_by(workspace_id=workspace_id)
-            .filter(_like_contains(Review.content, needle))
+            .filter(review_content)
             .order_by(Review.created_at, Review.id)
             .all()
         )
@@ -200,7 +257,7 @@ def search_memory(db: DB, workspace_id: str, keyword: str) -> str:
             .join(Draft, Draft.id == DraftVersion.draft_id)
             .filter(
                 Draft.workspace_id == workspace_id,
-                _like_contains(DraftVersion.content, needle),
+                version_content,
             )
             .order_by(DraftVersion.created_at, DraftVersion.id)
             .all()
@@ -208,7 +265,7 @@ def search_memory(db: DB, workspace_id: str, keyword: str) -> str:
         notes = (
             session.query(AgentMemory)
             .filter_by(workspace_id=workspace_id)
-            .filter(_like_contains(AgentMemory.content, needle))
+            .filter(note_content)
             .order_by(AgentMemory.created_at, AgentMemory.id)
             .all()
         )
@@ -239,7 +296,13 @@ def search_memory(db: DB, workspace_id: str, keyword: str) -> str:
     return "\n".join(lines)
 
 
-def search_all_layers(db: DB, workspace_id: str, keyword: str) -> str:
+def search_all_layers(
+    db: DB,
+    workspace_id: str,
+    keyword: str,
+    *,
+    _force_fts: bool | None = None,
+) -> str:
     """Case-insensitive search across every visible layer of one workspace (F18).
 
     Extends `search_memory` with style anchors, decisions, and plot threads while
@@ -250,6 +313,7 @@ def search_all_layers(db: DB, workspace_id: str, keyword: str) -> str:
     keyword = keyword.strip()
     workspace = get_workspace_or_raise(db, workspace_id)
     needle = keyword.lower()
+    use_fts = _force_fts if _force_fts is not None else len(keyword) >= FTS_MIN_CHARS
     lines: list[str] = []
 
     profile_fields = (
@@ -276,12 +340,35 @@ def search_all_layers(db: DB, workspace_id: str, keyword: str) -> str:
                     f"[风格] {label}：{_snippet(value, keyword)}（来源: 风格锚点）"
                 )
 
+        if use_fts:
+            message_content = Message.id.in_(
+                _content_hit_ids(session, FTS_TABLE_BY_LAYER["message"], keyword)
+            )
+            review_content = Review.id.in_(
+                _content_hit_ids(session, FTS_TABLE_BY_LAYER["review"], keyword)
+            )
+            version_content = DraftVersion.id.in_(
+                _content_hit_ids(session, FTS_TABLE_BY_LAYER["draft_version"], keyword)
+            )
+            note_content = AgentMemory.id.in_(
+                _content_hit_ids(session, FTS_TABLE_BY_LAYER["agent_memory"], keyword)
+            )
+            thread_content = PlotThread.id.in_(
+                _content_hit_ids(session, FTS_TABLE_BY_LAYER["plot_thread"], keyword)
+            )
+        else:
+            message_content = _like_contains(Message.content, needle)
+            review_content = _like_contains(Review.content, needle)
+            version_content = _like_contains(DraftVersion.content, needle)
+            note_content = _like_contains(AgentMemory.content, needle)
+            thread_content = _like_contains(PlotThread.content, needle)
+
         messages = (
             session.query(Message)
             .filter_by(workspace_id=workspace_id)
             .filter(
                 or_(
-                    _like_contains(Message.content, needle),
+                    message_content,
                     _like_contains(Message.actor, needle),
                 )
             )
@@ -293,7 +380,7 @@ def search_all_layers(db: DB, workspace_id: str, keyword: str) -> str:
             .filter_by(workspace_id=workspace_id)
             .filter(
                 or_(
-                    _like_contains(Review.content, needle),
+                    review_content,
                     _like_contains(Review.actor, needle),
                 )
             )
@@ -306,7 +393,7 @@ def search_all_layers(db: DB, workspace_id: str, keyword: str) -> str:
             .filter(
                 Draft.workspace_id == workspace_id,
                 or_(
-                    _like_contains(DraftVersion.content, needle),
+                    version_content,
                     _like_contains(Draft.title, needle),
                 ),
             )
@@ -323,7 +410,7 @@ def search_all_layers(db: DB, workspace_id: str, keyword: str) -> str:
             .filter(
                 AgentMemory.workspace_id == workspace_id,
                 or_(
-                    _like_contains(AgentMemory.content, needle),
+                    note_content,
                     _like_contains(func.coalesce(Agent.name, AgentMemory.agent_id), needle),
                 ),
             )
@@ -348,7 +435,7 @@ def search_all_layers(db: DB, workspace_id: str, keyword: str) -> str:
             .filter_by(workspace_id=workspace_id)
             .filter(
                 or_(
-                    _like_contains(PlotThread.content, needle),
+                    thread_content,
                     _like_contains(PlotThread.kind, needle),
                     _like_contains(PlotThread.status, needle),
                 )
