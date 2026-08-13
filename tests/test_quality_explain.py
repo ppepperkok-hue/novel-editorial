@@ -62,6 +62,8 @@ def test_extract_style_keywords_separator_only_returns_empty() -> None:
     assert extract_style_keywords("，") == frozenset()
     assert extract_style_keywords("、、") == frozenset()
     assert extract_style_keywords("，、 ") == frozenset()
+    assert extract_style_keywords("……") == frozenset()
+    assert extract_style_keywords("---") == frozenset()
 
 
 def test_long_continuous_description_does_not_fail_clean_text() -> None:

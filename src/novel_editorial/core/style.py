@@ -7,7 +7,7 @@ import re
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import StyleAnchor
 
-_KEYWORD_SEPARATOR_RE = re.compile(r"[、，,；;。！？!?\s]+")
+_KEYWORD_SEPARATOR_RE = re.compile(r"[、，,；;。！？!?…—–·・\-\s]+")
 
 
 def extract_style_keywords(description: str) -> frozenset[str]:
