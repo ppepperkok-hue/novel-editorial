@@ -1,0 +1,41 @@
+# 审查归档（Reviews）
+
+## 审查流程（独立 CLI 分工）
+
+1. 总监督从实施文档 / backlog 打包任务，派给独立 CLI 执行（`codex exec`）。
+2. 独立 CLI 按实施文档实现并本地验证，回报三问（做了什么 / 验证结果 / 偏离点）；不提交。
+3. 总监督验收：对照验收标准跑验证四连（pytest / ruff / pyright / 宪法），通过后提交。
+4. 总监督调独立审查 CLI 审查（`codex exec review --commit <sha>`）。
+5. 审查报告归档到 `docs/reviews/`：`<YYYYMMDD>-<范围>.md`。
+6. 总监督逐条核实审查意见，派修复任务包，回归验证，收口。
+
+## 报告模板
+
+```markdown
+# <YYYY-MM-DD> <范围> 审查报告
+
+- 审查方式：codex exec review（独立 CLI，只读）
+- 审查范围：commit <sha>
+- 审查依据：AGENTS.md / rules.md / extension.md / 实施文档
+
+### 优点
+（具体）
+
+### 问题
+#### Critical（必须修）
+#### Important（应该修）
+#### Minor（可后补）
+每条含：文件:行号、问题、影响、修法
+
+### 建议
+
+### 结论
+Ready to merge: Yes | No | With fixes
+
+### 处理记录
+- 核实结果、修复 commit、回归结果
+```
+
+## 归档索引
+
+- [20260813 历史审查汇总](20260813-review-archive.md)
