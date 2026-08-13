@@ -52,7 +52,7 @@ from novel_editorial.llm.client import LLMMessage, build_client
 from novel_editorial.quality.explain import explain_quality, render_explanation
 from novel_editorial.quality.gate import check_quality
 from novel_editorial.store.db import DB
-from novel_editorial.store.events import list_events, list_events_since
+from novel_editorial.store.events import latest_rowid, list_events, list_events_since
 from novel_editorial.store.models import Agent, AgentRole, Decision, Event, Workspace
 
 reconfigure = getattr(sys.stdout, "reconfigure", None)
@@ -803,17 +803,12 @@ def events_watch(
     db = DB(settings)
     db.init_schema()
     get_workspace_or_raise(db, workspace_id)
-    latest = list_events(db, workspace_id, limit=1)
-    cursor_time = latest[0].time if latest else None
-    cursor_id = latest[0].id if latest else None
+    cursor_rowid = latest_rowid(db, workspace_id)
     try:
         while True:
-            for event in list_events_since(
-                db, workspace_id, after_time=cursor_time, after_id=cursor_id
-            ):
-                typer.echo(_render_event(event))
-                cursor_time = event.time
-                cursor_id = event.id
+            for record in list_events_since(db, workspace_id, after_rowid=cursor_rowid):
+                typer.echo(_render_event(record.event))
+                cursor_rowid = record.rowid
             time.sleep(interval)
     except KeyboardInterrupt:
         raise typer.Exit(0) from None

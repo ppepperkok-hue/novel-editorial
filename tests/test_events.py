@@ -1,6 +1,8 @@
 import json
 import sqlite3
 import time
+import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -74,15 +76,49 @@ def test_list_events_since_respects_cursor(tmp_path: Path, monkeypatch) -> None:
     time.sleep(0.001)
     record_event(db, workspace_id, type=EventType.SYSTEM, actor="system", payload={"n": 3})
 
-    all_events = list_events(db, workspace_id)
-    newest = all_events[0]
-    middle = all_events[1]
-    oldest = all_events[2]
+    oldest, middle, newest = list_events_since(db, workspace_id)
     assert [
-        event.id
-        for event in list_events_since(db, workspace_id, after_time=oldest.time, after_id=oldest.id)
-    ] == [middle.id, newest.id]
-    assert list_events_since(db, workspace_id, after_time=newest.time, after_id=newest.id) == []
+        record.event.id
+        for record in list_events_since(db, workspace_id, after_rowid=oldest.rowid)
+    ] == [middle.event.id, newest.event.id]
+    assert list_events_since(db, workspace_id, after_rowid=newest.rowid) == []
+
+
+def test_list_events_since_does_not_skip_same_timestamp_cross_process(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    fixed_time = datetime(2026, 1, 2, 3, 4, 5, 678901, tzinfo=UTC)
+    ids = iter(["f" * 32, "0" * 32])
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None) -> datetime:
+            return fixed_time
+
+    monkeypatch.setattr("novel_editorial.store.events.datetime", FrozenDateTime)
+    monkeypatch.setattr(
+        "novel_editorial.store.models.uuid.uuid4",
+        lambda: uuid.UUID(int=int(next(ids), 16)),
+    )
+
+    # Fresh process state before each write, so both share the same clock tick.
+    monkeypatch.setattr("novel_editorial.store.events._LAST_EVENT_TIME", None)
+    record_event(db, workspace_id, type=EventType.SYSTEM, actor="process-a", payload={"n": 1})
+    monkeypatch.setattr("novel_editorial.store.events._LAST_EVENT_TIME", None)
+    record_event(db, workspace_id, type=EventType.SYSTEM, actor="process-b", payload={"n": 2})
+
+    records = list_events_since(db, workspace_id)
+    assert [record.event.actor for record in records] == ["process-a", "process-b"]
+    # SQLite round-trips datetimes without tzinfo.
+    assert records[0].event.time == records[1].event.time == fixed_time.replace(tzinfo=None)
+    # The later write deliberately carries a lexicographically smaller id.
+    assert records[1].event.id < records[0].event.id
+    assert [
+        record.event.actor
+        for record in list_events_since(db, workspace_id, after_rowid=records[0].rowid)
+    ] == ["process-b"]
 
 
 def test_talk_records_agent_message_events_only_for_agents(tmp_path: Path, monkeypatch) -> None:
@@ -268,3 +304,50 @@ def test_events_watch_streams_only_new_events_and_exits_cleanly(
     assert result.exit_code == 0, result.output
     assert '"note": "old"' not in result.output
     assert '"note": "new"' in result.output
+
+
+def test_events_watch_does_not_skip_same_timestamp_cross_process(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    fixed_time = datetime(2026, 1, 2, 3, 4, 5, 678901, tzinfo=UTC)
+    ids = iter(["f" * 32, "0" * 32])
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None) -> datetime:
+            return fixed_time
+
+    monkeypatch.setattr("novel_editorial.store.events.datetime", FrozenDateTime)
+    monkeypatch.setattr(
+        "novel_editorial.store.models.uuid.uuid4",
+        lambda: uuid.UUID(int=int(next(ids), 16)),
+    )
+    monkeypatch.setattr("novel_editorial.store.events._LAST_EVENT_TIME", None)
+    record_event(
+        db, workspace_id, type=EventType.SYSTEM, actor="process-a", payload={"note": "first"}
+    )
+
+    calls = {"count": 0}
+
+    def fake_sleep(seconds: float) -> None:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            # Second process: fresh clock state, same timestamp, smaller id.
+            monkeypatch.setattr("novel_editorial.store.events._LAST_EVENT_TIME", None)
+            record_event(
+                db,
+                workspace_id,
+                type=EventType.SYSTEM,
+                actor="process-b",
+                payload={"note": "second"},
+            )
+        else:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(time, "sleep", fake_sleep)
+    result = runner.invoke(app, ["events", "watch", workspace_id, "--interval", "1"])
+    assert result.exit_code == 0, result.output
+    assert '"note": "second"' in result.output
+    assert '"note": "first"' not in result.output
