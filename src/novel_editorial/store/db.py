@@ -54,7 +54,7 @@ class DB:
             conn.execute(text("SELECT 1"))
 
     def global_session(self) -> Session:
-        return Session(self.global_engine)
+        return Session(self.global_engine, expire_on_commit=False)
 
     def create_workspace_db(self, workspace_id: str) -> None:
         path = workspace_db_path(self.settings, workspace_id)
@@ -72,7 +72,9 @@ class DB:
             engine = _engine(path)
             self._workspace_engines[key] = engine
             run_migrations(f"sqlite:///{path}")
-        return sessionmaker(bind=self._workspace_engines[key])()
+        return sessionmaker(
+            bind=self._workspace_engines[key], expire_on_commit=False
+        )()
 
 
 DEFAULT_BAND: list[dict[str, str]] = [

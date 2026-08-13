@@ -21,8 +21,17 @@ from novel_editorial.core.chat import (
     resolve_target_role,
 )
 from novel_editorial.core.config import load_settings
+from novel_editorial.core.draft import (
+    build_memory_pack,
+    diff_versions,
+    find_draft_anywhere,
+    generate_draft,
+    get_draft_version,
+    list_drafts,
+)
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.logging_setup import configure_logging
+from novel_editorial.core.style import get_style_anchor, set_style_anchor
 from novel_editorial.llm.client import LLMMessage, build_client
 from novel_editorial.store.db import DB, seed_default_band
 from novel_editorial.store.models import Agent, AgentRole, Workspace
@@ -53,9 +62,15 @@ app = typer.Typer(cls=NovelGroup, help="Novel Editorial: a layered AI literary e
 works_app = typer.Typer(help="Manage workspaces")
 agents_app = typer.Typer(help="Manage editorial partners")
 talk_app = typer.Typer(help="Talk with the editorial band")
+style_app = typer.Typer(help="Manage style anchors")
+memory_app = typer.Typer(help="Inspect writing memory")
+draft_app = typer.Typer(help="Manage drafts")
 app.add_typer(works_app, name="works")
 app.add_typer(agents_app, name="agents")
 app.add_typer(talk_app, name="talk")
+app.add_typer(style_app, name="style")
+app.add_typer(memory_app, name="memory")
+app.add_typer(draft_app, name="draft")
 
 
 @app.callback(invoke_without_command=True)
@@ -224,3 +239,94 @@ def talk_list(workspace_id: str = typer.Argument(..., help="Workspace id")) -> N
     get_workspace_or_raise(db, workspace_id)
     for message in list_messages(db, workspace_id):
         typer.echo(f"[{message.role}] {message.actor}: {message.content}")
+
+
+@style_app.command("set")
+def style_set(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+    description: str = typer.Option("", "--description", help="Style description"),
+    forbidden: str = typer.Option("", "--forbidden", help="Forbidden words, comma separated"),
+) -> None:
+    """Set the workspace style anchor."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    get_workspace_or_raise(db, workspace_id)
+    set_style_anchor(db, workspace_id, description=description, forbidden_words=forbidden)
+    typer.echo(f"style anchor updated: {workspace_id}")
+
+
+@style_app.command("show")
+def style_show(workspace_id: str = typer.Argument(..., help="Workspace id")) -> None:
+    """Show the workspace style anchor."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    get_workspace_or_raise(db, workspace_id)
+    anchor = get_style_anchor(db, workspace_id)
+    typer.echo(f"description: {anchor.description or '(empty)'}")
+    typer.echo(f"forbidden: {anchor.forbidden_words or '(empty)'}")
+
+
+@memory_app.command("pack")
+def memory_pack(workspace_id: str = typer.Argument(..., help="Workspace id")) -> None:
+    """Show the writing memory pack for a workspace."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    typer.echo(build_memory_pack(db, workspace_id))
+
+
+@draft_app.command("generate")
+def draft_generate(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+    title: str = typer.Option("未命名章节", "--title", help="Chapter title"),
+) -> None:
+    """Generate a draft version (writer + memory pack + LLM)."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    client = build_client(settings)
+    draft = generate_draft(db, workspace_id, title=title, client=client)
+    typer.echo(f"draft {draft.id} {draft.title} now at v{draft.current_version}")
+
+
+@draft_app.command("list")
+def draft_list(workspace_id: str = typer.Argument(..., help="Workspace id")) -> None:
+    """List drafts in a workspace."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    get_workspace_or_raise(db, workspace_id)
+    for draft in list_drafts(db, workspace_id):
+        typer.echo(f"{draft.id}  {draft.title}  v{draft.current_version}  {draft.status}")
+
+
+@draft_app.command("show")
+def draft_show(draft_id: str = typer.Argument(..., help="Draft id")) -> None:
+    """Show a draft with its latest version content."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    draft = find_draft_anywhere(db, draft_id)
+    version = get_draft_version(db, draft.workspace_id, draft_id, draft.current_version)
+    typer.echo(f"{draft.title} (v{draft.current_version}, {draft.status})")
+    typer.echo("---")
+    typer.echo(version.content)
+
+
+@draft_app.command("diff")
+def draft_diff(
+    draft_id: str = typer.Argument(..., help="Draft id"),
+    version_a: int = typer.Argument(..., help="Version A"),
+    version_b: int = typer.Argument(..., help="Version B"),
+) -> None:
+    """Show the diff between two versions of a draft."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    draft = find_draft_anywhere(db, draft_id)
+    first = get_draft_version(db, draft.workspace_id, draft_id, version_a)
+    second = get_draft_version(db, draft.workspace_id, draft_id, version_b)
+    output = diff_versions(first, second)
+    typer.echo(output if output else "no differences")
