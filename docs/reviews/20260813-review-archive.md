@@ -17,7 +17,8 @@
 | 11 | M2-D 伙伴状态沉淀（fec6246） | P2 mood_change 污染 LLM 提示词历史；P2 mood 更新晚于业务提交、失败留半完成状态 | 已修复（2bf7e1c，提示词过滤 + 事务原子化），复审查 Ready to merge；详见 [20260813-M2D-initial.md](20260813-M2D-initial.md) 与 [20260813-M2D-fix.md](20260813-M2D-fix.md) |
 | 12 | M2-E 分层视图与检索（49a7345） | P3 `memory view --as 总编` 别名缺失 | 已修复（88fb6d8 + 2e8fffa），复审查 Ready to merge；详见 [20260813-M2E-initial.md](20260813-M2E-initial.md) 与 [20260813-M2E-fix.md](20260813-M2E-fix.md) |
 | 13 | M2-F 叙事追踪（a4b27bb） | P2 recover 跨库全量扫描、无关库异常整体失败；P3 多行 content 破坏提示词格式 | 已修复（ab96418 + 28ff33d），终审 Ready to merge；详见 [20260813-M2F-initial.md](20260813-M2F-initial.md) 与 [20260813-M2F-fix.md](20260813-M2F-fix.md) |
+| 14 | M2-G 质量门完善（7b481f8） | P1 风格缺失惩罚无界、长描述下干净草稿结构性失败；P2 纯分隔符描述 IndexError；P3 分隔符正则漏收 …—–·・- | 已修复（67c0e28 + ee6c39b），终审 Ready to merge；详见 [20260813-M2G-initial.md](20260813-M2G-initial.md) 与 [20260813-M2G-fix.md](20260813-M2G-fix.md) |
 
 ## 结论
 
-十八次独立审查共发现 3 个 P1、17 个 P2、12 个 P3（含 M1 总审与 M2-C~M2-F 各修复复审查），全部核实、修复并补回归测试；验证四连在每次修复后均全绿。
+二十一次独立审查共发现 4 个 P1、18 个 P2、13 个 P3（含 M1 总审与 M2-C~M2-G 各修复复审查），全部核实、修复并补回归测试；验证四连在每次修复后均全绿。
