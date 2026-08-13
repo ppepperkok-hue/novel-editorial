@@ -3,6 +3,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
+from novel_editorial.core.chat import list_messages
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.review import list_reviews
 from novel_editorial.llm.client import MockLLMClient
@@ -10,6 +11,16 @@ from novel_editorial.store.db import DB
 from novel_editorial.store.models import Decision, Draft, DraftVersion
 
 runner = CliRunner()
+
+
+class _CapturingLLMClient(MockLLMClient):
+    def __init__(self, reply: str = "修订稿内容") -> None:
+        super().__init__(reply)
+        self.last_prompt = ""
+
+    def complete(self, messages):
+        self.last_prompt = messages[-1].content
+        return super().complete(messages)
 
 
 def _create_workspace(tmp_path: Path, monkeypatch) -> str:
@@ -104,6 +115,83 @@ def test_revise_after_rejection_with_reason(tmp_path: Path, monkeypatch) -> None
         )
         assert version is not None
         assert "写手反驳" in version.reason
+
+
+def test_revise_feeds_feedback_and_previous_content_to_llm(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    draft_id = _generate_draft(workspace_id, monkeypatch)
+    runner.invoke(
+        app,
+        ["review", "add", draft_id, "--from", "责编", "--content", "退稿：开头钩子不成立"],
+    )
+
+    capturing = _CapturingLLMClient()
+    monkeypatch.setattr(
+        "novel_editorial.cli.app.build_client",
+        lambda settings: capturing,
+    )
+    result = runner.invoke(app, ["draft", "revise", draft_id, "--reason", "针对钩子重写铺垫"])
+    assert result.exit_code == 0, result.output
+
+    assert "初稿内容" in capturing.last_prompt
+    assert "退稿：开头钩子不成立" in capturing.last_prompt
+    assert "针对钩子重写铺垫" in capturing.last_prompt
+    assert "不要从头重写" in capturing.last_prompt
+
+
+def test_revise_generates_writer_rebuttal_message(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    draft_id = _generate_draft(workspace_id, monkeypatch)
+    runner.invoke(
+        app,
+        ["review", "add", draft_id, "--from", "责编", "--content", "退稿：节奏太慢"],
+    )
+    monkeypatch.setattr(
+        "novel_editorial.cli.app.build_client",
+        lambda settings: MockLLMClient(reply="修订稿内容"),
+    )
+    result = runner.invoke(app, ["draft", "revise", draft_id, "--reason", "重写铺垫"])
+    assert result.exit_code == 0, result.output
+
+    settings = load_settings()
+    messages = list_messages(DB(settings), workspace_id)
+    rebuttals = [
+        m
+        for m in messages
+        if '"initiator": "agent"' in m.payload and '"rebuttal"' in m.payload
+    ]
+    assert len(rebuttals) == 1
+    assert rebuttals[0].actor == "写手"
+    assert "写手反驳" in rebuttals[0].content
+
+
+def test_review_list_and_decision_list(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    draft_id = _generate_draft(workspace_id, monkeypatch)
+    runner.invoke(
+        app,
+        ["review", "add", draft_id, "--from", "作者", "--content", "节奏太慢"],
+    )
+    runner.invoke(app, ["decision", "accept", draft_id])
+
+    review_list = runner.invoke(app, ["review", "list", draft_id])
+    assert review_list.exit_code == 0, review_list.output
+    assert "[author] 作者: 节奏太慢" in review_list.output
+
+    decision_list = runner.invoke(app, ["decision", "list", draft_id])
+    assert decision_list.exit_code == 0, decision_list.output
+    assert "[accept] 作者" in decision_list.output
+
+
+def test_draft_show_prints_reason(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    draft_id = _generate_draft(workspace_id, monkeypatch)
+
+    shown = runner.invoke(app, ["draft", "show", draft_id])
+    assert shown.exit_code == 0
+    assert "reason: initial" in shown.output
 
 
 def test_decision_accept_and_guard(tmp_path: Path, monkeypatch) -> None:

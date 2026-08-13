@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from difflib import unified_diff
 
-from novel_editorial.core.chat import get_agent, get_workspace_or_raise
+from novel_editorial.core.chat import get_agent, get_workspace_or_raise, record_message
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.review import list_reviews
 from novel_editorial.core.style import get_style_anchor
 from novel_editorial.llm.client import LLMClient, LLMMessage
 from novel_editorial.store.db import DB, list_workspace_ids
@@ -32,14 +33,28 @@ def _build_writer_prompt(
     writer: Agent,
     memory_pack: str,
     title: str,
+    *,
+    previous_content: str | None = None,
+    reviews: list | None = None,
+    revision_reason: str | None = None,
 ) -> str:
-    return (
+    lines = [
         f"你是作品《{workspace.title}》的{writer.name}。\n"
         f"你的性格：{writer.personality}\n"
         f"你的立场：{writer.stance}\n"
         f"写作记忆包：\n{memory_pack}\n"
         f"请为章节《{title}》产出正文，符合上述风格，不要出现禁忌词。"
-    )
+    ]
+    if previous_content:
+        lines.append(f"\n上一版正文：\n{previous_content}")
+    if reviews:
+        review_lines = "\n".join(f"- {r.actor}：{r.content}" for r in reviews)
+        lines.append(f"\n收到的意见：\n{review_lines}")
+    if revision_reason:
+        lines.append(f"\n修订要求：{revision_reason}")
+    if previous_content or reviews:
+        lines.append("\n请针对上述意见修订正文，不要从头重写。")
+    return "\n".join(lines)
 
 
 def generate_draft(
@@ -90,7 +105,17 @@ def revise_draft(
     workspace = get_workspace_or_raise(db, workspace_id)
     writer = get_agent(db, workspace_id, AgentRole.WRITER)
     memory_pack = build_memory_pack(db, workspace_id)
-    prompt = _build_writer_prompt(workspace, writer, memory_pack, current.title)
+    previous = get_draft_version(db, workspace_id, draft_id, current.current_version)
+    reviews = list_reviews(db, workspace_id, draft_id)
+    prompt = _build_writer_prompt(
+        workspace,
+        writer,
+        memory_pack,
+        current.title,
+        previous_content=previous.content,
+        reviews=reviews,
+        revision_reason=reason,
+    )
     content = client.complete([LLMMessage(role="user", content=prompt)]).content
     if not content.strip():
         raise NovelError(ErrorCode.LLM_ERROR, "LLM returned empty draft content")
@@ -113,7 +138,19 @@ def revise_draft(
             )
         )
         session.commit()
-        return draft
+    if any(r.role == "agent" for r in reviews):
+        record_message(
+            db,
+            workspace_id,
+            role="agent",
+            actor=writer.name,
+            content=(
+                f"写手反驳：我看了意见后重新修订了正文。修订理由：{reason or 'revision'}。"
+                "这版针对反馈做了调整，请再审。"
+            ),
+            payload={"initiator": "agent", "kind": "rebuttal"},
+        )
+    return draft
 
 
 def list_drafts(db: DB, workspace_id: str) -> list[Draft]:

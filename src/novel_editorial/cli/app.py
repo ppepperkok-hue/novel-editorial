@@ -33,11 +33,11 @@ from novel_editorial.core.draft import (
 )
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.logging_setup import configure_logging
-from novel_editorial.core.review import add_review, resolve_reviewer
+from novel_editorial.core.review import add_review, list_reviews, resolve_reviewer
 from novel_editorial.core.style import get_style_anchor, set_style_anchor
 from novel_editorial.llm.client import LLMMessage, build_client
 from novel_editorial.store.db import DB, seed_default_band
-from novel_editorial.store.models import Agent, AgentRole, Workspace
+from novel_editorial.store.models import Agent, AgentRole, Decision, Workspace
 
 reconfigure = getattr(sys.stdout, "reconfigure", None)
 if callable(reconfigure):
@@ -333,6 +333,7 @@ def draft_show(draft_id: str = typer.Argument(..., help="Draft id")) -> None:
     draft = find_draft_anywhere(db, draft_id)
     version = get_draft_version(db, draft.workspace_id, draft_id, draft.current_version)
     typer.echo(f"{draft.title} (v{draft.current_version}, {draft.status})")
+    typer.echo(f"reason: {version.reason}")
     typer.echo("---")
     typer.echo(version.content)
 
@@ -368,6 +369,41 @@ def review_add(
     role, actor = resolve_reviewer(db, draft.workspace_id, source)
     add_review(db, draft.workspace_id, draft_id, role=role, actor=actor, content=content)
     typer.echo(f"review added by {actor}: {content}")
+
+
+@review_app.command("list")
+def review_list(draft_id: str = typer.Argument(..., help="Draft id")) -> None:
+    """List review comments for a draft."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    draft = find_draft_anywhere(db, draft_id)
+    reviews = list_reviews(db, draft.workspace_id, draft_id)
+    for review in reviews:
+        typer.echo(f"[{review.role}] {review.actor}: {review.content}")
+    if not reviews:
+        typer.echo("no reviews yet")
+
+
+@decision_app.command("list")
+def decision_list(draft_id: str = typer.Argument(..., help="Draft id")) -> None:
+    """List decision records for a draft."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    draft = find_draft_anywhere(db, draft_id)
+    with db.workspace_session(draft.workspace_id) as session:
+        decisions = (
+            session.query(Decision)
+            .filter_by(draft_id=draft_id)
+            .order_by(Decision.created_at)
+            .all()
+        )
+    for decision in decisions:
+        suffix = f": {decision.content}" if decision.content else ""
+        typer.echo(f"[{decision.action}] {decision.actor}{suffix}")
+    if not decisions:
+        typer.echo("no decisions yet")
 
 
 @decision_app.command("accept")

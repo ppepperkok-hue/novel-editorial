@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from novel_editorial.core.chat import ROLE_ALIASES, get_agent
-from novel_editorial.core.draft import get_draft
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.store.db import DB
-from novel_editorial.store.models import Review
+from novel_editorial.store.models import Draft, Review
 
 AUTHOR_ALIASES = ("作者", "author")
 
@@ -31,8 +30,10 @@ def add_review(
     actor: str,
     content: str,
 ) -> Review:
-    get_draft(db, workspace_id, draft_id)
     with db.workspace_session(workspace_id) as session:
+        draft = session.query(Draft).filter_by(workspace_id=workspace_id, id=draft_id).first()
+        if draft is None:
+            raise NovelError(ErrorCode.NOT_FOUND, f"draft not found: {draft_id}")
         review = Review(
             workspace_id=workspace_id,
             draft_id=draft_id,
