@@ -8,6 +8,7 @@ dependencies = [
   "pydantic>=2.7",
   "sqlalchemy>=2.0",
   "alembic>=1.13",
+  "openai>=3.0.0",
 ]
 
 [project.scripts]
