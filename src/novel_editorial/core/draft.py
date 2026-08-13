@@ -9,6 +9,7 @@ from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.review import list_reviews
 from novel_editorial.core.style import get_style_anchor
 from novel_editorial.llm.client import LLMClient, LLMMessage
+from novel_editorial.quality.gate import check_quality
 from novel_editorial.store.db import DB, list_workspace_ids
 from novel_editorial.store.models import Agent, AgentRole, Draft, DraftVersion
 
@@ -63,6 +64,7 @@ def generate_draft(
     *,
     title: str,
     client: LLMClient,
+    quality_threshold: int = 10,
 ) -> Draft:
     workspace = get_workspace_or_raise(db, workspace_id)
     writer = get_agent(db, workspace_id, AgentRole.WRITER)
@@ -71,6 +73,7 @@ def generate_draft(
     content = client.complete([LLMMessage(role="user", content=prompt)]).content
     if not content.strip():
         raise NovelError(ErrorCode.LLM_ERROR, "LLM returned empty draft content")
+    quality_passed = check_quality(content, threshold=quality_threshold).passed
     with db.workspace_session(workspace_id) as session:
         draft = session.query(Draft).filter_by(workspace_id=workspace_id, title=title).first()
         if draft is None:
@@ -78,6 +81,7 @@ def generate_draft(
             session.add(draft)
             session.flush()
         draft.current_version += 1
+        draft.status = "draft" if quality_passed else "quality_failed"
         reason = "initial" if draft.current_version == 1 else "revision"
         session.add(
             DraftVersion(
@@ -98,6 +102,7 @@ def revise_draft(
     *,
     reason: str,
     client: LLMClient,
+    quality_threshold: int = 10,
 ) -> Draft:
     current = get_draft(db, workspace_id, draft_id)
     if current.status == "accepted":
@@ -119,6 +124,7 @@ def revise_draft(
     content = client.complete([LLMMessage(role="user", content=prompt)]).content
     if not content.strip():
         raise NovelError(ErrorCode.LLM_ERROR, "LLM returned empty draft content")
+    quality_passed = check_quality(content, threshold=quality_threshold).passed
     with db.workspace_session(workspace_id) as session:
         draft = (
             session.query(Draft)
@@ -128,7 +134,7 @@ def revise_draft(
         if draft is None:
             raise NovelError(ErrorCode.NOT_FOUND, f"draft not found: {draft_id}")
         draft.current_version += 1
-        draft.status = "draft"
+        draft.status = "draft" if quality_passed else "quality_failed"
         session.add(
             DraftVersion(
                 draft_id=draft.id,

@@ -32,10 +32,12 @@ from novel_editorial.core.draft import (
     revise_draft,
 )
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.log import build_workspace_log
 from novel_editorial.core.logging_setup import configure_logging
 from novel_editorial.core.review import add_review, list_reviews, resolve_reviewer
 from novel_editorial.core.style import get_style_anchor, set_style_anchor
 from novel_editorial.llm.client import LLMMessage, build_client
+from novel_editorial.quality.gate import check_quality
 from novel_editorial.store.db import DB, seed_default_band
 from novel_editorial.store.models import Agent, AgentRole, Decision, Workspace
 
@@ -70,6 +72,7 @@ memory_app = typer.Typer(help="Inspect writing memory")
 draft_app = typer.Typer(help="Manage drafts")
 review_app = typer.Typer(help="Review drafts")
 decision_app = typer.Typer(help="Author decisions")
+quality_app = typer.Typer(help="Quality gate")
 app.add_typer(works_app, name="works")
 app.add_typer(agents_app, name="agents")
 app.add_typer(talk_app, name="talk")
@@ -78,6 +81,7 @@ app.add_typer(memory_app, name="memory")
 app.add_typer(draft_app, name="draft")
 app.add_typer(review_app, name="review")
 app.add_typer(decision_app, name="decision")
+app.add_typer(quality_app, name="quality")
 
 
 @app.callback(invoke_without_command=True)
@@ -123,6 +127,15 @@ def health() -> None:
 def version() -> None:
     """Print the current version."""
     typer.echo(__version__)
+
+
+@app.command("log")
+def log_workspace(workspace_id: str = typer.Argument(..., help="Workspace id")) -> None:
+    """Show the full workflow log for a workspace."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    typer.echo(build_workspace_log(db, workspace_id))
 
 
 @works_app.command("create")
@@ -294,7 +307,13 @@ def draft_generate(
     db = DB(settings)
     db.init_schema()
     client = build_client(settings)
-    draft = generate_draft(db, workspace_id, title=title, client=client)
+    draft = generate_draft(
+        db,
+        workspace_id,
+        title=title,
+        client=client,
+        quality_threshold=settings.quality_threshold,
+    )
     typer.echo(f"draft {draft.id} {draft.title} now at v{draft.current_version}")
 
 
@@ -309,7 +328,14 @@ def draft_revise(
     db.init_schema()
     draft = find_draft_anywhere(db, draft_id)
     client = build_client(settings)
-    revised = revise_draft(db, draft.workspace_id, draft_id, reason=reason, client=client)
+    revised = revise_draft(
+        db,
+        draft.workspace_id,
+        draft_id,
+        reason=reason,
+        client=client,
+        quality_threshold=settings.quality_threshold,
+    )
     typer.echo(f"draft {revised.id} {revised.title} now at v{revised.current_version}")
 
 
@@ -440,3 +466,18 @@ def decision_note(
     draft = find_draft_anywhere(db, draft_id)
     decide(db, draft.workspace_id, draft_id, action="note", content=content)
     typer.echo(f"note added to draft {draft_id}")
+
+
+@quality_app.command("check")
+def quality_check(draft_id: str = typer.Argument(..., help="Draft id")) -> None:
+    """Run the AI-flavor quality gate on the latest version of a draft."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    draft = find_draft_anywhere(db, draft_id)
+    version = get_draft_version(db, draft.workspace_id, draft_id, draft.current_version)
+    report = check_quality(version.content, threshold=settings.quality_threshold)
+    typer.echo(f"passed: {report.passed}")
+    typer.echo(f"score: {report.score} (threshold {settings.quality_threshold})")
+    typer.echo(f"ai word hits: {report.details['ai_word_hits']}")
+    typer.echo(f"modifier hits: {report.details['modifier_hits']}")

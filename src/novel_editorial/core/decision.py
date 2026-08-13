@@ -32,9 +32,13 @@ def decide(
         if action == "accept":
             if draft.status == ACCEPTED_STATUS:
                 raise NovelError(ErrorCode.USAGE_ERROR, "draft is already accepted")
+            if draft.status == "quality_failed":
+                raise NovelError(
+                    ErrorCode.USAGE_ERROR, "cannot accept a draft that failed the quality gate"
+                )
             draft.status = ACCEPTED_STATUS
         elif action == "reject":
-            if draft.status != DRAFT_STATUS:
+            if draft.status not in (DRAFT_STATUS, "quality_failed"):
                 raise NovelError(
                     ErrorCode.USAGE_ERROR,
                     f"cannot reject a draft in status {draft.status}",

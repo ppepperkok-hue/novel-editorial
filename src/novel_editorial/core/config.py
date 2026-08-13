@@ -17,6 +17,7 @@ class Settings:
     llm_base_url: str = "https://api.deepseek.com"
     llm_model: str = "deepseek-chat"
     log_level: str = "INFO"
+    quality_threshold: int = 8
     defaults: dict = field(default_factory=dict)
 
 
@@ -33,6 +34,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     config_path = Path(env.get("NOVEL_CONFIG", "./config.toml"))
     config = _read_toml(config_path)
     defaults = config.get("defaults", {})
+    default_threshold = defaults.get("quality_threshold", 8)
     return Settings(
         data_dir=data_dir,
         config_path=config_path,
@@ -40,5 +42,6 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         llm_base_url=env.get("NOVEL_LLM_BASE_URL", "https://api.deepseek.com"),
         llm_model=env.get("NOVEL_LLM_MODEL", "deepseek-chat"),
         log_level=env.get("NOVEL_LOG_LEVEL", "INFO"),
+        quality_threshold=int(env.get("NOVEL_QUALITY_THRESHOLD", str(default_threshold))),
         defaults=defaults,
     )
