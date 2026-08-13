@@ -365,15 +365,25 @@ def memory_note(
     workspace_id: str = typer.Argument(..., help="Workspace id"),
     target: str = typer.Argument(..., help="Agent id or role alias (总编/责编/写手/审稿)"),
     content: str = typer.Option(..., "--content", help="Private note content"),
+    actor: str = typer.Option(
+        AUTHOR_ACTOR,
+        "--as",
+        help="Note author: 总编/主编/责编/写手/审稿 (作者只读，需以伙伴身份写入)",
+    ),
 ) -> None:
-    """Write a private note for one partner (the note belongs to that partner)."""
+    """Write a partner's private note; the author is read-only."""
     settings = load_settings()
     db = DB(settings)
     db.init_schema()
     get_workspace_or_raise(db, workspace_id)
-    agent = resolve_agent(db, workspace_id, target)
-    add_memory_note(db, workspace_id, agent.id, content=content)
-    typer.echo(f"note added to {agent.name}")
+    try:
+        agent = resolve_agent(db, workspace_id, target)
+    except NovelError as exc:
+        if exc.code is ErrorCode.NOT_FOUND:
+            raise NovelError(ErrorCode.USAGE_ERROR, exc.message) from exc
+        raise
+    add_memory_note(db, workspace_id, agent.id, actor=actor, content=content)
+    typer.echo(f"note added to {agent.name} by {actor}")
 
 
 @memory_app.command("notes")
@@ -381,7 +391,7 @@ def memory_notes(
     workspace_id: str = typer.Argument(..., help="Workspace id"),
     target: str | None = typer.Argument(None, help="Agent id or role alias (omit for all)"),
 ) -> None:
-    """List private notes; omit the agent to see every partner's notes."""
+    """List private notes with their ids; omit the agent to see every partner's notes."""
     settings = load_settings()
     db = DB(settings)
     db.init_schema()
@@ -401,7 +411,8 @@ def memory_notes(
         return
     names = _agent_names(db, workspace_id)
     for note in notes:
-        typer.echo(f"[{names.get(note.agent_id, note.agent_id)}] {note.content}")
+        owner = names.get(note.agent_id, note.agent_id)
+        typer.echo(f"{note.id} [{owner}] {note.content}")
 
 
 @memory_app.command("delete")

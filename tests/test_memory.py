@@ -26,7 +26,16 @@ def test_memory_note_persists_for_writer(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     result = runner.invoke(
         app,
-        ["memory", "note", workspace_id, "写手", "--content", "第三章钩子埋在下雨天"],
+        [
+            "memory",
+            "note",
+            workspace_id,
+            "写手",
+            "--content",
+            "第三章钩子埋在下雨天",
+            "--as",
+            "写手",
+        ],
     )
     assert result.exit_code == 0, result.output
     assert "note added to 写手" in result.output
@@ -47,13 +56,15 @@ def test_memory_notes_partner_isolation_and_boss_view(tmp_path: Path, monkeypatc
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     assert (
         runner.invoke(
-            app, ["memory", "note", workspace_id, "写手", "--content", "写手私藏"]
+            app,
+            ["memory", "note", workspace_id, "写手", "--content", "写手私藏", "--as", "写手"],
         ).exit_code
         == 0
     )
     assert (
         runner.invoke(
-            app, ["memory", "note", workspace_id, "责编", "--content", "责编私藏"]
+            app,
+            ["memory", "note", workspace_id, "责编", "--content", "责编私藏", "--as", "责编"],
         ).exit_code
         == 0
     )
@@ -86,7 +97,8 @@ def test_memory_note_and_notes_by_agent_id(tmp_path: Path, monkeypatch) -> None:
         writer_id = writer.id
 
     created = runner.invoke(
-        app, ["memory", "note", workspace_id, writer_id, "--content", "按 id 记的"]
+        app,
+        ["memory", "note", workspace_id, writer_id, "--content", "按 id 记的", "--as", "写手"],
     )
     assert created.exit_code == 0, created.output
     listed = runner.invoke(app, ["memory", "notes", workspace_id, writer_id])
@@ -107,8 +119,134 @@ def test_memory_notes_empty(tmp_path: Path, monkeypatch) -> None:
 def test_memory_note_unknown_agent(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     result = runner.invoke(app, ["memory", "note", workspace_id, "nope", "--content", "x"])
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert "agent not found" in result.output
+
+
+def test_memory_note_as_partner_writes_own_notes(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    created = runner.invoke(
+        app,
+        [
+            "memory",
+            "note",
+            workspace_id,
+            "写手",
+            "--content",
+            "写手自己的账本",
+            "--as",
+            "写手",
+        ],
+    )
+    assert created.exit_code == 0, created.output
+    assert "note added to 写手 by 写手" in created.output
+    listed = runner.invoke(app, ["memory", "notes", workspace_id])
+    assert listed.exit_code == 0, listed.output
+    assert "写手自己的账本" in listed.output
+    assert "[写手]" in listed.output
+
+
+@pytest.mark.parametrize("alias", ["总编", "主编", "责编", "写手", "审稿"])
+def test_memory_note_each_partner_alias_writes_own_note(
+    tmp_path: Path, monkeypatch, alias: str
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    created = runner.invoke(
+        app,
+        ["memory", "note", workspace_id, alias, "--content", f"{alias}私有", "--as", alias],
+    )
+    assert created.exit_code == 0, created.output
+    listed = runner.invoke(app, ["memory", "notes", workspace_id])
+    assert listed.exit_code == 0, listed.output
+    assert f"{alias}私有" in listed.output
+
+
+@pytest.mark.parametrize("target", ["总编", "主编", "责编", "写手", "审稿"])
+def test_memory_note_as_author_is_read_only(
+    tmp_path: Path, monkeypatch, target: str
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    created = runner.invoke(
+        app,
+        ["memory", "note", workspace_id, target, "--content", "老板留言", "--as", "作者"],
+    )
+    assert created.exit_code == 2, created.output
+    assert "作者只读" in created.output
+    listed = runner.invoke(app, ["memory", "notes", workspace_id])
+    assert listed.exit_code == 0, listed.output
+    assert "老板留言" not in listed.output
+
+
+def test_memory_note_invalid_actor_usage_error(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    result = runner.invoke(
+        app,
+        ["memory", "note", workspace_id, "写手", "--content", "x", "--as", "路人"],
+    )
+    assert result.exit_code == 2
+    assert "invalid actor" in result.output
+
+
+@pytest.mark.parametrize("target", ["总编", "主编", "责编", "审稿"])
+def test_memory_note_partner_cannot_write_other_partner(
+    tmp_path: Path, monkeypatch, target: str
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    result = runner.invoke(
+        app,
+        ["memory", "note", workspace_id, target, "--content", "x", "--as", "写手"],
+    )
+    assert result.exit_code == 2
+    assert "may only write own notes" in result.output
+
+
+def test_memory_note_missing_as_rejected_as_read_only_author(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    created = runner.invoke(
+        app,
+        ["memory", "note", workspace_id, "写手", "--content", "缺省即作者"],
+    )
+    assert created.exit_code == 2, created.output
+    assert "作者只读" in created.output
+    listed = runner.invoke(app, ["memory", "notes", workspace_id])
+    assert listed.exit_code == 0, listed.output
+    assert "缺省即作者" not in listed.output
+
+
+def test_memory_note_valid_actor_unknown_target_usage_error(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    result = runner.invoke(
+        app,
+        ["memory", "note", workspace_id, "nope", "--content", "x", "--as", "写手"],
+    )
+    assert result.exit_code == 2
+    assert "agent not found" in result.output
+
+
+def test_memory_notes_prints_deletable_id(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    created = runner.invoke(
+        app,
+        ["memory", "note", workspace_id, "写手", "--content", "按 id 删", "--as", "写手"],
+    )
+    assert created.exit_code == 0, created.output
+    listed = runner.invoke(app, ["memory", "notes", workspace_id])
+    assert listed.exit_code == 0, listed.output
+    lines = [line for line in listed.output.splitlines() if "按 id 删" in line]
+    assert len(lines) == 1
+    memory_id = lines[0].split()[0]
+    assert len(memory_id) == 32
+    assert lines[0] == f"{memory_id} [写手] 按 id 删"
+    deleted = runner.invoke(app, ["memory", "delete", workspace_id, memory_id])
+    assert deleted.exit_code == 0, deleted.output
+    after = runner.invoke(app, ["memory", "notes", workspace_id])
+    assert after.exit_code == 0, after.output
+    assert "按 id 删" not in after.output
+    assert "no memory notes yet" in after.output
 
 
 def test_memory_note_unknown_workspace(tmp_path: Path, monkeypatch) -> None:
@@ -133,7 +271,8 @@ def test_memory_delete_removes_note(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     assert (
         runner.invoke(
-            app, ["memory", "note", workspace_id, "写手", "--content", "要删的笔记"]
+            app,
+            ["memory", "note", workspace_id, "写手", "--content", "要删的笔记", "--as", "写手"],
         ).exit_code
         == 0
     )
@@ -163,7 +302,8 @@ def test_memory_notes_isolated_between_workspaces(tmp_path: Path, monkeypatch) -
     workspace_a = _create_workspace(tmp_path, monkeypatch, "甲书")
     workspace_b = _create_workspace(tmp_path, monkeypatch, "乙书")
     created = runner.invoke(
-        app, ["memory", "note", workspace_a, "写手", "--content", "甲书秘密"]
+        app,
+        ["memory", "note", workspace_a, "写手", "--content", "甲书秘密", "--as", "写手"],
     )
     assert created.exit_code == 0, created.output
     listed_b = runner.invoke(app, ["memory", "notes", workspace_b])
@@ -181,7 +321,7 @@ def test_add_memory_note_rejects_foreign_agent(tmp_path: Path, monkeypatch) -> N
         assert writer_a is not None
 
     with pytest.raises(NovelError) as exc_info:
-        add_memory_note(db, workspace_b, writer_a.id, content="串台笔记")
+        add_memory_note(db, workspace_b, writer_a.id, actor="写手", content="串台笔记")
     assert exc_info.value.code is ErrorCode.NOT_FOUND
 
 
@@ -202,7 +342,8 @@ def test_memory_upgrades_pre_migration_workspace(tmp_path: Path, monkeypatch) ->
     connection.close()
 
     created = runner.invoke(
-        app, ["memory", "note", workspace_id, "写手", "--content", "升级后仍能记"]
+        app,
+        ["memory", "note", workspace_id, "写手", "--content", "升级后仍能记", "--as", "写手"],
     )
     assert created.exit_code == 0, created.output
     listed = runner.invoke(app, ["memory", "notes", workspace_id, "写手"])
