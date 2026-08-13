@@ -73,7 +73,7 @@ def has_proactive_message(db: DB, workspace_id: str) -> bool:
             session.query(Message)
             .filter(
                 Message.workspace_id == workspace_id,
-                Message.payload.like('%"initiator": "agent"%'),
+                Message.payload.like('%"kind": "proactive_question"%'),
             )
             .first()
         )

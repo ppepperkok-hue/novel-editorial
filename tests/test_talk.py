@@ -8,7 +8,7 @@ from novel_editorial.cli.app import app
 from novel_editorial.core.chat import has_proactive_message, list_messages
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
-from novel_editorial.llm.client import LLMClient, LLMMessage, LLMResult
+from novel_editorial.llm.client import LLMClient, LLMMessage, LLMResult, MockLLMClient
 from novel_editorial.store.db import DB, workspace_db_path
 
 runner = CliRunner()
@@ -126,3 +126,22 @@ def test_talk_upgrades_pre_migration_workspace(tmp_path: Path, monkeypatch) -> N
     result = runner.invoke(app, ["talk", "send", workspace_id, "升级后能聊"])
     assert result.exit_code == 0, result.output
     assert len(list_messages(db, workspace_id)) == 3
+
+
+def test_proactive_question_survives_rebuttal(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "novel_editorial.cli.app.build_client",
+        lambda settings: MockLLMClient(reply="正文内容"),
+    )
+    created = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "第一章"])
+    draft_id = created.output.split()[1]
+    runner.invoke(
+        app,
+        ["review", "add", draft_id, "--from", "责编", "--content", "退稿：钩子不成立"],
+    )
+    runner.invoke(app, ["draft", "revise", draft_id, "--reason", "重写铺垫"])
+
+    result = runner.invoke(app, ["talk", "send", workspace_id, "继续聊这个故事"])
+    assert result.exit_code == 0, result.output
+    assert "责编: 我想先确认一下" in result.output

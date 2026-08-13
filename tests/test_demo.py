@@ -5,6 +5,7 @@ from typer.testing import CliRunner
 from novel_editorial.cli.app import app
 from novel_editorial.core.chat import list_messages
 from novel_editorial.core.config import load_settings
+from novel_editorial.llm.client import MockLLMClient
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import Draft
 
@@ -53,3 +54,25 @@ def test_demo_is_repeatable(tmp_path: Path, monkeypatch) -> None:
     second = runner.invoke(app, ["demo"])
     assert first.exit_code == 0
     assert second.exit_code == 0
+
+
+def test_demo_handles_quality_gate_failure(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("NOVEL_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("NOVEL_CONFIG", str(tmp_path / "config.toml"))
+    monkeypatch.setattr(
+        "novel_editorial.core.demo.build_client",
+        lambda settings: MockLLMClient(reply="月光宛如薄纱，悄然洒落，他静静地凝视着远方。"),
+    )
+
+    result = runner.invoke(app, ["demo"])
+    assert result.exit_code == 0, result.output
+    assert "quality passed: False" in result.output
+    assert "rejected by the quality gate" in result.output
+
+    workspace_id = result.output.split()[1]
+    settings = load_settings()
+    db = DB(settings)
+    with db.workspace_session(workspace_id) as session:
+        draft = session.query(Draft).first()
+        assert draft is not None
+        assert draft.status == "rejected"

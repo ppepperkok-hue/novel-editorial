@@ -46,6 +46,9 @@ from novel_editorial.store.models import Agent, AgentRole, Decision, Workspace
 reconfigure = getattr(sys.stdout, "reconfigure", None)
 if callable(reconfigure):
     reconfigure(encoding="utf-8", errors="replace")
+stderr_reconfigure = getattr(sys.stderr, "reconfigure", None)
+if callable(stderr_reconfigure):
+    stderr_reconfigure(encoding="utf-8", errors="replace")
 
 
 class NovelGroup(TyperGroup):
@@ -139,7 +142,13 @@ def demo() -> None:
     typer.echo(f"workspace: {result['workspace_id']}")
     typer.echo(f"draft: {result['draft_id']}")
     typer.echo(f"quality passed: {result['quality'].passed} (score {result['quality'].score})")
-    typer.echo("draft accepted. Run `novel-editorial log <workspace_id>` to review the flow.")
+    if result["accepted"]:
+        typer.echo("draft accepted. Run `novel-editorial log <workspace_id>` to review the flow.")
+    else:
+        typer.echo(
+            "draft rejected by the quality gate (demo stops at the gate). "
+            "Run `novel-editorial log <workspace_id>` to review the flow."
+        )
 
 
 @app.command("log")

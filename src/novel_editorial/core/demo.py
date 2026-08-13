@@ -58,9 +58,15 @@ def run_demo(settings: Settings) -> dict:
     )
     version = get_draft_version(db, workspace_id, draft.id, draft.current_version)
     report = check_quality(version.content, threshold=settings.quality_threshold)
-    decide(db, workspace_id, draft.id, action="accept")
+    if report.passed:
+        decide(db, workspace_id, draft.id, action="accept")
+        accepted = True
+    else:
+        decide(db, workspace_id, draft.id, action="reject")
+        accepted = False
     return {
         "workspace_id": workspace_id,
         "draft_id": draft.id,
         "quality": report,
+        "accepted": accepted,
     }
