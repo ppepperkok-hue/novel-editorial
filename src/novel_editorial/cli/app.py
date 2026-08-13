@@ -271,6 +271,7 @@ def talk_send(
     agent = get_agent(db, workspace_id, target_role)
     refusal = check_refusal(agent, message)
     if refusal:
+        record_message(db, workspace_id, role="author", actor=AUTHOR_ACTOR, content=message)
         record_message(
             db,
             workspace_id,
@@ -279,6 +280,7 @@ def talk_send(
             content=refusal,
             payload={"kind": "refusal"},
         )
+        typer.echo(f"{AUTHOR_ACTOR}: {message}")
         typer.echo(f"{agent.name}: {refusal}")
         return
     history = list_messages(db, workspace_id)

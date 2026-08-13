@@ -45,11 +45,26 @@ REFUSAL_RULES: dict[str, list[tuple[tuple[str, ...], str]]] = {
     ],
 }
 
+NEGATION_PREFIXES = ("不", "别", "勿", "莫", "不必")
+
+
+def _keyword_triggered(message: str, keyword: str) -> bool:
+    """True if the keyword appears in the message without a negation prefix."""
+    start = 0
+    while True:
+        index = message.find(keyword, start)
+        if index == -1:
+            return False
+        prefix = message[max(0, index - 2) : index]
+        if not any(negation in prefix for negation in NEGATION_PREFIXES):
+            return True
+        start = index + 1
+
 
 def check_refusal(agent: Agent, message: str) -> str | None:
     """Return a refusal text if the message conflicts with the agent's stance."""
     for keywords, refusal in REFUSAL_RULES.get(agent.role, []):
-        if any(keyword in message for keyword in keywords):
+        if any(_keyword_triggered(message, keyword) for keyword in keywords):
             return refusal
     return None
 

@@ -56,6 +56,46 @@ def test_writer_refuses_against_portrayal(tmp_path: Path, monkeypatch) -> None:
     assert "违背人物逻辑" in refusals[0].content
 
 
+def test_refusal_records_author_message(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "novel_editorial.cli.app.build_client",
+        lambda settings: _CapturingLLMClient(),
+    )
+
+    result = runner.invoke(
+        app,
+        ["talk", "send", workspace_id, "@写手 这段按违背人设的设定写"],
+    )
+    assert result.exit_code == 0, result.output
+    assert f"{'作者'}: @写手 这段按违背人设的设定写" in result.output
+
+    settings = load_settings()
+    messages = list_messages(DB(settings), workspace_id)
+    assert len(messages) == 2
+    assert messages[0].role == "author"
+    assert messages[1].role == "agent"
+    assert '"kind": "refusal"' in messages[1].payload
+
+
+def test_negative_requests_are_not_refused(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    capturing = _CapturingLLMClient()
+    monkeypatch.setattr("novel_editorial.cli.app.build_client", lambda settings: capturing)
+
+    cases = [
+        ("@写手 这段不要违背人设，照设定来", 1),
+        ("@审稿 不要放行，仔细查前后矛盾", 2),
+        ("@责编 不要删钩子，保留节奏", 3),
+    ]
+    for message, expected_calls in cases:
+        result = runner.invoke(app, ["talk", "send", workspace_id, message])
+        assert result.exit_code == 0, result.output
+        assert capturing.calls == expected_calls
+
+    assert _refusals(workspace_id) == []
+
+
 def test_reviewer_refuses_to_pass_inconsistency(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     capturing = _CapturingLLMClient()

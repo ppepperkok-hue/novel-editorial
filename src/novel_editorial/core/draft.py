@@ -45,6 +45,7 @@ def _build_writer_prompt(
         f"你的立场：{writer.stance}\n"
         f"你的价值观：{writer.values}\n"
         f"你的审美：{writer.aesthetic}\n"
+        f"你的工作习惯：{writer.work_habits}\n"
         f"写作记忆包：\n{memory_pack}\n"
         f"请为章节《{title}》产出正文，符合上述风格，不要出现禁忌词。"
     ]
