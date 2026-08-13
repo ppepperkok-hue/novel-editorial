@@ -6,15 +6,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import cast
 
-from openai import (
-    APIConnectionError,
-    APITimeoutError,
-    AuthenticationError,
-    OpenAI,
-    RateLimitError,
-)
-from openai.types.chat import ChatCompletionMessageParam
-
 from novel_editorial.core.config import Settings
 from novel_editorial.core.errors import ErrorCode, NovelError
 
@@ -59,6 +50,8 @@ class OpenAICompatClient(LLMClient):
         *,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
     ) -> None:
+        from openai import OpenAI
+
         self._model = model
         self._client = OpenAI(
             api_key=api_key,
@@ -67,6 +60,14 @@ class OpenAICompatClient(LLMClient):
         )
 
     def complete(self, messages: list[LLMMessage]) -> LLMResult:
+        from openai import (
+            APIConnectionError,
+            APITimeoutError,
+            AuthenticationError,
+            RateLimitError,
+        )
+        from openai.types.chat import ChatCompletionMessageParam
+
         try:
             payload = cast(
                 list[ChatCompletionMessageParam],

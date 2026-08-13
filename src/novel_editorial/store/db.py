@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from alembic import command
-from alembic.config import Config
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -45,6 +43,9 @@ def _engine(path: Path) -> Engine:
 
 def run_migrations(url: str) -> None:
     """Apply Alembic migrations to a database URL (single source of truth for schema)."""
+    from alembic import command
+    from alembic.config import Config
+
     config = Config(str(_ALEMBIC_INI))
     config.set_main_option("sqlalchemy.url", url)
     command.upgrade(config, "head")

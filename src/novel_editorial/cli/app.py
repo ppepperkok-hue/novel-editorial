@@ -3,29 +3,19 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
+from typing import cast
 
 import typer
+from typer import Context
+from typer._click import Command
 from typer.core import TyperGroup
+from typer.main import get_group
 
 from novel_editorial import __version__
-from novel_editorial.cli.agents import agents_app
-from novel_editorial.cli.decision import decision_app
-from novel_editorial.cli.draft import draft_app
-from novel_editorial.cli.events import events_app
-from novel_editorial.cli.memory import memory_app
-from novel_editorial.cli.plot import plot_app
-from novel_editorial.cli.quality import quality_app
-from novel_editorial.cli.review import review_app
-from novel_editorial.cli.style import style_app
-from novel_editorial.cli.talk import talk_app
-from novel_editorial.cli.works import works_app
 from novel_editorial.core.config import load_settings
-from novel_editorial.core.demo import run_demo
 from novel_editorial.core.errors import ErrorCode, NovelError
-from novel_editorial.core.log import build_workspace_log
 from novel_editorial.core.logging_setup import configure_logging
-from novel_editorial.core.views import search_all_layers
-from novel_editorial.store.db import DB
 
 reconfigure = getattr(sys.stdout, "reconfigure", None)
 if callable(reconfigure):
@@ -35,10 +25,31 @@ if callable(stderr_reconfigure):
     stderr_reconfigure(encoding="utf-8", errors="replace")
 
 
+def _load_group(module_name: str, attribute: str) -> typer.Typer:
+    import importlib
+
+    return cast(typer.Typer, getattr(importlib.import_module(module_name), attribute))
+
+
+_GROUP_LOADERS: dict[str, Callable[[], typer.Typer]] = {
+    "works": lambda: _load_group("novel_editorial.cli.works", "works_app"),
+    "agents": lambda: _load_group("novel_editorial.cli.agents", "agents_app"),
+    "talk": lambda: _load_group("novel_editorial.cli.talk", "talk_app"),
+    "style": lambda: _load_group("novel_editorial.cli.style", "style_app"),
+    "memory": lambda: _load_group("novel_editorial.cli.memory", "memory_app"),
+    "draft": lambda: _load_group("novel_editorial.cli.draft", "draft_app"),
+    "review": lambda: _load_group("novel_editorial.cli.review", "review_app"),
+    "decision": lambda: _load_group("novel_editorial.cli.decision", "decision_app"),
+    "quality": lambda: _load_group("novel_editorial.cli.quality", "quality_app"),
+    "plot": lambda: _load_group("novel_editorial.cli.plot", "plot_app"),
+    "events": lambda: _load_group("novel_editorial.cli.events", "events_app"),
+}
+
+
 class NovelGroup(TyperGroup):
     """Translate NovelError to exit code 1 and unexpected errors to exit code 3."""
 
-    def invoke(self, ctx) -> None:
+    def invoke(self, ctx: Context) -> None:
         try:
             super().invoke(ctx)
         except (typer.Exit, typer.Abort):
@@ -51,19 +62,41 @@ class NovelGroup(TyperGroup):
             typer.echo(f"Unexpected error: {exc}", err=True)
             raise typer.Exit(3) from exc
 
+    def get_command(self, ctx: Context, cmd_name: str) -> Command | None:
+        command = super().get_command(ctx, cmd_name)
+        if command is not None:
+            return command
+        self._ensure_group(cmd_name)
+        command = super().get_command(ctx, cmd_name)
+        if command is not None:
+            return command
+        self._ensure_all_groups()
+        return super().get_command(ctx, cmd_name)
+
+    def list_commands(self, ctx: Context) -> list[str]:
+        self._ensure_all_groups()
+        return super().list_commands(ctx)
+
+    def _ensure_group(self, cmd_name: str) -> None:
+        if cmd_name in self.commands:
+            return
+        loader = _GROUP_LOADERS.get(cmd_name)
+        if loader is None:
+            return
+        self._add_group(cmd_name, loader)
+
+    def _ensure_all_groups(self) -> None:
+        for cmd_name, loader in _GROUP_LOADERS.items():
+            if cmd_name not in self.commands:
+                self._add_group(cmd_name, loader)
+
+    def _add_group(self, cmd_name: str, loader: Callable[[], typer.Typer]) -> None:
+        group = get_group(loader())
+        group.name = cmd_name
+        self.add_command(group, name=cmd_name)
+
 
 app = typer.Typer(cls=NovelGroup, help="Novel Editorial: a layered AI literary editorial office")
-app.add_typer(works_app, name="works")
-app.add_typer(agents_app, name="agents")
-app.add_typer(talk_app, name="talk")
-app.add_typer(style_app, name="style")
-app.add_typer(memory_app, name="memory")
-app.add_typer(draft_app, name="draft")
-app.add_typer(review_app, name="review")
-app.add_typer(decision_app, name="decision")
-app.add_typer(quality_app, name="quality")
-app.add_typer(plot_app, name="plot")
-app.add_typer(events_app, name="events")
 
 
 @app.callback(invoke_without_command=True)
@@ -81,6 +114,8 @@ def main(
 @app.command("init")
 def init() -> None:
     """Initialize data directory and configuration."""
+    from novel_editorial.store.db import DB
+
     settings = load_settings()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     DB(settings).init_schema()
@@ -98,6 +133,8 @@ def init() -> None:
 @app.command()
 def health() -> None:
     """Check configuration and database connectivity."""
+    from novel_editorial.store.db import DB
+
     settings = load_settings()
     db = DB(settings)
     db.init_schema()
@@ -114,6 +151,8 @@ def version() -> None:
 @app.command("demo")
 def demo() -> None:
     """Run the M1 end-to-end demo (uses mock LLM unless a key is configured)."""
+    from novel_editorial.core.demo import run_demo
+
     settings = load_settings()
     result = run_demo(settings)
     typer.echo(f"workspace: {result['workspace_id']}")
@@ -131,6 +170,9 @@ def demo() -> None:
 @app.command("log")
 def log_workspace(workspace_id: str = typer.Argument(..., help="Workspace id")) -> None:
     """Show the full workflow log for a workspace."""
+    from novel_editorial.core.log import build_workspace_log
+    from novel_editorial.store.db import DB
+
     settings = load_settings()
     db = DB(settings)
     db.init_schema()
@@ -143,6 +185,9 @@ def inspect_workspace(
     keyword: str = typer.Argument(..., help="Search keyword"),
 ) -> None:
     """Search every workspace layer with source citations."""
+    from novel_editorial.core.views import search_all_layers
+    from novel_editorial.store.db import DB
+
     settings = load_settings()
     db = DB(settings)
     db.init_schema()
