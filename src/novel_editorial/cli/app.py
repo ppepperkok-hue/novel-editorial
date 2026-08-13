@@ -366,7 +366,7 @@ def memory_view(
     as_role: str = typer.Option(
         "写手",
         "--as",
-        help="View role: 写手/主编/责编/作者 (default: 写手)",
+        help="View role: 写手/主编/总编/责编/作者 (default: 写手)",
     ),
 ) -> None:
     """Show the default layered view for one role."""
