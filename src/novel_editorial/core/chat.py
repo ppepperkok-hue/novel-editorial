@@ -8,6 +8,7 @@ import re
 from sqlalchemy.orm import Session
 
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.plot import plot_threads_section
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import Agent, AgentRole, Message, Workspace
 
@@ -217,6 +218,9 @@ def build_agent_prompt(
     agent: Agent,
     history: list[Message],
     latest_message: str | None = None,
+    *,
+    db: DB | None = None,
+    workspace_id: str | None = None,
 ) -> str:
     lines = [
         f"你是作品《{workspace.title}》的{agent.name}（{agent.role}）。",
@@ -226,8 +230,12 @@ def build_agent_prompt(
         f"你的审美：{agent.aesthetic}",
         f"你的工作习惯：{agent.work_habits}",
         f"作品简介：{workspace.title}（{workspace.genre}）{workspace.description}".rstrip(),
-        "最近对话：",
     ]
+    if agent.role == AgentRole.REVIEWER and db is not None:
+        section = plot_threads_section(db, workspace_id or workspace.id)
+        if section:
+            lines.append(section)
+    lines.append("最近对话：")
     conversation = [message for message in history if _is_conversation_message(message)]
     for message in conversation[-6:]:
         lines.append(f"{message.actor}: {message.content}")

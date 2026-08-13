@@ -40,6 +40,7 @@ from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.log import build_workspace_log
 from novel_editorial.core.logging_setup import configure_logging
 from novel_editorial.core.memory import add_memory_note, delete_memory_note, list_memory_notes
+from novel_editorial.core.plot import KIND_LABELS, list_threads, plant_thread, recover_thread
 from novel_editorial.core.review import add_review, list_reviews, resolve_reviewer
 from novel_editorial.core.style import get_style_anchor, set_style_anchor
 from novel_editorial.core.views import build_role_view, search_memory
@@ -84,6 +85,7 @@ draft_app = typer.Typer(help="Manage drafts")
 review_app = typer.Typer(help="Review drafts")
 decision_app = typer.Typer(help="Author decisions")
 quality_app = typer.Typer(help="Quality gate")
+plot_app = typer.Typer(help="Track narrative plot threads")
 app.add_typer(works_app, name="works")
 app.add_typer(agents_app, name="agents")
 app.add_typer(talk_app, name="talk")
@@ -93,6 +95,7 @@ app.add_typer(draft_app, name="draft")
 app.add_typer(review_app, name="review")
 app.add_typer(decision_app, name="decision")
 app.add_typer(quality_app, name="quality")
+app.add_typer(plot_app, name="plot")
 
 
 @app.callback(invoke_without_command=True)
@@ -291,7 +294,14 @@ def talk_send(
         return
     history = list_messages(db, workspace_id)
     client = build_client(settings)
-    prompt = build_agent_prompt(workspace, agent, history, latest_message=message)
+    prompt = build_agent_prompt(
+        workspace,
+        agent,
+        history,
+        latest_message=message,
+        db=db,
+        workspace_id=workspace_id,
+    )
     reply = client.complete([LLMMessage(role="user", content=prompt)]).content
     record_message(db, workspace_id, role="author", actor=AUTHOR_ACTOR, content=message)
     record_message(db, workspace_id, role="agent", actor=agent.name, content=reply)
@@ -642,3 +652,50 @@ def quality_check(draft_id: str = typer.Argument(..., help="Draft id")) -> None:
     typer.echo(f"score: {report.score} (threshold {settings.quality_threshold})")
     typer.echo(f"ai word hits: {report.details['ai_word_hits']}")
     typer.echo(f"modifier hits: {report.details['modifier_hits']}")
+
+
+@plot_app.command("plant")
+def plot_plant(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+    kind: str = typer.Option(..., "--kind", help="Thread kind: foreshadow/goal/hook"),
+    content: str = typer.Option(..., "--content", help="Thread content"),
+    chapter: str = typer.Option(None, "--chapter", help="Chapter placeholder"),
+) -> None:
+    """Plant a new narrative thread in a workspace."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    thread = plant_thread(db, workspace_id, kind=kind, content=content, chapter=chapter)
+    typer.echo(f"planted {thread.id} [{KIND_LABELS[thread.kind]}] {thread.content}")
+
+
+@plot_app.command("list")
+def plot_list(workspace_id: str = typer.Argument(..., help="Workspace id")) -> None:
+    """List every narrative thread in a workspace."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    threads = list_threads(db, workspace_id)
+    if not threads:
+        typer.echo("no plot threads yet")
+        return
+    for thread in threads:
+        label = KIND_LABELS.get(thread.kind, thread.kind)
+        chapter = thread.chapter or "-"
+        typer.echo(
+            f"{thread.id}  [{label}]  {thread.status}  {chapter}  {thread.content}"
+        )
+
+
+@plot_app.command("recover")
+def plot_recover(thread_id: str = typer.Argument(..., help="Plot thread id")) -> None:
+    """Mark a narrative thread as recovered."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    thread, changed = recover_thread(db, thread_id)
+    label = KIND_LABELS.get(thread.kind, thread.kind)
+    if changed:
+        typer.echo(f"recovered {thread.id} [{label}]")
+    else:
+        typer.echo(f"already recovered {thread.id} [{label}]")
