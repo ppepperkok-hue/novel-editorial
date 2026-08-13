@@ -59,7 +59,7 @@ def test_inspect_hits_every_layer_with_citation(tmp_path: Path, monkeypatch) -> 
     )
     monkeypatch.setattr(
         "novel_editorial.cli.talk.build_client",
-        lambda settings: MockLLMClient(reply="雨夜开场，钩子埋在最暗处。"),
+        lambda settings: MockLLMClient(reply="（模拟回复）"),
     )
     styled = runner.invoke(
         app,
