@@ -9,7 +9,19 @@ novel-editorial/
 │   ├── __main__.py          # python -m novel_editorial 入口
 │   ├── events.py            # 共享事件契约（EventType / Event）
 │   ├── cli/                 # CLI 命令层（Typer）
-│   │   └── app.py           # 主应用：init / health / version / works
+│   │   ├── __init__.py      # CLI 包入口
+│   │   ├── app.py           # 主入口：init / health / version / demo / log / inspect + 命令组挂载
+│   │   ├── works.py         # works 命令组
+│   │   ├── agents.py        # agents 命令组
+│   │   ├── talk.py          # talk 命令组
+│   │   ├── style.py         # style 命令组
+│   │   ├── memory.py        # memory 命令组
+│   │   ├── draft.py         # draft 命令组
+│   │   ├── review.py        # review 命令组
+│   │   ├── decision.py      # decision 命令组
+│   │   ├── quality.py       # quality 命令组
+│   │   ├── plot.py          # plot 命令组
+│   │   └── events.py        # events 命令组
 │   ├── core/                # 领域基础层
 │   │   ├── config.py        # 配置加载（NOVEL_* 环境变量 + config.toml）
 │   │   ├── errors.py        # NovelError 错误体系与错误码
