@@ -20,7 +20,7 @@ def _create_workspace(tmp_path: Path, monkeypatch) -> str:
 
 def _mock_llm(monkeypatch, reply: str) -> None:
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply=reply),
     )
 

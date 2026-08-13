@@ -94,7 +94,7 @@ class _RaisingLLMClient(LLMClient):
 def test_talk_send_llm_failure_leaves_no_messages(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.talk.build_client",
         lambda settings: _RaisingLLMClient(),
     )
     settings = load_settings()
@@ -153,7 +153,7 @@ def test_talk_upgrades_pre_migration_workspace(tmp_path: Path, monkeypatch) -> N
 def test_proactive_question_survives_rebuttal(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="正文内容"),
     )
     created = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "第一章"])

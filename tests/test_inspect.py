@@ -54,7 +54,7 @@ def test_inspect_hits_every_layer_with_citation(tmp_path: Path, monkeypatch) -> 
         description="钩子驱动的悬疑故事",
     )
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="雨夜开场，钩子埋在最暗处。"),
     )
     styled = runner.invoke(
@@ -130,7 +130,7 @@ def test_inspect_hits_every_layer_with_citation(tmp_path: Path, monkeypatch) -> 
 def test_inspect_searches_auxiliary_fields(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="雨夜的开场白。"),
     )
     styled = runner.invoke(

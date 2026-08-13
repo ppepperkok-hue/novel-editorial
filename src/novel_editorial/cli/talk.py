@@ -20,7 +20,7 @@ from novel_editorial.core.chat import (
     update_agent_mood,
 )
 from novel_editorial.core.config import load_settings
-from novel_editorial.llm.client import LLMMessage
+from novel_editorial.llm.client import LLMMessage, build_client
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import AgentRole
 
@@ -56,10 +56,6 @@ def talk_send(
         typer.echo(f"{agent.name}: {refusal}")
         return
     history = list_messages(db, workspace_id)
-    # Resolve lazily from cli.app so existing tests' monkeypatch of
-    # novel_editorial.cli.app.build_client keeps taking effect.
-    from novel_editorial.cli.app import build_client
-
     client = build_client(settings)
     prompt = build_agent_prompt(
         workspace,

@@ -122,7 +122,7 @@ def _draft_status(workspace_id: str, draft_id: str) -> str:
 
 def _generate(tmp_path: Path, monkeypatch, workspace_id: str, reply: str, title: str) -> str:
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply=reply),
     )
     result = runner.invoke(app, ["draft", "generate", workspace_id, "--title", title])

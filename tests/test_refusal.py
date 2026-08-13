@@ -40,7 +40,7 @@ def _refusals(workspace_id: str) -> list:
 def test_writer_refuses_against_portrayal(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     capturing = _CapturingLLMClient()
-    monkeypatch.setattr("novel_editorial.cli.app.build_client", lambda settings: capturing)
+    monkeypatch.setattr("novel_editorial.cli.talk.build_client", lambda settings: capturing)
 
     result = runner.invoke(
         app,
@@ -59,7 +59,7 @@ def test_writer_refuses_against_portrayal(tmp_path: Path, monkeypatch) -> None:
 def test_refusal_records_author_message(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.talk.build_client",
         lambda settings: _CapturingLLMClient(),
     )
 
@@ -82,7 +82,7 @@ def test_refusal_records_author_message(tmp_path: Path, monkeypatch) -> None:
 def test_negative_requests_are_not_refused(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     capturing = _CapturingLLMClient()
-    monkeypatch.setattr("novel_editorial.cli.app.build_client", lambda settings: capturing)
+    monkeypatch.setattr("novel_editorial.cli.talk.build_client", lambda settings: capturing)
 
     cases = [
         ("@写手 这段不要违背人设，照设定来", 1),
@@ -100,7 +100,7 @@ def test_negative_requests_are_not_refused(tmp_path: Path, monkeypatch) -> None:
 def test_reviewer_refuses_to_pass_inconsistency(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     capturing = _CapturingLLMClient()
-    monkeypatch.setattr("novel_editorial.cli.app.build_client", lambda settings: capturing)
+    monkeypatch.setattr("novel_editorial.cli.talk.build_client", lambda settings: capturing)
 
     result = runner.invoke(
         app,
@@ -115,7 +115,7 @@ def test_reviewer_refuses_to_pass_inconsistency(tmp_path: Path, monkeypatch) -> 
 def test_editor_refuses_to_drop_hooks(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.talk.build_client",
         lambda settings: _CapturingLLMClient(),
     )
 
@@ -131,7 +131,7 @@ def test_editor_refuses_to_drop_hooks(tmp_path: Path, monkeypatch) -> None:
 def test_normal_message_is_not_refused(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     capturing = _CapturingLLMClient()
-    monkeypatch.setattr("novel_editorial.cli.app.build_client", lambda settings: capturing)
+    monkeypatch.setattr("novel_editorial.cli.talk.build_client", lambda settings: capturing)
 
     result = runner.invoke(app, ["talk", "send", workspace_id, "我们继续讨论第三章"])
     assert result.exit_code == 0, result.output
@@ -142,7 +142,7 @@ def test_normal_message_is_not_refused(tmp_path: Path, monkeypatch) -> None:
 def test_talk_prompt_includes_full_profile(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     capturing = _CapturingLLMClient()
-    monkeypatch.setattr("novel_editorial.cli.app.build_client", lambda settings: capturing)
+    monkeypatch.setattr("novel_editorial.cli.talk.build_client", lambda settings: capturing)
 
     result = runner.invoke(app, ["talk", "send", workspace_id, "聊聊主角动机"])
     assert result.exit_code == 0, result.output
@@ -154,7 +154,7 @@ def test_talk_prompt_includes_full_profile(tmp_path: Path, monkeypatch) -> None:
 def test_writer_prompt_includes_full_profile(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     capturing = _CapturingLLMClient()
-    monkeypatch.setattr("novel_editorial.cli.app.build_client", lambda settings: capturing)
+    monkeypatch.setattr("novel_editorial.cli.draft.build_client", lambda settings: capturing)
 
     result = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "第一章"])
     assert result.exit_code == 0, result.output

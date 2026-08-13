@@ -59,4 +59,4 @@ def test_works_show(tmp_path, monkeypatch):
 
 ## 模板实测示例
 
-用 `works show` 实测接入流程：CLI 命令 + 数据访问 + 测试，验证“取单元 → 增量实现 → 过验证门”可走通。实现见 `src/novel_editorial/cli/app.py` 与 `tests/test_works.py`。
+用 `works show` 实测接入流程：CLI 命令 + 数据访问 + 测试，验证“取单元 → 增量实现 → 过验证门”可走通。实现见 `src/novel_editorial/cli/works.py` 与 `tests/test_works.py`。

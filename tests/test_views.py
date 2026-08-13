@@ -88,7 +88,7 @@ def test_editor_view_profile_and_conversation_without_private_memory(
 def test_boss_view_band_drafts_reviews_decisions(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="雨夜的开场，钩子埋下。"),
     )
     generated = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "雨夜"])
@@ -143,7 +143,7 @@ def test_memory_search_hits_every_source_with_citation(
 ) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch, description="钩子驱动的悬疑故事")
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="雨夜开场，钩子埋在最暗处。"),
     )
     generated = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "第一章"])

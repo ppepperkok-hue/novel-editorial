@@ -67,7 +67,7 @@ def test_draft_generate_versions_and_diff(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     replies = iter(["雨夜的开场，第一版。", "雨夜的开场，第二版，更冷。"])
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply=next(replies)),
     )
 
@@ -100,7 +100,7 @@ def test_draft_generate_versions_and_diff(tmp_path: Path, monkeypatch) -> None:
 def test_draft_show_missing_and_diff_missing(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="内容"),
     )
     created = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "章一"])
@@ -118,7 +118,7 @@ def test_draft_show_missing_and_diff_missing(tmp_path: Path, monkeypatch) -> Non
 def test_draft_generate_rejects_empty_content(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="   "),
     )
 

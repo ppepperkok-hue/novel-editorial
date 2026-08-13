@@ -33,7 +33,7 @@ def _create_workspace(tmp_path: Path, monkeypatch) -> str:
 
 def _generate_draft(workspace_id: str, monkeypatch) -> str:
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="初稿内容"),
     )
     result = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "第一章"])
@@ -94,7 +94,7 @@ def test_revise_after_rejection_with_reason(tmp_path: Path, monkeypatch) -> None
     assert _draft_status(workspace_id, draft_id) == "rejected"
 
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="修订稿内容"),
     )
     revised = runner.invoke(
@@ -129,7 +129,7 @@ def test_revise_feeds_feedback_and_previous_content_to_llm(
 
     capturing = _CapturingLLMClient()
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: capturing,
     )
     result = runner.invoke(app, ["draft", "revise", draft_id, "--reason", "针对钩子重写铺垫"])
@@ -149,7 +149,7 @@ def test_revise_generates_writer_rebuttal_message(tmp_path: Path, monkeypatch) -
         ["review", "add", draft_id, "--from", "责编", "--content", "退稿：节奏太慢"],
     )
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="修订稿内容"),
     )
     result = runner.invoke(app, ["draft", "revise", draft_id, "--reason", "重写铺垫"])

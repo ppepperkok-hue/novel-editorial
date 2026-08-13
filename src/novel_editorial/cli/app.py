@@ -25,11 +25,7 @@ from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.log import build_workspace_log
 from novel_editorial.core.logging_setup import configure_logging
 from novel_editorial.core.views import search_all_layers
-from novel_editorial.llm.client import build_client  # noqa: F401
 from novel_editorial.store.db import DB
-
-# Keep build_client in this namespace: talk/draft subcommands resolve it lazily from here,
-# and existing tests patch novel_editorial.cli.app.build_client.
 
 reconfigure = getattr(sys.stdout, "reconfigure", None)
 if callable(reconfigure):

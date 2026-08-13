@@ -14,6 +14,7 @@ from novel_editorial.core.draft import (
     list_drafts,
     revise_draft,
 )
+from novel_editorial.llm.client import build_client
 from novel_editorial.store.db import DB
 
 draft_app = typer.Typer(help="Manage drafts")
@@ -28,10 +29,6 @@ def draft_generate(
     settings = load_settings()
     db = DB(settings)
     db.init_schema()
-    # Resolve lazily from cli.app so existing tests' monkeypatch of
-    # novel_editorial.cli.app.build_client keeps taking effect.
-    from novel_editorial.cli.app import build_client
-
     client = build_client(settings)
     draft = generate_draft(
         db,
@@ -55,10 +52,6 @@ def draft_revise(
     db = DB(settings)
     db.init_schema()
     draft = find_draft_anywhere(db, draft_id)
-    # Resolve lazily from cli.app so existing tests' monkeypatch of
-    # novel_editorial.cli.app.build_client keeps taking effect.
-    from novel_editorial.cli.app import build_client
-
     client = build_client(settings)
     revised = revise_draft(
         db,

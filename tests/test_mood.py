@@ -41,7 +41,7 @@ def _create_workspace(tmp_path: Path, monkeypatch) -> str:
 
 def _generate_draft(workspace_id: str, monkeypatch) -> str:
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="初稿内容"),
     )
     result = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "第一章"])
@@ -139,7 +139,7 @@ def test_revise_updates_writer_mood(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     draft_id = _generate_draft(workspace_id, monkeypatch)
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="修订稿内容"),
     )
     revised = runner.invoke(app, ["draft", "revise", draft_id, "--reason", "重写铺垫"])
@@ -313,7 +313,7 @@ def test_second_talk_prompt_excludes_mood_change_self_report(
 ) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     capturing = _CapturingLLMClient()
-    monkeypatch.setattr("novel_editorial.cli.app.build_client", lambda settings: capturing)
+    monkeypatch.setattr("novel_editorial.cli.talk.build_client", lambda settings: capturing)
 
     first = runner.invoke(app, ["talk", "send", workspace_id, "@写手 写一段开场"])
     assert first.exit_code == 0, first.output
@@ -329,7 +329,7 @@ def test_editor_talk_prompt_excludes_writer_mood_trace(
 ) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     capturing = _CapturingLLMClient()
-    monkeypatch.setattr("novel_editorial.cli.app.build_client", lambda settings: capturing)
+    monkeypatch.setattr("novel_editorial.cli.talk.build_client", lambda settings: capturing)
 
     writer_talk = runner.invoke(app, ["talk", "send", workspace_id, "@写手 写一段开场"])
     assert writer_talk.exit_code == 0, writer_talk.output
@@ -397,7 +397,7 @@ def test_revise_rolls_back_when_mood_write_fails(tmp_path: Path, monkeypatch) ->
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     draft_id = _generate_draft(workspace_id, monkeypatch)
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="修订稿内容"),
     )
 

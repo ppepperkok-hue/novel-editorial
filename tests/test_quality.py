@@ -72,7 +72,7 @@ def test_generate_marks_quality_failed_and_blocks_accept(
 ) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply=AI_FLAVOR_SAMPLES[0]),
     )
     created = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "第一章"])
@@ -85,7 +85,7 @@ def test_generate_marks_quality_failed_and_blocks_accept(
     assert "quality gate" in accepted.output
 
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="他推开门，走进院子。"),
     )
     revised = runner.invoke(app, ["draft", "revise", draft_id, "--reason", "按质量门修改"])
@@ -99,7 +99,7 @@ def test_generate_marks_quality_failed_and_blocks_accept(
 def test_quality_check_command_reports(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply=AI_FLAVOR_SAMPLES[0]),
     )
     created = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "第一章"])
@@ -116,7 +116,7 @@ def test_quality_threshold_configurable(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     monkeypatch.setenv("NOVEL_QUALITY_THRESHOLD", "100")
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply=AI_FLAVOR_SAMPLES[0]),
     )
     created = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "第一章"])
@@ -139,7 +139,7 @@ def test_invalid_quality_threshold_reports_config_error(
 def test_regenerate_accepted_draft_is_rejected(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="他推开门，走进院子。"),
     )
     created = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "第一章"])
@@ -155,7 +155,7 @@ def test_regenerate_accepted_draft_is_rejected(tmp_path: Path, monkeypatch) -> N
 def test_workspace_log_aggregates_flow(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="他推开门，走进院子。"),
     )
     runner.invoke(app, ["talk", "send", workspace_id, "写一个雨夜故事"])

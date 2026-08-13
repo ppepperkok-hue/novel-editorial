@@ -27,7 +27,7 @@ def _create_workspace(tmp_path: Path, monkeypatch) -> str:
 
 def _generate_draft(workspace_id: str, monkeypatch, reply: str = "正文内容") -> str:
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply=reply),
     )
     result = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "第一章"])
@@ -160,7 +160,7 @@ def test_draft_generate_emits_created_gate_and_decision_events(tmp_path: Path, m
 def test_quality_failure_emits_only_draft_created(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="月光宛如薄纱，悄然洒落，他静静地凝视着远方。"),
     )
     result = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "第一章"])
@@ -174,7 +174,7 @@ def test_revise_emits_gate_and_decision_with_new_version(tmp_path: Path, monkeyp
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     draft_id = _generate_draft(workspace_id, monkeypatch)
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="修订稿内容"),
     )
     revised = runner.invoke(app, ["draft", "revise", draft_id, "--reason", "重写铺垫"])
@@ -218,7 +218,7 @@ def test_review_rejected_only_for_agent_reviews(tmp_path: Path, monkeypatch) -> 
 def test_end_to_end_event_order(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="正文内容"),
     )
     talk = runner.invoke(app, ["talk", "send", workspace_id, "我们写一个侦探故事"])
@@ -253,7 +253,7 @@ def test_events_list_cli_filters_limits_and_rejects_unknown_types(
     assert "no events yet" in empty.output
 
     monkeypatch.setattr(
-        "novel_editorial.cli.app.build_client",
+        "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="正文内容"),
     )
     runner.invoke(app, ["talk", "send", workspace_id, "我们写一个侦探故事"])
