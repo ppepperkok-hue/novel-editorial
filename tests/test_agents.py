@@ -23,6 +23,15 @@ def test_agents_show_lists_full_profiles(tmp_path: Path, monkeypatch) -> None:
         assert name in result.output
     assert "性格" in result.output
     assert "立场" in result.output
+    for profile_fragment in ("沉稳果断", "敏锐挑剔", "手感型创作者", "冷静严谨"):
+        assert profile_fragment in result.output
+    for stance_fragment in (
+        "叙事完整性与作品基调优先",
+        "读者节奏优先",
+        "忠于人物内心戏",
+        "连贯性与一致性优先",
+    ):
+        assert stance_fragment in result.output
 
 
 def test_agents_show_missing_workspace(tmp_path: Path, monkeypatch) -> None:
