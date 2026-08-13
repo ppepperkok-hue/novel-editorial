@@ -2,8 +2,33 @@
 
 from __future__ import annotations
 
+import re
+
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import StyleAnchor
+
+_KEYWORD_SEPARATOR_RE = re.compile(r"[、，,；;。！？!?\s]+")
+
+
+def extract_style_keywords(description: str) -> frozenset[str]:
+    """Extract keyword phrases from a style description.
+
+    Separator-delimited descriptions (顿号/逗号/空格 etc.) yield each separated
+    token as one keyword; an unseparated run of text yields every consecutive
+    2-4 character substring. Empty or blank descriptions yield an empty set.
+    """
+    text = (description or "").strip()
+    if not text:
+        return frozenset()
+    tokens = [token for token in _KEYWORD_SEPARATOR_RE.split(text) if token]
+    if len(tokens) > 1:
+        return frozenset(token for token in tokens if len(token) >= 2)
+    run = tokens[0]
+    return frozenset(
+        run[start : start + length]
+        for length in (2, 3, 4)
+        for start in range(len(run) - length + 1)
+    )
 
 
 def get_style_anchor(db: DB, workspace_id: str) -> StyleAnchor:

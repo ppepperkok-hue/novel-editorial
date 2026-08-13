@@ -42,10 +42,11 @@ from novel_editorial.core.logging_setup import configure_logging
 from novel_editorial.core.memory import add_memory_note, delete_memory_note, list_memory_notes
 from novel_editorial.core.plot import KIND_LABELS, list_threads, plant_thread, recover_thread
 from novel_editorial.core.review import add_review, list_reviews, resolve_reviewer
-from novel_editorial.core.style import get_style_anchor, set_style_anchor
+from novel_editorial.core.style import extract_style_keywords, get_style_anchor, set_style_anchor
 from novel_editorial.core.views import build_role_view, search_memory
 from novel_editorial.core.workspace import create_workspace
 from novel_editorial.llm.client import LLMMessage, build_client
+from novel_editorial.quality.explain import explain_quality, render_explanation
 from novel_editorial.quality.gate import check_quality
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import Agent, AgentRole, Decision, Workspace
@@ -647,11 +648,40 @@ def quality_check(draft_id: str = typer.Argument(..., help="Draft id")) -> None:
     db.init_schema()
     draft = find_draft_anywhere(db, draft_id)
     version = get_draft_version(db, draft.workspace_id, draft_id, draft.current_version)
-    report = check_quality(version.content, threshold=settings.quality_threshold)
+    anchor = get_style_anchor(db, draft.workspace_id)
+    style_keywords = extract_style_keywords(anchor.description)
+    report = check_quality(
+        version.content,
+        threshold=settings.quality_threshold,
+        style_keywords=style_keywords,
+    )
     typer.echo(f"passed: {report.passed}")
     typer.echo(f"score: {report.score} (threshold {settings.quality_threshold})")
     typer.echo(f"ai word hits: {report.details['ai_word_hits']}")
     typer.echo(f"modifier hits: {report.details['modifier_hits']}")
+    typer.echo(f"sentence repetition: {report.details['sentence_repetition']}")
+    if style_keywords:
+        consistency = report.details["style_consistency"]
+        typer.echo(
+            f"style hits: {len(report.details['style_hits'])}/{len(style_keywords)} "
+            f"(consistency {consistency:.2f})"
+        )
+    else:
+        typer.echo("style hits: n/a (no style keywords)")
+
+
+@quality_app.command("explain")
+def quality_explain(draft_id: str = typer.Argument(..., help="Draft id")) -> None:
+    """Locate AI-flavor sentences in the latest draft version with rewrite suggestions."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    draft = find_draft_anywhere(db, draft_id)
+    version = get_draft_version(db, draft.workspace_id, draft_id, draft.current_version)
+    issues = explain_quality(version.content)
+    if issues:
+        typer.echo(f"{draft.title} (v{version.version})")
+    typer.echo(render_explanation(issues))
 
 
 @plot_app.command("plant")

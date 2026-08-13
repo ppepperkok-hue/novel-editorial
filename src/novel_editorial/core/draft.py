@@ -15,7 +15,7 @@ from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.memory import list_memory_notes
 from novel_editorial.core.plot import plot_threads_section
 from novel_editorial.core.review import list_reviews
-from novel_editorial.core.style import get_style_anchor
+from novel_editorial.core.style import extract_style_keywords, get_style_anchor
 from novel_editorial.llm.client import LLMClient, LLMMessage
 from novel_editorial.quality.gate import check_quality
 from novel_editorial.store.db import DB, list_workspace_ids
@@ -93,7 +93,13 @@ def generate_draft(
     content = client.complete([LLMMessage(role="user", content=prompt)]).content
     if not content.strip():
         raise NovelError(ErrorCode.LLM_ERROR, "LLM returned empty draft content")
-    quality_passed = check_quality(content, threshold=quality_threshold).passed
+    anchor = get_style_anchor(db, workspace_id)
+    style_keywords = extract_style_keywords(anchor.description)
+    quality_passed = check_quality(
+        content,
+        threshold=quality_threshold,
+        style_keywords=style_keywords,
+    ).passed
     with db.workspace_session(workspace_id) as session:
         draft = session.query(Draft).filter_by(workspace_id=workspace_id, title=title).first()
         if draft is None:
@@ -148,7 +154,13 @@ def revise_draft(
     content = client.complete([LLMMessage(role="user", content=prompt)]).content
     if not content.strip():
         raise NovelError(ErrorCode.LLM_ERROR, "LLM returned empty draft content")
-    quality_passed = check_quality(content, threshold=quality_threshold).passed
+    anchor = get_style_anchor(db, workspace_id)
+    style_keywords = extract_style_keywords(anchor.description)
+    quality_passed = check_quality(
+        content,
+        threshold=quality_threshold,
+        style_keywords=style_keywords,
+    ).passed
     with db.workspace_session(workspace_id) as session:
         draft = (
             session.query(Draft)
