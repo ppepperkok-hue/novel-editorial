@@ -125,6 +125,33 @@ def test_quality_threshold_configurable(tmp_path: Path, monkeypatch) -> None:
     assert _draft_status(workspace_id, draft_id) == "draft"
 
 
+def test_invalid_quality_threshold_reports_config_error(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("NOVEL_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("NOVEL_CONFIG", str(tmp_path / "config.toml"))
+    monkeypatch.setenv("NOVEL_QUALITY_THRESHOLD", "high")
+    result = runner.invoke(app, ["init"])
+    assert result.exit_code == 1
+    assert "invalid quality threshold" in result.output
+
+
+def test_regenerate_accepted_draft_is_rejected(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "novel_editorial.cli.app.build_client",
+        lambda settings: MockLLMClient(reply="他推开门，走进院子。"),
+    )
+    created = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "第一章"])
+    draft_id = created.output.split()[1]
+    accepted = runner.invoke(app, ["decision", "accept", draft_id])
+    assert accepted.exit_code == 0, accepted.output
+
+    again = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "第一章"])
+    assert again.exit_code == 2
+    assert "cannot regenerate an accepted draft" in again.output
+
+
 def test_workspace_log_aggregates_flow(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     monkeypatch.setattr(

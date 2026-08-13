@@ -6,6 +6,7 @@ def test_defaults() -> None:
     assert settings.llm_base_url == "https://api.deepseek.com"
     assert settings.llm_model == "deepseek-chat"
     assert settings.llm_api_key is None
+    assert settings.quality_threshold == 8
 
 
 def test_env_overrides() -> None:

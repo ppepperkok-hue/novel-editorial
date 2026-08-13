@@ -8,6 +8,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from novel_editorial.core.errors import ErrorCode, NovelError
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -35,6 +37,14 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     config = _read_toml(config_path)
     defaults = config.get("defaults", {})
     default_threshold = defaults.get("quality_threshold", 8)
+    threshold_value = env.get("NOVEL_QUALITY_THRESHOLD", str(default_threshold))
+    try:
+        quality_threshold = int(threshold_value)
+    except (TypeError, ValueError) as exc:
+        raise NovelError(
+            ErrorCode.CONFIG_ERROR,
+            f"invalid quality threshold: {threshold_value!r}",
+        ) from exc
     return Settings(
         data_dir=data_dir,
         config_path=config_path,
@@ -42,6 +52,6 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         llm_base_url=env.get("NOVEL_LLM_BASE_URL", "https://api.deepseek.com"),
         llm_model=env.get("NOVEL_LLM_MODEL", "deepseek-chat"),
         log_level=env.get("NOVEL_LOG_LEVEL", "INFO"),
-        quality_threshold=int(env.get("NOVEL_QUALITY_THRESHOLD", str(default_threshold))),
+        quality_threshold=quality_threshold,
         defaults=defaults,
     )

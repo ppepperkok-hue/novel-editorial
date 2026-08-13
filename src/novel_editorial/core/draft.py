@@ -64,7 +64,7 @@ def generate_draft(
     *,
     title: str,
     client: LLMClient,
-    quality_threshold: int = 10,
+    quality_threshold: int = 8,
 ) -> Draft:
     workspace = get_workspace_or_raise(db, workspace_id)
     writer = get_agent(db, workspace_id, AgentRole.WRITER)
@@ -80,6 +80,10 @@ def generate_draft(
             draft = Draft(workspace_id=workspace_id, title=title)
             session.add(draft)
             session.flush()
+        elif draft.status == "accepted":
+            raise NovelError(
+                ErrorCode.USAGE_ERROR, "cannot regenerate an accepted draft"
+            )
         draft.current_version += 1
         draft.status = "draft" if quality_passed else "quality_failed"
         reason = "initial" if draft.current_version == 1 else "revision"
@@ -102,7 +106,7 @@ def revise_draft(
     *,
     reason: str,
     client: LLMClient,
-    quality_threshold: int = 10,
+    quality_threshold: int = 8,
 ) -> Draft:
     current = get_draft(db, workspace_id, draft_id)
     if current.status == "accepted":
