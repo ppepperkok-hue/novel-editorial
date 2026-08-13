@@ -22,7 +22,8 @@
 | 16 | M3-B1 事件流（62bdf7a） | P2 跨进程同时间戳事件被 watch 游标永久跳过 | 已修复（e93acc1，rowid 游标 + 失败测试先复现），终审 Ready to merge；详见 [20260814-M3B1-initial.md](20260814-M3B1-initial.md) 与 [20260814-M3B1-fix.md](20260814-M3B1-fix.md) |
 | 17 | M3-B2 穿透查询（0e6ed4e） | P3 带首尾空格关键词漏匹配；P3 命中辅助字段时输出行看不到命中词 | 已修复（ceae3a9），终审 Ready to merge；详见 [20260814-M3B2-initial.md](20260814-M3B2-initial.md) 与 [20260814-M3B2-fix.md](20260814-M3B2-fix.md) |
 | 18 | M3-B3 拍板提醒（770aa9d） | P2 reject 后待拍板消失缺端到端覆盖 | 已修复（4a15c63，新增镜像用例），终审 Ready to merge；详见 [20260814-M3B3-initial.md](20260814-M3B3-initial.md) 与 [20260814-M3B3-fix.md](20260814-M3B3-fix.md) |
+| 19 | M4-ENG-1 瓶颈1 CLI 拆包（918bf7d） | P2 talk/draft 延迟 import 隐藏循环依赖；P3 extension.md 指针过期 | 已修复（121b52c 顶部直连 import + 文档修正），终审再出 P2 混合用例 talk 侧 patch 缺失（73b7ea5 修复）与 P3 talk 回复复用削弱版本层断言（6d02f2e 修复），复审查 Ready to merge；详见 [20260814-M4-ENG1-initial.md](20260814-M4-ENG1-initial.md) 与 [20260814-M4-ENG1-fix.md](20260814-M4-ENG1-fix.md) |
 
 ## 结论
 
-截至 M3-B3，独立审查共发现 4 个 P1、22 个 P2、16 个 P3（含 M1 总审、M2-C~M2-G 各修复复审查、M3-A 的 2 个 P2 与 1 个 P3、M3-B1 的 1 个 P2、M3-B2 的 2 个 P3，以及 M3-B3 的 1 个 P2），全部核实、修复并补回归测试；验证四连在每次修复后均全绿。
+截至 M4-ENG-1，独立审查累计 4 个 P1、24 个 P2、18 个 P3（M4-ENG-1 新增 2 个 P2 与 2 个 P3），全部核实、修复并补回归测试；验证四连在每次修复后均全绿。
