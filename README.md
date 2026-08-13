@@ -57,7 +57,7 @@ Windows PowerShell 写法见 [使用文档](docs/usage.md)。注意：程序只�
 
 ```bash
 uv run novel-editorial init
-# initialized: <数据目录>
+initialized: <数据目录>
 ```
 
 初始化数据目录和 `config.toml`；可重复执行（幂等），配置已存在时会提示 `config exists: ... (kept)`。
@@ -66,7 +66,7 @@ uv run novel-editorial init
 
 ```bash
 uv run novel-editorial works create 雨夜侦探 --genre 悬疑 --description 侦探雨夜回乡查旧案
-# created workspace <作品ID>: 雨夜侦探
+created workspace <作品ID>: 雨夜侦探
 ```
 
 记下 `<作品ID>`。想看班子与档案：`uv run novel-editorial works show <作品ID>` / `uv run novel-editorial agents show <作品ID>`。
@@ -75,16 +75,16 @@ uv run novel-editorial works create 雨夜侦探 --genre 悬疑 --description �
 
 ```bash
 uv run novel-editorial style set <作品ID> --description 平实克制短句 --forbidden 璀璨,宛如
-# style anchor updated: <作品ID>
+style anchor updated: <作品ID>
 ```
 
 **第 4 步：和编辑部说话**
 
 ```bash
 uv run novel-editorial talk send <作品ID> 我们写一个雨夜故事，侦探回到故乡。
-# 作者: 我们写一个雨夜故事，侦探回到故乡。
-# 总编: （模拟回复）
-# 责编: 我想先确认一下：这部作品的主角动机和核心冲突，咱们还没对齐吧？这个定不下来，后面每一章都会飘。
+作者: 我们写一个雨夜故事，侦探回到故乡。
+总编: （模拟回复）
+责编: 我想先确认一下：这部作品的主角动机和核心冲突，咱们还没对齐吧？这个定不下来，后面每一章都会飘。
 ```
 
 不带 `@` 默认由总编回答；写 `@写手`、`@责编`、`@审稿`、`@总编`（`主编` 等同 `总编`）指定对象，例如 `talk send <作品ID> @写手，写一段雨夜开场`。首条消息后责编会主动发起追问，这是预期行为。
@@ -93,18 +93,18 @@ uv run novel-editorial talk send <作品ID> 我们写一个雨夜故事，侦探
 
 ```bash
 uv run novel-editorial memory pack <作品ID>
-# 作品：《雨夜侦探》（悬疑）
-# 简介：侦探雨夜回乡查旧案
-# 风格说明：平实克制短句
-# 禁忌词：璀璨,宛如
-# 章纲：暂无（占位）
+作品：《雨夜侦探》（悬疑）
+简介：侦探雨夜回乡查旧案
+风格说明：平实克制短句
+禁忌词：璀璨,宛如
+章纲：暂无（占位）
 ```
 
 **第 6 步：生成草稿**
 
 ```bash
-uv run novel-editorial draft generate <作品ID> --title 第一章 雨夜
-# draft <草稿ID> 第一章 雨夜 now at v1
+uv run novel-editorial draft generate <作品ID> --title "第一章 雨夜"
+draft <草稿ID> 第一章 雨夜 now at v1
 ```
 
 mock 模式下正文是「（模拟回复）」；接真实模型后就是写手按记忆包写的正文。
@@ -113,13 +113,13 @@ mock 模式下正文是「（模拟回复）」；接真实模型后就是写手
 
 ```bash
 uv run novel-editorial quality check <草稿ID>
-# passed: True
-# score: 0.5 (threshold 8)
-# ai word hits: []
-# ...
+passed: True
+score: 0.5 (threshold 8)
+ai word hits: []
+...
 
 uv run novel-editorial quality explain <草稿ID>
-# 未发现明显 AI 味
+未发现明显 AI 味
 ```
 
 `explain` 在有问题时会逐句定位并给改写建议。分数超过阈值（默认 8）的草稿状态会变成 `quality_failed`，无法被拍板通过。
@@ -128,14 +128,14 @@ uv run novel-editorial quality explain <草稿ID>
 
 ```bash
 uv run novel-editorial review add <草稿ID> --from 责编 --content 退稿：开场钩子不成立
-# review added by 责编: 退稿：开场钩子不成立
+review added by 责编: 退稿：开场钩子不成立
 ```
 
 **第 9 步：写手修订**
 
 ```bash
 uv run novel-editorial draft revise <草稿ID> --reason 写手反驳：重写铺垫
-# draft <草稿ID> 第一章 雨夜 now at v2
+draft <草稿ID> 第一章 雨夜 now at v2
 ```
 
 修订会带上上一版正文和已有意见，并自动记录写手的反驳留痕。注意：修订必须在拍板之前（`accepted` 后不能再改）。
@@ -144,7 +144,7 @@ uv run novel-editorial draft revise <草稿ID> --reason 写手反驳：重写铺
 
 ```bash
 uv run novel-editorial decision accept <草稿ID>
-# draft <草稿ID> accepted
+draft <草稿ID> accepted
 ```
 
 也可 `decision reject <草稿ID>`（退稿）或 `decision note <草稿ID> --content ...`（只留言不改状态）。
@@ -161,10 +161,10 @@ uv run novel-editorial log <作品ID>
 
 ```bash
 uv run novel-editorial demo
-# workspace: <作品ID>
-# draft: <草稿ID>
-# quality passed: True (score 0.0)
-# draft accepted. Run `novel-editorial log <workspace_id>` to review the flow.
+workspace: <作品ID>
+draft: <草稿ID>
+quality passed: True (score 0.0)
+draft accepted. Run `novel-editorial log <workspace_id>` to review the flow.
 ```
 
 `demo` 用《演示之书》自动完成「建作品 → 对话 → 生成草稿 → 质量门 → 拍板」，配置了真实 key 就用真实模型，否则用 mock。

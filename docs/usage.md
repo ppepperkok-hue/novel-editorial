@@ -73,10 +73,14 @@ PowerShell：
 ```powershell
 Get-Content .env | ForEach-Object {
   if ($_ -match '^\s*([^#][^=]*)=(.*)$') {
-    [Environment]::SetEnvironmentVariable($Matches[1].Trim(), $Matches[2].Trim(), 'Process')
+    $name  = $Matches[1].Trim()
+    $value = $Matches[2].Trim() -replace '^["'']|["'']$', ''
+    [Environment]::SetEnvironmentVariable($name, $value, 'Process')
   }
 }
 ```
+
+加载器会去掉值两侧的引号，所以 `.env` 里的值带引号（`NOVEL_LLM_API_KEY="sk-..."`、`NOVEL_LLM_API_KEY='sk-...'`）或裸值（`NOVEL_LLM_API_KEY=sk-...`）都可以，效果相同。
 
 或者干脆不用 `.env`，直接 `export` / `$env:` 设置。
 
