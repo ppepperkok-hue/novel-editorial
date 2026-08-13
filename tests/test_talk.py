@@ -109,7 +109,14 @@ def test_talk_upgrades_pre_migration_workspace(tmp_path: Path, monkeypatch) -> N
     db = DB(settings)
     path = workspace_db_path(settings, workspace_id)
     connection = sqlite3.connect(path)
-    for table in ("messages", "style_anchors", "drafts", "draft_versions"):
+    tables = [
+        row[0]
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master "
+            "WHERE type='table' AND name NOT IN ('agents', 'workspaces', 'alembic_version')"
+        )
+    ]
+    for table in tables:
         connection.execute(f"DROP TABLE IF EXISTS {table}")
     connection.execute("DELETE FROM alembic_version")
     connection.execute("INSERT INTO alembic_version (version_num) VALUES ('3b05b83f8953')")

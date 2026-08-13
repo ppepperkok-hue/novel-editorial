@@ -112,3 +112,31 @@ class DraftVersion(Base):
     content: Mapped[str] = mapped_column(Text)
     reason: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class Review(Base):
+    """A review comment on a draft from the author or an agent."""
+
+    __tablename__ = "reviews"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(String(32), index=True)
+    draft_id: Mapped[str] = mapped_column(String(32), index=True)
+    role: Mapped[str] = mapped_column(String(20))
+    actor: Mapped[str] = mapped_column(String(100))
+    content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class Decision(Base):
+    """An author decision (accept / reject / note) on a draft."""
+
+    __tablename__ = "decisions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(String(32), index=True)
+    draft_id: Mapped[str] = mapped_column(String(32), index=True)
+    action: Mapped[str] = mapped_column(String(20))
+    actor: Mapped[str] = mapped_column(String(100), default="作者")
+    content: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

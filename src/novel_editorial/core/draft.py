@@ -9,7 +9,7 @@ from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.style import get_style_anchor
 from novel_editorial.llm.client import LLMClient, LLMMessage
 from novel_editorial.store.db import DB, list_workspace_ids
-from novel_editorial.store.models import AgentRole, Draft, DraftVersion
+from novel_editorial.store.models import Agent, AgentRole, Draft, DraftVersion
 
 
 def build_memory_pack(db: DB, workspace_id: str) -> str:
@@ -27,6 +27,21 @@ def build_memory_pack(db: DB, workspace_id: str) -> str:
     return "\n".join(lines)
 
 
+def _build_writer_prompt(
+    workspace,
+    writer: Agent,
+    memory_pack: str,
+    title: str,
+) -> str:
+    return (
+        f"你是作品《{workspace.title}》的{writer.name}。\n"
+        f"你的性格：{writer.personality}\n"
+        f"你的立场：{writer.stance}\n"
+        f"写作记忆包：\n{memory_pack}\n"
+        f"请为章节《{title}》产出正文，符合上述风格，不要出现禁忌词。"
+    )
+
+
 def generate_draft(
     db: DB,
     workspace_id: str,
@@ -37,13 +52,7 @@ def generate_draft(
     workspace = get_workspace_or_raise(db, workspace_id)
     writer = get_agent(db, workspace_id, AgentRole.WRITER)
     memory_pack = build_memory_pack(db, workspace_id)
-    prompt = (
-        f"你是作品《{workspace.title}》的{writer.name}。\n"
-        f"你的性格：{writer.personality}\n"
-        f"你的立场：{writer.stance}\n"
-        f"写作记忆包：\n{memory_pack}\n"
-        f"请为章节《{title}》产出正文，符合上述风格，不要出现禁忌词。"
-    )
+    prompt = _build_writer_prompt(workspace, writer, memory_pack, title)
     content = client.complete([LLMMessage(role="user", content=prompt)]).content
     if not content.strip():
         raise NovelError(ErrorCode.LLM_ERROR, "LLM returned empty draft content")
@@ -61,6 +70,46 @@ def generate_draft(
                 version=draft.current_version,
                 content=content,
                 reason=reason,
+            )
+        )
+        session.commit()
+        return draft
+
+
+def revise_draft(
+    db: DB,
+    workspace_id: str,
+    draft_id: str,
+    *,
+    reason: str,
+    client: LLMClient,
+) -> Draft:
+    current = get_draft(db, workspace_id, draft_id)
+    if current.status == "accepted":
+        raise NovelError(ErrorCode.USAGE_ERROR, "cannot revise an accepted draft")
+    workspace = get_workspace_or_raise(db, workspace_id)
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+    memory_pack = build_memory_pack(db, workspace_id)
+    prompt = _build_writer_prompt(workspace, writer, memory_pack, current.title)
+    content = client.complete([LLMMessage(role="user", content=prompt)]).content
+    if not content.strip():
+        raise NovelError(ErrorCode.LLM_ERROR, "LLM returned empty draft content")
+    with db.workspace_session(workspace_id) as session:
+        draft = (
+            session.query(Draft)
+            .filter_by(workspace_id=workspace_id, id=draft_id)
+            .first()
+        )
+        if draft is None:
+            raise NovelError(ErrorCode.NOT_FOUND, f"draft not found: {draft_id}")
+        draft.current_version += 1
+        draft.status = "draft"
+        session.add(
+            DraftVersion(
+                draft_id=draft.id,
+                version=draft.current_version,
+                content=content,
+                reason=reason or "revision",
             )
         )
         session.commit()

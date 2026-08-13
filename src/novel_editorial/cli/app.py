@@ -21,6 +21,7 @@ from novel_editorial.core.chat import (
     resolve_target_role,
 )
 from novel_editorial.core.config import load_settings
+from novel_editorial.core.decision import decide
 from novel_editorial.core.draft import (
     build_memory_pack,
     diff_versions,
@@ -28,9 +29,11 @@ from novel_editorial.core.draft import (
     generate_draft,
     get_draft_version,
     list_drafts,
+    revise_draft,
 )
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.logging_setup import configure_logging
+from novel_editorial.core.review import add_review, resolve_reviewer
 from novel_editorial.core.style import get_style_anchor, set_style_anchor
 from novel_editorial.llm.client import LLMMessage, build_client
 from novel_editorial.store.db import DB, seed_default_band
@@ -65,12 +68,16 @@ talk_app = typer.Typer(help="Talk with the editorial band")
 style_app = typer.Typer(help="Manage style anchors")
 memory_app = typer.Typer(help="Inspect writing memory")
 draft_app = typer.Typer(help="Manage drafts")
+review_app = typer.Typer(help="Review drafts")
+decision_app = typer.Typer(help="Author decisions")
 app.add_typer(works_app, name="works")
 app.add_typer(agents_app, name="agents")
 app.add_typer(talk_app, name="talk")
 app.add_typer(style_app, name="style")
 app.add_typer(memory_app, name="memory")
 app.add_typer(draft_app, name="draft")
+app.add_typer(review_app, name="review")
+app.add_typer(decision_app, name="decision")
 
 
 @app.callback(invoke_without_command=True)
@@ -291,6 +298,21 @@ def draft_generate(
     typer.echo(f"draft {draft.id} {draft.title} now at v{draft.current_version}")
 
 
+@draft_app.command("revise")
+def draft_revise(
+    draft_id: str = typer.Argument(..., help="Draft id"),
+    reason: str = typer.Option("revision", "--reason", help="Reason for the revision"),
+) -> None:
+    """Re-generate a draft as a new version (writer + LLM)."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    draft = find_draft_anywhere(db, draft_id)
+    client = build_client(settings)
+    revised = revise_draft(db, draft.workspace_id, draft_id, reason=reason, client=client)
+    typer.echo(f"draft {revised.id} {revised.title} now at v{revised.current_version}")
+
+
 @draft_app.command("list")
 def draft_list(workspace_id: str = typer.Argument(..., help="Workspace id")) -> None:
     """List drafts in a workspace."""
@@ -330,3 +352,55 @@ def draft_diff(
     second = get_draft_version(db, draft.workspace_id, draft_id, version_b)
     output = diff_versions(first, second)
     typer.echo(output if output else "no differences")
+
+
+@review_app.command("add")
+def review_add(
+    draft_id: str = typer.Argument(..., help="Draft id"),
+    source: str = typer.Option("作者", "--from", help="Reviewer: 作者/总编/责编/写手/审稿"),
+    content: str = typer.Option(..., "--content", help="Review comment"),
+) -> None:
+    """Add a review comment to a draft."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    draft = find_draft_anywhere(db, draft_id)
+    role, actor = resolve_reviewer(db, draft.workspace_id, source)
+    add_review(db, draft.workspace_id, draft_id, role=role, actor=actor, content=content)
+    typer.echo(f"review added by {actor}: {content}")
+
+
+@decision_app.command("accept")
+def decision_accept(draft_id: str = typer.Argument(..., help="Draft id")) -> None:
+    """Accept a draft as the author."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    draft = find_draft_anywhere(db, draft_id)
+    decide(db, draft.workspace_id, draft_id, action="accept")
+    typer.echo(f"draft {draft_id} accepted")
+
+
+@decision_app.command("reject")
+def decision_reject(draft_id: str = typer.Argument(..., help="Draft id")) -> None:
+    """Reject a draft as the author."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    draft = find_draft_anywhere(db, draft_id)
+    decide(db, draft.workspace_id, draft_id, action="reject")
+    typer.echo(f"draft {draft_id} rejected")
+
+
+@decision_app.command("note")
+def decision_note(
+    draft_id: str = typer.Argument(..., help="Draft id"),
+    content: str = typer.Option(..., "--content", help="Note text"),
+) -> None:
+    """Leave a note on a draft without changing its status."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    draft = find_draft_anywhere(db, draft_id)
+    decide(db, draft.workspace_id, draft_id, action="note", content=content)
+    typer.echo(f"note added to draft {draft_id}")

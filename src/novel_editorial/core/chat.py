@@ -16,7 +16,7 @@ PROACTIVE_QUESTION = (
     "这个定不下来，后面每一章都会飘。"
 )
 
-_ROLE_ALIASES: dict[str, str] = {
+ROLE_ALIASES: dict[str, str] = {
     "总编": AgentRole.EDITOR_IN_CHIEF,
     "主编": AgentRole.EDITOR_IN_CHIEF,
     "责编": AgentRole.EDITOR,
@@ -85,7 +85,7 @@ def resolve_target_role(message: str) -> str:
     if match is None:
         return AgentRole.EDITOR_IN_CHIEF
     alias = match.group(1)
-    role = _ROLE_ALIASES.get(alias)
+    role = ROLE_ALIASES.get(alias)
     if role is None:
         raise NovelError(ErrorCode.USAGE_ERROR, f"unknown partner alias: {alias}")
     return role
