@@ -92,6 +92,22 @@ def test_accept_removes_from_pending(tmp_path: Path, monkeypatch) -> None:
     assert draft_id not in pending.output
 
 
+def test_reject_removes_from_pending(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    generated = _generate(
+        workspace_id, monkeypatch, title="第一章", reply="通过质量门的正文。"
+    )
+    draft_id = generated.output.split()[1]
+
+    rejected = runner.invoke(app, ["decision", "reject", draft_id])
+    assert rejected.exit_code == 0, rejected.output
+
+    pending = runner.invoke(app, ["decision", "pending", workspace_id])
+    assert pending.exit_code == 0, pending.output
+    assert "no pending decisions" in pending.output
+    assert draft_id not in pending.output
+
+
 def test_quality_failed_has_no_hint_and_is_not_pending(
     tmp_path: Path, monkeypatch
 ) -> None:
