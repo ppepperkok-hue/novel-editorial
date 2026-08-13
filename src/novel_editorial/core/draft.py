@@ -8,7 +8,7 @@ from novel_editorial.core.chat import get_agent, get_workspace_or_raise
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.style import get_style_anchor
 from novel_editorial.llm.client import LLMClient, LLMMessage
-from novel_editorial.store.db import DB
+from novel_editorial.store.db import DB, list_workspace_ids
 from novel_editorial.store.models import AgentRole, Draft, DraftVersion
 
 
@@ -45,6 +45,8 @@ def generate_draft(
         f"请为章节《{title}》产出正文，符合上述风格，不要出现禁忌词。"
     )
     content = client.complete([LLMMessage(role="user", content=prompt)]).content
+    if not content.strip():
+        raise NovelError(ErrorCode.LLM_ERROR, "LLM returned empty draft content")
     with db.workspace_session(workspace_id) as session:
         draft = session.query(Draft).filter_by(workspace_id=workspace_id, title=title).first()
         if draft is None:
@@ -114,13 +116,8 @@ def diff_versions(first: DraftVersion, second: DraftVersion) -> str:
 
 def find_draft_anywhere(db: DB, draft_id: str) -> Draft:
     """Locate a draft across workspace databases by id."""
-    works_dir = db.settings.data_dir / "works"
-    if not works_dir.is_dir():
-        raise NovelError(ErrorCode.NOT_FOUND, f"draft not found: {draft_id}")
-    for path in works_dir.iterdir():
-        if not path.is_dir() or not (path / "data.db").exists():
-            continue
-        with db.workspace_session(path.name) as session:
+    for workspace_id in list_workspace_ids(db.settings):
+        with db.workspace_session(workspace_id) as session:
             draft = session.query(Draft).filter_by(id=draft_id).first()
             if draft is not None:
                 return draft

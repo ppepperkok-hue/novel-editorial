@@ -113,3 +113,19 @@ def test_draft_show_missing_and_diff_missing(tmp_path: Path, monkeypatch) -> Non
     bad_diff = runner.invoke(app, ["draft", "diff", draft_id, "1", "99"])
     assert bad_diff.exit_code == 1
     assert "draft version not found" in bad_diff.output
+
+
+def test_draft_generate_rejects_empty_content(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "novel_editorial.cli.app.build_client",
+        lambda settings: MockLLMClient(reply="   "),
+    )
+
+    result = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "空章"])
+    assert result.exit_code == 1
+    assert "empty draft content" in result.output
+
+    listing = runner.invoke(app, ["draft", "list", workspace_id])
+    assert listing.exit_code == 0
+    assert "空章" not in listing.output

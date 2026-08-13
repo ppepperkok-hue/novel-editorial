@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -102,6 +102,9 @@ class DraftVersion(Base):
     """One version of a draft."""
 
     __tablename__ = "draft_versions"
+    __table_args__ = (
+        UniqueConstraint("draft_id", "version", name="uq_draft_versions_draft_version"),
+    )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     draft_id: Mapped[str] = mapped_column(String(32), index=True)

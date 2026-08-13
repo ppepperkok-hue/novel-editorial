@@ -26,6 +26,18 @@ def workspace_db_path(settings: Settings, workspace_id: str) -> Path:
     return settings.data_dir / "works" / workspace_id / "data.db"
 
 
+def list_workspace_ids(settings: Settings) -> list[str]:
+    """Enumerate workspace ids that have a database on disk."""
+    works_dir = settings.data_dir / "works"
+    if not works_dir.is_dir():
+        return []
+    return [
+        path.name
+        for path in works_dir.iterdir()
+        if path.is_dir() and (path / "data.db").exists()
+    ]
+
+
 def _engine(path: Path) -> Engine:
     path.parent.mkdir(parents=True, exist_ok=True)
     return create_engine(f"sqlite:///{path}", connect_args={"check_same_thread": False})
