@@ -178,9 +178,11 @@ draft accepted. Run `novel-editorial log <workspace_id>` to review the flow.
 - `memory`：`pack`（写作记忆包）/ `note`（写私有记忆）/ `notes`（列私有记忆）/ `view`（分层视图）/ `search`（带来源检索）/ `delete`
 - `draft`：`generate` / `revise` / `list` / `show` / `diff`
 - `review`：`add`（给意见）/ `list`
-- `decision`：`accept` / `reject` / `note` / `list`
+- `decision`：`accept` / `reject` / `note` / `list` / `pending`（待拍板清单）
 - `quality`：`check`（打分与通过与否）/ `explain`（定位句与改写建议）
 - `plot`：`plant`（埋线索）/ `list` / `recover`（回收线索）
+- `events`：`list`（事件回放）/ `watch`（增量观察新事件）
+- `inspect`：`<作品ID> <关键词>`（老板跨层检索，结果带来源）
 - 其他：`init` / `health` / `version` / `demo` / `log`
 
 完整选项看 `uv run novel-editorial <命令> --help`。

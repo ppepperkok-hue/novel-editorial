@@ -119,6 +119,12 @@ uv run novel-editorial quality explain <草稿ID>
 
 - 调整阈值：`NOVEL_QUALITY_THRESHOLD=6`（更严）或在 `config.toml` 里写 `quality_threshold = 6`。阈值非整数会报配置错误（退出码 1）。
 
+## 可见性（老板怎么看见编辑部）
+
+- `events list <作品ID> [--type ...] [--limit N]`：按时间倒序回放事件（对话 / 草稿 / 质量门 / 待拍板 / 退稿）；`events watch <作品ID> [--interval 秒]` 持续输出新事件，Ctrl+C 退出。
+- `inspect <作品ID> <关键词>`：跨层检索（作品档案、风格锚点、对话、意见、版本、伙伴笔记、决策、伏笔线索），结果带来源引用；无命中输出 `no matches`。
+- `decision pending <作品ID>`：列出质量门通过、等待拍板的草稿；草稿生成 / 修订通过质量门时，命令末尾会提示 `awaiting decision`。
+
 ## 数据目录与备份
 
 - `NOVEL_DATA_DIR`（默认 `./data`）：
@@ -193,7 +199,8 @@ uv run novel-editorial memory delete <作品ID> <笔记ID>
 - `works show <作品ID>`：班子一览；
 - `memory view <作品ID> --as 作者`：老板视图（档案、班子状态、草稿、最近意见与决策）；
 - `log <作品ID>`：全流程回顾（对话 / 状态 / 草稿 / 意见 / 决策）；
-- `talk list <作品ID>`：对话记录。
+- `talk list <作品ID>`：对话记录；
+- `events list <作品ID>` / `inspect <作品ID> <关键词>` / `decision pending <作品ID>`：事件流、穿透查询与待拍板提醒（见「可见性」）。
 
 ### 我配了 .env 为什么不生效？
 
