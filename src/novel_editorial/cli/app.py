@@ -22,6 +22,7 @@ from novel_editorial.core.chat import (
 )
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.decision import decide
+from novel_editorial.core.demo import run_demo
 from novel_editorial.core.draft import (
     build_memory_pack,
     diff_versions,
@@ -36,9 +37,10 @@ from novel_editorial.core.log import build_workspace_log
 from novel_editorial.core.logging_setup import configure_logging
 from novel_editorial.core.review import add_review, list_reviews, resolve_reviewer
 from novel_editorial.core.style import get_style_anchor, set_style_anchor
+from novel_editorial.core.workspace import create_workspace
 from novel_editorial.llm.client import LLMMessage, build_client
 from novel_editorial.quality.gate import check_quality
-from novel_editorial.store.db import DB, seed_default_band
+from novel_editorial.store.db import DB
 from novel_editorial.store.models import Agent, AgentRole, Decision, Workspace
 
 reconfigure = getattr(sys.stdout, "reconfigure", None)
@@ -129,6 +131,17 @@ def version() -> None:
     typer.echo(__version__)
 
 
+@app.command("demo")
+def demo() -> None:
+    """Run the M1 end-to-end demo (uses mock LLM unless a key is configured)."""
+    settings = load_settings()
+    result = run_demo(settings)
+    typer.echo(f"workspace: {result['workspace_id']}")
+    typer.echo(f"draft: {result['draft_id']}")
+    typer.echo(f"quality passed: {result['quality'].passed} (score {result['quality'].score})")
+    typer.echo("draft accepted. Run `novel-editorial log <workspace_id>` to review the flow.")
+
+
 @app.command("log")
 def log_workspace(workspace_id: str = typer.Argument(..., help="Workspace id")) -> None:
     """Show the full workflow log for a workspace."""
@@ -148,14 +161,8 @@ def works_create(
     settings = load_settings()
     db = DB(settings)
     db.init_schema()
-    with db.global_session() as session:
-        workspace = Workspace(title=title, genre=genre, description=description)
-        session.add(workspace)
-        session.commit()
-        workspace_id = workspace.id
-    db.create_workspace_db(workspace_id)
-    seed_default_band(db, workspace_id)
-    typer.echo(f"created workspace {workspace_id}: {title}")
+    workspace = create_workspace(db, title=title, genre=genre, description=description)
+    typer.echo(f"created workspace {workspace.id}: {title}")
 
 
 @works_app.command("list")
