@@ -269,7 +269,15 @@ def test_memory_note_rejects_blank_content(
 
 @pytest.mark.parametrize(
     "content",
-    ["first line\nsecond line", "first line\rsecond line", "first line\r\nsecond line"],
+    [
+        "first line\nsecond line",
+        "first line\rsecond line",
+        "first line\r\nsecond line",
+        "first line\u2028second line",
+        "first line\u2029second line",
+        "first line\x0bsecond line",
+        "first line\x0csecond line",
+    ],
 )
 def test_memory_note_rejects_newline_content(
     tmp_path: Path, monkeypatch, content: str
@@ -347,7 +355,16 @@ def test_add_memory_note_rejects_foreign_agent(tmp_path: Path, monkeypatch) -> N
 
 
 @pytest.mark.parametrize(
-    "content", ["line one\nline two", "line one\rline two", "line one\r\nline two"]
+    "content",
+    [
+        "line one\nline two",
+        "line one\rline two",
+        "line one\r\nline two",
+        "line one\u2028line two",
+        "line one\u2029line two",
+        "line one\x0bline two",
+        "line one\x0cline two",
+    ],
 )
 def test_add_memory_note_rejects_newline_content(
     tmp_path: Path, monkeypatch, content: str

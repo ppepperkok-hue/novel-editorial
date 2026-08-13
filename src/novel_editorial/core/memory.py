@@ -33,7 +33,7 @@ def add_memory_note(
         )
     if not content.strip():
         raise NovelError(ErrorCode.USAGE_ERROR, "memory content must not be empty")
-    if "\n" in content or "\r" in content:
+    if len(content.splitlines()) > 1:
         raise NovelError(ErrorCode.USAGE_ERROR, "memory content must not contain newlines")
     with db.workspace_session(workspace_id) as session:
         agent = session.query(Agent).filter_by(workspace_id=workspace_id, id=agent_id).first()
