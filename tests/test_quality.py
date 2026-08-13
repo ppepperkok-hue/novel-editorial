@@ -158,6 +158,10 @@ def test_workspace_log_aggregates_flow(tmp_path: Path, monkeypatch) -> None:
         "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="他推开门，走进院子。"),
     )
+    monkeypatch.setattr(
+        "novel_editorial.cli.talk.build_client",
+        lambda settings: MockLLMClient(reply="他推开门，走进院子。"),
+    )
     runner.invoke(app, ["talk", "send", workspace_id, "写一个雨夜故事"])
     created = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "第一章"])
     draft_id = created.output.split()[1]

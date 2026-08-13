@@ -221,6 +221,10 @@ def test_end_to_end_event_order(tmp_path: Path, monkeypatch) -> None:
         "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="正文内容"),
     )
+    monkeypatch.setattr(
+        "novel_editorial.cli.talk.build_client",
+        lambda settings: MockLLMClient(reply="正文内容"),
+    )
     talk = runner.invoke(app, ["talk", "send", workspace_id, "我们写一个侦探故事"])
     assert talk.exit_code == 0, talk.output
     draft = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "第一章"])
@@ -254,6 +258,10 @@ def test_events_list_cli_filters_limits_and_rejects_unknown_types(
 
     monkeypatch.setattr(
         "novel_editorial.cli.draft.build_client",
+        lambda settings: MockLLMClient(reply="正文内容"),
+    )
+    monkeypatch.setattr(
+        "novel_editorial.cli.talk.build_client",
         lambda settings: MockLLMClient(reply="正文内容"),
     )
     runner.invoke(app, ["talk", "send", workspace_id, "我们写一个侦探故事"])

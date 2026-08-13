@@ -156,6 +156,10 @@ def test_proactive_question_survives_rebuttal(tmp_path: Path, monkeypatch) -> No
         "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="正文内容"),
     )
+    monkeypatch.setattr(
+        "novel_editorial.cli.talk.build_client",
+        lambda settings: MockLLMClient(reply="正文内容"),
+    )
     created = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "第一章"])
     draft_id = created.output.split()[1]
     runner.invoke(
