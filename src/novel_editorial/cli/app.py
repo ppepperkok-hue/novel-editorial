@@ -376,12 +376,7 @@ def memory_note(
     db = DB(settings)
     db.init_schema()
     get_workspace_or_raise(db, workspace_id)
-    try:
-        agent = resolve_agent(db, workspace_id, target)
-    except NovelError as exc:
-        if exc.code is ErrorCode.NOT_FOUND:
-            raise NovelError(ErrorCode.USAGE_ERROR, exc.message) from exc
-        raise
+    agent = resolve_agent(db, workspace_id, target)
     add_memory_note(db, workspace_id, agent.id, actor=actor, content=content)
     typer.echo(f"note added to {agent.name} by {actor}")
 

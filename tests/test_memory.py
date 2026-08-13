@@ -116,10 +116,10 @@ def test_memory_notes_empty(tmp_path: Path, monkeypatch) -> None:
     assert "no notes for 写手" in single.output
 
 
-def test_memory_note_unknown_agent(tmp_path: Path, monkeypatch) -> None:
+def test_memory_note_unknown_agent_not_found(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     result = runner.invoke(app, ["memory", "note", workspace_id, "nope", "--content", "x"])
-    assert result.exit_code == 2
+    assert result.exit_code == 1
     assert "agent not found" in result.output
 
 
@@ -215,7 +215,7 @@ def test_memory_note_missing_as_rejected_as_read_only_author(
     assert "缺省即作者" not in listed.output
 
 
-def test_memory_note_valid_actor_unknown_target_usage_error(
+def test_memory_note_valid_actor_unknown_target_not_found(
     tmp_path: Path, monkeypatch
 ) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
@@ -223,7 +223,7 @@ def test_memory_note_valid_actor_unknown_target_usage_error(
         app,
         ["memory", "note", workspace_id, "nope", "--content", "x", "--as", "写手"],
     )
-    assert result.exit_code == 2
+    assert result.exit_code == 1
     assert "agent not found" in result.output
 
 
@@ -265,6 +265,27 @@ def test_memory_note_rejects_blank_content(
     result = runner.invoke(app, ["memory", "note", workspace_id, "写手", "--content", content])
     assert result.exit_code == 2
     assert "must not be empty" in result.output
+
+
+@pytest.mark.parametrize(
+    "content",
+    ["first line\nsecond line", "first line\rsecond line", "first line\r\nsecond line"],
+)
+def test_memory_note_rejects_newline_content(
+    tmp_path: Path, monkeypatch, content: str
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    result = runner.invoke(
+        app,
+        ["memory", "note", workspace_id, "写手", "--content", content, "--as", "写手"],
+    )
+    assert result.exit_code == 2, result.output
+    assert "must not contain newlines" in result.output
+    settings = load_settings()
+    db = DB(settings)
+    with db.workspace_session(workspace_id) as session:
+        notes = session.query(AgentMemory).filter_by(workspace_id=workspace_id).all()
+        assert notes == []
 
 
 def test_memory_delete_removes_note(tmp_path: Path, monkeypatch) -> None:
@@ -323,6 +344,25 @@ def test_add_memory_note_rejects_foreign_agent(tmp_path: Path, monkeypatch) -> N
     with pytest.raises(NovelError) as exc_info:
         add_memory_note(db, workspace_b, writer_a.id, actor="写手", content="串台笔记")
     assert exc_info.value.code is ErrorCode.NOT_FOUND
+
+
+@pytest.mark.parametrize(
+    "content", ["line one\nline two", "line one\rline two", "line one\r\nline two"]
+)
+def test_add_memory_note_rejects_newline_content(
+    tmp_path: Path, monkeypatch, content: str
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = DB(settings)
+    with db.workspace_session(workspace_id) as session:
+        writer = session.query(Agent).filter_by(workspace_id=workspace_id, role="writer").first()
+        assert writer is not None
+
+    with pytest.raises(NovelError) as exc_info:
+        add_memory_note(db, workspace_id, writer.id, actor="写手", content=content)
+    assert exc_info.value.code is ErrorCode.USAGE_ERROR
+    assert "must not contain newlines" in exc_info.value.message
 
 
 def test_agent_memory_model_columns() -> None:
