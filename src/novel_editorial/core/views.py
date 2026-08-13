@@ -9,6 +9,7 @@ from novel_editorial.core.chat import (
 )
 from novel_editorial.core.draft import build_memory_pack, list_drafts
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.plot import KIND_LABELS
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import (
     Agent,
@@ -17,7 +18,9 @@ from novel_editorial.store.models import (
     Draft,
     DraftVersion,
     Message,
+    PlotThread,
     Review,
+    StyleAnchor,
 )
 
 WRITER_VIEW = "writer"
@@ -212,6 +215,139 @@ def search_memory(db: DB, workspace_id: str, keyword: str) -> str:
                 owner_name = owner.name if owner is not None else note.agent_id
                 lines.append(
                     f"[笔记] {_snippet(note.content, keyword)}（来源: {owner_name}）"
+                )
+
+    if not lines:
+        return "no matches"
+    return "\n".join(lines)
+
+
+def search_all_layers(db: DB, workspace_id: str, keyword: str) -> str:
+    """Case-insensitive search across every visible layer of one workspace (F18).
+
+    Extends `search_memory` with style anchors, decisions, and plot threads while
+    keeping the same snippet and `[layer] 片段（来源: ...）` citation format.
+    """
+    if not keyword.strip():
+        raise NovelError(ErrorCode.USAGE_ERROR, "search keyword must not be empty")
+    workspace = get_workspace_or_raise(db, workspace_id)
+    needle = keyword.lower()
+    lines: list[str] = []
+
+    profile_fields = (
+        ("标题", workspace.title),
+        ("体裁", workspace.genre),
+        ("简介", workspace.description),
+    )
+    for label, value in profile_fields:
+        if needle in value.lower():
+            lines.append(
+                f"[档案] {label}：{_snippet(value, keyword)}"
+                f"（来源: 作品《{workspace.title}》）"
+            )
+
+    with db.workspace_session(workspace_id) as session:
+        anchor = session.query(StyleAnchor).filter_by(workspace_id=workspace_id).first()
+        anchor_fields = (
+            ("描述", anchor.description if anchor is not None else ""),
+            ("禁忌词", anchor.forbidden_words if anchor is not None else ""),
+        )
+        for label, value in anchor_fields:
+            if needle in value.lower():
+                lines.append(
+                    f"[风格] {label}：{_snippet(value, keyword)}（来源: 风格锚点）"
+                )
+
+        agents = {
+            agent.id: agent.name
+            for agent in session.query(Agent).filter_by(workspace_id=workspace_id).all()
+        }
+        messages = (
+            session.query(Message)
+            .filter_by(workspace_id=workspace_id)
+            .order_by(Message.created_at, Message.id)
+            .all()
+        )
+        reviews = (
+            session.query(Review)
+            .filter_by(workspace_id=workspace_id)
+            .order_by(Review.created_at, Review.id)
+            .all()
+        )
+        versions = (
+            session.query(DraftVersion)
+            .join(Draft, Draft.id == DraftVersion.draft_id)
+            .filter(Draft.workspace_id == workspace_id)
+            .order_by(DraftVersion.created_at, DraftVersion.id)
+            .all()
+        )
+        notes = (
+            session.query(AgentMemory)
+            .filter_by(workspace_id=workspace_id)
+            .order_by(AgentMemory.created_at, AgentMemory.id)
+            .all()
+        )
+        decisions = (
+            session.query(Decision)
+            .filter_by(workspace_id=workspace_id)
+            .order_by(Decision.created_at, Decision.id)
+            .all()
+        )
+        threads = (
+            session.query(PlotThread)
+            .filter_by(workspace_id=workspace_id)
+            .order_by(PlotThread.created_at, PlotThread.id)
+            .all()
+        )
+
+        for message in messages:
+            if needle in message.content.lower() or needle in message.actor.lower():
+                lines.append(
+                    f"[对话] {_snippet(message.content, keyword)}（来源: {message.actor}）"
+                )
+        for review in reviews:
+            if needle in review.content.lower() or needle in review.actor.lower():
+                lines.append(
+                    f"[意见] {_snippet(review.content, keyword)}（来源: {review.actor}）"
+                )
+        draft_titles = {
+            draft.id: draft.title
+            for draft in session.query(Draft).filter_by(workspace_id=workspace_id).all()
+        }
+        for version in versions:
+            title = draft_titles.get(version.draft_id, "")
+            if needle in version.content.lower() or needle in title.lower():
+                lines.append(
+                    f"[版本] {_snippet(version.content, keyword)}"
+                    f"（来源: {title} v{version.version}）"
+                )
+        for note in notes:
+            owner_name = agents.get(note.agent_id, note.agent_id)
+            if needle in note.content.lower() or needle in owner_name.lower():
+                lines.append(
+                    f"[笔记] {_snippet(note.content, keyword)}（来源: {owner_name}）"
+                )
+        for decision in decisions:
+            if (
+                needle in decision.action.lower()
+                or needle in decision.actor.lower()
+                or needle in decision.content.lower()
+            ):
+                display = decision.content or decision.action
+                lines.append(
+                    f"[决策] {_snippet(display, keyword)}"
+                    f"（来源: 决策 {decision.action}（{decision.actor}））"
+                )
+        for thread in threads:
+            if (
+                needle in thread.content.lower()
+                or needle in thread.kind.lower()
+                or needle in thread.status.lower()
+            ):
+                label = KIND_LABELS.get(thread.kind, thread.kind)
+                lines.append(
+                    f"[线索] {_snippet(thread.content, keyword)}"
+                    f"（来源: 线索 {label}（{thread.status}））"
                 )
 
     if not lines:

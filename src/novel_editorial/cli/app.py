@@ -45,7 +45,7 @@ from novel_editorial.core.memory import add_memory_note, delete_memory_note, lis
 from novel_editorial.core.plot import KIND_LABELS, list_threads, plant_thread, recover_thread
 from novel_editorial.core.review import add_review, list_reviews, resolve_reviewer
 from novel_editorial.core.style import extract_style_keywords, get_style_anchor, set_style_anchor
-from novel_editorial.core.views import build_role_view, search_memory
+from novel_editorial.core.views import build_role_view, search_all_layers, search_memory
 from novel_editorial.core.workspace import create_workspace
 from novel_editorial.events import EventType
 from novel_editorial.llm.client import LLMMessage, build_client
@@ -174,6 +174,18 @@ def log_workspace(workspace_id: str = typer.Argument(..., help="Workspace id")) 
     db = DB(settings)
     db.init_schema()
     typer.echo(build_workspace_log(db, workspace_id))
+
+
+@app.command("inspect")
+def inspect_workspace(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+    keyword: str = typer.Argument(..., help="Search keyword"),
+) -> None:
+    """Search every workspace layer with source citations."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    typer.echo(search_all_layers(db, workspace_id, keyword))
 
 
 @works_app.command("create")
