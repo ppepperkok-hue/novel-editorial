@@ -68,11 +68,11 @@ class DB:
         if not path.exists():
             raise NovelError(ErrorCode.NOT_FOUND, f"workspace not found: {workspace_id}")
         key = str(path)
-        engine = self._workspace_engines.get(key)
-        if engine is None:
+        if key not in self._workspace_engines:
             engine = _engine(path)
             self._workspace_engines[key] = engine
-        return sessionmaker(bind=engine)()
+            run_migrations(f"sqlite:///{path}")
+        return sessionmaker(bind=self._workspace_engines[key])()
 
 
 DEFAULT_BAND: list[dict[str, str]] = [

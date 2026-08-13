@@ -8,11 +8,24 @@ import typer
 from typer.core import TyperGroup
 
 from novel_editorial import __version__
+from novel_editorial.core.chat import (
+    AUTHOR_ACTOR,
+    PROACTIVE_PAYLOAD,
+    PROACTIVE_QUESTION,
+    build_agent_prompt,
+    get_agent,
+    get_workspace_or_raise,
+    has_proactive_message,
+    list_messages,
+    record_message,
+    resolve_target_role,
+)
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.logging_setup import configure_logging
+from novel_editorial.llm.client import LLMMessage, build_client
 from novel_editorial.store.db import DB, seed_default_band
-from novel_editorial.store.models import Agent, Workspace
+from novel_editorial.store.models import Agent, AgentRole, Workspace
 
 reconfigure = getattr(sys.stdout, "reconfigure", None)
 if callable(reconfigure):
@@ -38,8 +51,10 @@ class NovelGroup(TyperGroup):
 app = typer.Typer(cls=NovelGroup, help="Novel Editorial: a layered AI literary editorial office")
 works_app = typer.Typer(help="Manage workspaces")
 agents_app = typer.Typer(help="Manage editorial partners")
+talk_app = typer.Typer(help="Talk with the editorial band")
 app.add_typer(works_app, name="works")
 app.add_typer(agents_app, name="agents")
+app.add_typer(talk_app, name="talk")
 
 
 @app.callback(invoke_without_command=True)
@@ -161,3 +176,50 @@ def agents_show(workspace_id: str = typer.Argument(..., help="Workspace id")) ->
         typer.echo(f"[{agent.role}] {agent.name}")
         typer.echo(f"  性格: {agent.personality}")
         typer.echo(f"  立场: {agent.stance}")
+
+
+@talk_app.command("send")
+def talk_send(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+    message: str = typer.Argument(..., help="Message to the band"),
+) -> None:
+    """Send one message to the band; the addressed partner replies."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    workspace = get_workspace_or_raise(db, workspace_id)
+
+    record_message(db, workspace_id, role="author", actor=AUTHOR_ACTOR, content=message)
+    target_role = resolve_target_role(message)
+    agent = get_agent(db, workspace_id, target_role)
+    history = list_messages(db, workspace_id)
+    client = build_client(settings)
+    prompt = build_agent_prompt(workspace, agent, history)
+    reply = client.complete([LLMMessage(role="user", content=prompt)]).content
+    record_message(db, workspace_id, role="agent", actor=agent.name, content=reply)
+
+    typer.echo(f"{AUTHOR_ACTOR}: {message}")
+    typer.echo(f"{agent.name}: {reply}")
+
+    if not has_proactive_message(db, workspace_id):
+        editor = get_agent(db, workspace_id, AgentRole.EDITOR)
+        record_message(
+            db,
+            workspace_id,
+            role="agent",
+            actor=editor.name,
+            content=PROACTIVE_QUESTION,
+            payload=PROACTIVE_PAYLOAD,
+        )
+        typer.echo(f"{editor.name}: {PROACTIVE_QUESTION}")
+
+
+@talk_app.command("list")
+def talk_list(workspace_id: str = typer.Argument(..., help="Workspace id")) -> None:
+    """List the conversation history for a workspace."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    get_workspace_or_raise(db, workspace_id)
+    for message in list_messages(db, workspace_id):
+        typer.echo(f"[{message.role}] {message.actor}: {message.content}")

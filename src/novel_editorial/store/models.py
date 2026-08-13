@@ -52,3 +52,17 @@ class Agent(Base):
     personality: Mapped[str] = mapped_column(Text, default="")
     stance: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class Message(Base):
+    """One message in a workspace conversation."""
+
+    __tablename__ = "messages"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(String(32), index=True)
+    role: Mapped[str] = mapped_column(String(20))
+    actor: Mapped[str] = mapped_column(String(100))
+    content: Mapped[str] = mapped_column(Text)
+    payload: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
