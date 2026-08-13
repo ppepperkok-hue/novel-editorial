@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import func, or_, text
+from sqlalchemy import String, and_, bindparam, func, or_, text
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.selectable import Subquery
 
 from novel_editorial.core.chat import (
     _is_conversation_message,
@@ -185,10 +186,39 @@ def _fts_phrase(keyword: str) -> str:
     return '"' + keyword.replace('"', '""') + '"'
 
 
-def _content_hit_ids(session: Session, fts_table: str, keyword: str) -> list[str]:
-    """Return source-row ids whose content matches the keyword in the FTS index."""
-    statement = text(f"SELECT id FROM {fts_table} WHERE {fts_table} MATCH :phrase")
-    return list(session.execute(statement, {"phrase": _fts_phrase(keyword)}).scalars())
+def _fts_tables_present(session: Session) -> bool:
+    """Return True only when every FTS5 shadow table exists in this database.
+
+    One lightweight sqlite_master lookup per search keeps the availability
+    check cheap; any missing layer falls back to the LIKE path as a whole.
+    """
+    statement = text("SELECT name FROM sqlite_master WHERE type = 'table'")
+    names = {name for name in session.execute(statement).scalars()}
+    return all(name in names for name in FTS_TABLE_BY_LAYER.values())
+
+
+def _fts_match_subquery(keyword: str, fts_table: str) -> Subquery:
+    """Render one FTS5 MATCH subquery exposing the matching source-row ids."""
+    statement = (
+        text(f"SELECT id FROM {fts_table} WHERE {fts_table} MATCH :phrase")
+        .bindparams(bindparam("phrase", value=_fts_phrase(keyword)))
+        .columns(id=String(32))
+    )
+    return statement.subquery()
+
+
+def _content_filter(hits: Subquery | None, content_column: Any, needle: str) -> Any:
+    """Content predicate for one searchable layer.
+
+    With FTS5 the predicate requires join membership (id present in the MATCH
+    subquery) on top of the same `_like_contains` refine used by the LIKE
+    path. FTS5 trigram folding is Unicode-aware while SQLite `lower()` only
+    folds ASCII, so MATCH can over-match (café hits CAFÉ); the refine prunes
+    those rows and keeps both paths byte-identical.
+    """
+    if hits is None:
+        return _like_contains(content_column, needle)
+    return and_(hits.c.id.is_not(None), _like_contains(content_column, needle))
 
 
 def search_memory(
@@ -219,53 +249,66 @@ def search_memory(
             )
 
     with db.workspace_session(workspace_id) as session:
-        if use_fts:
-            message_content = Message.id.in_(
-                _content_hit_ids(session, FTS_TABLE_BY_LAYER["message"], keyword)
-            )
-            review_content = Review.id.in_(
-                _content_hit_ids(session, FTS_TABLE_BY_LAYER["review"], keyword)
-            )
-            version_content = DraftVersion.id.in_(
-                _content_hit_ids(session, FTS_TABLE_BY_LAYER["draft_version"], keyword)
-            )
-            note_content = AgentMemory.id.in_(
-                _content_hit_ids(session, FTS_TABLE_BY_LAYER["agent_memory"], keyword)
-            )
-        else:
-            message_content = _like_contains(Message.content, needle)
-            review_content = _like_contains(Review.content, needle)
-            version_content = _like_contains(DraftVersion.content, needle)
-            note_content = _like_contains(AgentMemory.content, needle)
+        if use_fts and not _fts_tables_present(session):
+            use_fts = False
 
+        message_hits = (
+            _fts_match_subquery(keyword, FTS_TABLE_BY_LAYER["message"]) if use_fts else None
+        )
+        review_hits = (
+            _fts_match_subquery(keyword, FTS_TABLE_BY_LAYER["review"]) if use_fts else None
+        )
+        version_hits = (
+            _fts_match_subquery(keyword, FTS_TABLE_BY_LAYER["draft_version"])
+            if use_fts
+            else None
+        )
+        note_hits = (
+            _fts_match_subquery(keyword, FTS_TABLE_BY_LAYER["agent_memory"]) if use_fts else None
+        )
+        message_content = _content_filter(message_hits, Message.content, needle)
+        review_content = _content_filter(review_hits, Review.content, needle)
+        version_content = _content_filter(version_hits, DraftVersion.content, needle)
+        note_content = _content_filter(note_hits, AgentMemory.content, needle)
+
+        messages_query = session.query(Message).filter_by(workspace_id=workspace_id)
+        if message_hits is not None:
+            messages_query = messages_query.outerjoin(
+                message_hits, message_hits.c.id == Message.id
+            )
         messages = (
-            session.query(Message)
-            .filter_by(workspace_id=workspace_id)
-            .filter(message_content)
+            messages_query.filter(message_content)
             .order_by(Message.created_at, Message.id)
             .all()
         )
+        reviews_query = session.query(Review).filter_by(workspace_id=workspace_id)
+        if review_hits is not None:
+            reviews_query = reviews_query.outerjoin(review_hits, review_hits.c.id == Review.id)
         reviews = (
-            session.query(Review)
-            .filter_by(workspace_id=workspace_id)
-            .filter(review_content)
+            reviews_query.filter(review_content)
             .order_by(Review.created_at, Review.id)
             .all()
         )
+        versions_query = session.query(DraftVersion).join(
+            Draft, Draft.id == DraftVersion.draft_id
+        )
+        if version_hits is not None:
+            versions_query = versions_query.outerjoin(
+                version_hits, version_hits.c.id == DraftVersion.id
+            )
         versions = (
-            session.query(DraftVersion)
-            .join(Draft, Draft.id == DraftVersion.draft_id)
-            .filter(
+            versions_query.filter(
                 Draft.workspace_id == workspace_id,
                 version_content,
             )
             .order_by(DraftVersion.created_at, DraftVersion.id)
             .all()
         )
+        notes_query = session.query(AgentMemory).filter_by(workspace_id=workspace_id)
+        if note_hits is not None:
+            notes_query = notes_query.outerjoin(note_hits, note_hits.c.id == AgentMemory.id)
         notes = (
-            session.query(AgentMemory)
-            .filter_by(workspace_id=workspace_id)
-            .filter(note_content)
+            notes_query.filter(note_content)
             .order_by(AgentMemory.created_at, AgentMemory.id)
             .all()
         )
@@ -329,6 +372,9 @@ def search_all_layers(
             )
 
     with db.workspace_session(workspace_id) as session:
+        if use_fts and not _fts_tables_present(session):
+            use_fts = False
+
         anchor = session.query(StyleAnchor).filter_by(workspace_id=workspace_id).first()
         anchor_fields = (
             ("描述", anchor.description if anchor is not None else ""),
@@ -340,33 +386,36 @@ def search_all_layers(
                     f"[风格] {label}：{_snippet(value, keyword)}（来源: 风格锚点）"
                 )
 
-        if use_fts:
-            message_content = Message.id.in_(
-                _content_hit_ids(session, FTS_TABLE_BY_LAYER["message"], keyword)
-            )
-            review_content = Review.id.in_(
-                _content_hit_ids(session, FTS_TABLE_BY_LAYER["review"], keyword)
-            )
-            version_content = DraftVersion.id.in_(
-                _content_hit_ids(session, FTS_TABLE_BY_LAYER["draft_version"], keyword)
-            )
-            note_content = AgentMemory.id.in_(
-                _content_hit_ids(session, FTS_TABLE_BY_LAYER["agent_memory"], keyword)
-            )
-            thread_content = PlotThread.id.in_(
-                _content_hit_ids(session, FTS_TABLE_BY_LAYER["plot_thread"], keyword)
-            )
-        else:
-            message_content = _like_contains(Message.content, needle)
-            review_content = _like_contains(Review.content, needle)
-            version_content = _like_contains(DraftVersion.content, needle)
-            note_content = _like_contains(AgentMemory.content, needle)
-            thread_content = _like_contains(PlotThread.content, needle)
+        message_hits = (
+            _fts_match_subquery(keyword, FTS_TABLE_BY_LAYER["message"]) if use_fts else None
+        )
+        review_hits = (
+            _fts_match_subquery(keyword, FTS_TABLE_BY_LAYER["review"]) if use_fts else None
+        )
+        version_hits = (
+            _fts_match_subquery(keyword, FTS_TABLE_BY_LAYER["draft_version"])
+            if use_fts
+            else None
+        )
+        note_hits = (
+            _fts_match_subquery(keyword, FTS_TABLE_BY_LAYER["agent_memory"]) if use_fts else None
+        )
+        thread_hits = (
+            _fts_match_subquery(keyword, FTS_TABLE_BY_LAYER["plot_thread"]) if use_fts else None
+        )
+        message_content = _content_filter(message_hits, Message.content, needle)
+        review_content = _content_filter(review_hits, Review.content, needle)
+        version_content = _content_filter(version_hits, DraftVersion.content, needle)
+        note_content = _content_filter(note_hits, AgentMemory.content, needle)
+        thread_content = _content_filter(thread_hits, PlotThread.content, needle)
 
+        messages_query = session.query(Message).filter_by(workspace_id=workspace_id)
+        if message_hits is not None:
+            messages_query = messages_query.outerjoin(
+                message_hits, message_hits.c.id == Message.id
+            )
         messages = (
-            session.query(Message)
-            .filter_by(workspace_id=workspace_id)
-            .filter(
+            messages_query.filter(
                 or_(
                     message_content,
                     _like_contains(Message.actor, needle),
@@ -375,10 +424,11 @@ def search_all_layers(
             .order_by(Message.created_at, Message.id)
             .all()
         )
+        reviews_query = session.query(Review).filter_by(workspace_id=workspace_id)
+        if review_hits is not None:
+            reviews_query = reviews_query.outerjoin(review_hits, review_hits.c.id == Review.id)
         reviews = (
-            session.query(Review)
-            .filter_by(workspace_id=workspace_id)
-            .filter(
+            reviews_query.filter(
                 or_(
                     review_content,
                     _like_contains(Review.actor, needle),
@@ -387,10 +437,15 @@ def search_all_layers(
             .order_by(Review.created_at, Review.id)
             .all()
         )
+        versions_query = session.query(DraftVersion).join(
+            Draft, Draft.id == DraftVersion.draft_id
+        )
+        if version_hits is not None:
+            versions_query = versions_query.outerjoin(
+                version_hits, version_hits.c.id == DraftVersion.id
+            )
         versions = (
-            session.query(DraftVersion)
-            .join(Draft, Draft.id == DraftVersion.draft_id)
-            .filter(
+            versions_query.filter(
                 Draft.workspace_id == workspace_id,
                 or_(
                     version_content,
@@ -400,14 +455,18 @@ def search_all_layers(
             .order_by(DraftVersion.created_at, DraftVersion.id)
             .all()
         )
-        notes = (
+        notes_query = (
             session.query(AgentMemory, Agent.name)
             .outerjoin(
                 Agent,
                 (Agent.id == AgentMemory.agent_id)
                 & (Agent.workspace_id == AgentMemory.workspace_id),
             )
-            .filter(
+        )
+        if note_hits is not None:
+            notes_query = notes_query.outerjoin(note_hits, note_hits.c.id == AgentMemory.id)
+        notes = (
+            notes_query.filter(
                 AgentMemory.workspace_id == workspace_id,
                 or_(
                     note_content,
@@ -430,10 +489,13 @@ def search_all_layers(
             .order_by(Decision.created_at, Decision.id)
             .all()
         )
+        threads_query = session.query(PlotThread).filter_by(workspace_id=workspace_id)
+        if thread_hits is not None:
+            threads_query = threads_query.outerjoin(
+                thread_hits, thread_hits.c.id == PlotThread.id
+            )
         threads = (
-            session.query(PlotThread)
-            .filter_by(workspace_id=workspace_id)
-            .filter(
+            threads_query.filter(
                 or_(
                     thread_content,
                     _like_contains(PlotThread.kind, needle),

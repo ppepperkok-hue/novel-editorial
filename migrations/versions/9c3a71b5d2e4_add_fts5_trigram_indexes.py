@@ -6,8 +6,11 @@ Create Date: 2026-08-14 20:30:00.000000
 
 """
 
+import sys
 from collections.abc import Sequence
+from typing import Any
 
+import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -27,9 +30,27 @@ _FTS_LAYERS: tuple[tuple[str, str], ...] = (
     ("plot_thread_fts", "plot_threads"),
 )
 
+_FTS5_WARNING = (
+    "warning: this SQLite build does not include FTS5; skipping trigram "
+    "full-text indexes (case-insensitive LIKE search remains available)"
+)
+
+
+def _fts5_available(connection: Any) -> bool:
+    """Return True when this SQLite build was compiled with FTS5 enabled."""
+    rows = connection.execute(sa.text("PRAGMA compile_options")).fetchall()
+    return any(row[0] == "ENABLE_FTS5" for row in rows)
+
 
 def upgrade() -> None:
-    """Create trigram shadow tables, sync triggers, and backfill existing rows."""
+    """Create trigram shadow tables, sync triggers, and backfill existing rows.
+
+    On builds without FTS5 the migration still records success while skipping
+    every FTS object, so every command stays usable on the LIKE fallback.
+    """
+    if not _fts5_available(op.get_bind()):
+        print(_FTS5_WARNING, file=sys.stderr)
+        return
     for fts_table, source_table in _FTS_LAYERS:
         op.execute(
             f"CREATE VIRTUAL TABLE IF NOT EXISTS {fts_table} USING fts5("

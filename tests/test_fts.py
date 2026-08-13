@@ -1,9 +1,12 @@
 """FTS5 trigram full-text search: migration, sync triggers, and dual-path parity."""
 
+import importlib.util
 import sqlite3
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
-from sqlalchemy import event
+from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from typer.testing import CliRunner
 
@@ -31,6 +34,13 @@ FTS_TABLES = {
 }
 
 PRE_FTS_HEAD = "1ecd3fdf59e1"
+
+MIGRATION_MODULE_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "migrations"
+    / "versions"
+    / "9c3a71b5d2e4_add_fts5_trigram_indexes.py"
+)
 
 MEMORY_KEYWORDS = [
     "暗线七星",
@@ -60,6 +70,8 @@ ADVERSARIAL_KEYWORDS = [
     "—破折—",
     "delete",
 ]
+
+NON_ASCII_KEYWORDS = ("café", "CAFÉ", "straße", "STRASSE", "résumé", "RESUMÉ")
 
 
 def _create_workspace(tmp_path: Path, monkeypatch, title: str = "检索之书") -> str:
@@ -161,6 +173,69 @@ def _seed_layers(db: DB, workspace_id: str) -> str:
     )
     decide(db, workspace_id, draft.id, action="note", content="决策：暗线七星方案待定。")
     return draft.id
+
+
+def _seed_non_ascii_layers(db: DB, workspace_id: str) -> None:
+    """Seed uppercase/lowercase accented text across several searchable layers."""
+    record_message(
+        db,
+        workspace_id,
+        role="author",
+        actor=AUTHOR_ACTOR,
+        content="仓库里只有 CAFÉ 豆",
+    )
+    record_message(
+        db,
+        workspace_id,
+        role="author",
+        actor=AUTHOR_ACTOR,
+        content="café 柜台在转角",
+    )
+    record_message(
+        db,
+        workspace_id,
+        role="author",
+        actor=AUTHOR_ACTOR,
+        content="CAFÉ 与 café 混放",
+    )
+    record_message(
+        db,
+        workspace_id,
+        role="author",
+        actor=AUTHOR_ACTOR,
+        content="Straße 与 STRASSE 并排写",
+    )
+    draft = generate_draft(
+        db,
+        workspace_id,
+        title="拉丁字符卷",
+        client=MockLLMClient(reply="正文：café 要开在 Straße 边。"),
+    )
+    add_review(
+        db,
+        workspace_id,
+        draft.id,
+        role="agent",
+        actor="责编",
+        content="CAFÉ 的招牌统一用 résumé 那种重音。",
+    )
+    add_memory_note(
+        db,
+        workspace_id,
+        _writer_id(db, workspace_id),
+        actor="写手",
+        content="笔记：STRASSE 全部改成 Straße。",
+    )
+
+
+def _load_fts_migration_module():
+    spec = importlib.util.spec_from_file_location(
+        "fts5_migration_under_test", MIGRATION_MODULE_PATH
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _fts_hits(path: Path, table: str, keyword: str) -> list[str]:
@@ -369,3 +444,132 @@ def test_fts_query_escaping_never_errors(tmp_path: Path, monkeypatch) -> None:
         liked = search_memory(db, workspace_id, keyword, _force_fts=False)
         ftsed = search_memory(db, workspace_id, keyword, _force_fts=True)
         assert ftsed.encode("utf-8") == liked.encode("utf-8"), f"keyword={keyword!r}"
+
+
+def test_non_ascii_case_folding_dual_path_parity(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = DB(settings)
+    _seed_non_ascii_layers(db, workspace_id)
+
+    for keyword in NON_ASCII_KEYWORDS:
+        liked = search_memory(db, workspace_id, keyword, _force_fts=False)
+        ftsed = search_memory(db, workspace_id, keyword, _force_fts=True)
+        assert ftsed.encode("utf-8") == liked.encode("utf-8"), f"memory keyword={keyword!r}"
+
+        liked_all = search_all_layers(db, workspace_id, keyword, _force_fts=False)
+        ftsed_all = search_all_layers(db, workspace_id, keyword, _force_fts=True)
+        assert ftsed_all.encode("utf-8") == liked_all.encode("utf-8"), (
+            f"layers keyword={keyword!r}"
+        )
+
+    # P2-1 regression: the Unicode FTS hit on CAFÉ must be pruned by the LIKE refine.
+    cafe = search_memory(db, workspace_id, "café", _force_fts=True)
+    assert "仓库里只有 CAFÉ 豆" not in cafe
+    assert "café 柜台在转角" in cafe
+
+
+def test_search_falls_back_to_like_when_fts_tables_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = DB(settings)
+    _seed_layers(db, workspace_id)
+
+    expected_memory = search_memory(db, workspace_id, "暗线七星", _force_fts=False)
+    expected_layers = search_all_layers(db, workspace_id, "暗线七星", _force_fts=False)
+
+    path = workspace_db_path(settings, workspace_id)
+    connection = sqlite3.connect(path)
+    try:
+        for table in FTS_TABLES:
+            for suffix in ("_ai", "_ad", "_au"):
+                connection.execute(f"DROP TRIGGER IF EXISTS {table}{suffix}")
+            connection.execute(f"DROP TABLE IF EXISTS {table}")
+        connection.commit()
+    finally:
+        connection.close()
+
+    memory_result = search_memory(db, workspace_id, "暗线七星")
+    layers_result = search_all_layers(db, workspace_id, "暗线七星")
+    assert memory_result.encode("utf-8") == expected_memory.encode("utf-8")
+    assert layers_result.encode("utf-8") == expected_layers.encode("utf-8")
+    assert "[对话]" in memory_result
+
+    memory_cli = runner.invoke(app, ["memory", "search", workspace_id, "暗线七星"])
+    assert memory_cli.exit_code == 0, memory_cli.output
+    assert "暗线七星" in memory_cli.output
+
+    inspect_cli = runner.invoke(app, ["inspect", workspace_id, "暗线七星"])
+    assert inspect_cli.exit_code == 0, inspect_cli.output
+    assert "[对话]" in inspect_cli.output
+
+
+def test_fts_path_uses_join_like_refine_not_in_list(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = DB(settings)
+    _seed_layers(db, workspace_id)
+
+    captured: list[tuple[str, tuple | dict]] = []
+
+    def capture(conn, cursor, statement, parameters, context, executemany) -> None:
+        captured.append((statement, parameters or ()))
+
+    event.listen(Engine, "after_cursor_execute", capture)
+    try:
+        search_all_layers(db, workspace_id, "暗线七星")
+    finally:
+        event.remove(Engine, "after_cursor_execute", capture)
+
+    fts_match = [
+        statement
+        for statement, _ in captured
+        if "message_fts" in statement.lower() and "match" in statement.lower()
+    ]
+    assert fts_match, "no FTS MATCH statement reached the message layer"
+
+    joined_like = [
+        statement
+        for statement, _ in captured
+        if "join" in statement.lower()
+        and "message_fts" in statement.lower()
+        and "like" in statement.lower()
+    ]
+    assert joined_like, "FTS content filter was not a JOIN plus LIKE refine"
+
+    assert not any(" in (" in statement.lower() for statement, _ in captured)
+    max_params = max((len(parameters) for _, parameters in captured), default=0)
+    assert max_params < 32, f"found a statement with {max_params} bound parameters"
+
+
+def test_fts5_availability_detection() -> None:
+    migration = _load_fts_migration_module()
+
+    with create_engine("sqlite://").connect() as connection:
+        assert migration._fts5_available(connection) is True
+
+    without_fts5 = SimpleNamespace(
+        execute=lambda statement: SimpleNamespace(
+            fetchall=lambda: [("ENABLE_JSON1",), ("COMPILER=gcc-12.2.0",)]
+        )
+    )
+    assert migration._fts5_available(without_fts5) is False
+
+
+def test_fts_migration_skips_when_fts5_unavailable(capsys) -> None:
+    migration = _load_fts_migration_module()
+    executed: list[str] = []
+    without_fts5 = SimpleNamespace(
+        execute=lambda statement: SimpleNamespace(fetchall=lambda: [("ENABLE_JSON1",)])
+    )
+    fake_op = SimpleNamespace(
+        get_bind=lambda: without_fts5,
+        execute=lambda statement: executed.append(str(statement)),
+    )
+    with mock.patch.object(migration, "op", fake_op):
+        migration.upgrade()
+
+    assert executed == []
+    assert "FTS5" in capsys.readouterr().err
