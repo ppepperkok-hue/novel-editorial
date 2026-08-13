@@ -253,6 +253,17 @@ def list_drafts(db: DB, workspace_id: str) -> list[Draft]:
         )
 
 
+def list_pending_drafts(db: DB, workspace_id: str) -> list[Draft]:
+    """List drafts that passed the quality gate and await the author's decision."""
+    with db.workspace_session(workspace_id) as session:
+        return (
+            session.query(Draft)
+            .filter_by(workspace_id=workspace_id, status="draft")
+            .order_by(Draft.updated_at.desc())
+            .all()
+        )
+
+
 def get_draft(db: DB, workspace_id: str, draft_id: str) -> Draft:
     with db.workspace_session(workspace_id) as session:
         draft = (

@@ -36,6 +36,7 @@ from novel_editorial.core.draft import (
     generate_draft,
     get_draft_version,
     list_drafts,
+    list_pending_drafts,
     revise_draft,
 )
 from novel_editorial.core.errors import ErrorCode, NovelError
@@ -505,6 +506,8 @@ def draft_generate(
         quality_threshold=settings.quality_threshold,
     )
     typer.echo(f"draft {draft.id} {draft.title} now at v{draft.current_version}")
+    if draft.status == "draft":
+        typer.echo(f"awaiting decision: {draft.id}")
 
 
 @draft_app.command("revise")
@@ -527,6 +530,8 @@ def draft_revise(
         quality_threshold=settings.quality_threshold,
     )
     typer.echo(f"draft {revised.id} {revised.title} now at v{revised.current_version}")
+    if revised.status == "draft":
+        typer.echo(f"awaiting decision: {revised.id}")
 
 
 @draft_app.command("list")
@@ -620,6 +625,21 @@ def decision_list(draft_id: str = typer.Argument(..., help="Draft id")) -> None:
         typer.echo(f"[{decision.action}] {decision.actor}{suffix}")
     if not decisions:
         typer.echo("no decisions yet")
+
+
+@decision_app.command("pending")
+def decision_pending(workspace_id: str = typer.Argument(..., help="Workspace id")) -> None:
+    """List drafts that passed the quality gate and await the author's decision."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    get_workspace_or_raise(db, workspace_id)
+    pending = list_pending_drafts(db, workspace_id)
+    if not pending:
+        typer.echo("no pending decisions")
+        return
+    for draft in pending:
+        typer.echo(f"{draft.id}  {draft.title}  v{draft.current_version}  {draft.status}")
 
 
 @decision_app.command("accept")
