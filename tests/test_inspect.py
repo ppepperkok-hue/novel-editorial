@@ -264,3 +264,44 @@ def test_inspect_missing_workspace(tmp_path: Path, monkeypatch) -> None:
     result = runner.invoke(app, ["inspect", "nope", "关键词"])
     assert result.exit_code == 1
     assert "workspace not found" in result.output
+
+
+def test_inspect_escapes_like_wildcards(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    _add_note(workspace_id, "写手", "进度100%达标")
+    _add_note(workspace_id, "写手", "进度100分达标")
+    _add_note(workspace_id, "写手", "代号a_b")
+    _add_note(workspace_id, "写手", "代号aXb")
+    planted = runner.invoke(
+        app,
+        [
+            "plot",
+            "plant",
+            workspace_id,
+            "--kind",
+            "hook",
+            "--content",
+            r"路径 C:\temp 存档",
+        ],
+    )
+    assert planted.exit_code == 0, planted.output
+
+    percent = runner.invoke(app, ["inspect", workspace_id, "%"])
+    assert percent.exit_code == 0, percent.output
+    assert "进度100%达标" in percent.output
+    assert "进度100分达标" not in percent.output
+    assert "代号a_b" not in percent.output
+    assert "代号aXb" not in percent.output
+    assert r"路径 C:\temp 存档" not in percent.output
+
+    underscore = runner.invoke(app, ["inspect", workspace_id, "_"])
+    assert underscore.exit_code == 0, underscore.output
+    assert "代号a_b" in underscore.output
+    assert "代号aXb" not in underscore.output
+    assert "进度100%达标" not in underscore.output
+
+    backslash = runner.invoke(app, ["inspect", workspace_id, "\\"])
+    assert backslash.exit_code == 0, backslash.output
+    assert r"路径 C:\temp 存档" in backslash.output
+    assert "进度100%达标" not in backslash.output
+    assert "代号a_b" not in backslash.output

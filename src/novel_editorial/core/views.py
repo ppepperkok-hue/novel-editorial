@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+from sqlalchemy import func, or_
+
 from novel_editorial.core.chat import (
     _is_conversation_message,
     get_workspace_or_raise,
@@ -145,6 +149,17 @@ def _snippet(text: str, keyword: str, *, width: int = SNIPPET_WIDTH) -> str:
     return f"{prefix}{collapsed[start:end]}{suffix}"
 
 
+def _like_contains(column: Any, needle: str) -> Any:
+    """Case-insensitive literal substring predicate pushed down to SQL LIKE.
+
+    Callers pass an already-lowercased needle. `%`, `_`, and `\\` inside the
+    needle are escaped so LIKE keeps the exact literal substring semantics of
+    Python's `needle in value.lower()`.
+    """
+    escaped = needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return func.lower(column).like(f"%{escaped}%", escape="\\")
+
+
 def search_memory(db: DB, workspace_id: str, keyword: str) -> str:
     """Case-insensitive substring search with source citations across one workspace."""
     if not keyword.strip():
@@ -169,53 +184,55 @@ def search_memory(db: DB, workspace_id: str, keyword: str) -> str:
         messages = (
             session.query(Message)
             .filter_by(workspace_id=workspace_id)
+            .filter(_like_contains(Message.content, needle))
             .order_by(Message.created_at, Message.id)
             .all()
         )
         reviews = (
             session.query(Review)
             .filter_by(workspace_id=workspace_id)
+            .filter(_like_contains(Review.content, needle))
             .order_by(Review.created_at, Review.id)
             .all()
         )
         versions = (
             session.query(DraftVersion)
             .join(Draft, Draft.id == DraftVersion.draft_id)
-            .filter(Draft.workspace_id == workspace_id)
+            .filter(
+                Draft.workspace_id == workspace_id,
+                _like_contains(DraftVersion.content, needle),
+            )
             .order_by(DraftVersion.created_at, DraftVersion.id)
             .all()
         )
         notes = (
             session.query(AgentMemory)
             .filter_by(workspace_id=workspace_id)
+            .filter(_like_contains(AgentMemory.content, needle))
             .order_by(AgentMemory.created_at, AgentMemory.id)
             .all()
         )
         for message in messages:
-            if needle in message.content.lower():
-                lines.append(
-                    f"[对话] {_snippet(message.content, keyword)}（来源: {message.actor}）"
-                )
+            lines.append(
+                f"[对话] {_snippet(message.content, keyword)}（来源: {message.actor}）"
+            )
         for review in reviews:
-            if needle in review.content.lower():
-                lines.append(
-                    f"[意见] {_snippet(review.content, keyword)}（来源: {review.actor}）"
-                )
+            lines.append(
+                f"[意见] {_snippet(review.content, keyword)}（来源: {review.actor}）"
+            )
         for version in versions:
-            if needle in version.content.lower():
-                draft = session.get(Draft, version.draft_id)
-                title = draft.title if draft is not None else ""
-                lines.append(
-                    f"[版本] {_snippet(version.content, keyword)}"
-                    f"（来源: {title} v{version.version}）"
-                )
+            draft = session.get(Draft, version.draft_id)
+            title = draft.title if draft is not None else ""
+            lines.append(
+                f"[版本] {_snippet(version.content, keyword)}"
+                f"（来源: {title} v{version.version}）"
+            )
         for note in notes:
-            if needle in note.content.lower():
-                owner = session.get(Agent, note.agent_id)
-                owner_name = owner.name if owner is not None else note.agent_id
-                lines.append(
-                    f"[笔记] {_snippet(note.content, keyword)}（来源: {owner_name}）"
-                )
+            owner = session.get(Agent, note.agent_id)
+            owner_name = owner.name if owner is not None else note.agent_id
+            lines.append(
+                f"[笔记] {_snippet(note.content, keyword)}（来源: {owner_name}）"
+            )
 
     if not lines:
         return "no matches"
@@ -259,109 +276,133 @@ def search_all_layers(db: DB, workspace_id: str, keyword: str) -> str:
                     f"[风格] {label}：{_snippet(value, keyword)}（来源: 风格锚点）"
                 )
 
-        agents = {
-            agent.id: agent.name
-            for agent in session.query(Agent).filter_by(workspace_id=workspace_id).all()
-        }
         messages = (
             session.query(Message)
             .filter_by(workspace_id=workspace_id)
+            .filter(
+                or_(
+                    _like_contains(Message.content, needle),
+                    _like_contains(Message.actor, needle),
+                )
+            )
             .order_by(Message.created_at, Message.id)
             .all()
         )
         reviews = (
             session.query(Review)
             .filter_by(workspace_id=workspace_id)
+            .filter(
+                or_(
+                    _like_contains(Review.content, needle),
+                    _like_contains(Review.actor, needle),
+                )
+            )
             .order_by(Review.created_at, Review.id)
             .all()
         )
         versions = (
             session.query(DraftVersion)
             .join(Draft, Draft.id == DraftVersion.draft_id)
-            .filter(Draft.workspace_id == workspace_id)
+            .filter(
+                Draft.workspace_id == workspace_id,
+                or_(
+                    _like_contains(DraftVersion.content, needle),
+                    _like_contains(Draft.title, needle),
+                ),
+            )
             .order_by(DraftVersion.created_at, DraftVersion.id)
             .all()
         )
         notes = (
-            session.query(AgentMemory)
-            .filter_by(workspace_id=workspace_id)
+            session.query(AgentMemory, Agent.name)
+            .outerjoin(
+                Agent,
+                (Agent.id == AgentMemory.agent_id)
+                & (Agent.workspace_id == AgentMemory.workspace_id),
+            )
+            .filter(
+                AgentMemory.workspace_id == workspace_id,
+                or_(
+                    _like_contains(AgentMemory.content, needle),
+                    _like_contains(func.coalesce(Agent.name, AgentMemory.agent_id), needle),
+                ),
+            )
             .order_by(AgentMemory.created_at, AgentMemory.id)
             .all()
         )
         decisions = (
             session.query(Decision)
             .filter_by(workspace_id=workspace_id)
+            .filter(
+                or_(
+                    _like_contains(Decision.action, needle),
+                    _like_contains(Decision.actor, needle),
+                    _like_contains(Decision.content, needle),
+                )
+            )
             .order_by(Decision.created_at, Decision.id)
             .all()
         )
         threads = (
             session.query(PlotThread)
             .filter_by(workspace_id=workspace_id)
+            .filter(
+                or_(
+                    _like_contains(PlotThread.content, needle),
+                    _like_contains(PlotThread.kind, needle),
+                    _like_contains(PlotThread.status, needle),
+                )
+            )
             .order_by(PlotThread.created_at, PlotThread.id)
             .all()
         )
 
         for message in messages:
-            content_hit = needle in message.content.lower()
             actor_hit = needle in message.actor.lower()
-            if content_hit or actor_hit:
-                prefix = f"{message.actor}：" if actor_hit else ""
-                lines.append(
-                    f"[对话] {prefix}{_snippet(message.content, keyword)}（来源: {message.actor}）"
-                )
+            prefix = f"{message.actor}：" if actor_hit else ""
+            lines.append(
+                f"[对话] {prefix}{_snippet(message.content, keyword)}（来源: {message.actor}）"
+            )
         for review in reviews:
-            content_hit = needle in review.content.lower()
             actor_hit = needle in review.actor.lower()
-            if content_hit or actor_hit:
-                prefix = f"{review.actor}：" if actor_hit else ""
-                lines.append(
-                    f"[意见] {prefix}{_snippet(review.content, keyword)}（来源: {review.actor}）"
-                )
+            prefix = f"{review.actor}：" if actor_hit else ""
+            lines.append(
+                f"[意见] {prefix}{_snippet(review.content, keyword)}（来源: {review.actor}）"
+            )
         draft_titles = {
             draft.id: draft.title
             for draft in session.query(Draft).filter_by(workspace_id=workspace_id).all()
         }
         for version in versions:
             title = draft_titles.get(version.draft_id, "")
-            content_hit = needle in version.content.lower()
             title_hit = needle in title.lower()
-            if content_hit or title_hit:
-                prefix = f"{title}：" if title_hit else ""
-                lines.append(
-                    f"[版本] {prefix}{_snippet(version.content, keyword)}"
-                    f"（来源: {title} v{version.version}）"
-                )
-        for note in notes:
-            owner_name = agents.get(note.agent_id, note.agent_id)
-            content_hit = needle in note.content.lower()
+            prefix = f"{title}：" if title_hit else ""
+            lines.append(
+                f"[版本] {prefix}{_snippet(version.content, keyword)}"
+                f"（来源: {title} v{version.version}）"
+            )
+        for note, agent_name in notes:
+            owner_name = agent_name if agent_name is not None else note.agent_id
             owner_hit = needle in owner_name.lower()
-            if content_hit or owner_hit:
-                prefix = f"{owner_name}：" if owner_hit else ""
-                lines.append(
-                    f"[笔记] {prefix}{_snippet(note.content, keyword)}（来源: {owner_name}）"
-                )
+            prefix = f"{owner_name}：" if owner_hit else ""
+            lines.append(
+                f"[笔记] {prefix}{_snippet(note.content, keyword)}（来源: {owner_name}）"
+            )
         for decision in decisions:
-            if (
-                needle in decision.action.lower()
-                or needle in decision.actor.lower()
-                or needle in decision.content.lower()
-            ):
-                display = decision.content or decision.action
-                lines.append(
-                    f"[决策] {_snippet(display, keyword)}"
-                    f"（来源: 决策 {decision.action}（{decision.actor}））"
-                )
+            display = decision.content or decision.action
+            lines.append(
+                f"[决策] {_snippet(display, keyword)}"
+                f"（来源: 决策 {decision.action}（{decision.actor}））"
+            )
         for thread in threads:
-            content_hit = needle in thread.content.lower()
             kind_hit = needle in thread.kind.lower()
             status_hit = needle in thread.status.lower()
-            if content_hit or kind_hit or status_hit:
-                label = KIND_LABELS.get(thread.kind, thread.kind)
-                prefix = f"{thread.kind}/{thread.status}：" if kind_hit or status_hit else ""
-                lines.append(
-                    f"[线索] {prefix}{_snippet(thread.content, keyword)}"
-                    f"（来源: 线索 {label}（{thread.status}））"
-                )
+            label = KIND_LABELS.get(thread.kind, thread.kind)
+            prefix = f"{thread.kind}/{thread.status}：" if kind_hit or status_hit else ""
+            lines.append(
+                f"[线索] {prefix}{_snippet(thread.content, keyword)}"
+                f"（来源: 线索 {label}（{thread.status}））"
+            )
 
     if not lines:
         return "no matches"

@@ -1,11 +1,14 @@
 from pathlib import Path
 
 import pytest
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
 from novel_editorial.core.chat import record_message
 from novel_editorial.core.config import load_settings
+from novel_editorial.core.views import search_all_layers, search_memory
 from novel_editorial.llm.client import MockLLMClient
 from novel_editorial.store.db import DB
 
@@ -212,3 +215,87 @@ def test_memory_search_blank_keyword_usage_error(tmp_path: Path, monkeypatch) ->
     result = runner.invoke(app, ["memory", "search", workspace_id, "   "])
     assert result.exit_code == 2
     assert "must not be empty" in result.output
+
+
+def test_memory_search_escapes_like_wildcards(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    _add_note(workspace_id, "写手", "进度100%达标")
+    _add_note(workspace_id, "写手", "进度100分达标")
+    _add_note(workspace_id, "写手", "代号a_b")
+    _add_note(workspace_id, "写手", "代号aXb")
+    _add_note(workspace_id, "写手", r"路径 C:\temp 存档")
+
+    percent = runner.invoke(app, ["memory", "search", workspace_id, "%"])
+    assert percent.exit_code == 0, percent.output
+    assert "进度100%达标" in percent.output
+    assert "进度100分达标" not in percent.output
+    assert "代号a_b" not in percent.output
+    assert "代号aXb" not in percent.output
+    assert r"路径 C:\temp 存档" not in percent.output
+
+    underscore = runner.invoke(app, ["memory", "search", workspace_id, "_"])
+    assert underscore.exit_code == 0, underscore.output
+    assert "代号a_b" in underscore.output
+    assert "代号aXb" not in underscore.output
+    assert "进度100%达标" not in underscore.output
+
+    backslash = runner.invoke(app, ["memory", "search", workspace_id, "\\"])
+    assert backslash.exit_code == 0, backslash.output
+    assert r"路径 C:\temp 存档" in backslash.output
+    assert "进度100%达标" not in backslash.output
+    assert "代号a_b" not in backslash.output
+
+    composite = runner.invoke(app, ["memory", "search", workspace_id, "100%达标"])
+    assert composite.exit_code == 0, composite.output
+    assert "进度100%达标" in composite.output
+    assert "进度100分达标" not in composite.output
+
+
+@pytest.mark.parametrize(
+    ("searcher", "expected_tables"),
+    [
+        (search_memory, ("messages", "reviews", "draft_versions", "agent_memories")),
+        (
+            search_all_layers,
+            (
+                "messages",
+                "reviews",
+                "draft_versions",
+                "agent_memories",
+                "decisions",
+                "plot_threads",
+            ),
+        ),
+    ],
+)
+def test_search_filters_text_layers_in_sql(
+    tmp_path: Path, monkeypatch, searcher, expected_tables
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = DB(settings)
+
+    statements: list[str] = []
+
+    def capture(conn, cursor, statement, parameters, context, executemany) -> None:
+        statements.append(statement)
+
+    event.listen(Engine, "after_cursor_execute", capture)
+    try:
+        searcher(db, workspace_id, "钩子")
+    finally:
+        event.remove(Engine, "after_cursor_execute", capture)
+
+    selects = {table: [] for table in expected_tables}
+    for statement in statements:
+        lowered = statement.lower()
+        if not lowered.startswith("select"):
+            continue
+        for table in expected_tables:
+            if table in lowered:
+                selects[table].append(statement)
+    for table in expected_tables:
+        assert selects[table], f"no SELECT reached the {table} layer"
+        assert all(
+            "like" in statement.lower() for statement in selects[table]
+        ), f"{table} layer was not filtered in SQL with LIKE"
