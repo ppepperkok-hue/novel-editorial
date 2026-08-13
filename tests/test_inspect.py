@@ -169,30 +169,51 @@ def test_inspect_searches_auxiliary_fields(tmp_path: Path, monkeypatch) -> None:
     assert actor_result.exit_code == 0, actor_result.output
     assert "[对话]" in actor_result.output
     assert "（来源: 写手）" in actor_result.output
+    assert "[对话] 写手：" in actor_result.output
 
     owner_result = runner.invoke(app, ["inspect", workspace_id, "责编"])
     assert owner_result.exit_code == 0, owner_result.output
     assert "[笔记]" in owner_result.output
     assert "（来源: 责编）" in owner_result.output
+    assert "[笔记] 责编：" in owner_result.output
 
     title_result = runner.invoke(app, ["inspect", workspace_id, "钩子章"])
     assert title_result.exit_code == 0, title_result.output
     assert "[版本]" in title_result.output
     assert "（来源: 钩子章 v1）" in title_result.output
+    assert "[版本] 钩子章：" in title_result.output
 
     action_result = runner.invoke(app, ["inspect", workspace_id, "accept"])
     assert action_result.exit_code == 0, action_result.output
     assert "[决策]" in action_result.output
     assert "（来源: 决策 accept（作者））" in action_result.output
+    assert "accept" in action_result.output
+
+    decision_actor_result = runner.invoke(app, ["inspect", workspace_id, "作者"])
+    assert decision_actor_result.exit_code == 0, decision_actor_result.output
+    assert "[决策]" in decision_actor_result.output
+    assert "（来源: 决策 accept（作者））" in decision_actor_result.output
 
     kind_result = runner.invoke(app, ["inspect", workspace_id, "foreshadow"])
     assert kind_result.exit_code == 0, kind_result.output
     assert "[线索]" in kind_result.output
     assert "（来源: 线索 伏笔（planted））" in kind_result.output
+    assert "[线索] foreshadow/planted：" in kind_result.output
+    assert "foreshadow" in kind_result.output
 
     status_result = runner.invoke(app, ["inspect", workspace_id, "planted"])
     assert status_result.exit_code == 0, status_result.output
     assert "[线索]" in status_result.output
+    assert "planted" in status_result.output
+
+
+def test_inspect_strips_surrounding_whitespace_keyword(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch, description="钩子驱动的悬疑故事")
+    result = runner.invoke(app, ["inspect", workspace_id, " 钩子 "])
+    assert result.exit_code == 0, result.output
+    assert "[档案]" in result.output
+    assert "钩子驱动的悬疑故事" in result.output
+    assert "（来源: 作品《穿透之书》）" in result.output
 
 
 def test_inspect_isolated_between_workspaces(tmp_path: Path, monkeypatch) -> None:

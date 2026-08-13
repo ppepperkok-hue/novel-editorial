@@ -230,6 +230,7 @@ def search_all_layers(db: DB, workspace_id: str, keyword: str) -> str:
     """
     if not keyword.strip():
         raise NovelError(ErrorCode.USAGE_ERROR, "search keyword must not be empty")
+    keyword = keyword.strip()
     workspace = get_workspace_or_raise(db, workspace_id)
     needle = keyword.lower()
     lines: list[str] = []
@@ -301,14 +302,20 @@ def search_all_layers(db: DB, workspace_id: str, keyword: str) -> str:
         )
 
         for message in messages:
-            if needle in message.content.lower() or needle in message.actor.lower():
+            content_hit = needle in message.content.lower()
+            actor_hit = needle in message.actor.lower()
+            if content_hit or actor_hit:
+                prefix = f"{message.actor}：" if actor_hit else ""
                 lines.append(
-                    f"[对话] {_snippet(message.content, keyword)}（来源: {message.actor}）"
+                    f"[对话] {prefix}{_snippet(message.content, keyword)}（来源: {message.actor}）"
                 )
         for review in reviews:
-            if needle in review.content.lower() or needle in review.actor.lower():
+            content_hit = needle in review.content.lower()
+            actor_hit = needle in review.actor.lower()
+            if content_hit or actor_hit:
+                prefix = f"{review.actor}：" if actor_hit else ""
                 lines.append(
-                    f"[意见] {_snippet(review.content, keyword)}（来源: {review.actor}）"
+                    f"[意见] {prefix}{_snippet(review.content, keyword)}（来源: {review.actor}）"
                 )
         draft_titles = {
             draft.id: draft.title
@@ -316,16 +323,22 @@ def search_all_layers(db: DB, workspace_id: str, keyword: str) -> str:
         }
         for version in versions:
             title = draft_titles.get(version.draft_id, "")
-            if needle in version.content.lower() or needle in title.lower():
+            content_hit = needle in version.content.lower()
+            title_hit = needle in title.lower()
+            if content_hit or title_hit:
+                prefix = f"{title}：" if title_hit else ""
                 lines.append(
-                    f"[版本] {_snippet(version.content, keyword)}"
+                    f"[版本] {prefix}{_snippet(version.content, keyword)}"
                     f"（来源: {title} v{version.version}）"
                 )
         for note in notes:
             owner_name = agents.get(note.agent_id, note.agent_id)
-            if needle in note.content.lower() or needle in owner_name.lower():
+            content_hit = needle in note.content.lower()
+            owner_hit = needle in owner_name.lower()
+            if content_hit or owner_hit:
+                prefix = f"{owner_name}：" if owner_hit else ""
                 lines.append(
-                    f"[笔记] {_snippet(note.content, keyword)}（来源: {owner_name}）"
+                    f"[笔记] {prefix}{_snippet(note.content, keyword)}（来源: {owner_name}）"
                 )
         for decision in decisions:
             if (
@@ -339,14 +352,14 @@ def search_all_layers(db: DB, workspace_id: str, keyword: str) -> str:
                     f"（来源: 决策 {decision.action}（{decision.actor}））"
                 )
         for thread in threads:
-            if (
-                needle in thread.content.lower()
-                or needle in thread.kind.lower()
-                or needle in thread.status.lower()
-            ):
+            content_hit = needle in thread.content.lower()
+            kind_hit = needle in thread.kind.lower()
+            status_hit = needle in thread.status.lower()
+            if content_hit or kind_hit or status_hit:
                 label = KIND_LABELS.get(thread.kind, thread.kind)
+                prefix = f"{thread.kind}/{thread.status}：" if kind_hit or status_hit else ""
                 lines.append(
-                    f"[线索] {_snippet(thread.content, keyword)}"
+                    f"[线索] {prefix}{_snippet(thread.content, keyword)}"
                     f"（来源: 线索 {label}（{thread.status}））"
                 )
 
