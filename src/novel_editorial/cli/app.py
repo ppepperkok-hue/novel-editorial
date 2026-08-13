@@ -11,6 +11,7 @@ from novel_editorial import __version__
 from novel_editorial.core.agents import resolve_agent, update_agent_field
 from novel_editorial.core.chat import (
     AUTHOR_ACTOR,
+    MOOD_TALK,
     PROACTIVE_PAYLOAD,
     PROACTIVE_QUESTION,
     build_agent_prompt,
@@ -21,6 +22,7 @@ from novel_editorial.core.chat import (
     list_messages,
     record_message,
     resolve_target_role,
+    update_agent_mood,
 )
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.decision import decide
@@ -229,6 +231,7 @@ def agents_show(workspace_id: str = typer.Argument(..., help="Workspace id")) ->
         agents = session.query(Agent).order_by(Agent.created_at).all()
     for agent in agents:
         typer.echo(f"[{agent.role}] {agent.name}")
+        typer.echo(f"  当前状态: {agent.mood}")
         typer.echo(f"  性格: {agent.personality}")
         typer.echo(f"  立场: {agent.stance}")
         typer.echo(f"  价值观: {agent.values}")
@@ -281,6 +284,7 @@ def talk_send(
             content=refusal,
             payload={"kind": "refusal"},
         )
+        update_agent_mood(db, workspace_id, agent, MOOD_TALK)
         typer.echo(f"{AUTHOR_ACTOR}: {message}")
         typer.echo(f"{agent.name}: {refusal}")
         return
@@ -290,6 +294,7 @@ def talk_send(
     reply = client.complete([LLMMessage(role="user", content=prompt)]).content
     record_message(db, workspace_id, role="author", actor=AUTHOR_ACTOR, content=message)
     record_message(db, workspace_id, role="agent", actor=agent.name, content=reply)
+    update_agent_mood(db, workspace_id, agent, MOOD_TALK)
 
     typer.echo(f"{AUTHOR_ACTOR}: {message}")
     typer.echo(f"{agent.name}: {reply}")

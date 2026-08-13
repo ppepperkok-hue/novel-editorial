@@ -393,6 +393,7 @@ def test_memory_upgrades_pre_migration_workspace(tmp_path: Path, monkeypatch) ->
     path = workspace_db_path(settings, workspace_id)
     connection = sqlite3.connect(path)
     connection.execute("DROP TABLE IF EXISTS agent_memories")
+    connection.execute('ALTER TABLE agents DROP COLUMN "mood"')
     connection.execute("DELETE FROM alembic_version")
     connection.execute("INSERT INTO alembic_version (version_num) VALUES ('f1f5f128b371')")
     connection.commit()

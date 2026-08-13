@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from novel_editorial.core.chat import (
     AUTHOR_ACTOR,
+    MOOD_TALK,
     PROACTIVE_PAYLOAD,
     PROACTIVE_QUESTION,
     build_agent_prompt,
@@ -11,6 +12,7 @@ from novel_editorial.core.chat import (
     list_messages,
     record_message,
     resolve_target_role,
+    update_agent_mood,
 )
 from novel_editorial.core.config import Settings
 from novel_editorial.core.decision import decide
@@ -38,6 +40,7 @@ def run_demo(settings: Settings) -> dict:
     reply = client.complete([LLMMessage(role="user", content=prompt)]).content
     record_message(db, workspace_id, role="author", actor=AUTHOR_ACTOR, content=author_message)
     record_message(db, workspace_id, role="agent", actor=agent.name, content=reply)
+    update_agent_mood(db, workspace_id, agent, MOOD_TALK)
 
     editor = get_agent(db, workspace_id, AgentRole.EDITOR)
     record_message(

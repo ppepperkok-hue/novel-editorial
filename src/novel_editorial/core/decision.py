@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+from novel_editorial.core.chat import (
+    MOOD_ACCEPTED,
+    MOOD_REJECTED,
+    get_agent,
+    update_agent_mood,
+)
 from novel_editorial.core.draft import get_draft
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.store.db import DB
-from novel_editorial.store.models import Decision, Draft
+from novel_editorial.store.models import AgentRole, Decision, Draft
 
 DRAFT_STATUS = "draft"
 ACCEPTED_STATUS = "accepted"
@@ -58,4 +64,10 @@ def decide(
             )
         )
         session.commit()
-        return draft
+    if action == "accept":
+        writer = get_agent(db, workspace_id, AgentRole.WRITER)
+        update_agent_mood(db, workspace_id, writer, MOOD_ACCEPTED)
+    elif action == "reject":
+        writer = get_agent(db, workspace_id, AgentRole.WRITER)
+        update_agent_mood(db, workspace_id, writer, MOOD_REJECTED)
+    return draft

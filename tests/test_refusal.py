@@ -72,10 +72,11 @@ def test_refusal_records_author_message(tmp_path: Path, monkeypatch) -> None:
 
     settings = load_settings()
     messages = list_messages(DB(settings), workspace_id)
-    assert len(messages) == 2
+    assert len(messages) == 3
     assert messages[0].role == "author"
     assert messages[1].role == "agent"
     assert '"kind": "refusal"' in messages[1].payload
+    assert '"kind": "mood_change"' in messages[2].payload
 
 
 def test_negative_requests_are_not_refused(tmp_path: Path, monkeypatch) -> None:

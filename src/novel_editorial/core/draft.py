@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from difflib import unified_diff
 
-from novel_editorial.core.chat import get_agent, get_workspace_or_raise, record_message
+from novel_editorial.core.chat import (
+    MOOD_REVISING,
+    get_agent,
+    get_workspace_or_raise,
+    record_message,
+    update_agent_mood,
+)
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.review import list_reviews
 from novel_editorial.core.style import get_style_anchor
@@ -151,6 +157,7 @@ def revise_draft(
             )
         )
         session.commit()
+    update_agent_mood(db, workspace_id, writer, MOOD_REVISING)
     if any(r.role == "agent" for r in reviews):
         record_message(
             db,

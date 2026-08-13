@@ -16,6 +16,11 @@ PROACTIVE_QUESTION = (
     "这个定不下来，后面每一章都会飘。"
 )
 
+MOOD_TALK = "投入对话"
+MOOD_REVISING = "专注修订"
+MOOD_REJECTED = "低落"
+MOOD_ACCEPTED = "振奋"
+
 ROLE_ALIASES: dict[str, str] = {
     "总编": AgentRole.EDITOR_IN_CHIEF,
     "主编": AgentRole.EDITOR_IN_CHIEF,
@@ -104,6 +109,33 @@ def record_message(
         session.add(message)
         session.commit()
         return message
+
+
+def update_agent_mood(db: DB, workspace_id: str, agent: Agent, mood: str) -> Message | None:
+    """Persist one partner's mood change and leave a mood_change message trace."""
+    if not mood:
+        raise NovelError(ErrorCode.USAGE_ERROR, "mood must not be empty")
+    with db.workspace_session(workspace_id) as session:
+        row = (
+            session.query(Agent)
+            .filter_by(workspace_id=workspace_id, id=agent.id)
+            .first()
+        )
+        if row is None:
+            raise NovelError(ErrorCode.NOT_FOUND, f"agent not found: {agent.id}")
+        previous = row.mood
+        if previous == mood:
+            return None
+        row.mood = mood
+        session.commit()
+    return record_message(
+        db,
+        workspace_id,
+        role="system",
+        actor=agent.name,
+        content=f"{agent.name} 的状态从「{previous}」变为「{mood}」",
+        payload={"kind": "mood_change", "from": previous, "to": mood, "agent": agent.name},
+    )
 
 
 def list_messages(db: DB, workspace_id: str) -> list[Message]:

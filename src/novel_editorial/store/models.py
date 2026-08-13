@@ -54,6 +54,7 @@ class Agent(Base):
     values: Mapped[str] = mapped_column(Text, default="")
     aesthetic: Mapped[str] = mapped_column(Text, default="")
     emotion_baseline: Mapped[str] = mapped_column(Text, default="")
+    mood: Mapped[str] = mapped_column(Text, default="平静")
     work_habits: Mapped[str] = mapped_column(Text, default="")
     weaknesses: Mapped[str] = mapped_column(Text, default="")
     relationship_presets: Mapped[str] = mapped_column(Text, default="")

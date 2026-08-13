@@ -33,9 +33,11 @@ def test_demo_runs_full_loop(tmp_path: Path, monkeypatch) -> None:
         assert draft.status == "accepted"
 
     messages = list_messages(db, workspace_id)
-    assert len(messages) == 3
+    assert len(messages) == 5
     assert messages[0].role == "author"
     assert messages[1].role == "agent" and messages[1].actor == "总编"
+    mood_changes = [m for m in messages if '"kind": "mood_change"' in m.payload]
+    assert len(mood_changes) == 2
     proactive = [m for m in messages if '"initiator": "agent"' in m.payload]
     assert len(proactive) == 1
     assert "我想先确认一下" in proactive[0].content

@@ -33,11 +33,13 @@ def test_talk_send_records_author_reply_and_proactive(tmp_path: Path, monkeypatc
     settings = load_settings()
     db = DB(settings)
     messages = list_messages(db, workspace_id)
-    assert len(messages) == 3
+    assert len(messages) == 4
     assert messages[0].role == "author"
     assert messages[1].role == "agent" and messages[1].actor == "总编"
-    payload = json.loads(messages[2].payload)
-    assert payload["initiator"] == "agent"
+    mood_payload = json.loads(messages[2].payload)
+    assert mood_payload["kind"] == "mood_change"
+    proactive_payload = json.loads(messages[3].payload)
+    assert proactive_payload["initiator"] == "agent"
     assert has_proactive_message(db, workspace_id)
 
 
@@ -123,10 +125,11 @@ def test_talk_upgrades_pre_migration_workspace(tmp_path: Path, monkeypatch) -> N
         "aesthetic",
         "emotion_baseline",
         "work_habits",
-        "weaknesses",
-        "relationship_presets",
-        "private_motive",
-    ):
+            "weaknesses",
+            "relationship_presets",
+            "private_motive",
+            "mood",
+        ):
         connection.execute(f'ALTER TABLE agents DROP COLUMN "{column}"')
     connection.execute("DELETE FROM alembic_version")
     connection.execute("INSERT INTO alembic_version (version_num) VALUES ('3b05b83f8953')")
@@ -135,7 +138,7 @@ def test_talk_upgrades_pre_migration_workspace(tmp_path: Path, monkeypatch) -> N
 
     result = runner.invoke(app, ["talk", "send", workspace_id, "升级后能聊"])
     assert result.exit_code == 0, result.output
-    assert len(list_messages(db, workspace_id)) == 3
+    assert len(list_messages(db, workspace_id)) == 4
 
     with db.workspace_session(workspace_id) as session:
         from novel_editorial.store.models import Agent
@@ -144,6 +147,7 @@ def test_talk_upgrades_pre_migration_workspace(tmp_path: Path, monkeypatch) -> N
         assert writer is not None
         assert writer.values
         assert writer.private_motive
+        assert writer.mood == "平静"
 
 
 def test_proactive_question_survives_rebuttal(tmp_path: Path, monkeypatch) -> None:

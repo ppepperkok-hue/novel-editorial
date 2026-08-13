@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from novel_editorial.core.chat import get_workspace_or_raise, list_messages
 from novel_editorial.core.draft import list_drafts
 from novel_editorial.store.db import DB
@@ -23,10 +25,26 @@ def build_workspace_log(db: DB, workspace_id: str) -> str:
     lines = [f"作品：《{workspace.title}》（{workspace.genre}）"]
 
     messages = list_messages(db, workspace_id)
-    if messages:
+    conversation: list = []
+    mood_changes: list[tuple] = []
+    for message in messages:
+        try:
+            payload = json.loads(message.payload or "{}")
+        except json.JSONDecodeError:
+            payload = {}
+        if payload.get("kind") == "mood_change":
+            mood_changes.append((message, payload))
+        else:
+            conversation.append(message)
+    if conversation:
         lines.append("\n== 对话 ==")
-        for message in messages:
+        for message in conversation:
             lines.append(f"[{message.role}] {message.actor}: {message.content}")
+    if mood_changes:
+        lines.append("\n== 状态 ==")
+        for message, payload in mood_changes:
+            agent = payload.get("agent") or message.actor
+            lines.append(f"[{agent}] {payload.get('from')} -> {payload.get('to')} (mood_change)")
 
     drafts = list_drafts(db, workspace_id)
     if drafts:
