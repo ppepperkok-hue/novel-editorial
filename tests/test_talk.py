@@ -137,6 +137,14 @@ def test_talk_upgrades_pre_migration_workspace(tmp_path: Path, monkeypatch) -> N
     assert result.exit_code == 0, result.output
     assert len(list_messages(db, workspace_id)) == 3
 
+    with db.workspace_session(workspace_id) as session:
+        from novel_editorial.store.models import Agent
+
+        writer = session.query(Agent).filter_by(workspace_id=workspace_id, role="writer").first()
+        assert writer is not None
+        assert writer.values
+        assert writer.private_motive
+
 
 def test_proactive_question_survives_rebuttal(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
