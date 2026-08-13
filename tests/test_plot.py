@@ -148,7 +148,16 @@ def test_plot_plant_rejects_invalid_kind_and_empty_content(
 
 def test_plot_plant_rejects_multiline_content(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
-    for content in ("第一行\n第二行", "第一行\r第二行", "第一行\u2028第二行"):
+    contents = (
+        "第一行\n第二行",
+        "第一行\r第二行",
+        "第一行\u2028第二行",
+        "第一行\n",
+        "第一行\r",
+        "第一行\r\n",
+        "第一行\u2028",
+    )
+    for content in contents:
         result = runner.invoke(
             app, ["plot", "plant", workspace_id, "--kind", "foreshadow", "--content", content]
         )

@@ -47,7 +47,7 @@ def plant_thread(
         )
     if not content.strip():
         raise NovelError(ErrorCode.USAGE_ERROR, "thread content must not be empty")
-    if len(content.splitlines()) > 1:
+    if "".join(content.splitlines()) != content:
         raise NovelError(ErrorCode.USAGE_ERROR, "thread content must not contain newlines")
     _ensure_workspace(db, workspace_id)
     with db.workspace_session(workspace_id) as session:
