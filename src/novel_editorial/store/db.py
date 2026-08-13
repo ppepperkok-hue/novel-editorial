@@ -76,10 +76,30 @@ class DB:
 
 
 DEFAULT_BAND: list[dict[str, str]] = [
-    {"role": AgentRole.EDITOR_IN_CHIEF, "name": "总编"},
-    {"role": AgentRole.EDITOR, "name": "责编"},
-    {"role": AgentRole.WRITER, "name": "写手"},
-    {"role": AgentRole.REVIEWER, "name": "审稿"},
+    {
+        "role": AgentRole.EDITOR_IN_CHIEF,
+        "name": "总编",
+        "personality": "沉稳果断，重整体结构与叙事基调，说话留三分余地，但主线问题上从不含糊。",
+        "stance": "叙事完整性与作品基调优先；反对为热度牺牲人物逻辑。",
+    },
+    {
+        "role": AgentRole.EDITOR,
+        "name": "责编",
+        "personality": "敏锐挑剔，追读体验至上，细节上较真，说话直接。",
+        "stance": "读者节奏优先；先抓钩子和信息密度，再谈文笔。",
+    },
+    {
+        "role": AgentRole.WRITER,
+        "name": "写手",
+        "personality": "手感型创作者，擅长把大纲变成有温度的正文，容易带入角色情绪，偶尔超字数。",
+        "stance": "忠于人物内心戏，反对为剧情强行降智。",
+    },
+    {
+        "role": AgentRole.REVIEWER,
+        "name": "审稿",
+        "personality": "冷静严谨，盯逻辑漏洞和伏笔，话不多但句句在点子上。",
+        "stance": "连贯性与一致性优先；发现前后矛盾必退稿。",
+    },
 ]
 
 
@@ -91,8 +111,8 @@ def seed_default_band(db: DB, workspace_id: str) -> None:
                     workspace_id=workspace_id,
                     name=member["name"],
                     role=member["role"],
-                    personality="",
-                    stance="",
+                    personality=member["personality"],
+                    stance=member["stance"],
                 )
             )
         session.commit()
