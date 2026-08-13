@@ -187,13 +187,25 @@ def _fts_phrase(keyword: str) -> str:
 
 
 def _fts_tables_present(session: Session) -> bool:
-    """Return True only when every FTS5 shadow table exists in this database.
+    """Return True only when FTS5 is enabled and every shadow table exists.
 
-    One lightweight sqlite_master lookup per search keeps the availability
-    check cheap; any missing layer falls back to the LIKE path as a whole.
+    A database created on an FTS5 build keeps its shadow tables when copied
+    onto a build without FTS5, where MATCH fails with "no such module: fts5".
+    Checking the compile options first makes the probe fail closed, so every
+    search falls back to LIKE instead of crashing; any missing layer also
+    falls back as a whole.
     """
-    statement = text("SELECT name FROM sqlite_master WHERE type = 'table'")
-    names = {name for name in session.execute(statement).scalars()}
+    options = {
+        option for option in session.execute(text("PRAGMA compile_options")).scalars()
+    }
+    if "ENABLE_FTS5" not in options:
+        return False
+    names = {
+        name
+        for name in session.execute(
+            text("SELECT name FROM sqlite_master WHERE type = 'table'")
+        ).scalars()
+    }
     return all(name in names for name in FTS_TABLE_BY_LAYER.values())
 
 

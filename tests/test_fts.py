@@ -4,10 +4,12 @@ import importlib.util
 import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 from unittest import mock
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
@@ -18,7 +20,12 @@ from novel_editorial.core.draft import generate_draft
 from novel_editorial.core.memory import add_memory_note
 from novel_editorial.core.plot import KIND_FORESHADOW, plant_thread
 from novel_editorial.core.review import add_review
-from novel_editorial.core.views import search_all_layers, search_memory
+from novel_editorial.core.views import (
+    FTS_TABLE_BY_LAYER,
+    _fts_tables_present,
+    search_all_layers,
+    search_memory,
+)
 from novel_editorial.llm.client import MockLLMClient
 from novel_editorial.store.db import DB, workspace_db_path
 from novel_editorial.store.models import Agent, AgentMemory, Message
@@ -504,6 +511,39 @@ def test_search_falls_back_to_like_when_fts_tables_missing(
     inspect_cli = runner.invoke(app, ["inspect", workspace_id, "暗线七星"])
     assert inspect_cli.exit_code == 0, inspect_cli.output
     assert "[对话]" in inspect_cli.output
+
+
+def test_fts_probe_true_when_fts5_enabled_and_all_shadow_tables_present() -> None:
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        options = {row[0] for row in connection.execute(text("PRAGMA compile_options"))}
+        assert "ENABLE_FTS5" in options
+        for name in FTS_TABLE_BY_LAYER.values():
+            connection.execute(text(f"CREATE TABLE {name} (id TEXT)"))
+
+    with Session(engine) as session:
+        assert _fts_tables_present(session) is True
+
+
+def test_fts_probe_false_when_fts5_enabled_but_shadow_table_missing() -> None:
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        options = {row[0] for row in connection.execute(text("PRAGMA compile_options"))}
+        assert "ENABLE_FTS5" in options
+        for name in list(FTS_TABLE_BY_LAYER.values())[:-1]:
+            connection.execute(text(f"CREATE TABLE {name} (id TEXT)"))
+
+    with Session(engine) as session:
+        assert _fts_tables_present(session) is False
+
+
+def test_fts_probe_false_when_fts5_disabled_even_if_shadow_tables_exist() -> None:
+    shadow_tables = list(FTS_TABLE_BY_LAYER.values())
+    session = SimpleNamespace(
+        execute=lambda statement: SimpleNamespace(scalars=lambda: iter(shadow_tables))
+    )
+
+    assert _fts_tables_present(cast(Session, session)) is False
 
 
 def test_fts_path_uses_join_like_refine_not_in_list(tmp_path: Path, monkeypatch) -> None:
