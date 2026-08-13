@@ -177,3 +177,16 @@ class Decision(Base):
     actor: Mapped[str] = mapped_column(String(100), default="作者")
     content: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class Event(Base):
+    """One visible collaboration event in a workspace."""
+
+    __tablename__ = "events"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(String(32), index=True)
+    type: Mapped[str] = mapped_column(String(50))
+    time: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    actor: Mapped[str] = mapped_column(String(100))
+    payload: Mapped[str] = mapped_column(Text, default="{}")

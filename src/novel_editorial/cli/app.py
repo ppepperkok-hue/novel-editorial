@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import sys
+import time
 
 import typer
 from typer.core import TyperGroup
@@ -45,11 +47,13 @@ from novel_editorial.core.review import add_review, list_reviews, resolve_review
 from novel_editorial.core.style import extract_style_keywords, get_style_anchor, set_style_anchor
 from novel_editorial.core.views import build_role_view, search_memory
 from novel_editorial.core.workspace import create_workspace
+from novel_editorial.events import EventType
 from novel_editorial.llm.client import LLMMessage, build_client
 from novel_editorial.quality.explain import explain_quality, render_explanation
 from novel_editorial.quality.gate import check_quality
 from novel_editorial.store.db import DB
-from novel_editorial.store.models import Agent, AgentRole, Decision, Workspace
+from novel_editorial.store.events import list_events, list_events_since
+from novel_editorial.store.models import Agent, AgentRole, Decision, Event, Workspace
 
 reconfigure = getattr(sys.stdout, "reconfigure", None)
 if callable(reconfigure):
@@ -87,6 +91,7 @@ review_app = typer.Typer(help="Review drafts")
 decision_app = typer.Typer(help="Author decisions")
 quality_app = typer.Typer(help="Quality gate")
 plot_app = typer.Typer(help="Track narrative plot threads")
+events_app = typer.Typer(help="Inspect the workspace event flow")
 app.add_typer(works_app, name="works")
 app.add_typer(agents_app, name="agents")
 app.add_typer(talk_app, name="talk")
@@ -97,6 +102,7 @@ app.add_typer(review_app, name="review")
 app.add_typer(decision_app, name="decision")
 app.add_typer(quality_app, name="quality")
 app.add_typer(plot_app, name="plot")
+app.add_typer(events_app, name="events")
 
 
 @app.callback(invoke_without_command=True)
@@ -732,3 +738,82 @@ def plot_recover(
         typer.echo(f"recovered {thread.id} [{label}]")
     else:
         typer.echo(f"already recovered {thread.id} [{label}]")
+
+
+EVENT_PAYLOAD_LIMIT = 80
+
+
+def _resolve_event_types(types: list[str] | None) -> list[EventType] | None:
+    if not types:
+        return None
+    resolved: list[EventType] = []
+    for value in types:
+        try:
+            resolved.append(EventType(value))
+        except ValueError as exc:
+            raise NovelError(
+                ErrorCode.USAGE_ERROR, f"unknown event type: {value}"
+            ) from exc
+    return resolved
+
+
+def _render_event(event: Event) -> str:
+    try:
+        payload = json.loads(event.payload or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    payload_text = json.dumps(payload, ensure_ascii=False)
+    if len(payload_text) > EVENT_PAYLOAD_LIMIT:
+        payload_text = payload_text[:EVENT_PAYLOAD_LIMIT] + "..."
+    when = event.time.isoformat(timespec="seconds")
+    return f"{when} [{event.type}] {event.actor} {payload_text}"
+
+
+_EVENT_TYPES_OPTION = typer.Option(
+    None, "--type", help="Filter by event type (repeatable)"
+)
+
+
+@events_app.command("list")
+def events_list(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+    types: list[str] | None = _EVENT_TYPES_OPTION,
+    limit: int = typer.Option(20, "--limit", min=1, help="Max events to show"),
+) -> None:
+    """List workspace events, newest first."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    get_workspace_or_raise(db, workspace_id)
+    events = list_events(db, workspace_id, types=_resolve_event_types(types), limit=limit)
+    if not events:
+        typer.echo("no events yet")
+        return
+    for event in events:
+        typer.echo(_render_event(event))
+
+
+@events_app.command("watch")
+def events_watch(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+    interval: float = typer.Option(2.0, "--interval", min=0.1, help="Poll interval in seconds"),
+) -> None:
+    """Watch for new workspace events (Ctrl+C to stop)."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    get_workspace_or_raise(db, workspace_id)
+    latest = list_events(db, workspace_id, limit=1)
+    cursor_time = latest[0].time if latest else None
+    cursor_id = latest[0].id if latest else None
+    try:
+        while True:
+            for event in list_events_since(
+                db, workspace_id, after_time=cursor_time, after_id=cursor_id
+            ):
+                typer.echo(_render_event(event))
+                cursor_time = event.time
+                cursor_id = event.id
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        raise typer.Exit(0) from None

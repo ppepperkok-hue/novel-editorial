@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.plot import plot_threads_section
+from novel_editorial.events import EventType
 from novel_editorial.store.db import DB
+from novel_editorial.store.events import record_event_in_session
 from novel_editorial.store.models import Agent, AgentRole, Message, Workspace
 
 AUTHOR_ACTOR = "作者"
@@ -110,6 +112,14 @@ def _record_message_in_session(
         payload=json.dumps(payload or {}, ensure_ascii=False),
     )
     session.add(message)
+    if role == "agent":
+        record_event_in_session(
+            session,
+            workspace_id,
+            type=EventType.AGENT_MESSAGE,
+            actor=actor,
+            payload=payload or {},
+        )
     return message
 
 

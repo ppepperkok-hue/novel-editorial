@@ -266,6 +266,7 @@ def test_plot_upgrades_pre_migration_workspace(tmp_path: Path, monkeypatch) -> N
     path = workspace_db_path(settings, workspace_id)
     connection = sqlite3.connect(path)
     connection.execute("DROP TABLE IF EXISTS plot_threads")
+    connection.execute("DROP TABLE IF EXISTS events")
     connection.execute("DELETE FROM alembic_version")
     connection.execute("INSERT INTO alembic_version (version_num) VALUES ('2c8ab7642c70')")
     connection.commit()

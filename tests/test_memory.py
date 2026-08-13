@@ -394,6 +394,7 @@ def test_memory_upgrades_pre_migration_workspace(tmp_path: Path, monkeypatch) ->
     connection = sqlite3.connect(path)
     connection.execute("DROP TABLE IF EXISTS agent_memories")
     connection.execute("DROP TABLE IF EXISTS plot_threads")
+    connection.execute("DROP TABLE IF EXISTS events")
     connection.execute('ALTER TABLE agents DROP COLUMN "mood"')
     connection.execute("DELETE FROM alembic_version")
     connection.execute("INSERT INTO alembic_version (version_num) VALUES ('f1f5f128b371')")

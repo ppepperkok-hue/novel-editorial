@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from novel_editorial.core.chat import ROLE_ALIASES, get_agent
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.events import EventType
 from novel_editorial.store.db import DB
+from novel_editorial.store.events import record_event_in_session
 from novel_editorial.store.models import Draft, Review
 
 AUTHOR_ALIASES = ("作者", "author")
@@ -42,6 +44,20 @@ def add_review(
             content=content,
         )
         session.add(review)
+        if role == "agent":
+            session.flush()
+            record_event_in_session(
+                session,
+                workspace_id,
+                type=EventType.REVIEW_REJECTED,
+                actor=actor,
+                payload={
+                    "review_id": review.id,
+                    "draft_id": draft_id,
+                    "actor": actor,
+                    "content": content,
+                },
+            )
         session.commit()
         return review
 

@@ -16,9 +16,11 @@ from novel_editorial.core.memory import list_memory_notes
 from novel_editorial.core.plot import plot_threads_section
 from novel_editorial.core.review import list_reviews
 from novel_editorial.core.style import extract_style_keywords, get_style_anchor
+from novel_editorial.events import EventType
 from novel_editorial.llm.client import LLMClient, LLMMessage
 from novel_editorial.quality.gate import check_quality
 from novel_editorial.store.db import DB, list_workspace_ids
+from novel_editorial.store.events import record_event_in_session
 from novel_editorial.store.models import Agent, AgentRole, Draft, DraftVersion
 
 
@@ -95,23 +97,30 @@ def generate_draft(
         raise NovelError(ErrorCode.LLM_ERROR, "LLM returned empty draft content")
     anchor = get_style_anchor(db, workspace_id)
     style_keywords = extract_style_keywords(anchor.description)
-    quality_passed = check_quality(
+    quality_report = check_quality(
         content,
         threshold=quality_threshold,
         style_keywords=style_keywords,
-    ).passed
+    )
     with db.workspace_session(workspace_id) as session:
         draft = session.query(Draft).filter_by(workspace_id=workspace_id, title=title).first()
         if draft is None:
             draft = Draft(workspace_id=workspace_id, title=title)
             session.add(draft)
             session.flush()
+            record_event_in_session(
+                session,
+                workspace_id,
+                type=EventType.DRAFT_CREATED,
+                actor=writer.name,
+                payload={"draft_id": draft.id, "title": title},
+            )
         elif draft.status == "accepted":
             raise NovelError(
                 ErrorCode.USAGE_ERROR, "cannot regenerate an accepted draft"
             )
         draft.current_version += 1
-        draft.status = "draft" if quality_passed else "quality_failed"
+        draft.status = "draft" if quality_report.passed else "quality_failed"
         reason = "initial" if draft.current_version == 1 else "revision"
         session.add(
             DraftVersion(
@@ -121,6 +130,25 @@ def generate_draft(
                 reason=reason,
             )
         )
+        if quality_report.passed:
+            record_event_in_session(
+                session,
+                workspace_id,
+                type=EventType.QUALITY_GATE_PASSED,
+                actor="system",
+                payload={
+                    "draft_id": draft.id,
+                    "version": draft.current_version,
+                    "score": quality_report.score,
+                },
+            )
+            record_event_in_session(
+                session,
+                workspace_id,
+                type=EventType.DECISION_REQUESTED,
+                actor="system",
+                payload={"draft_id": draft.id, "version": draft.current_version},
+            )
         session.commit()
         return draft
 
@@ -156,11 +184,11 @@ def revise_draft(
         raise NovelError(ErrorCode.LLM_ERROR, "LLM returned empty draft content")
     anchor = get_style_anchor(db, workspace_id)
     style_keywords = extract_style_keywords(anchor.description)
-    quality_passed = check_quality(
+    quality_report = check_quality(
         content,
         threshold=quality_threshold,
         style_keywords=style_keywords,
-    ).passed
+    )
     with db.workspace_session(workspace_id) as session:
         draft = (
             session.query(Draft)
@@ -170,7 +198,7 @@ def revise_draft(
         if draft is None:
             raise NovelError(ErrorCode.NOT_FOUND, f"draft not found: {draft_id}")
         draft.current_version += 1
-        draft.status = "draft" if quality_passed else "quality_failed"
+        draft.status = "draft" if quality_report.passed else "quality_failed"
         session.add(
             DraftVersion(
                 draft_id=draft.id,
@@ -179,6 +207,25 @@ def revise_draft(
                 reason=reason or "revision",
             )
         )
+        if quality_report.passed:
+            record_event_in_session(
+                session,
+                workspace_id,
+                type=EventType.QUALITY_GATE_PASSED,
+                actor="system",
+                payload={
+                    "draft_id": draft.id,
+                    "version": draft.current_version,
+                    "score": quality_report.score,
+                },
+            )
+            record_event_in_session(
+                session,
+                workspace_id,
+                type=EventType.DECISION_REQUESTED,
+                actor="system",
+                payload={"draft_id": draft.id, "version": draft.current_version},
+            )
         _update_agent_mood_in_session(session, workspace_id, writer.id, MOOD_REVISING)
         if any(r.role == "agent" for r in reviews):
             _record_message_in_session(
