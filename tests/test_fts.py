@@ -61,8 +61,15 @@ def _no_fts5_error(statement: str) -> OperationalError:
 
 
 def _raise_no_fts5(statement) -> None:
-    """Raise the wrapped "no such module: fts5" error for a fake connection."""
-    raise _no_fts5_error(str(statement))
+    """Raise the wrapped "no such module: fts5" error for a fake connection.
+
+    The pre-probe cleanup DROP TABLE IF EXISTS must succeed: on a build
+    without FTS5 there is nothing to drop, and only the CREATE fails.
+    """
+    sql = str(statement)
+    if "DROP TABLE IF EXISTS temp._novel_fts5_probe" in sql:
+        return None
+    raise _no_fts5_error(sql)
 
 
 def _fts5_runtime_available() -> bool:
@@ -578,6 +585,62 @@ def test_fts_probe_false_when_fts5_enabled_but_shadow_table_missing() -> None:
         assert _fts_tables_present(session) is False
 
 
+@requires_fts5
+def test_fts_probe_self_heals_residual_probe_table() -> None:
+    """A leftover probe table must not disable FTS5 or leak past the probe.
+
+    SQLite DDL auto-commits at the driver layer, so a probe interrupted between
+    CREATE and DROP leaves temp._novel_fts5_probe behind. The probe must clear
+    the residue before CREATE and keep reporting True on every new session.
+    """
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE VIRTUAL TABLE temp._novel_fts5_probe "
+                "USING fts5(content, tokenize='trigram')"
+            )
+        )
+
+    for _ in range(3):
+        with Session(engine) as session:
+            assert _fts5_available(session) is True
+            residual = session.execute(
+                text(
+                    "SELECT name FROM sqlite_temp_master "
+                    "WHERE name = '_novel_fts5_probe'"
+                )
+            ).scalars().all()
+        assert residual == []
+
+
+def test_fts_probe_true_even_when_tail_cleanup_drop_fails() -> None:
+    """Tail cleanup failure must not crash the probe or flip True to False.
+
+    The final DROP is best-effort housekeeping: the next probe clears any
+    residue with the DROP TABLE IF EXISTS pre-step.
+    """
+    statements: list[str] = []
+
+    def execute(statement):
+        sql = str(statement)
+        statements.append(sql)
+        if "DROP TABLE IF EXISTS temp._novel_fts5_probe" in sql:
+            return None
+        if "CREATE VIRTUAL TABLE" in sql:
+            return None
+        if sql == "DROP TABLE temp._novel_fts5_probe":
+            raise _no_fts5_error(sql)
+        raise AssertionError(f"unexpected statement: {sql}")
+
+    session = SimpleNamespace(execute=execute)
+
+    assert _fts5_available(cast(Session, session)) is True
+    assert any(
+        statement == "DROP TABLE temp._novel_fts5_probe" for statement in statements
+    )
+
+
 def test_fts_probe_false_when_fts5_disabled_even_if_shadow_tables_exist() -> None:
     shadow_tables = list(FTS_TABLE_BY_LAYER.values())
     statements: list[str] = []
@@ -585,6 +648,8 @@ def test_fts_probe_false_when_fts5_disabled_even_if_shadow_tables_exist() -> Non
     def execute(statement):
         sql = str(statement)
         statements.append(sql)
+        if "DROP TABLE IF EXISTS temp._novel_fts5_probe" in sql:
+            return None
         if "CREATE VIRTUAL TABLE" in sql:
             raise _no_fts5_error(sql)
         if "sqlite_master" in sql:
@@ -596,6 +661,10 @@ def test_fts_probe_false_when_fts5_disabled_even_if_shadow_tables_exist() -> Non
     assert _fts_tables_present(cast(Session, session)) is False
     # Fail closed before consulting sqlite_master: even a database that still
     # holds all five shadow tables falls back once the runtime probe fails.
+    assert any(
+        "DROP TABLE IF EXISTS temp._novel_fts5_probe" in statement
+        for statement in statements
+    )
     assert any("CREATE VIRTUAL TABLE" in statement for statement in statements)
     assert not any("sqlite_master" in statement for statement in statements)
 
@@ -656,8 +725,11 @@ def test_fts_migration_skips_when_fts5_unavailable(capsys) -> None:
     probed: list[str] = []
 
     def execute(statement):
-        probed.append(str(statement))
-        raise _no_fts5_error(str(statement))
+        sql = str(statement)
+        probed.append(sql)
+        if "DROP TABLE IF EXISTS temp._novel_fts5_probe" in sql:
+            return None
+        raise _no_fts5_error(sql)
 
     without_fts5 = SimpleNamespace(
         execute=execute,
