@@ -5,6 +5,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
@@ -248,6 +249,7 @@ def test_end_to_end_event_order(tmp_path: Path, monkeypatch) -> None:
     ]
 
 
+@pytest.mark.smoke
 def test_events_list_cli_filters_limits_and_rejects_unknown_types(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -289,6 +291,7 @@ def test_events_list_cli_filters_limits_and_rejects_unknown_types(
     assert "unknown event type: nope" in unknown.output
 
 
+@pytest.mark.smoke
 def test_events_watch_streams_only_new_events_and_exits_cleanly(
     tmp_path: Path, monkeypatch
 ) -> None:

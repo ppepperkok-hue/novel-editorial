@@ -54,6 +54,7 @@ def test_every_command_registered_and_documented(args: list[str], label: str) ->
     assert result.exit_code == 0, f"{label}: {result.output}"
 
 
+@pytest.mark.smoke
 def test_representative_commands_run() -> None:
     create = runner.invoke(app, ["works", "create", "注册测试", "--genre", "网文"])
     assert create.exit_code == 0, create.output

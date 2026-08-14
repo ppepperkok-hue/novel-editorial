@@ -1,6 +1,7 @@
 import re
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
@@ -11,6 +12,7 @@ from novel_editorial.store.models import Agent
 runner = CliRunner()
 
 
+@pytest.mark.smoke
 def test_works_create_and_list(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("NOVEL_DATA_DIR", str(tmp_path))
     result = runner.invoke(app, ["works", "create", "测试之书", "--genre", "网文"])

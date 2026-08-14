@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
@@ -160,6 +161,7 @@ def test_generate_passes_style_keywords_into_gate(tmp_path: Path, monkeypatch) -
     assert _draft_status(workspace_id, draft_id) == "quality_failed"
 
 
+@pytest.mark.smoke
 def test_quality_explain_command_lists_issues_and_suggestions(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     draft_id = _generate(tmp_path, monkeypatch, workspace_id, AI_TEXT, "第一章")

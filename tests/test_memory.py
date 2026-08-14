@@ -22,6 +22,7 @@ def _create_workspace(tmp_path: Path, monkeypatch, title: str = "记忆之书") 
     return result.output.split()[2].rstrip(":")
 
 
+@pytest.mark.smoke
 def test_memory_note_persists_for_writer(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     result = runner.invoke(

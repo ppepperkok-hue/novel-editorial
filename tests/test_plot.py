@@ -1,6 +1,7 @@
 import sqlite3
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
@@ -41,6 +42,7 @@ def _plant(
     return result.output.split()[1]
 
 
+@pytest.mark.smoke
 def test_plant_creates_planted_record(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     result = runner.invoke(
@@ -88,6 +90,7 @@ def test_plot_list_shows_threads_and_empty_hint(tmp_path: Path, monkeypatch) -> 
     assert "雨夜巷口的人影" in listing.output
 
 
+@pytest.mark.smoke
 def test_plot_recover_marks_recovered_and_is_idempotent(
     tmp_path: Path, monkeypatch
 ) -> None:

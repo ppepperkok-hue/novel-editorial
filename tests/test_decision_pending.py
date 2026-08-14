@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
@@ -32,6 +33,7 @@ def _generate(workspace_id: str, monkeypatch, *, title: str, reply: str):
     return result
 
 
+@pytest.mark.smoke
 def test_generate_quality_passed_hints_and_lists_pending(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -76,6 +78,7 @@ def test_revise_quality_passed_still_hints_and_lists_pending(
     assert "v2" in pending.output
 
 
+@pytest.mark.smoke
 def test_accept_removes_from_pending(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     generated = _generate(
@@ -92,6 +95,7 @@ def test_accept_removes_from_pending(tmp_path: Path, monkeypatch) -> None:
     assert draft_id not in pending.output
 
 
+@pytest.mark.smoke
 def test_reject_removes_from_pending(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     generated = _generate(

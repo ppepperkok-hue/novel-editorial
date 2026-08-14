@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
@@ -67,6 +68,7 @@ def _draft_status(workspace_id: str, draft_id: str) -> str:
         return draft.status
 
 
+@pytest.mark.smoke
 def test_generate_marks_quality_failed_and_blocks_accept(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -96,6 +98,7 @@ def test_generate_marks_quality_failed_and_blocks_accept(
     assert accepted.exit_code == 0, accepted.output
 
 
+@pytest.mark.smoke
 def test_quality_check_command_reports(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     monkeypatch.setattr(

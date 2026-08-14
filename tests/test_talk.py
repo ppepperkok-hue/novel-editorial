@@ -2,6 +2,7 @@ import json
 import sqlite3
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
@@ -22,6 +23,7 @@ def _create_workspace(tmp_path: Path, monkeypatch) -> str:
     return result.output.split()[2].rstrip(":")
 
 
+@pytest.mark.smoke
 def test_talk_send_records_author_reply_and_proactive(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     result = runner.invoke(app, ["talk", "send", workspace_id, "我们写一个侦探故事"])
@@ -43,6 +45,7 @@ def test_talk_send_records_author_reply_and_proactive(tmp_path: Path, monkeypatc
     assert has_proactive_message(db, workspace_id)
 
 
+@pytest.mark.smoke
 def test_talk_send_routes_at_mention(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     result = runner.invoke(app, ["talk", "send", workspace_id, "@写手 写一段开场"])

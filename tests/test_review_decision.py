@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
@@ -50,6 +51,7 @@ def _draft_status(workspace_id: str, draft_id: str) -> str:
         return draft.status
 
 
+@pytest.mark.smoke
 def test_review_add_from_author_and_editor(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     draft_id = _generate_draft(workspace_id, monkeypatch)
@@ -85,6 +87,7 @@ def test_review_unknown_alias(tmp_path: Path, monkeypatch) -> None:
     assert "unknown reviewer alias" in result.output
 
 
+@pytest.mark.smoke
 def test_revise_after_rejection_with_reason(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     draft_id = _generate_draft(workspace_id, monkeypatch)
@@ -185,6 +188,7 @@ def test_review_list_and_decision_list(tmp_path: Path, monkeypatch) -> None:
     assert "[accept] 作者" in decision_list.output
 
 
+@pytest.mark.smoke
 def test_draft_show_prints_reason(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     draft_id = _generate_draft(workspace_id, monkeypatch)

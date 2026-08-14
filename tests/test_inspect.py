@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
@@ -45,6 +46,7 @@ def _add_note(workspace_id: str, target: str, content: str) -> None:
     assert result.exit_code == 0, result.output
 
 
+@pytest.mark.smoke
 def test_inspect_hits_every_layer_with_citation(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(
         tmp_path,

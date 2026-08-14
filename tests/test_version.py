@@ -1,3 +1,4 @@
+import pytest
 from typer.testing import CliRunner
 
 from novel_editorial import __version__
@@ -6,6 +7,7 @@ from novel_editorial.cli.app import app
 runner = CliRunner()
 
 
+@pytest.mark.smoke
 def test_version_command() -> None:
     result = runner.invoke(app, ["version"])
     assert result.exit_code == 0

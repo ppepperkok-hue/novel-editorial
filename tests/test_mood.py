@@ -4,6 +4,7 @@ import json
 import sqlite3
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
@@ -205,6 +206,7 @@ def test_agents_show_displays_mood(tmp_path: Path, monkeypatch) -> None:
     assert "当前状态: 沉稳" in result.output
 
 
+@pytest.mark.smoke
 def test_log_shows_mood_change_trace(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     runner.invoke(app, ["talk", "send", workspace_id, "@写手 写一段开场"])

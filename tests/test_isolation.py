@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
@@ -19,6 +20,7 @@ def _create_workspace(tmp_path: Path, monkeypatch, title: str) -> str:
     return result.output.split()[2].rstrip(":")
 
 
+@pytest.mark.smoke
 def test_workspaces_are_isolated(tmp_path: Path, monkeypatch) -> None:
     workspace_a = _create_workspace(tmp_path, monkeypatch, "甲书")
     workspace_b = _create_workspace(tmp_path, monkeypatch, "乙书")

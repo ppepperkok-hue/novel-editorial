@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
@@ -18,6 +19,7 @@ def _create_workspace(tmp_path: Path, monkeypatch) -> str:
     return result.output.split()[2].rstrip(":")
 
 
+@pytest.mark.smoke
 def test_agents_show_lists_full_profiles(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     result = runner.invoke(app, ["agents", "show", workspace_id])
@@ -57,6 +59,7 @@ def test_agents_show_missing_workspace(tmp_path: Path, monkeypatch) -> None:
     assert "workspace not found" in result.output
 
 
+@pytest.mark.smoke
 def test_agents_edit_updates_field(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     result = runner.invoke(

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
@@ -20,6 +21,7 @@ def _create_workspace(tmp_path: Path, monkeypatch, title: str = "风格之书") 
     return result.output.split()[2].rstrip(":")
 
 
+@pytest.mark.smoke
 def test_style_set_and_show(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     result = runner.invoke(
@@ -46,6 +48,7 @@ def test_style_set_and_show(tmp_path: Path, monkeypatch) -> None:
     assert "平实克制的文风" in shown.output
 
 
+@pytest.mark.smoke
 def test_memory_pack_is_isolated_per_workspace(tmp_path: Path, monkeypatch) -> None:
     first_id = _create_workspace(tmp_path, monkeypatch, title="第一本书")
     second_id = _create_workspace(tmp_path, monkeypatch, title="第二本书")
@@ -63,6 +66,7 @@ def test_memory_pack_is_isolated_per_workspace(tmp_path: Path, monkeypatch) -> N
     assert "第一本书" not in second_pack.output
 
 
+@pytest.mark.smoke
 def test_draft_generate_versions_and_diff(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     replies = iter(["雨夜的开场，第一版。", "雨夜的开场，第二版，更冷。"])

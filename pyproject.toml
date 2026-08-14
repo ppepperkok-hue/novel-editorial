@@ -21,6 +21,7 @@ dev = [
   "ruff>=0.5",
   "pyright>=1.1.370",
   "pytest-cov>=7.1.0",
+  "pytest-xdist>=3.6",
 ]
 
 [build-system]
@@ -44,3 +45,6 @@ typeCheckingMode = "basic"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+  "smoke: fast representative core-loop subset",
+]

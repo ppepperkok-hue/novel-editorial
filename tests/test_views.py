@@ -141,6 +141,7 @@ def test_memory_view_missing_workspace(tmp_path: Path, monkeypatch) -> None:
     assert "workspace not found" in result.output
 
 
+@pytest.mark.smoke
 def test_memory_search_hits_every_source_with_citation(
     tmp_path: Path, monkeypatch
 ) -> None:

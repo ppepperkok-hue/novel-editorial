@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
@@ -12,6 +13,7 @@ from novel_editorial.store.models import Draft
 runner = CliRunner()
 
 
+@pytest.mark.smoke
 def test_demo_runs_full_loop(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("NOVEL_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("NOVEL_CONFIG", str(tmp_path / "config.toml"))
