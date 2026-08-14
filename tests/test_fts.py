@@ -589,10 +589,11 @@ def test_fts_probe_false_when_fts5_enabled_but_shadow_table_missing() -> None:
 def test_fts_probe_self_heals_residual_probe_table() -> None:
     """A leftover probe table must not disable FTS5 or leak past the probe.
 
-    SQLite DDL cannot be rolled back once executed, so a probe interrupted
-    between CREATE and DROP leaves temp._novel_fts5_probe behind on the
-    connection. The probe must clear the residue before CREATE and keep
-    reporting True on every new session.
+    pysqlite's legacy transaction control executes DDL outside the implicit
+    transaction (driver-level autocommit), so a probe interrupted between
+    CREATE and DROP leaves temp._novel_fts5_probe behind on the connection.
+    The probe must clear the residue before CREATE and keep reporting True
+    on every new session.
     """
     engine = create_engine("sqlite://")
     with engine.begin() as connection:
