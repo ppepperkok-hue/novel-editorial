@@ -38,7 +38,7 @@
 - 布局：`tests/` 镜像 `src/`；文件名 `test_*.py`；一个单元至少一个测试。
 - 核心服务层行覆盖率 ≥ 80%（M1 结束时统计）；LLM 用模拟模式测试，错误路径必须测。
 - 验证命令（本地与 CI 同一套）：
-  - `uv run pytest`
+  - `uv run pytest -q -n auto`（全量并行；子集用 `-m smoke`，重跑失败用 `--lf`）
   - `uv run ruff check`
   - `uv run pyright`
   - `uv run novel-editorial --version`

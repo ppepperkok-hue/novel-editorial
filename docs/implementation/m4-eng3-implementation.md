@@ -35,7 +35,7 @@
   1. pyproject dev 依赖加 pytest-xdist；
   2. pyproject pytest 配置注册 `smoke` marker（不自动启用，避免 CI 行为变化）；
   3. 给核心闭环代表用例打 `@pytest.mark.smoke`（约 20-30 个，覆盖各模块关键路径）；
-  4. 文档化本地命令：全量 `uv run pytest -q`、并行 `uv run pytest -q -n auto`、子集 `uv run pytest -q -m smoke`、重跑 `uv run pytest -q --lf`；
+  4. 文档化本地命令：全量 `uv run pytest -q`、并行 `uv run pytest -q -n auto`、子集 `uv run pytest -q -m smoke`、重跑 `uv run pytest -q --lf`（README / rules.md 已同步）；
   5. CI 测试步骤改 `uv run pytest -q -n auto`。
 - 做到什么程度：smoke 子集 <15s；CI 全量 <30s；全量 259 仍全绿；分片无 flake（连续跑 3 次 -n auto 全绿）。
 - 涉及功能：工程瓶颈；单元 M4-ENG-3-A。

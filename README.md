@@ -205,7 +205,9 @@ draft accepted. Run `novel-editorial log <workspace_id>` to review the flow.
 开发与验证命令：
 
 ```bash
-uv run pytest -q
+uv run pytest -q -n auto          # 全量并行（与 CI 同一套）
+uv run pytest -q -m smoke         # 快速核心闭环子集（约 30 个代表用例）
+uv run pytest -q --lf             # 只重跑上次失败用例
 uv run ruff check .
 uv run pyright
 python scripts/verify_constitution.py
