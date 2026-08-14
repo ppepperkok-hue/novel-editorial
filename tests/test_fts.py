@@ -589,9 +589,10 @@ def test_fts_probe_false_when_fts5_enabled_but_shadow_table_missing() -> None:
 def test_fts_probe_self_heals_residual_probe_table() -> None:
     """A leftover probe table must not disable FTS5 or leak past the probe.
 
-    SQLite DDL auto-commits at the driver layer, so a probe interrupted between
-    CREATE and DROP leaves temp._novel_fts5_probe behind. The probe must clear
-    the residue before CREATE and keep reporting True on every new session.
+    SQLite DDL cannot be rolled back once executed, so a probe interrupted
+    between CREATE and DROP leaves temp._novel_fts5_probe behind on the
+    connection. The probe must clear the residue before CREATE and keep
+    reporting True on every new session.
     """
     engine = create_engine("sqlite://")
     with engine.begin() as connection:
@@ -614,7 +615,7 @@ def test_fts_probe_self_heals_residual_probe_table() -> None:
         assert residual == []
 
 
-def test_fts_probe_true_even_when_tail_cleanup_drop_fails() -> None:
+def test_fts_probe_true_even_when_tail_cleanup_drop_fails(capsys) -> None:
     """Tail cleanup failure must not crash the probe or flip True to False.
 
     The final DROP is best-effort housekeeping: the next probe clears any
@@ -639,6 +640,7 @@ def test_fts_probe_true_even_when_tail_cleanup_drop_fails() -> None:
     assert any(
         statement == "DROP TABLE temp._novel_fts5_probe" for statement in statements
     )
+    assert "warning: could not drop temp FTS5 probe table" in capsys.readouterr().err
 
 
 def test_fts_probe_false_when_fts5_disabled_even_if_shadow_tables_exist() -> None:

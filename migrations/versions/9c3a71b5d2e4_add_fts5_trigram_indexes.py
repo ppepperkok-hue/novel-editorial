@@ -45,10 +45,11 @@ def _fts5_available(connection: Any) -> bool:
     module failed to register at runtime. Creating a real temp virtual table
     is the one probe that reflects whether MATCH will work for this process.
 
-    SQLite DDL auto-commits at the driver layer, so a probe interrupted between
-    CREATE and DROP leaves the temp table behind and the next CREATE would fail
-    with "table already exists". The DROP IF EXISTS below clears that residue
-    before probing, keeping the probe self-healing.
+    SQLite DDL cannot be rolled back once executed, so a probe interrupted
+    between CREATE and DROP leaves the temp table behind on this connection,
+    where it persists after the connection returns to the pool. The DROP
+    TABLE IF EXISTS below clears that residue before probing, keeping the
+    probe self-healing.
     """
     try:
         connection.execute(sa.text("DROP TABLE IF EXISTS temp._novel_fts5_probe"))
@@ -65,8 +66,12 @@ def _fts5_available(connection: Any) -> bool:
     # by the DROP IF EXISTS above on the next probe.
     try:
         connection.execute(sa.text("DROP TABLE temp._novel_fts5_probe"))
-    except OperationalError:
-        pass
+    except OperationalError as exc:
+        print(
+            f"warning: could not drop temp FTS5 probe table ({exc}); "
+            "the next probe clears the residue with DROP TABLE IF EXISTS",
+            file=sys.stderr,
+        )
     return True
 
 

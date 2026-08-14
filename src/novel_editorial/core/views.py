@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 from sqlalchemy import String, and_, bindparam, func, or_, text
@@ -196,10 +197,11 @@ def _fts5_available(session: Session) -> bool:
     table is the one probe that reflects whether MATCH works right now, so the
     probe is deliberately not cached (a search probes once, costing milliseconds).
 
-    SQLite DDL auto-commits at the driver layer, so a probe interrupted between
-    CREATE and DROP leaves the temp table behind and the next CREATE would fail
-    with "table already exists". The DROP IF EXISTS below clears that residue
-    before probing, keeping the probe self-healing.
+    SQLite DDL cannot be rolled back once executed, so a probe interrupted
+    between CREATE and DROP leaves the temp table behind on this connection,
+    where it persists after the connection returns to the pool. The DROP
+    TABLE IF EXISTS below clears that residue before probing, keeping the
+    probe self-healing.
     """
     try:
         session.execute(text("DROP TABLE IF EXISTS temp._novel_fts5_probe"))
@@ -216,8 +218,12 @@ def _fts5_available(session: Session) -> bool:
     # by the DROP IF EXISTS above on the next probe.
     try:
         session.execute(text("DROP TABLE temp._novel_fts5_probe"))
-    except OperationalError:
-        pass
+    except OperationalError as exc:
+        print(
+            f"warning: could not drop temp FTS5 probe table ({exc}); "
+            "the next probe clears the residue with DROP TABLE IF EXISTS",
+            file=sys.stderr,
+        )
     return True
 
 
