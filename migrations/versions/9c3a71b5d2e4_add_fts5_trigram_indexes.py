@@ -12,6 +12,7 @@ from typing import Any
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.exc import OperationalError
 
 # revision identifiers, used by Alembic.
 revision: str = "9c3a71b5d2e4"
@@ -31,15 +32,30 @@ _FTS_LAYERS: tuple[tuple[str, str], ...] = (
 )
 
 _FTS5_WARNING = (
-    "warning: this SQLite build does not include FTS5; skipping trigram "
-    "full-text indexes (case-insensitive LIKE search remains available)"
+    "warning: FTS5 trigram indexes are unavailable at runtime; skipping them "
+    "(case-insensitive LIKE search remains available)"
 )
 
 
 def _fts5_available(connection: Any) -> bool:
-    """Return True when this SQLite build was compiled with FTS5 enabled."""
-    rows = connection.execute(sa.text("PRAGMA compile_options")).fetchall()
-    return any(row[0] == "ENABLE_FTS5" for row in rows)
+    """Return True only when this connection can create an FTS5 trigram table.
+
+    `PRAGMA compile_options` only reflects build-time flags, so it cannot see
+    FTS5 supplied by a loadable extension and it can report success when the
+    module failed to register at runtime. Creating a real temp virtual table
+    is the one probe that reflects whether MATCH will work for this process.
+    """
+    try:
+        connection.execute(
+            sa.text(
+                "CREATE VIRTUAL TABLE temp._novel_fts5_probe "
+                "USING fts5(content, tokenize='trigram')"
+            )
+        )
+    except OperationalError:
+        return False
+    connection.execute(sa.text("DROP TABLE temp._novel_fts5_probe"))
+    return True
 
 
 def upgrade() -> None:

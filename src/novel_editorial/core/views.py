@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy import String, and_, bindparam, func, or_, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.selectable import Subquery
 
@@ -186,19 +187,37 @@ def _fts_phrase(keyword: str) -> str:
     return '"' + keyword.replace('"', '""') + '"'
 
 
+def _fts5_available(session: Session) -> bool:
+    """Return True only when this process can create an FTS5 trigram table.
+
+    `PRAGMA compile_options` only reflects build-time flags: an FTS5 module
+    supplied by a loadable extension has no ENABLE_FTS5 entry, and a compiled
+    flag can still fail to register at runtime. Creating a real temp virtual
+    table is the one probe that reflects whether MATCH works right now, so the
+    probe is deliberately not cached (a search probes once, costing milliseconds).
+    """
+    try:
+        session.execute(
+            text(
+                "CREATE VIRTUAL TABLE temp._novel_fts5_probe "
+                "USING fts5(content, tokenize='trigram')"
+            )
+        )
+    except OperationalError:
+        return False
+    session.execute(text("DROP TABLE temp._novel_fts5_probe"))
+    return True
+
+
 def _fts_tables_present(session: Session) -> bool:
-    """Return True only when FTS5 is enabled and every shadow table exists.
+    """Return True only when FTS5 MATCH works here and every shadow table exists.
 
     A database created on an FTS5 build keeps its shadow tables when copied
     onto a build without FTS5, where MATCH fails with "no such module: fts5".
-    Checking the compile options first makes the probe fail closed, so every
-    search falls back to LIKE instead of crashing; any missing layer also
-    falls back as a whole.
+    The runtime probe fails closed first, so every search falls back to LIKE
+    instead of crashing; any missing layer also falls back as a whole.
     """
-    options = {
-        option for option in session.execute(text("PRAGMA compile_options")).scalars()
-    }
-    if "ENABLE_FTS5" not in options:
+    if not _fts5_available(session):
         return False
     names = {
         name

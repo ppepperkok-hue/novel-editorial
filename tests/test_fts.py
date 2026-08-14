@@ -7,8 +7,10 @@ from types import SimpleNamespace
 from typing import cast
 from unittest import mock
 
+import pytest
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 from typer.testing import CliRunner
 
@@ -22,6 +24,7 @@ from novel_editorial.core.plot import KIND_FORESHADOW, plant_thread
 from novel_editorial.core.review import add_review
 from novel_editorial.core.views import (
     FTS_TABLE_BY_LAYER,
+    _fts5_available,
     _fts_tables_present,
     search_all_layers,
     search_memory,
@@ -48,6 +51,36 @@ MIGRATION_MODULE_PATH = (
     / "versions"
     / "9c3a71b5d2e4_add_fts5_trigram_indexes.py"
 )
+
+
+def _no_fts5_error(statement: str) -> OperationalError:
+    """Build the wrapper error SQLAlchemy raises when the FTS5 module is missing."""
+    return OperationalError(
+        statement, {}, sqlite3.OperationalError("no such module: fts5")
+    )
+
+
+def _raise_no_fts5(statement) -> None:
+    """Raise the wrapped "no such module: fts5" error for a fake connection."""
+    raise _no_fts5_error(str(statement))
+
+
+def _fts5_runtime_available() -> bool:
+    """Run the real runtime probe so FTS5-dependent tests skip when unusable.
+
+    The probe creates a temp FTS5 trigram table and drops it, mirroring what
+    the search path does on every call, so a build whose FTS5 only exists in
+    compile options still skips instead of crashing mid-test.
+    """
+    with Session(create_engine("sqlite://")) as session:
+        return _fts5_available(session)
+
+
+requires_fts5 = pytest.mark.skipif(
+    not _fts5_runtime_available(),
+    reason="SQLite in this process cannot create an FTS5 trigram table",
+)
+
 
 MEMORY_KEYWORDS = [
     "暗线七星",
@@ -97,7 +130,9 @@ def _create_workspace(tmp_path: Path, monkeypatch, title: str = "检索之书") 
         ],
     )
     assert result.exit_code == 0, result.output
-    return result.output.split()[2].rstrip(":")
+    # Parse stdout only: on builds without FTS5 the migration prints a warning
+    # to stderr, and CliRunner mixes both streams into `output`.
+    return result.stdout.split()[2].rstrip(":")
 
 
 def _writer_id(db: DB, workspace_id: str) -> str:
@@ -255,6 +290,7 @@ def _fts_hits(path: Path, table: str, keyword: str) -> list[str]:
         connection.close()
 
 
+@requires_fts5
 def test_fts_migration_creates_shadow_tables_and_triggers(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     settings = load_settings()
@@ -280,6 +316,7 @@ def test_fts_migration_creates_shadow_tables_and_triggers(tmp_path: Path, monkey
     assert expected_triggers <= triggers
 
 
+@requires_fts5
 def test_fts_triggers_keep_shadow_tables_in_sync(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     settings = load_settings()
@@ -313,6 +350,7 @@ def test_fts_triggers_keep_shadow_tables_in_sync(tmp_path: Path, monkeypatch) ->
     assert _fts_hits(path, "message_fts", "改成了") == []
 
 
+@requires_fts5
 def test_fts_migration_upgrades_legacy_database_with_backfill(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     settings = load_settings()
@@ -360,6 +398,7 @@ def test_fts_migration_upgrades_legacy_database_with_backfill(tmp_path: Path, mo
     assert ids == [message.id]
 
 
+@requires_fts5
 def test_dual_path_outputs_match_for_search_memory(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     settings = load_settings()
@@ -380,6 +419,7 @@ def test_dual_path_outputs_match_for_search_memory(tmp_path: Path, monkeypatch) 
         assert tag in cross_layer
 
 
+@requires_fts5
 def test_dual_path_outputs_match_for_search_all_layers(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     settings = load_settings()
@@ -396,6 +436,7 @@ def test_dual_path_outputs_match_for_search_all_layers(tmp_path: Path, monkeypat
         assert tag in cross_layer
 
 
+@requires_fts5
 def test_long_keywords_use_fts_and_short_keywords_use_like(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     settings = load_settings()
@@ -431,6 +472,7 @@ def test_long_keywords_use_fts_and_short_keywords_use_like(tmp_path: Path, monke
     assert any("like" in statement.lower() for statement in short_statements)
 
 
+@requires_fts5
 def test_fts_query_escaping_never_errors(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     settings = load_settings()
@@ -453,6 +495,7 @@ def test_fts_query_escaping_never_errors(tmp_path: Path, monkeypatch) -> None:
         assert ftsed.encode("utf-8") == liked.encode("utf-8"), f"keyword={keyword!r}"
 
 
+@requires_fts5
 def test_non_ascii_case_folding_dual_path_parity(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     settings = load_settings()
@@ -513,11 +556,10 @@ def test_search_falls_back_to_like_when_fts_tables_missing(
     assert "[对话]" in inspect_cli.output
 
 
+@requires_fts5
 def test_fts_probe_true_when_fts5_enabled_and_all_shadow_tables_present() -> None:
     engine = create_engine("sqlite://")
     with engine.begin() as connection:
-        options = {row[0] for row in connection.execute(text("PRAGMA compile_options"))}
-        assert "ENABLE_FTS5" in options
         for name in FTS_TABLE_BY_LAYER.values():
             connection.execute(text(f"CREATE TABLE {name} (id TEXT)"))
 
@@ -525,11 +567,10 @@ def test_fts_probe_true_when_fts5_enabled_and_all_shadow_tables_present() -> Non
         assert _fts_tables_present(session) is True
 
 
+@requires_fts5
 def test_fts_probe_false_when_fts5_enabled_but_shadow_table_missing() -> None:
     engine = create_engine("sqlite://")
     with engine.begin() as connection:
-        options = {row[0] for row in connection.execute(text("PRAGMA compile_options"))}
-        assert "ENABLE_FTS5" in options
         for name in list(FTS_TABLE_BY_LAYER.values())[:-1]:
             connection.execute(text(f"CREATE TABLE {name} (id TEXT)"))
 
@@ -539,13 +580,27 @@ def test_fts_probe_false_when_fts5_enabled_but_shadow_table_missing() -> None:
 
 def test_fts_probe_false_when_fts5_disabled_even_if_shadow_tables_exist() -> None:
     shadow_tables = list(FTS_TABLE_BY_LAYER.values())
-    session = SimpleNamespace(
-        execute=lambda statement: SimpleNamespace(scalars=lambda: iter(shadow_tables))
-    )
+    statements: list[str] = []
+
+    def execute(statement):
+        sql = str(statement)
+        statements.append(sql)
+        if "CREATE VIRTUAL TABLE" in sql:
+            raise _no_fts5_error(sql)
+        if "sqlite_master" in sql:
+            return SimpleNamespace(scalars=lambda: iter(shadow_tables))
+        raise AssertionError(f"unexpected statement: {sql}")
+
+    session = SimpleNamespace(execute=execute)
 
     assert _fts_tables_present(cast(Session, session)) is False
+    # Fail closed before consulting sqlite_master: even a database that still
+    # holds all five shadow tables falls back once the runtime probe fails.
+    assert any("CREATE VIRTUAL TABLE" in statement for statement in statements)
+    assert not any("sqlite_master" in statement for statement in statements)
 
 
+@requires_fts5
 def test_fts_path_uses_join_like_refine_not_in_list(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     settings = load_settings()
@@ -584,25 +639,28 @@ def test_fts_path_uses_join_like_refine_not_in_list(tmp_path: Path, monkeypatch)
     assert max_params < 32, f"found a statement with {max_params} bound parameters"
 
 
+@requires_fts5
 def test_fts5_availability_detection() -> None:
     migration = _load_fts_migration_module()
 
     with create_engine("sqlite://").connect() as connection:
         assert migration._fts5_available(connection) is True
 
-    without_fts5 = SimpleNamespace(
-        execute=lambda statement: SimpleNamespace(
-            fetchall=lambda: [("ENABLE_JSON1",), ("COMPILER=gcc-12.2.0",)]
-        )
-    )
+    without_fts5 = SimpleNamespace(execute=_raise_no_fts5)
     assert migration._fts5_available(without_fts5) is False
 
 
 def test_fts_migration_skips_when_fts5_unavailable(capsys) -> None:
     migration = _load_fts_migration_module()
     executed: list[str] = []
+    probed: list[str] = []
+
+    def execute(statement):
+        probed.append(str(statement))
+        raise _no_fts5_error(str(statement))
+
     without_fts5 = SimpleNamespace(
-        execute=lambda statement: SimpleNamespace(fetchall=lambda: [("ENABLE_JSON1",)])
+        execute=execute,
     )
     fake_op = SimpleNamespace(
         get_bind=lambda: without_fts5,
@@ -612,4 +670,5 @@ def test_fts_migration_skips_when_fts5_unavailable(capsys) -> None:
         migration.upgrade()
 
     assert executed == []
+    assert any("CREATE VIRTUAL TABLE" in statement for statement in probed)
     assert "FTS5" in capsys.readouterr().err
