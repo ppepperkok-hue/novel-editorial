@@ -89,3 +89,32 @@ def test_invalid_proactive_values_report_config_error(tmp_path: Path) -> None:
             }
         )
     assert info.value.code == ErrorCode.CONFIG_ERROR
+
+
+def test_negative_proactive_max_reports_config_error(tmp_path: Path) -> None:
+    with pytest.raises(NovelError) as info:
+        load_settings(
+            {
+                "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+                "NOVEL_PROACTIVE_MAX_PER_AGENT": "-1",
+            }
+        )
+    assert info.value.code == ErrorCode.CONFIG_ERROR
+
+    (tmp_path / "config.toml").write_text(
+        "[defaults]\nproactive_max_per_agent = -1\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(NovelError) as info:
+        load_settings({"NOVEL_CONFIG": str(tmp_path / "config.toml")})
+    assert info.value.code == ErrorCode.CONFIG_ERROR
+
+
+def test_zero_proactive_max_is_allowed(tmp_path: Path) -> None:
+    settings = load_settings(
+        {
+            "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+            "NOVEL_PROACTIVE_MAX_PER_AGENT": "0",
+        }
+    )
+    assert settings.proactive_max_per_agent == 0

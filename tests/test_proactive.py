@@ -208,3 +208,74 @@ def test_unknown_kind_and_empty_fields_are_rejected() -> None:
     with pytest.raises(NovelError) as info:
         proactive.build_proactive_payload(proactive.PROACTIVE_KIND_REVIEW, "")
     assert info.value.code == ErrorCode.USAGE_ERROR
+
+
+def test_single_evaluation_caps_same_agent_budget(tmp_path: Path) -> None:
+    db, workspace_id = _make_db(tmp_path, proactive_max_per_agent=1)
+    reviewer = _agent_name(db, workspace_id, AgentRole.REVIEWER)
+    proactive.register_proactive_trigger(
+        trigger="style_set_budget_a1",
+        agent=reviewer,
+        kind=proactive.PROACTIVE_KIND_CONSISTENCY,
+        content="first candidate",
+        condition=lambda context: True,
+    )
+    proactive.register_proactive_trigger(
+        trigger="style_set_budget_a1",
+        agent=reviewer,
+        kind=proactive.PROACTIVE_KIND_DIRECTION,
+        content="second candidate",
+        condition=lambda context: True,
+    )
+
+    candidates = proactive.evaluate_proactive_triggers(
+        db, workspace_id, "style_set_budget_a1", {}
+    )
+    assert len(candidates) == 1
+    assert candidates[0].agent == reviewer
+
+
+def test_zero_budget_returns_no_candidates(tmp_path: Path) -> None:
+    db, workspace_id = _make_db(tmp_path, proactive_max_per_agent=0)
+    writer = _agent_name(db, workspace_id, AgentRole.WRITER)
+    proactive.register_proactive_trigger(
+        trigger="talk_sent_budget_a1",
+        agent=writer,
+        kind=proactive.PROACTIVE_KIND_QUESTION,
+        content="question candidate",
+        condition=lambda context: True,
+    )
+
+    assert (
+        proactive.evaluate_proactive_triggers(db, workspace_id, "talk_sent_budget_a1", {})
+        == []
+    )
+
+
+def test_rebuttal_messages_do_not_consume_proactive_budget(tmp_path: Path) -> None:
+    db, workspace_id = _make_db(tmp_path)
+    writer = _agent_name(db, workspace_id, AgentRole.WRITER)
+    with db.workspace_session(workspace_id) as session:
+        session.add(
+            Message(
+                workspace_id=workspace_id,
+                role="agent",
+                actor=writer,
+                content="rebuttal",
+                payload=json.dumps(
+                    {"initiator": "agent", "kind": "rebuttal"}, ensure_ascii=False
+                ),
+            )
+        )
+        session.commit()
+
+    assert proactive.count_proactive_messages(db, workspace_id, writer) == 0
+
+    _insert_proactive(
+        db,
+        workspace_id,
+        writer,
+        kind=proactive.PROACTIVE_KIND_REPORT,
+        trigger="draft_revised_a1",
+    )
+    assert proactive.count_proactive_messages(db, workspace_id, writer) == 1

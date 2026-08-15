@@ -7,6 +7,7 @@ flow in chat/talk is deliberately left untouched.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -99,16 +100,28 @@ def build_proactive_payload(kind: str, trigger: str) -> dict[str, str]:
 def count_proactive_messages(db: DB, workspace_id: str, agent: str) -> int:
     """Count proactive messages already sent by one partner in one workspace."""
     with db.workspace_session(workspace_id) as session:
-        return (
+        messages = (
             session.query(Message)
             .filter(
                 Message.workspace_id == workspace_id,
                 Message.actor == agent,
-                Message.payload.like('%"initiator": "agent"%'),
-                Message.payload.like('%"kind":%'),
             )
-            .count()
+            .all()
         )
+    count = 0
+    for message in messages:
+        try:
+            payload = json.loads(message.payload)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        if (
+            payload.get("initiator") == INITIATOR_AGENT
+            and payload.get("kind") in PROACTIVE_KINDS
+        ):
+            count += 1
+    return count
 
 
 def proactive_within_limit(db: DB, workspace_id: str, agent: str, max_per_agent: int) -> bool:
@@ -131,14 +144,19 @@ def evaluate_proactive_triggers(
         return []
     context = context if context is not None else {}
     candidates: list[ProactiveCandidate] = []
+    remaining_budget: dict[str, int] = {}
     for spec in _PROACTIVE_TRIGGERS.get(trigger, []):
         if not spec.condition(context):
             continue
-        if not proactive_within_limit(
-            db, workspace_id, spec.agent, db.settings.proactive_max_per_agent
-        ):
+        if spec.agent not in remaining_budget:
+            remaining_budget[spec.agent] = (
+                db.settings.proactive_max_per_agent
+                - count_proactive_messages(db, workspace_id, spec.agent)
+            )
+        if remaining_budget[spec.agent] <= 0:
             continue
         candidates.append(
             ProactiveCandidate(agent=spec.agent, kind=spec.kind, content=spec.content)
         )
+        remaining_budget[spec.agent] -= 1
     return candidates

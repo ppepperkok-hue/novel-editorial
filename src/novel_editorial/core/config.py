@@ -71,6 +71,11 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             ErrorCode.CONFIG_ERROR,
             f"invalid proactive max per agent: {max_value!r}",
         ) from exc
+    if proactive_max_per_agent < 0:
+        raise NovelError(
+            ErrorCode.CONFIG_ERROR,
+            f"invalid proactive max per agent: {max_value!r}",
+        )
     return Settings(
         data_dir=data_dir,
         config_path=config_path,
