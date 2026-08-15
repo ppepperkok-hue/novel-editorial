@@ -144,17 +144,21 @@ def test_draft_generate_emits_created_gate_and_decision_events(tmp_path: Path, m
 
     events = list_events(DB(load_settings()), workspace_id)
     assert [event.type for event in events] == [
+        "agent.message",
+        "agent.message",
         "decision.requested",
         "quality_gate.passed",
         "draft.created",
     ]
-    created = json.loads(events[2].payload)
+    message_kinds = [json.loads(event.payload)["kind"] for event in events[:2]]
+    assert message_kinds == ["proactive_review", "proactive_report"]
+    created = json.loads(events[4].payload)
     assert created == {"draft_id": draft_id, "title": "第一章"}
-    gate = json.loads(events[1].payload)
+    gate = json.loads(events[3].payload)
     assert gate["draft_id"] == draft_id
     assert gate["version"] == 1
     assert gate["score"] == 0.0
-    decision = json.loads(events[0].payload)
+    decision = json.loads(events[2].payload)
     assert decision == {"draft_id": draft_id, "version": 1}
 
 
@@ -168,7 +172,13 @@ def test_quality_failure_emits_only_draft_created(tmp_path: Path, monkeypatch) -
     assert result.exit_code == 0, result.output
 
     events = list_events(DB(load_settings()), workspace_id)
-    assert [event.type for event in events] == ["draft.created"]
+    assert [event.type for event in events] == ["agent.message", "draft.created"]
+    assert events[0].actor == "写手"
+    assert json.loads(events[0].payload) == {
+        "initiator": "agent",
+        "kind": "proactive_report",
+        "trigger": "draft_generated",
+    }
 
 
 def test_revise_emits_gate_and_decision_with_new_version(tmp_path: Path, monkeypatch) -> None:
@@ -245,6 +255,8 @@ def test_end_to_end_event_order(tmp_path: Path, monkeypatch) -> None:
         "draft.created",
         "quality_gate.passed",
         "decision.requested",
+        "agent.message",
+        "agent.message",
         "review.rejected",
     ]
 
@@ -272,14 +284,19 @@ def test_events_list_cli_filters_limits_and_rejects_unknown_types(
     result = runner.invoke(app, ["events", "list", workspace_id])
     assert result.exit_code == 0, result.output
     lines = result.output.strip().splitlines()
-    assert "[decision.requested]" in lines[0]
-    assert "[quality_gate.passed]" in lines[1]
-    assert "[draft.created]" in lines[2]
+    assert len(lines) == 7
+    assert "[agent.message]" in lines[0]
+    assert "[agent.message]" in lines[1]
+    assert "[decision.requested]" in lines[2]
+    assert "[quality_gate.passed]" in lines[3]
+    assert "[draft.created]" in lines[4]
+    assert "[agent.message]" in lines[5]
+    assert "[agent.message]" in lines[6]
 
     only_messages = runner.invoke(app, ["events", "list", workspace_id, "--type", "agent.message"])
     assert only_messages.exit_code == 0, only_messages.output
     message_lines = only_messages.output.strip().splitlines()
-    assert len(message_lines) == 2
+    assert len(message_lines) == 4
     assert all("[agent.message]" in line for line in message_lines)
 
     limited = runner.invoke(app, ["events", "list", workspace_id, "--limit", "2"])

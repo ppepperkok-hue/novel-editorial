@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import typer
 
+from novel_editorial.core import proactive
 from novel_editorial.core.chat import get_workspace_or_raise
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.draft import (
@@ -14,10 +15,32 @@ from novel_editorial.core.draft import (
     list_drafts,
     revise_draft,
 )
+from novel_editorial.core.review import list_reviews
 from novel_editorial.llm.client import build_client
 from novel_editorial.store.db import DB
 
 draft_app = typer.Typer(help="Manage drafts")
+
+
+def _content_excerpt(content: str, limit: int = 20) -> str:
+    """Flatten the opening of draft content into one short, assertable line."""
+    return " ".join(content.split())[:limit]
+
+
+def _revision_is_rebuttal(db: DB, workspace_id: str, draft_id: str) -> bool:
+    """True when the revision round already emits the writer rebuttal message."""
+    return any(review.role == "agent" for review in list_reviews(db, workspace_id, draft_id))
+
+
+def _record_proactive(db: DB, workspace_id: str, trigger: str, context: dict) -> None:
+    """Evaluate and echo proactive messages; a failure never rolls business back."""
+    try:
+        messages = proactive.record_proactive_messages(db, workspace_id, trigger, context)
+    except Exception as exc:
+        typer.echo(f"warning: proactive messages skipped: {exc}", err=True)
+        return
+    for message in messages:
+        typer.echo(f"{message.actor}: {message.content}")
 
 
 @draft_app.command("generate")
@@ -40,6 +63,15 @@ def draft_generate(
     typer.echo(f"draft {draft.id} {draft.title} now at v{draft.current_version}")
     if draft.status == "draft":
         typer.echo(f"awaiting decision: {draft.id}")
+    version = get_draft_version(db, workspace_id, draft.id, draft.current_version)
+    context = {
+        "title": draft.title,
+        "excerpt": _content_excerpt(version.content),
+        "passed": draft.status == "draft",
+    }
+    _record_proactive(db, workspace_id, proactive.TRIGGER_DRAFT_GENERATED, context)
+    if draft.status == "draft":
+        _record_proactive(db, workspace_id, proactive.TRIGGER_DRAFT_GATE_PASSED, context)
 
 
 @draft_app.command("revise")
@@ -64,6 +96,12 @@ def draft_revise(
     typer.echo(f"draft {revised.id} {revised.title} now at v{revised.current_version}")
     if revised.status == "draft":
         typer.echo(f"awaiting decision: {revised.id}")
+    _record_proactive(
+        db,
+        draft.workspace_id,
+        proactive.TRIGGER_DRAFT_REVISED,
+        {"rebutted": _revision_is_rebuttal(db, draft.workspace_id, draft_id)},
+    )
 
 
 @draft_app.command("list")

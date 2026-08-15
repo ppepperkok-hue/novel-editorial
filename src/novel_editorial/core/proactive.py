@@ -1,18 +1,26 @@
-"""Proactive behavior model: kinds, payloads, trigger registry, and rate limiting.
+"""Proactive behavior model and business-event wiring.
 
-A1 scope only: this module establishes the framework without wiring any concrete
-role situation (that lands in A2). The existing first-round PROACTIVE_QUESTION
-flow in chat/talk is deliberately left untouched.
+A1 established the five kinds, the trigger registry, SQL-backed frequency
+counting, and the enabled/max-per-agent settings. A2 adds the write path used
+after real business events: candidates returned by evaluate_proactive_triggers
+are persisted as agent messages with the standard payload plus their
+agent.message events, reusing the session-scoped message helper from chat.
+
+The writer and editor draft situations are registered here with fixed,
+deterministic copy. The existing first-round PROACTIVE_QUESTION flow in
+chat/talk is deliberately left untouched.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from string import Template
 from typing import Any
 
 from sqlalchemy import func, or_, select
 
+from novel_editorial.core.chat import _record_message_in_session
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import Message
@@ -35,6 +43,10 @@ PROACTIVE_KINDS: frozenset[str] = frozenset(
 )
 
 INITIATOR_AGENT = "agent"
+
+TRIGGER_DRAFT_GENERATED = "draft_generated"
+TRIGGER_DRAFT_REVISED = "draft_revised"
+TRIGGER_DRAFT_GATE_PASSED = "draft_gate_passed"
 
 TriggerContext = Mapping[str, Any]
 ConditionFn = Callable[[TriggerContext], bool]
@@ -160,3 +172,75 @@ def evaluate_proactive_triggers(
         )
         remaining_budget[spec.agent] -= 1
     return candidates
+
+
+class _RenderContext(dict):
+    """Template context that renders missing placeholders as empty strings."""
+
+    def __missing__(self, key: str) -> str:
+        return ""
+
+
+def _render_content(content: str, context: TriggerContext) -> str:
+    return Template(content).substitute(_RenderContext(context))
+
+
+def record_proactive_messages(
+    db: DB,
+    workspace_id: str,
+    trigger: str,
+    context: TriggerContext | None = None,
+) -> list[Message]:
+    """Evaluate one situation and persist the firing candidates.
+
+    Each candidate becomes an agent message carrying the standard proactive
+    payload plus its agent.message event. Writes run in their own transaction
+    after the business operation already committed, so a proactive failure can
+    never roll the business result back; callers decide how to surface it.
+    """
+    candidates = evaluate_proactive_triggers(db, workspace_id, trigger, context)
+    if not candidates:
+        return []
+    render_context = context if context is not None else {}
+    with db.workspace_session(workspace_id) as session:
+        messages = [
+            _record_message_in_session(
+                session,
+                workspace_id,
+                role="agent",
+                actor=candidate.agent,
+                content=_render_content(candidate.content, render_context),
+                payload=build_proactive_payload(candidate.kind, trigger),
+            )
+            for candidate in candidates
+        ]
+        session.commit()
+        return messages
+
+
+def _register_draft_proactive_behaviors() -> None:
+    """Register the writer/editor draft situations with fixed, assertable copy."""
+    register_proactive_trigger(
+        trigger=TRIGGER_DRAFT_GENERATED,
+        agent="写手",
+        kind=PROACTIVE_KIND_REPORT,
+        content="《$title》初稿写完了，我按节奏收尾，先交给你过目。",
+        condition=lambda context: True,
+    )
+    register_proactive_trigger(
+        trigger=TRIGGER_DRAFT_REVISED,
+        agent="写手",
+        kind=PROACTIVE_KIND_QUESTION,
+        content="这章我留了个钩子，下章要不要收？",
+        condition=lambda context: not context.get("rebutted", False),
+    )
+    register_proactive_trigger(
+        trigger=TRIGGER_DRAFT_GATE_PASSED,
+        agent="责编",
+        kind=PROACTIVE_KIND_REVIEW,
+        content="《$title》过了质量门，我试读了开头「$excerpt」，节奏在线，建议作者拍板。",
+        condition=lambda context: context.get("passed") is True,
+    )
+
+
+_register_draft_proactive_behaviors()

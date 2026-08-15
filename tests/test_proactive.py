@@ -10,6 +10,7 @@ from novel_editorial.core.config import Settings
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.workspace import create_workspace
 from novel_editorial.store.db import DB
+from novel_editorial.store.events import list_events
 from novel_editorial.store.models import Agent, AgentRole, Message
 
 
@@ -321,3 +322,67 @@ def test_count_filters_in_sql_without_materializing_rows(tmp_path: Path) -> None
     for kind in proactive.PROACTIVE_KINDS:
         assert f'%"kind": "{kind}"%' in param_values
     assert f'%"initiator": "{proactive.INITIATOR_AGENT}"%' in param_values
+
+
+def test_record_proactive_messages_persists_message_and_event(tmp_path: Path) -> None:
+    db, workspace_id = _make_db(tmp_path)
+    writer = _agent_name(db, workspace_id, AgentRole.WRITER)
+    proactive.register_proactive_trigger(
+        trigger="record_a2",
+        agent=writer,
+        kind=proactive.PROACTIVE_KIND_REPORT,
+        content="《$title》写完了，片段「$excerpt」",
+        condition=lambda context: True,
+    )
+
+    recorded = proactive.record_proactive_messages(
+        db, workspace_id, "record_a2", {"title": "第一章", "excerpt": "开头一句"}
+    )
+    assert len(recorded) == 1
+    message = recorded[0]
+    assert message.role == "agent"
+    assert message.actor == writer
+    assert message.content == "《第一章》写完了，片段「开头一句」"
+    assert json.loads(message.payload) == {
+        "initiator": proactive.INITIATOR_AGENT,
+        "kind": proactive.PROACTIVE_KIND_REPORT,
+        "trigger": "record_a2",
+    }
+
+    events = list_events(db, workspace_id)
+    assert [event.type for event in events] == ["agent.message"]
+    assert json.loads(events[0].payload) == json.loads(message.payload)
+
+
+def test_record_proactive_messages_renders_missing_context_as_empty(tmp_path: Path) -> None:
+    db, workspace_id = _make_db(tmp_path)
+    writer = _agent_name(db, workspace_id, AgentRole.WRITER)
+    proactive.register_proactive_trigger(
+        trigger="render_a2",
+        agent=writer,
+        kind=proactive.PROACTIVE_KIND_REPORT,
+        content="《$title》片段「$excerpt」",
+        condition=lambda context: True,
+    )
+
+    recorded = proactive.record_proactive_messages(
+        db, workspace_id, "render_a2", {"title": "第一章"}
+    )
+    assert len(recorded) == 1
+    assert recorded[0].content == "《第一章》片段「」"
+
+
+def test_record_proactive_messages_respects_disabled_switch(tmp_path: Path) -> None:
+    db, workspace_id = _make_db(tmp_path, proactive_enabled=False)
+    writer = _agent_name(db, workspace_id, AgentRole.WRITER)
+    proactive.register_proactive_trigger(
+        trigger="disabled_a2",
+        agent=writer,
+        kind=proactive.PROACTIVE_KIND_REPORT,
+        content="文案",
+        condition=lambda context: True,
+    )
+
+    assert proactive.record_proactive_messages(db, workspace_id, "disabled_a2", {}) == []
+    with db.workspace_session(workspace_id) as session:
+        assert session.query(Message).count() == 0
