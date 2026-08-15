@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from pathlib import Path
 
@@ -5,9 +6,11 @@ import pytest
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
-from novel_editorial.core.chat import build_agent_prompt
+from novel_editorial.core import proactive
+from novel_editorial.core.chat import build_agent_prompt, list_messages
 from novel_editorial.core.config import load_settings
 from novel_editorial.store.db import DB, workspace_db_path
+from novel_editorial.store.events import list_events
 from novel_editorial.store.models import Agent, AgentRole, PlotThread, Workspace
 
 runner = CliRunner()
@@ -172,6 +175,70 @@ def test_plot_plant_rejects_multiline_content(tmp_path: Path, monkeypatch) -> No
     with db.workspace_session(workspace_id) as session:
         threads = session.query(PlotThread).filter_by(workspace_id=workspace_id).all()
     assert threads == []
+
+
+@pytest.mark.smoke
+def test_plot_plant_emits_reviewer_consistency(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            "plant",
+            workspace_id,
+            "--kind",
+            "foreshadow",
+            "--content",
+            "侦探口袋里的旧车票",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "审稿: 线索「侦探口袋里的旧车票」埋下了" in result.output
+
+    db = DB(load_settings())
+    consistency = [
+        message
+        for message in list_messages(db, workspace_id)
+        if json.loads(message.payload)["kind"] == proactive.PROACTIVE_KIND_CONSISTENCY
+    ]
+    assert len(consistency) == 1
+    assert consistency[0].actor == "审稿"
+    assert consistency[0].content == (
+        "线索「侦探口袋里的旧车票」埋下了。我记进时间线，回头逐章对照，别让它断在半路。"
+    )
+    assert json.loads(consistency[0].payload) == {
+        "initiator": "agent",
+        "kind": proactive.PROACTIVE_KIND_CONSISTENCY,
+        "trigger": proactive.TRIGGER_PLOT_PLANTED,
+    }
+
+    events = list_events(db, workspace_id)
+    assert [event.type for event in events] == ["agent.message"]
+    assert json.loads(events[0].payload) == json.loads(consistency[0].payload)
+
+
+def test_disabled_proactive_suppresses_plot_consistency(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("NOVEL_PROACTIVE_ENABLED", "false")
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    result = runner.invoke(
+        app,
+        [
+            "plot",
+            "plant",
+            workspace_id,
+            "--kind",
+            "hook",
+            "--content",
+            "雨夜巷口的人影",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "审稿:" not in result.output
+
+    db = DB(load_settings())
+    assert list_messages(db, workspace_id) == []
 
 
 def test_plot_unknown_workspace_and_thread_not_found(tmp_path: Path, monkeypatch) -> None:

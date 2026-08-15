@@ -6,6 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
+from novel_editorial.core import proactive
 from novel_editorial.core.chat import has_proactive_message, list_messages
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
@@ -31,17 +32,28 @@ def test_talk_send_records_author_reply_and_proactive(tmp_path: Path, monkeypatc
     assert f"{'作者'}: 我们写一个侦探故事" in result.output
     assert "总编: （模拟回复）" in result.output
     assert "责编: 我想先确认一下" in result.output
+    assert "总编: 这部作品的方向还没定" in result.output
 
     settings = load_settings()
     db = DB(settings)
     messages = list_messages(db, workspace_id)
-    assert len(messages) == 4
+    assert len(messages) == 5
     assert messages[0].role == "author"
     assert messages[1].role == "agent" and messages[1].actor == "总编"
     mood_payload = json.loads(messages[2].payload)
     assert mood_payload["kind"] == "mood_change"
     proactive_payload = json.loads(messages[3].payload)
     assert proactive_payload["initiator"] == "agent"
+    direction_payload = json.loads(messages[4].payload)
+    assert direction_payload == {
+        "initiator": "agent",
+        "kind": proactive.PROACTIVE_KIND_DIRECTION,
+        "trigger": proactive.TRIGGER_TALK_FIRST_ROUND,
+    }
+    assert messages[4].actor == "总编"
+    assert messages[4].content == (
+        "这部作品的方向还没定：整体基调、核心冲突，咱们先把这些捋清楚再动笔。"
+    )
     assert has_proactive_message(db, workspace_id)
 
 
@@ -69,7 +81,7 @@ def test_talk_proactive_happens_only_once(tmp_path: Path, monkeypatch) -> None:
     db = DB(settings)
     messages = list_messages(db, workspace_id)
     proactive = [m for m in messages if json.loads(m.payload).get("initiator") == "agent"]
-    assert len(proactive) == 1
+    assert len(proactive) == 2
 
 
 def test_talk_send_unknown_alias(tmp_path: Path, monkeypatch) -> None:
@@ -141,7 +153,7 @@ def test_talk_upgrades_pre_migration_workspace(tmp_path: Path, monkeypatch) -> N
 
     result = runner.invoke(app, ["talk", "send", workspace_id, "升级后能聊"])
     assert result.exit_code == 0, result.output
-    assert len(list_messages(db, workspace_id)) == 4
+    assert len(list_messages(db, workspace_id)) == 5
 
     with db.workspace_session(workspace_id) as session:
         from novel_editorial.store.models import Agent
@@ -200,3 +212,45 @@ def test_talk_proactive_question_fires_after_writer_revise_followup(
     sent = runner.invoke(app, ["talk", "send", workspace_id, "继续聊这个故事"])
     assert sent.exit_code == 0, sent.output
     assert "责编: 我想先确认一下" in sent.output
+
+
+def test_talk_direction_suppressed_when_style_anchor_exists(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    styled = runner.invoke(
+        app, ["style", "set", workspace_id, "--description", "平实克制短句"]
+    )
+    assert styled.exit_code == 0, styled.output
+
+    result = runner.invoke(app, ["talk", "send", workspace_id, "我们写一个侦探故事"])
+    assert result.exit_code == 0, result.output
+    assert "责编: 我想先确认一下" in result.output
+    assert "这部作品的方向还没定" not in result.output
+
+    db = DB(load_settings())
+    directions = [
+        message
+        for message in list_messages(db, workspace_id)
+        if json.loads(message.payload).get("kind") == proactive.PROACTIVE_KIND_DIRECTION
+    ]
+    assert directions == []
+
+
+def test_disabled_proactive_keeps_question_but_skips_direction(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("NOVEL_PROACTIVE_ENABLED", "false")
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    result = runner.invoke(app, ["talk", "send", workspace_id, "我们写一个侦探故事"])
+    assert result.exit_code == 0, result.output
+    assert "责编: 我想先确认一下" in result.output
+    assert "这部作品的方向还没定" not in result.output
+
+    db = DB(load_settings())
+    directions = [
+        message
+        for message in list_messages(db, workspace_id)
+        if json.loads(message.payload).get("kind") == proactive.PROACTIVE_KIND_DIRECTION
+    ]
+    assert directions == []

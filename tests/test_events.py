@@ -128,14 +128,24 @@ def test_talk_records_agent_message_events_only_for_agents(tmp_path: Path, monke
     assert result.exit_code == 0, result.output
 
     events = list_events(DB(load_settings()), workspace_id)
-    assert [event.type for event in events] == ["agent.message", "agent.message"]
-    assert events[0].actor == "责编"
+    assert [event.type for event in events] == [
+        "agent.message",
+        "agent.message",
+        "agent.message",
+    ]
+    assert events[0].actor == "总编"
     assert json.loads(events[0].payload) == {
+        "initiator": "agent",
+        "kind": "proactive_direction",
+        "trigger": "talk_first_round",
+    }
+    assert events[1].actor == "责编"
+    assert json.loads(events[1].payload) == {
         "initiator": "agent",
         "kind": "proactive_question",
     }
-    assert events[1].actor == "总编"
-    assert json.loads(events[1].payload) == {}
+    assert events[2].actor == "总编"
+    assert json.loads(events[2].payload) == {}
 
 
 def test_draft_generate_emits_created_gate_and_decision_events(tmp_path: Path, monkeypatch) -> None:
@@ -252,6 +262,7 @@ def test_end_to_end_event_order(tmp_path: Path, monkeypatch) -> None:
     assert oldest_first == [
         "agent.message",
         "agent.message",
+        "agent.message",
         "draft.created",
         "quality_gate.passed",
         "decision.requested",
@@ -284,7 +295,7 @@ def test_events_list_cli_filters_limits_and_rejects_unknown_types(
     result = runner.invoke(app, ["events", "list", workspace_id])
     assert result.exit_code == 0, result.output
     lines = result.output.strip().splitlines()
-    assert len(lines) == 7
+    assert len(lines) == 8
     assert "[agent.message]" in lines[0]
     assert "[agent.message]" in lines[1]
     assert "[decision.requested]" in lines[2]
@@ -292,11 +303,12 @@ def test_events_list_cli_filters_limits_and_rejects_unknown_types(
     assert "[draft.created]" in lines[4]
     assert "[agent.message]" in lines[5]
     assert "[agent.message]" in lines[6]
+    assert "[agent.message]" in lines[7]
 
     only_messages = runner.invoke(app, ["events", "list", workspace_id, "--type", "agent.message"])
     assert only_messages.exit_code == 0, only_messages.output
     message_lines = only_messages.output.strip().splitlines()
-    assert len(message_lines) == 4
+    assert len(message_lines) == 5
     assert all("[agent.message]" in line for line in message_lines)
 
     limited = runner.invoke(app, ["events", "list", workspace_id, "--limit", "2"])

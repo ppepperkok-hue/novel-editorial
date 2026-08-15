@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import typer
 
+from novel_editorial.core import proactive
 from novel_editorial.core.chat import (
     AUTHOR_ACTOR,
     MOOD_TALK,
@@ -22,9 +23,27 @@ from novel_editorial.core.chat import (
 from novel_editorial.core.config import load_settings
 from novel_editorial.llm.client import LLMMessage, build_client
 from novel_editorial.store.db import DB
-from novel_editorial.store.models import AgentRole
+from novel_editorial.store.models import AgentRole, StyleAnchor
 
 talk_app = typer.Typer(help="Talk with the editorial band")
+
+
+def _has_style_anchor(db: DB, workspace_id: str) -> bool:
+    """True when the workspace has a meaningful style anchor (non-empty description)."""
+    with db.workspace_session(workspace_id) as session:
+        anchor = session.query(StyleAnchor).filter_by(workspace_id=workspace_id).first()
+        return bool(anchor and anchor.description)
+
+
+def _record_proactive(db: DB, workspace_id: str, trigger: str, context: dict) -> None:
+    """Evaluate and echo proactive messages; a failure never rolls business back."""
+    try:
+        messages = proactive.record_proactive_messages(db, workspace_id, trigger, context)
+    except Exception as exc:
+        typer.echo(f"warning: proactive messages skipped: {exc}", err=True)
+        return
+    for message in messages:
+        typer.echo(f"{message.actor}: {message.content}")
 
 
 @talk_app.command("send")
@@ -84,6 +103,15 @@ def talk_send(
             payload=PROACTIVE_PAYLOAD,
         )
         typer.echo(f"{editor.name}: {PROACTIVE_QUESTION}")
+        _record_proactive(
+            db,
+            workspace_id,
+            proactive.TRIGGER_TALK_FIRST_ROUND,
+            {
+                "first_round": True,
+                "has_style_anchor": _has_style_anchor(db, workspace_id),
+            },
+        )
 
 
 @talk_app.command("list")

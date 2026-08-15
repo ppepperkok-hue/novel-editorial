@@ -386,3 +386,88 @@ def test_record_proactive_messages_respects_disabled_switch(tmp_path: Path) -> N
     assert proactive.record_proactive_messages(db, workspace_id, "disabled_a2", {}) == []
     with db.workspace_session(workspace_id) as session:
         assert session.query(Message).count() == 0
+
+
+def test_reviewer_registered_for_style_set_and_plot_planted(tmp_path: Path) -> None:
+    db, workspace_id = _make_db(tmp_path)
+
+    styled = proactive.evaluate_proactive_triggers(db, workspace_id, "style_set", {})
+    assert styled == [
+        proactive.ProactiveCandidate(
+            agent="审稿",
+            kind=proactive.PROACTIVE_KIND_CONSISTENCY,
+            content=(
+                "风格锚点定了：「$description」。"
+                "我盯着设定看了一遍，开头那句跟「$description」会不会打架？"
+            ),
+        )
+    ]
+
+    planted = proactive.evaluate_proactive_triggers(db, workspace_id, "plot_planted", {})
+    assert len(planted) == 1
+    assert planted[0].agent == "审稿"
+    assert planted[0].kind == proactive.PROACTIVE_KIND_CONSISTENCY
+    assert planted[0].content == (
+        "线索「$content」埋下了。我记进时间线，回头逐章对照，别让它断在半路。"
+    )
+
+
+def test_editor_direction_fires_only_first_round_without_style_anchor(
+    tmp_path: Path,
+) -> None:
+    db, workspace_id = _make_db(tmp_path)
+
+    fired = proactive.evaluate_proactive_triggers(
+        db,
+        workspace_id,
+        "talk_first_round",
+        {"first_round": True, "has_style_anchor": False},
+    )
+    assert fired == [
+        proactive.ProactiveCandidate(
+            agent="总编",
+            kind=proactive.PROACTIVE_KIND_DIRECTION,
+            content="这部作品的方向还没定：整体基调、核心冲突，咱们先把这些捋清楚再动笔。",
+        )
+    ]
+    assert (
+        proactive.evaluate_proactive_triggers(
+            db,
+            workspace_id,
+            "talk_first_round",
+            {"first_round": True, "has_style_anchor": True},
+        )
+        == []
+    )
+    assert (
+        proactive.evaluate_proactive_triggers(
+            db,
+            workspace_id,
+            "talk_first_round",
+            {"first_round": False, "has_style_anchor": False},
+        )
+        == []
+    )
+
+
+def test_record_talk_direction_persists_payload_and_event(tmp_path: Path) -> None:
+    db, workspace_id = _make_db(tmp_path)
+    recorded = proactive.record_proactive_messages(
+        db,
+        workspace_id,
+        "talk_first_round",
+        {"first_round": True, "has_style_anchor": False},
+    )
+    assert len(recorded) == 1
+    message = recorded[0]
+    assert message.actor == "总编"
+    assert message.content == "这部作品的方向还没定：整体基调、核心冲突，咱们先把这些捋清楚再动笔。"
+    assert json.loads(message.payload) == {
+        "initiator": proactive.INITIATOR_AGENT,
+        "kind": proactive.PROACTIVE_KIND_DIRECTION,
+        "trigger": "talk_first_round",
+    }
+
+    events = list_events(db, workspace_id)
+    assert [event.type for event in events] == ["agent.message"]
+    assert json.loads(events[0].payload) == json.loads(message.payload)

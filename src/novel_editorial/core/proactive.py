@@ -6,9 +6,9 @@ after real business events: candidates returned by evaluate_proactive_triggers
 are persisted as agent messages with the standard payload plus their
 agent.message events, reusing the session-scoped message helper from chat.
 
-The writer and editor draft situations are registered here with fixed,
-deterministic copy. The existing first-round PROACTIVE_QUESTION flow in
-chat/talk is deliberately left untouched.
+The writer, editor, reviewer, and editor-in-chief situations are registered
+here with fixed, deterministic copy. The existing first-round
+PROACTIVE_QUESTION flow in chat/talk is deliberately left untouched.
 """
 
 from __future__ import annotations
@@ -47,6 +47,9 @@ INITIATOR_AGENT = "agent"
 TRIGGER_DRAFT_GENERATED = "draft_generated"
 TRIGGER_DRAFT_REVISED = "draft_revised"
 TRIGGER_DRAFT_GATE_PASSED = "draft_gate_passed"
+TRIGGER_STYLE_SET = "style_set"
+TRIGGER_PLOT_PLANTED = "plot_planted"
+TRIGGER_TALK_FIRST_ROUND = "talk_first_round"
 
 TriggerContext = Mapping[str, Any]
 ConditionFn = Callable[[TriggerContext], bool]
@@ -245,4 +248,34 @@ def _register_draft_proactive_behaviors() -> None:
     )
 
 
+def _register_reviewer_and_editor_proactive_behaviors() -> None:
+    """Register the reviewer (style/plot) and editor-in-chief (talk) situations."""
+    register_proactive_trigger(
+        trigger=TRIGGER_STYLE_SET,
+        agent="审稿",
+        kind=PROACTIVE_KIND_CONSISTENCY,
+        content=(
+            "风格锚点定了：「$description」。"
+            "我盯着设定看了一遍，开头那句跟「$description」会不会打架？"
+        ),
+        condition=lambda context: True,
+    )
+    register_proactive_trigger(
+        trigger=TRIGGER_PLOT_PLANTED,
+        agent="审稿",
+        kind=PROACTIVE_KIND_CONSISTENCY,
+        content="线索「$content」埋下了。我记进时间线，回头逐章对照，别让它断在半路。",
+        condition=lambda context: True,
+    )
+    register_proactive_trigger(
+        trigger=TRIGGER_TALK_FIRST_ROUND,
+        agent="总编",
+        kind=PROACTIVE_KIND_DIRECTION,
+        content="这部作品的方向还没定：整体基调、核心冲突，咱们先把这些捋清楚再动笔。",
+        condition=lambda context: context.get("first_round") is True
+        and not context.get("has_style_anchor", False),
+    )
+
+
 _register_draft_proactive_behaviors()
+_register_reviewer_and_editor_proactive_behaviors()
