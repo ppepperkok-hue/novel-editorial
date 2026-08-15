@@ -10,6 +10,18 @@ from pathlib import Path
 
 from novel_editorial.core.errors import ErrorCode, NovelError
 
+_TRUE_ENABLED_VALUES = frozenset({"1", "true", "yes", "on"})
+_FALSE_ENABLED_VALUES = frozenset({"0", "false", "no", "off"})
+
+
+def _parse_enabled(value: str) -> bool:
+    lowered = value.strip().lower()
+    if lowered in _TRUE_ENABLED_VALUES:
+        return True
+    if lowered in _FALSE_ENABLED_VALUES:
+        return False
+    raise NovelError(ErrorCode.CONFIG_ERROR, f"invalid proactive enabled: {value!r}")
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -20,6 +32,8 @@ class Settings:
     llm_model: str = "deepseek-chat"
     log_level: str = "INFO"
     quality_threshold: int = 8
+    proactive_enabled: bool = True
+    proactive_max_per_agent: int = 3
     defaults: dict = field(default_factory=dict)
 
 
@@ -45,6 +59,18 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             ErrorCode.CONFIG_ERROR,
             f"invalid quality threshold: {threshold_value!r}",
         ) from exc
+    default_proactive_enabled = defaults.get("proactive_enabled", True)
+    enabled_value = env.get("NOVEL_PROACTIVE_ENABLED", str(default_proactive_enabled))
+    proactive_enabled = _parse_enabled(enabled_value)
+    default_proactive_max = defaults.get("proactive_max_per_agent", 3)
+    max_value = env.get("NOVEL_PROACTIVE_MAX_PER_AGENT", str(default_proactive_max))
+    try:
+        proactive_max_per_agent = int(max_value)
+    except (TypeError, ValueError) as exc:
+        raise NovelError(
+            ErrorCode.CONFIG_ERROR,
+            f"invalid proactive max per agent: {max_value!r}",
+        ) from exc
     return Settings(
         data_dir=data_dir,
         config_path=config_path,
@@ -53,5 +79,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         llm_model=env.get("NOVEL_LLM_MODEL", "deepseek-chat"),
         log_level=env.get("NOVEL_LOG_LEVEL", "INFO"),
         quality_threshold=quality_threshold,
+        proactive_enabled=proactive_enabled,
+        proactive_max_per_agent=proactive_max_per_agent,
         defaults=defaults,
     )

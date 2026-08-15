@@ -1,4 +1,9 @@
+from pathlib import Path
+
+import pytest
+
 from novel_editorial.core.config import load_settings
+from novel_editorial.core.errors import ErrorCode, NovelError
 
 
 def test_defaults() -> None:
@@ -20,3 +25,67 @@ def test_env_overrides() -> None:
     assert settings.llm_api_key == "sk-test"
     assert settings.llm_model == "custom-model"
     assert str(settings.data_dir) == "C:\\tmp\\novel-data"
+
+
+def test_proactive_defaults() -> None:
+    settings = load_settings({})
+    assert settings.proactive_enabled is True
+    assert settings.proactive_max_per_agent == 3
+
+
+def test_proactive_env_overrides(tmp_path: Path) -> None:
+    settings = load_settings(
+        {
+            "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+            "NOVEL_PROACTIVE_ENABLED": "false",
+            "NOVEL_PROACTIVE_MAX_PER_AGENT": "7",
+        }
+    )
+    assert settings.proactive_enabled is False
+    assert settings.proactive_max_per_agent == 7
+
+
+def test_proactive_toml_overrides(tmp_path: Path) -> None:
+    (tmp_path / "config.toml").write_text(
+        "[defaults]\nproactive_enabled = false\nproactive_max_per_agent = 5\n",
+        encoding="utf-8",
+    )
+    settings = load_settings({"NOVEL_CONFIG": str(tmp_path / "config.toml")})
+    assert settings.proactive_enabled is False
+    assert settings.proactive_max_per_agent == 5
+
+
+def test_proactive_env_beats_toml(tmp_path: Path) -> None:
+    (tmp_path / "config.toml").write_text(
+        "[defaults]\nproactive_enabled = false\nproactive_max_per_agent = 5\n",
+        encoding="utf-8",
+    )
+    settings = load_settings(
+        {
+            "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+            "NOVEL_PROACTIVE_ENABLED": "true",
+            "NOVEL_PROACTIVE_MAX_PER_AGENT": "9",
+        }
+    )
+    assert settings.proactive_enabled is True
+    assert settings.proactive_max_per_agent == 9
+
+
+def test_invalid_proactive_values_report_config_error(tmp_path: Path) -> None:
+    with pytest.raises(NovelError) as info:
+        load_settings(
+            {
+                "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+                "NOVEL_PROACTIVE_ENABLED": "maybe",
+            }
+        )
+    assert info.value.code == ErrorCode.CONFIG_ERROR
+
+    with pytest.raises(NovelError) as info:
+        load_settings(
+            {
+                "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+                "NOVEL_PROACTIVE_MAX_PER_AGENT": "high",
+            }
+        )
+    assert info.value.code == ErrorCode.CONFIG_ERROR
