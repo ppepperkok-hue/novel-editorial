@@ -112,7 +112,7 @@ def count_proactive_messages(db: DB, workspace_id: str, agent: str) -> int:
             .where(
                 Message.workspace_id == workspace_id,
                 Message.actor == agent,
-                Message.payload.like('%"initiator": "agent"%'),
+                Message.payload.like(f'%"initiator": "{INITIATOR_AGENT}"%'),
                 or_(
                     *(
                         Message.payload.like(f'%"kind": "{kind}"%')

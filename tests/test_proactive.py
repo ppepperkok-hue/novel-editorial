@@ -320,4 +320,4 @@ def test_count_filters_in_sql_without_materializing_rows(tmp_path: Path) -> None
     param_values = {value for value in parameters if isinstance(value, str)}
     for kind in proactive.PROACTIVE_KINDS:
         assert f'%"kind": "{kind}"%' in param_values
-    assert '%"initiator": "agent"%' in param_values
+    assert f'%"initiator": "{proactive.INITIATOR_AGENT}"%' in param_values
