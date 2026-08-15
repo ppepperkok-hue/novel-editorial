@@ -122,4 +122,5 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 
 ## 状态
 
-- A1 / A2 / A3：待用户确认本文档后派包。
+- A1：完成（24a9b32 + 3769382 + ebe32dd + d9c0cc1，审查链收敛 Ready，2026-08-15 归档）。
+- A2 / A3：待派包。
