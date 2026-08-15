@@ -68,6 +68,8 @@ def draft_generate(
         "title": draft.title,
         "excerpt": _content_excerpt(version.content),
         "passed": draft.status == "draft",
+        "current_version": draft.current_version,
+        "reason": version.reason,
     }
     _record_proactive(db, workspace_id, proactive.TRIGGER_DRAFT_GENERATED, context)
     if draft.status == "draft":
@@ -100,7 +102,10 @@ def draft_revise(
         db,
         draft.workspace_id,
         proactive.TRIGGER_DRAFT_REVISED,
-        {"rebutted": _revision_is_rebuttal(db, draft.workspace_id, draft_id)},
+        {
+            "rebutted": _revision_is_rebuttal(db, draft.workspace_id, draft_id),
+            "passed": revised.status == "draft",
+        },
     )
 
 

@@ -174,3 +174,29 @@ def test_proactive_question_survives_rebuttal(tmp_path: Path, monkeypatch) -> No
     result = runner.invoke(app, ["talk", "send", workspace_id, "继续聊这个故事"])
     assert result.exit_code == 0, result.output
     assert "责编: 我想先确认一下" in result.output
+
+
+def test_talk_proactive_question_fires_after_writer_revise_followup(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    replies = iter(["初稿内容", "修订稿内容"])
+    monkeypatch.setattr(
+        "novel_editorial.cli.draft.build_client",
+        lambda settings: MockLLMClient(reply=next(replies)),
+    )
+    monkeypatch.setattr(
+        "novel_editorial.cli.talk.build_client",
+        lambda settings: MockLLMClient(reply="对话回复"),
+    )
+    created = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "第一章"])
+    assert created.exit_code == 0, created.output
+    draft_id = created.output.split()[1]
+
+    revised = runner.invoke(app, ["draft", "revise", draft_id, "--reason", "收钩子"])
+    assert revised.exit_code == 0, revised.output
+    assert "写手: 这章我留了个钩子，下章要不要收？" in revised.output
+
+    sent = runner.invoke(app, ["talk", "send", workspace_id, "继续聊这个故事"])
+    assert sent.exit_code == 0, sent.output
+    assert "责编: 我想先确认一下" in sent.output

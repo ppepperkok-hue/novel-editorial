@@ -189,12 +189,18 @@ def list_messages(db: DB, workspace_id: str) -> list[Message]:
 
 
 def has_proactive_message(db: DB, workspace_id: str) -> bool:
+    """True only for talk's first-round question (kind marker without a trigger).
+
+    Draft follow-ups reuse the ``proactive_question`` kind but carry a ``trigger``
+    key, so they must not suppress the editor's first-round question in talk.
+    """
     with db.workspace_session(workspace_id) as session:
         row = (
             session.query(Message)
             .filter(
                 Message.workspace_id == workspace_id,
                 Message.payload.like('%"kind": "proactive_question"%'),
+                Message.payload.not_like('%"trigger"%'),
             )
             .first()
         )

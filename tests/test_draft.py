@@ -210,6 +210,74 @@ def test_draft_revise_emits_writer_question(tmp_path: Path, monkeypatch) -> None
     assert json.loads(questions[0].payload)["trigger"] == "draft_revised"
 
 
+def test_draft_regenerate_reports_and_reviews_only_initial_version(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    replies = iter(["第一版正文", "第二版正文"])
+    monkeypatch.setattr(
+        "novel_editorial.cli.draft.build_client",
+        lambda settings: MockLLMClient(reply=next(replies)),
+    )
+
+    first = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "雨夜"])
+    assert first.exit_code == 0, first.output
+    assert "写手: 《雨夜》初稿写完了" in first.output
+    assert "责编: 《雨夜》过了质量门" in first.output
+
+    second = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "雨夜"])
+    assert second.exit_code == 0, second.output
+    assert "v2" in second.output
+    assert "写手: 《雨夜》初稿写完了" not in second.output
+    assert "责编: 《雨夜》过了质量门" not in second.output
+
+    db = DB(load_settings())
+    messages = list_messages(db, workspace_id)
+    writer_reports = [
+        message
+        for message in messages
+        if message.actor == "写手"
+        and json.loads(message.payload)["kind"] == proactive.PROACTIVE_KIND_REPORT
+    ]
+    editor_reviews = [
+        message
+        for message in messages
+        if message.actor == "责编"
+        and json.loads(message.payload)["kind"] == proactive.PROACTIVE_KIND_REVIEW
+    ]
+    assert len(writer_reports) == 1
+    assert len(editor_reviews) == 1
+    assert proactive.count_proactive_messages(db, workspace_id, "写手") == 1
+    assert proactive.count_proactive_messages(db, workspace_id, "责编") == 1
+
+
+def test_draft_revise_quality_failure_suppresses_writer_question(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "novel_editorial.cli.draft.build_client",
+        lambda settings: MockLLMClient(reply="正文内容"),
+    )
+    created = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "第一章"])
+    assert created.exit_code == 0, created.output
+    draft_id = created.output.split()[1]
+
+    monkeypatch.setenv("NOVEL_QUALITY_THRESHOLD", "-1")
+    revised = runner.invoke(app, ["draft", "revise", draft_id, "--reason", "收钩子"])
+    assert revised.exit_code == 0, revised.output
+    assert "写手: 这章我留了个钩子，下章要不要收？" not in revised.output
+    assert "awaiting decision" not in revised.output
+
+    db = DB(load_settings())
+    questions = [
+        message
+        for message in list_messages(db, workspace_id)
+        if json.loads(message.payload)["kind"] == proactive.PROACTIVE_KIND_QUESTION
+    ]
+    assert questions == []
+
+
 def test_disabled_proactive_suppresses_draft_messages(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("NOVEL_PROACTIVE_ENABLED", "false")
     workspace_id = _create_workspace(tmp_path, monkeypatch)

@@ -225,21 +225,23 @@ def _register_draft_proactive_behaviors() -> None:
         agent="写手",
         kind=PROACTIVE_KIND_REPORT,
         content="《$title》初稿写完了，我按节奏收尾，先交给你过目。",
-        condition=lambda context: True,
+        condition=lambda context: context.get("current_version") == 1,
     )
     register_proactive_trigger(
         trigger=TRIGGER_DRAFT_REVISED,
         agent="写手",
         kind=PROACTIVE_KIND_QUESTION,
         content="这章我留了个钩子，下章要不要收？",
-        condition=lambda context: not context.get("rebutted", False),
+        condition=lambda context: context.get("passed") is True
+        and not context.get("rebutted", False),
     )
     register_proactive_trigger(
         trigger=TRIGGER_DRAFT_GATE_PASSED,
         agent="责编",
         kind=PROACTIVE_KIND_REVIEW,
         content="《$title》过了质量门，我试读了开头「$excerpt」，节奏在线，建议作者拍板。",
-        condition=lambda context: context.get("passed") is True,
+        condition=lambda context: context.get("passed") is True
+        and context.get("current_version") == 1,
     )
 
 
