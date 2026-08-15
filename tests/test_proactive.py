@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 
 import pytest
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 
 from novel_editorial.core import proactive
 from novel_editorial.core.config import Settings
@@ -279,3 +281,43 @@ def test_rebuttal_messages_do_not_consume_proactive_budget(tmp_path: Path) -> No
         trigger="draft_revised_a1",
     )
     assert proactive.count_proactive_messages(db, workspace_id, writer) == 1
+
+
+def test_count_filters_in_sql_without_materializing_rows(tmp_path: Path) -> None:
+    db, workspace_id = _make_db(tmp_path)
+    writer = _agent_name(db, workspace_id, AgentRole.WRITER)
+    _insert_proactive(db, workspace_id, writer, kind=proactive.PROACTIVE_KIND_REPORT)
+    with db.workspace_session(workspace_id) as session:
+        session.add(
+            Message(
+                workspace_id=workspace_id,
+                role="agent",
+                actor=writer,
+                content="rebuttal",
+                payload=json.dumps(
+                    {"initiator": "agent", "kind": "rebuttal"}, ensure_ascii=False
+                ),
+            )
+        )
+        session.commit()
+
+    executed: list[tuple[str, tuple]] = []
+
+    def capture(conn, cursor, statement, parameters, context, executemany) -> None:
+        executed.append((statement, parameters))
+
+    event.listen(Engine, "after_cursor_execute", capture)
+    try:
+        assert proactive.count_proactive_messages(db, workspace_id, writer) == 1
+    finally:
+        event.remove(Engine, "after_cursor_execute", capture)
+
+    selects = [entry for entry in executed if entry[0].lower().startswith("select")]
+    assert len(selects) == 1
+    statement, parameters = selects[0]
+    assert "count(*)" in statement.lower()
+    assert "messages.content" not in statement.lower()
+    param_values = {value for value in parameters if isinstance(value, str)}
+    for kind in proactive.PROACTIVE_KINDS:
+        assert f'%"kind": "{kind}"%' in param_values
+    assert '%"initiator": "agent"%' in param_values

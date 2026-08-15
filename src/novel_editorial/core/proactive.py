@@ -7,10 +7,11 @@ flow in chat/talk is deliberately left untouched.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
+
+from sqlalchemy import func, or_, select
 
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.store.db import DB
@@ -98,30 +99,29 @@ def build_proactive_payload(kind: str, trigger: str) -> dict[str, str]:
 
 
 def count_proactive_messages(db: DB, workspace_id: str, agent: str) -> int:
-    """Count proactive messages already sent by one partner in one workspace."""
+    """Count proactive messages already sent by one partner in one workspace.
+
+    The whitelist filter runs in SQL and returns a COUNT, so message rows (and
+    their content) are never materialized in Python. Only payloads carrying the
+    agent initiator marker and one of the five proactive kinds are counted.
+    """
     with db.workspace_session(workspace_id) as session:
-        messages = (
-            session.query(Message)
-            .filter(
+        count_statement = (
+            select(func.count())
+            .select_from(Message)
+            .where(
                 Message.workspace_id == workspace_id,
                 Message.actor == agent,
+                Message.payload.like('%"initiator": "agent"%'),
+                or_(
+                    *(
+                        Message.payload.like(f'%"kind": "{kind}"%')
+                        for kind in sorted(PROACTIVE_KINDS)
+                    ),
+                ),
             )
-            .all()
         )
-    count = 0
-    for message in messages:
-        try:
-            payload = json.loads(message.payload)
-        except (TypeError, ValueError):
-            continue
-        if not isinstance(payload, dict):
-            continue
-        if (
-            payload.get("initiator") == INITIATOR_AGENT
-            and payload.get("kind") in PROACTIVE_KINDS
-        ):
-            count += 1
-    return count
+        return int(session.scalar(count_statement) or 0)
 
 
 def proactive_within_limit(db: DB, workspace_id: str, agent: str, max_per_agent: int) -> bool:
