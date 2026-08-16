@@ -9,6 +9,7 @@ import typer
 from novel_editorial.core import proactive
 from novel_editorial.core.chat import (
     AUTHOR_ACTOR,
+    MOOD_ACCEPTED,
     MOOD_TALK,
     PROACTIVE_PAYLOAD,
     PROACTIVE_QUESTION,
@@ -17,6 +18,8 @@ from novel_editorial.core.chat import (
     get_agent,
     get_workspace_or_raise,
     has_proactive_message,
+    has_same_rule_refusal,
+    is_author_override,
     list_messages,
     record_message,
     resolve_target_role,
@@ -80,20 +83,35 @@ def talk_send(
 
     target_role = resolve_target_role(message)
     agent = get_agent(db, workspace_id, target_role)
-    refusal = check_refusal(agent, message)
-    if refusal:
+    rule = check_refusal(agent, message)
+    if rule is not None:
         record_message(db, workspace_id, role="author", actor=AUTHOR_ACTOR, content=message)
+        if is_author_override(message):
+            content = rule.acceptance
+            payload = {"kind": "override", "stance": rule.stance, "rule": rule.rule}
+            mood = MOOD_ACCEPTED
+        else:
+            repeated = has_same_rule_refusal(db, workspace_id, agent, rule.rule)
+            content = rule.reaffirmation if repeated else rule.refusal
+            payload: dict[str, object] = {
+                "kind": "refusal",
+                "stance": rule.stance,
+                "rule": rule.rule,
+            }
+            if repeated:
+                payload["repeated"] = True
+            mood = MOOD_TALK
         record_message(
             db,
             workspace_id,
             role="agent",
             actor=agent.name,
-            content=refusal,
-            payload={"kind": "refusal"},
+            content=content,
+            payload=payload,
         )
-        update_agent_mood(db, workspace_id, agent, MOOD_TALK)
+        update_agent_mood(db, workspace_id, agent, mood)
         typer.echo(f"{AUTHOR_ACTOR}: {message}")
-        typer.echo(f"{agent.name}: {refusal}")
+        typer.echo(f"{agent.name}: {content}")
         return
     history = list_messages(db, workspace_id)
     client = build_client(settings)

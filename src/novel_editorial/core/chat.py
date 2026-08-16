@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
@@ -34,28 +35,70 @@ ROLE_ALIASES: dict[str, str] = {
     "审稿": AgentRole.REVIEWER,
 }
 
-REFUSAL_RULES: dict[str, list[tuple[tuple[str, ...], str]]] = {
+NEGATION_PREFIXES = ("不", "别", "勿", "莫", "不必")
+
+OVERRIDE_PHRASES: tuple[str, ...] = (
+    "以老板身份",
+    "我拍板",
+    "老板拍板",
+    "就这么定了",
+    "我定了",
+    "老板说了算",
+    "听我的",
+)
+
+
+@dataclass(frozen=True)
+class RefusalRule:
+    """One deterministic stance rule with stable, traceable identifiers.
+
+    ``rule`` is the stable rule id carried by refusal/override payloads;
+    ``stance`` is the stance summary shown alongside the refusal so the
+    judgment stays traceable to the partner's stance/values fields.
+    """
+
+    rule: str
+    stance: str
+    keywords: tuple[str, ...]
+    refusal: str
+    reaffirmation: str
+    acceptance: str
+
+
+REFUSAL_RULES: dict[str, list[RefusalRule]] = {
     AgentRole.WRITER: [
-        (
-            ("违背人设", "强行降智", "无视设定", "乱改设定"),
-            "这个我写不了。违背人物逻辑的剧情，写出来也是假的，我的立场不允许。",
+        RefusalRule(
+            rule="writer_portrayal",
+            stance="忠于人物内心，反对为剧情强行降智",
+            keywords=("违背人设", "强行降智", "无视设定", "乱改设定"),
+            refusal=("这个我写不了。违背人物逻辑的剧情，写出来也是假的，我的立场不允许。"),
+            reaffirmation=(
+                "我还是这句话，写不了。违背人物逻辑的内容我坚持不写，换个不塌人设的写法再说。"
+            ),
+            acceptance=("明白了，作者拍板。这条我按你的意思来，立场我先记着，写完有问题我再提。"),
         ),
     ],
     AgentRole.REVIEWER: [
-        (
-            ("放行", "忽略矛盾", "别管矛盾", "忽略逻辑", "别查伏笔", "直接过", "别较真"),
-            "这个我不能放行。前后矛盾不修就过稿，等于砸审稿的招牌。",
+        RefusalRule(
+            rule="reviewer_consistency",
+            stance="连贯性与一致性优先，前后矛盾必须退稿",
+            keywords=("放行", "忽略矛盾", "别管矛盾", "忽略逻辑", "别查伏笔", "直接过", "别较真"),
+            refusal=("这个我不能放行。前后矛盾不修就过稿，等于砸审稿的招牌。"),
+            reaffirmation=("我还是不能放行。前后矛盾这条线我坚持，你换别的指令我照做，过稿不行。"),
+            acceptance=("行，作者拍板。矛盾这条我先放行，标记我留着，后面咬合不上我再提。"),
         ),
     ],
     AgentRole.EDITOR: [
-        (
-            ("删掉钩子", "删钩子", "钩子全删", "不要钩子", "平铺直叙", "不要节奏"),
-            "钩子删光、节奏放平，读者留不住。这稿我不接，先改回来再说。",
+        RefusalRule(
+            rule="editor_hooks",
+            stance="读者节奏优先，钩子与信息密度优先",
+            keywords=("删掉钩子", "删钩子", "钩子全删", "不要钩子", "平铺直叙", "不要节奏"),
+            refusal=("钩子删光、节奏放平，读者留不住。这稿我不接，先改回来再说。"),
+            reaffirmation=("钩子这条我还是坚持：删光、放平，读者留不住。我的立场没变，先改回来。"),
+            acceptance=("行，老板说了算。钩子先照你说的改，节奏我盯着，别崩太远。"),
         ),
     ],
 }
-
-NEGATION_PREFIXES = ("不", "别", "勿", "莫", "不必")
 
 
 def _keyword_triggered(message: str, keyword: str) -> bool:
@@ -71,12 +114,40 @@ def _keyword_triggered(message: str, keyword: str) -> bool:
         start = index + 1
 
 
-def check_refusal(agent: Agent, message: str) -> str | None:
-    """Return a refusal text if the message conflicts with the agent's stance."""
-    for keywords, refusal in REFUSAL_RULES.get(agent.role, []):
-        if any(_keyword_triggered(message, keyword) for keyword in keywords):
-            return refusal
+def check_refusal(agent: Agent, message: str) -> RefusalRule | None:
+    """Return the stance rule the message conflicts with, or None.
+
+    The judgment stays deterministic: a rule fires only when one of its
+    keywords appears without a negation prefix. The returned rule carries the
+    stable ``rule`` id and ``stance`` summary used by refusal payloads.
+    """
+    for rule in REFUSAL_RULES.get(agent.role, []):
+        if any(_keyword_triggered(message, keyword) for keyword in rule.keywords):
+            return rule
     return None
+
+
+def is_author_override(message: str) -> bool:
+    """True when the author explicitly overrides a partner's stance."""
+    return any(_keyword_triggered(message, phrase) for phrase in OVERRIDE_PHRASES)
+
+
+def has_same_rule_refusal(db: DB, workspace_id: str, agent: Agent, rule: str) -> bool:
+    """True when this partner already refused the same rule in this workspace."""
+    with db.workspace_session(workspace_id) as session:
+        row = (
+            session.query(Message)
+            .filter(
+                Message.workspace_id == workspace_id,
+                Message.role == "agent",
+                Message.actor == agent.name,
+                Message.payload.like('%"kind": "refusal"%'),
+                Message.payload.like(f'%"rule": "{rule}"%'),
+            )
+            .first()
+        )
+    return row is not None
+
 
 def get_workspace_or_raise(db: DB, workspace_id: str) -> Workspace:
     with db.global_session() as session:
