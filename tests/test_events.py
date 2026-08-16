@@ -9,6 +9,7 @@ import pytest
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
+from novel_editorial.core import proactive
 from novel_editorial.core.config import load_settings
 from novel_editorial.events import EventType
 from novel_editorial.llm.client import MockLLMClient
@@ -146,6 +147,29 @@ def test_talk_records_agent_message_events_only_for_agents(tmp_path: Path, monke
     }
     assert events[2].actor == "总编"
     assert json.loads(events[2].payload) == {}
+
+
+def test_events_list_payload_identifies_proactive_messages(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    sent = runner.invoke(app, ["talk", "send", workspace_id, "我们写一个侦探故事"])
+    assert sent.exit_code == 0, sent.output
+
+    listed = runner.invoke(app, ["events", "list", workspace_id, "--type", "agent.message"])
+    assert listed.exit_code == 0, listed.output
+    assert '"initiator": "agent"' in listed.output
+    assert '"kind": "proactive_question"' in listed.output
+    assert '"kind": "proactive_direction"' in listed.output
+
+    events = list_events(DB(load_settings()), workspace_id)
+    proactive_payloads = [
+        json.loads(event.payload)
+        for event in events
+        if json.loads(event.payload).get("initiator") == "agent"
+    ]
+    assert proactive_payloads
+    assert all(payload["kind"] in proactive.PROACTIVE_KINDS for payload in proactive_payloads)
 
 
 def test_draft_generate_emits_created_gate_and_decision_events(tmp_path: Path, monkeypatch) -> None:

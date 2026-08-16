@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import typer
 
 from novel_editorial.core import proactive
@@ -44,6 +46,25 @@ def _record_proactive(db: DB, workspace_id: str, trigger: str, context: dict) ->
         return
     for message in messages:
         typer.echo(f"{message.actor}: {message.content}")
+
+
+def _proactive_kind(payload: str | None) -> str | None:
+    """Return the proactive kind carried by an agent-initiated message payload.
+
+    Only messages whose payload marks them as agent-initiated and whose kind is
+    one of the registered proactive kinds are classified; everything else
+    (plain dialogue, refusal, mood_change, malformed payloads) returns None.
+    """
+    try:
+        data = json.loads(payload or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    if data.get("initiator") != proactive.INITIATOR_AGENT:
+        return None
+    kind = data.get("kind")
+    return kind if kind in proactive.PROACTIVE_KINDS else None
 
 
 @talk_app.command("send")
@@ -116,10 +137,14 @@ def talk_send(
 
 @talk_app.command("list")
 def talk_list(workspace_id: str = typer.Argument(..., help="Workspace id")) -> None:
-    """List the conversation history for a workspace."""
+    """List the conversation history, marking agent-initiated proactive messages."""
     settings = load_settings()
     db = DB(settings)
     db.init_schema()
     get_workspace_or_raise(db, workspace_id)
     for message in list_messages(db, workspace_id):
-        typer.echo(f"[{message.role}] {message.actor}: {message.content}")
+        kind = _proactive_kind(message.payload)
+        if kind is None:
+            typer.echo(f"[{message.role}] {message.actor}: {message.content}")
+            continue
+        typer.echo(f"[agent·主动·{kind}] {message.actor}: {message.content}")

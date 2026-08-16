@@ -6,6 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
+from novel_editorial.cli.talk import _proactive_kind
 from novel_editorial.core import proactive
 from novel_editorial.core.chat import has_proactive_message, list_messages
 from novel_editorial.core.config import load_settings
@@ -70,6 +71,65 @@ def test_talk_send_routes_at_mention_with_cjk_punctuation(tmp_path: Path, monkey
     result = runner.invoke(app, ["talk", "send", workspace_id, "@写手，写一段雨夜开场"])
     assert result.exit_code == 0, result.output
     assert "写手: （模拟回复）" in result.output
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        (None, None),
+        ("{}", None),
+        ("not json", None),
+        ("[]", None),
+        ('{"initiator": "author", "kind": "proactive_report"}', None),
+        ('{"initiator": "agent", "kind": "refusal"}', None),
+        ('{"initiator": "agent", "kind": "rebuttal"}', None),
+        ('{"initiator": "agent", "kind": "mood_change"}', None),
+        ('{"initiator": "agent", "kind": "proactive_question"}', "proactive_question"),
+        (
+            '{"initiator": "agent", "kind": "proactive_direction", "trigger": "talk_first_round"}',
+            "proactive_direction",
+        ),
+    ],
+)
+def test_proactive_kind_classification(payload: str | None, expected: str | None) -> None:
+    assert _proactive_kind(payload) == expected
+
+
+def test_talk_list_marks_proactive_messages_and_keeps_others_plain(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    sent = runner.invoke(app, ["talk", "send", workspace_id, "我们写一个侦探故事"])
+    assert sent.exit_code == 0, sent.output
+
+    listed = runner.invoke(app, ["talk", "list", workspace_id])
+    assert listed.exit_code == 0, listed.output
+    lines = listed.output.strip().splitlines()
+    assert len(lines) == 5
+    assert lines[0] == "[author] 作者: 我们写一个侦探故事"
+    assert lines[1] == "[agent] 总编: （模拟回复）"
+    assert lines[2].startswith("[system] 总编: 总编 的状态从")
+    assert "·主动·" not in lines[2]
+    assert lines[3].startswith("[agent·主动·proactive_question] 责编: 我想先确认一下")
+    assert lines[4].startswith(
+        "[agent·主动·proactive_direction] 总编: 这部作品的方向还没定"
+    )
+    assert [line for line in lines if "·主动·" in line] == lines[3:]
+
+
+def test_talk_list_keeps_refusal_and_mood_unmarked(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    sent = runner.invoke(app, ["talk", "send", workspace_id, "@责编 删掉钩子"])
+    assert sent.exit_code == 0, sent.output
+
+    listed = runner.invoke(app, ["talk", "list", workspace_id])
+    assert listed.exit_code == 0, listed.output
+    lines = listed.output.strip().splitlines()
+    assert len(lines) == 3
+    assert lines[0] == "[author] 作者: @责编 删掉钩子"
+    assert lines[1].startswith("[agent] 责编: 钩子删光")
+    assert lines[2].startswith("[system] 责编: 责编 的状态从")
+    assert "·主动·" not in listed.output
 
 
 def test_talk_proactive_happens_only_once(tmp_path: Path, monkeypatch) -> None:

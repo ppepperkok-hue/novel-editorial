@@ -18,9 +18,13 @@
 ```toml
 [defaults]
 quality_threshold = 8
+proactive_enabled = true
+proactive_max_per_agent = 3
 ```
 
 - `quality_threshold`：质量门阈值（整数），默认 `8`；草稿得分 ≤ 阈值才算通过。
+- `proactive_enabled`：主动行为总开关（布尔），默认 `true`；`false` 时伙伴的主动发言停发（talk 首轮的责编确认提问除外，见「主动行为」）。
+- `proactive_max_per_agent`：每位伙伴在一部作品里的主动发言上限（整数），默认 `3`；达到上限后不再新增，设 `0` 等于不发（talk 首轮提问除外）。
 - 仓库里的 `config.example.toml` 只写了空的 `[defaults]` 段头，把上面的键补进你自己生成的 `config.toml` 即可。
 - 每次运行命令都会重新读取，改完无需重启任何服务。
 
@@ -35,10 +39,12 @@ quality_threshold = 8
 | `NOVEL_LLM_MODEL` | 模型名 | `deepseek-chat` | `gpt-4o-mini` |
 | `NOVEL_LOG_LEVEL` | 日志级别（输出到 stderr） | `INFO` | `DEBUG` |
 | `NOVEL_QUALITY_THRESHOLD` | 质量门阈值 | `config.toml` 的 `quality_threshold`，再退到 `8` | `6` |
+| `NOVEL_PROACTIVE_ENABLED` | 主动行为总开关 | `config.toml` 的 `proactive_enabled`，再退到 `true` | `false` |
+| `NOVEL_PROACTIVE_MAX_PER_AGENT` | 每位伙伴主动发言上限 | `config.toml` 的 `proactive_max_per_agent`，再退到 `3` | `1` |
 
 阈值优先级：`NOVEL_QUALITY_THRESHOLD` > `config.toml [defaults].quality_threshold` > 内置默认 `8`。
 
-仓库里的 `.env.example` 模板列了 `NOVEL_LLM_API_KEY`、`NOVEL_LLM_BASE_URL`、`NOVEL_LLM_MODEL`、`NOVEL_DATA_DIR`、`NOVEL_LOG_LEVEL`；本表另外补充的 `NOVEL_CONFIG` 与 `NOVEL_QUALITY_THRESHOLD` 同样受支持。
+仓库里的 `.env.example` 模板列了 `NOVEL_LLM_API_KEY`、`NOVEL_LLM_BASE_URL`、`NOVEL_LLM_MODEL`、`NOVEL_DATA_DIR`、`NOVEL_LOG_LEVEL`；本表另外补充的 `NOVEL_CONFIG`、`NOVEL_QUALITY_THRESHOLD`、`NOVEL_PROACTIVE_ENABLED` 与 `NOVEL_PROACTIVE_MAX_PER_AGENT` 同样受支持。
 
 Windows PowerShell 示例：
 
@@ -119,9 +125,47 @@ uv run novel-editorial quality explain <草稿ID>
 
 - 调整阈值：`NOVEL_QUALITY_THRESHOLD=6`（更严）或在 `config.toml` 里写 `quality_threshold = 6`。阈值非整数会报配置错误（退出码 1）。
 
+## 主动行为（伙伴主动发言）
+
+伙伴不只是被 @ 才说话：五种情境会触发主动发言，每条主动消息都带来源标记，作者随时能从命令行看出「这条是伙伴主动发的」。
+
+| 类型（kind） | 谁发 | 触发点 |
+| --- | --- | --- |
+| `proactive_question` | 责编 / 写手 | talk 首轮，责编主动确认主角动机与核心冲突；写手修订收钩子后追问「这章我留了个钩子，下章要不要收？」 |
+| `proactive_direction` | 总编 | talk 首轮且尚未设置风格锚点时，提醒先把基调与核心冲突定下来 |
+| `proactive_report` | 写手 | 初稿（第 1 版）生成后主动汇报「初稿写完了」 |
+| `proactive_review` | 责编 | 初稿（第 1 版）过质量门后，主动试读并建议作者拍板 |
+| `proactive_consistency` | 审稿 | 设置风格锚点后、埋下伏笔线索后，提醒前后一致 |
+
+注：talk 首轮的责编确认提问是 talk 命令自带的固定流程，不受下面两个配置控制；其余情境都受同一套开关与上限约束。
+
+开关与上限（优先级：环境变量 > `config.toml` > 内置默认值）：
+
+- 总开关 `NOVEL_PROACTIVE_ENABLED` / `proactive_enabled`，默认 `true`；设为 `false` 后，上表除 talk 首轮提问外的主动发言全部停发。
+- 每伙伴上限 `NOVEL_PROACTIVE_MAX_PER_AGENT` / `proactive_max_per_agent`，默认 `3`；某位伙伴在这部作品里的主动发言数达到上限后不再新增，设 `0` 等于不发（talk 首轮提问除外）。
+
+```bash
+export NOVEL_PROACTIVE_ENABLED=false    # 全部关掉（talk 首轮提问除外）
+export NOVEL_PROACTIVE_MAX_PER_AGENT=1  # 每位伙伴最多主动说 1 次
+```
+
+或者写进 `config.toml`：
+
+```toml
+[defaults]
+proactive_enabled = false
+proactive_max_per_agent = 1
+```
+
+### 怎么辨认哪条是主动发的
+
+- `talk list <作品ID>`：主动消息的行首会从 `[agent]` 变成 `[agent·主动·<kind>]`，例如 `[agent·主动·proactive_report] 写手: 《…》初稿写完了…`；作者消息仍是 `[author]`，普通对话仍是 `[agent]`，拒稿、心情变化等状态消息不带主动标记。
+- `events list <作品ID>`：每条 `agent.message` 事件都带 payload。主动消息的 payload 形如 `{"initiator": "agent", "kind": "proactive_direction", "trigger": "talk_first_round"}`，看 `initiator=agent` 与 `kind` 即可辨认；talk 首轮那条 `proactive_question` 没有 `trigger` 字段。
+
 ## 可见性（老板怎么看见编辑部）
 
 - `events list <作品ID> [--type ...] [--limit N]`：按时间倒序回放事件（对话 / 草稿 / 质量门 / 待拍板 / 退稿）；`events watch <作品ID> [--interval 秒]` 持续输出新事件，Ctrl+C 退出。
+- `talk list <作品ID>`：对话回放；伙伴主动发的消息行首带 `[agent·主动·<kind>]` 标记，普通消息不带（见「主动行为」）。
 - `inspect <作品ID> <关键词>`：跨层检索（作品档案、风格锚点、对话、意见、版本、伙伴笔记、决策、伏笔线索），结果带来源引用；无命中输出 `no matches`。
 - `decision pending <作品ID>`：列出质量门通过、等待拍板的草稿；草稿生成 / 修订通过质量门时，命令末尾会提示 `awaiting decision`。
 
