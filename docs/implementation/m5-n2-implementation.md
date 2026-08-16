@@ -49,6 +49,12 @@ pytest + ruff + pyright + 宪法校验 + CLI 冒烟（mock 下可断言）。
 - 拒绝/分歧对关系的演化（N3）；
 - 伙伴互委（N16）。
 
+### 变更记录（实施中已回写）
+
+- 推翻口径：作者 override 后，该 rule 在本工作区的确定性拒绝失效，后续命中同 rule 关键词的消息走原有 LLM 正常路径；立场仍在 prompt 中自然表达，override 记录继续留痕。
+- 留痕匹配：`has_same_rule_refusal` / `has_same_rule_override` 用 SQLite `json_valid` + `json_extract`（CASE 守卫）+ 等值比较，与 JSON 序列化格式无关；LIKE 通配符与谓词求值顺序两类风险均已消除。
+- 审查链五轮收敛，P1 误报核实与 P3 测试有效性说明见 docs/reviews/20260817-M5N2B1-fix3.md 与 -fix4.md。
+
 ## 子阶段 B2：反驳与分歧记录
 
 ### 做什么
@@ -118,4 +124,5 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 
 ## 状态
 
-- B1 / B2 / B3：待用户确认本文档后派包。
+- B1 完成（2026-08-17；commits 9bc5ed9 / 7d800e5 / c47ed07 / 6803357 / e07f6c1 / f70c46b，全量 335 测试绿）。
+- B2 / B3：待派包。
