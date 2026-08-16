@@ -18,6 +18,7 @@ from novel_editorial.core.chat import (
     get_agent,
     get_workspace_or_raise,
     has_proactive_message,
+    has_same_rule_override,
     has_same_rule_refusal,
     is_author_override,
     list_messages,
@@ -84,23 +85,10 @@ def talk_send(
     target_role = resolve_target_role(message)
     agent = get_agent(db, workspace_id, target_role)
     rule = check_refusal(agent, message)
-    if rule is not None:
+    if rule is not None and is_author_override(message):
         record_message(db, workspace_id, role="author", actor=AUTHOR_ACTOR, content=message)
-        if is_author_override(message):
-            content = rule.acceptance
-            payload = {"kind": "override", "stance": rule.stance, "rule": rule.rule}
-            mood = MOOD_ACCEPTED
-        else:
-            repeated = has_same_rule_refusal(db, workspace_id, agent, rule.rule)
-            content = rule.reaffirmation if repeated else rule.refusal
-            payload: dict[str, object] = {
-                "kind": "refusal",
-                "stance": rule.stance,
-                "rule": rule.rule,
-            }
-            if repeated:
-                payload["repeated"] = True
-            mood = MOOD_TALK
+        content = rule.acceptance
+        payload = {"kind": "override", "stance": rule.stance, "rule": rule.rule}
         record_message(
             db,
             workspace_id,
@@ -109,10 +97,35 @@ def talk_send(
             content=content,
             payload=payload,
         )
-        update_agent_mood(db, workspace_id, agent, mood)
+        update_agent_mood(db, workspace_id, agent, MOOD_ACCEPTED)
         typer.echo(f"{AUTHOR_ACTOR}: {message}")
         typer.echo(f"{agent.name}: {content}")
         return
+    if rule is not None and not has_same_rule_override(db, workspace_id, agent, rule.rule):
+        record_message(db, workspace_id, role="author", actor=AUTHOR_ACTOR, content=message)
+        repeated = has_same_rule_refusal(db, workspace_id, agent, rule.rule)
+        content = rule.reaffirmation if repeated else rule.refusal
+        payload: dict[str, object] = {
+            "kind": "refusal",
+            "stance": rule.stance,
+            "rule": rule.rule,
+        }
+        if repeated:
+            payload["repeated"] = True
+        record_message(
+            db,
+            workspace_id,
+            role="agent",
+            actor=agent.name,
+            content=content,
+            payload=payload,
+        )
+        update_agent_mood(db, workspace_id, agent, MOOD_TALK)
+        typer.echo(f"{AUTHOR_ACTOR}: {message}")
+        typer.echo(f"{agent.name}: {content}")
+        return
+    # A rule already overridden by the author falls through to the normal LLM
+    # path; the stance stays in the prompt and the override record stays traced.
     history = list_messages(db, workspace_id)
     client = build_client(settings)
     prompt = build_agent_prompt(

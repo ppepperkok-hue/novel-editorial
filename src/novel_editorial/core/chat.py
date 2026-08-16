@@ -132,21 +132,48 @@ def is_author_override(message: str) -> bool:
     return any(_keyword_triggered(message, phrase) for phrase in OVERRIDE_PHRASES)
 
 
-def has_same_rule_refusal(db: DB, workspace_id: str, agent: Agent, rule: str) -> bool:
-    """True when this partner already refused the same rule in this workspace."""
+def _payload_data(payload: str | None) -> dict[str, object]:
+    """Parse one JSON payload into a dict; malformed payloads read as empty."""
+    try:
+        data = json.loads(payload or "{}")
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _message_matches_rule(message: Message, kind: str, rule: str) -> bool:
+    """Compare a payload's kind/rule fields exactly, not via SQL LIKE."""
+    data = _payload_data(message.payload)
+    return data.get("kind") == kind and data.get("rule") == rule
+
+
+def _has_rule_record(db: DB, workspace_id: str, agent: Agent, kind: str, rule: str) -> bool:
+    """True when one partner already recorded ``kind`` for ``rule`` here.
+
+    Payload fields are parsed and compared exactly, so rule ids containing SQL
+    LIKE wildcards (``%`` and ``_``) can never match a different rule id.
+    """
     with db.workspace_session(workspace_id) as session:
-        row = (
+        rows = (
             session.query(Message)
             .filter(
                 Message.workspace_id == workspace_id,
                 Message.role == "agent",
                 Message.actor == agent.name,
-                Message.payload.like('%"kind": "refusal"%'),
-                Message.payload.like(f'%"rule": "{rule}"%'),
             )
-            .first()
+            .all()
         )
-    return row is not None
+    return any(_message_matches_rule(row, kind, rule) for row in rows)
+
+
+def has_same_rule_refusal(db: DB, workspace_id: str, agent: Agent, rule: str) -> bool:
+    """True when this partner already refused the same rule in this workspace."""
+    return _has_rule_record(db, workspace_id, agent, "refusal", rule)
+
+
+def has_same_rule_override(db: DB, workspace_id: str, agent: Agent, rule: str) -> bool:
+    """True when the author already overrode this partner's stance rule here."""
+    return _has_rule_record(db, workspace_id, agent, "override", rule)
 
 
 def get_workspace_or_raise(db: DB, workspace_id: str) -> Workspace:

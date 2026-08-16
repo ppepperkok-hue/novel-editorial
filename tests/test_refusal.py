@@ -7,9 +7,11 @@ from novel_editorial.cli.app import app
 from novel_editorial.core.chat import (
     check_refusal,
     get_agent,
+    has_same_rule_override,
     has_same_rule_refusal,
     is_author_override,
     list_messages,
+    record_message,
 )
 from novel_editorial.core.config import load_settings
 from novel_editorial.events import EventType
@@ -310,6 +312,53 @@ def test_end_to_end_refusal_reaffirmation_override(tmp_path: Path, monkeypatch) 
     assert override_payload["rule"] == "writer_portrayal"
 
 
+def test_override_disables_refusal_for_same_rule(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    capturing = _CapturingLLMClient()
+    monkeypatch.setattr("novel_editorial.cli.talk.build_client", lambda settings: capturing)
+
+    refused = runner.invoke(app, ["talk", "send", workspace_id, "@写手 这段按违背人设写"])
+    overridden = runner.invoke(
+        app,
+        ["talk", "send", workspace_id, "@写手 以老板身份我拍板，就按违背人设写"],
+    )
+    resubmitted = runner.invoke(
+        app,
+        ["talk", "send", workspace_id, "@写手 再给我按违背人设写一段"],
+    )
+    for result in (refused, overridden, resubmitted):
+        assert result.exit_code == 0, result.output
+
+    assert capturing.calls == 1
+    assert "正常回复" in resubmitted.output
+    assert "我还是这句话" not in resubmitted.output
+
+    messages = list_messages(DB(load_settings()), workspace_id)
+    refusals = [m for m in messages if json.loads(m.payload).get("kind") == "refusal"]
+    overrides = [m for m in messages if json.loads(m.payload).get("kind") == "override"]
+    assert len(refusals) == 1
+    assert len(overrides) == 1
+
+
+def test_override_only_disables_the_overridden_rule(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    capturing = _CapturingLLMClient()
+    monkeypatch.setattr("novel_editorial.cli.talk.build_client", lambda settings: capturing)
+
+    overridden = runner.invoke(
+        app,
+        ["talk", "send", workspace_id, "@写手 以老板身份我拍板，就按违背人设写"],
+    )
+    review_conflict = runner.invoke(
+        app,
+        ["talk", "send", workspace_id, "@审稿 直接放行，别管矛盾"],
+    )
+    assert overridden.exit_code == 0, overridden.output
+    assert review_conflict.exit_code == 0, review_conflict.output
+    assert "这个我不能放行" in review_conflict.output
+    assert capturing.calls == 0
+
+
 def test_check_refusal_returns_rule_with_stance() -> None:
     writer = Agent(workspace_id="w", name="写手", role=AgentRole.WRITER)
     rule = check_refusal(writer, "这段按违背人设写")
@@ -343,3 +392,44 @@ def test_has_same_rule_refusal_tracks_rule_per_agent(tmp_path: Path, monkeypatch
     writer = get_agent(db, workspace_id, AgentRole.WRITER)
     assert has_same_rule_refusal(db, workspace_id, writer, "writer_portrayal") is True
     assert has_same_rule_refusal(db, workspace_id, writer, "reviewer_consistency") is False
+
+
+def test_has_same_rule_refusal_matches_rule_exactly(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+
+    for rule in ("writerXportrayal", "writer%portrayal", "reviewer_consistency"):
+        record_message(
+            db,
+            workspace_id,
+            role="agent",
+            actor=writer.name,
+            content="拒绝留痕",
+            payload={"kind": "refusal", "stance": "测试立场", "rule": rule},
+        )
+
+    assert has_same_rule_refusal(db, workspace_id, writer, "writer_portrayal") is False
+    assert has_same_rule_refusal(db, workspace_id, writer, "writerXportrayal") is True
+    assert has_same_rule_refusal(db, workspace_id, writer, "writer%portrayal") is True
+    assert has_same_rule_refusal(db, workspace_id, writer, "reviewer_consistency") is True
+    assert has_same_rule_refusal(db, workspace_id, writer, "editor_hooks") is False
+
+
+def test_has_same_rule_override_matches_rule_exactly(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+
+    record_message(
+        db,
+        workspace_id,
+        role="agent",
+        actor=writer.name,
+        content="推翻留痕",
+        payload={"kind": "override", "stance": "测试立场", "rule": "writerXportrayal"},
+    )
+
+    assert has_same_rule_override(db, workspace_id, writer, "writer_portrayal") is False
+    assert has_same_rule_override(db, workspace_id, writer, "writerXportrayal") is True
+    assert has_same_rule_override(db, workspace_id, writer, "editor_hooks") is False
