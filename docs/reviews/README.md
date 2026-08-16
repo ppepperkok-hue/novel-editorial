@@ -47,3 +47,5 @@ Ready to merge: Yes | No | With fixes
 - [20260815 M5-A2-A-FIX2 审查](20260815-M5A2A-fix2.md)
 - [20260815 M5-A2-B 初始审查](20260815-M5A2B-initial.md)
 - [20260815 M5-A2-B-FIX 审查](20260815-M5A2B-fix.md)
+- [20260816 M5-A3 初始审查](20260816-M5A3-initial.md)
+- [20260816 M5-A3-FIX 审查](20260816-M5A3-fix.md)
