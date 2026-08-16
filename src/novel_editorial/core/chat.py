@@ -6,6 +6,7 @@ import json
 import re
 from dataclasses import dataclass
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from novel_editorial.core.errors import ErrorCode, NovelError
@@ -132,42 +133,29 @@ def is_author_override(message: str) -> bool:
     return any(_keyword_triggered(message, phrase) for phrase in OVERRIDE_PHRASES)
 
 
-def _payload_data(payload: str | None) -> dict[str, object]:
-    """Parse one JSON payload into a dict; malformed payloads read as empty."""
-    try:
-        data = json.loads(payload or "{}")
-    except json.JSONDecodeError:
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _payload_matches_rule(payload: str | None, kind: str, rule: str) -> bool:
-    """Compare a payload's kind/rule fields exactly, not via SQL LIKE."""
-    data = _payload_data(payload)
-    return data.get("kind") == kind and data.get("rule") == rule
-
-
 def _has_rule_record(db: DB, workspace_id: str, agent: Agent, kind: str, rule: str) -> bool:
     """True when one partner already recorded ``kind`` for ``rule`` here.
 
-    SQL pre-filters on the fixed ``kind`` literal (``refusal`` / ``override``,
-    both free of LIKE wildcards) and fetches only the payload column, so long
-    conversations no longer materialize full message contents. Payload fields
-    are then parsed and compared exactly, so rule ids containing SQL LIKE
-    wildcards (``%`` and ``_``) can never match a different rule id.
+    Matching happens entirely in SQLite: ``json_valid`` keeps malformed payloads
+    away from ``json_extract`` (which raises on them), and the extracted
+    kind/rule fields are compared exactly. This is independent of JSON
+    serialization style (pretty or compact) and cannot be fooled by LIKE
+    wildcards, rule ids that share a prefix, or extra fields.
     """
     with db.workspace_session(workspace_id) as session:
-        payloads = (
-            session.query(Message.payload)
+        row = (
+            session.query(Message)
             .filter(
                 Message.workspace_id == workspace_id,
                 Message.role == "agent",
                 Message.actor == agent.name,
-                Message.payload.like(f'%"kind": "{kind}"%'),
+                func.json_valid(Message.payload),
+                func.json_extract(Message.payload, "$.kind") == kind,
+                func.json_extract(Message.payload, "$.rule") == rule,
             )
-            .all()
+            .first()
         )
-    return any(_payload_matches_rule(payload, kind, rule) for payload, in payloads)
+    return row is not None
 
 
 def has_same_rule_refusal(db: DB, workspace_id: str, agent: Agent, rule: str) -> bool:

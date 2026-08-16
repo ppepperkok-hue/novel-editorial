@@ -559,3 +559,47 @@ def test_kind_prefilter_keeps_refusal_and_override_distinct(
 
     assert has_same_rule_override(db, workspace_id, writer, "writer_portrayal") is True
     assert has_same_rule_refusal(db, workspace_id, writer, "writer_portrayal") is False
+
+
+def test_has_same_rule_refusal_matches_compact_json_payload(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+
+    _insert_raw_payload(
+        db,
+        workspace_id,
+        writer,
+        json.dumps(
+            {"kind": "refusal", "stance": "测试立场", "rule": "writer_portrayal"},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+    )
+
+    assert has_same_rule_refusal(db, workspace_id, writer, "writer_portrayal") is True
+    assert has_same_rule_override(db, workspace_id, writer, "writer_portrayal") is False
+
+
+def test_has_same_rule_override_matches_compact_json_payload(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+
+    _insert_raw_payload(
+        db,
+        workspace_id,
+        writer,
+        json.dumps(
+            {"kind": "override", "stance": "测试立场", "rule": "writer_portrayal"},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+    )
+
+    assert has_same_rule_override(db, workspace_id, writer, "writer_portrayal") is True
+    assert has_same_rule_refusal(db, workspace_id, writer, "writer_portrayal") is False
