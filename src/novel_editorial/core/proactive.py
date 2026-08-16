@@ -258,7 +258,7 @@ def _register_reviewer_and_editor_proactive_behaviors() -> None:
             "风格锚点定了：「$description」。"
             "我盯着设定看了一遍，开头那句跟「$description」会不会打架？"
         ),
-        condition=lambda context: True,
+        condition=lambda context: bool(context.get("description")),
     )
     register_proactive_trigger(
         trigger=TRIGGER_PLOT_PLANTED,

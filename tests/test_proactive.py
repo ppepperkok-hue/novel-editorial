@@ -391,7 +391,9 @@ def test_record_proactive_messages_respects_disabled_switch(tmp_path: Path) -> N
 def test_reviewer_registered_for_style_set_and_plot_planted(tmp_path: Path) -> None:
     db, workspace_id = _make_db(tmp_path)
 
-    styled = proactive.evaluate_proactive_triggers(db, workspace_id, "style_set", {})
+    styled = proactive.evaluate_proactive_triggers(
+        db, workspace_id, "style_set", {"description": "平实克制短句"}
+    )
     assert styled == [
         proactive.ProactiveCandidate(
             agent="审稿",

@@ -85,6 +85,23 @@ def test_style_set_reviewer_budget_stops_after_max(tmp_path: Path, monkeypatch) 
     assert proactive.count_proactive_messages(db, workspace_id, "审稿") == 1
 
 
+def test_style_set_without_description_skips_reviewer_without_consuming_budget(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    result = runner.invoke(
+        app,
+        ["style", "set", workspace_id, "--forbidden", "璀璨,宛如"],
+    )
+    assert result.exit_code == 0, result.output
+    assert "style anchor updated" in result.output
+    assert "审稿:" not in result.output
+
+    db = DB(load_settings())
+    assert list_messages(db, workspace_id) == []
+    assert proactive.count_proactive_messages(db, workspace_id, "审稿") == 0
+
+
 def test_disabled_proactive_suppresses_style_consistency(
     tmp_path: Path, monkeypatch
 ) -> None:
