@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 from novel_editorial.cli.app import app
 from novel_editorial.cli.talk import _proactive_kind
 from novel_editorial.core import proactive
-from novel_editorial.core.chat import has_proactive_message, list_messages
+from novel_editorial.core.chat import has_proactive_message, list_messages, record_message
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.llm.client import LLMClient, LLMMessage, LLMResult, MockLLMClient
@@ -84,6 +84,8 @@ def test_talk_send_routes_at_mention_with_cjk_punctuation(tmp_path: Path, monkey
         ('{"initiator": "agent", "kind": "refusal"}', None),
         ('{"initiator": "agent", "kind": "rebuttal"}', None),
         ('{"initiator": "agent", "kind": "mood_change"}', None),
+        ('{"initiator": "agent", "kind": ["proactive_question"]}', None),
+        ('{"initiator": "agent", "kind": {"name": "proactive_question"}}', None),
         ('{"initiator": "agent", "kind": "proactive_question"}', "proactive_question"),
         (
             '{"initiator": "agent", "kind": "proactive_direction", "trigger": "talk_first_round"}',
@@ -129,6 +131,29 @@ def test_talk_list_keeps_refusal_and_mood_unmarked(tmp_path: Path, monkeypatch) 
     assert lines[0] == "[author] 作者: @责编 删掉钩子"
     assert lines[1].startswith("[agent] 责编: 钩子删光")
     assert lines[2].startswith("[system] 责编: 责编 的状态从")
+    assert "·主动·" not in listed.output
+
+
+def test_talk_list_survives_non_hashable_kind_payload(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = DB(settings)
+    record_message(
+        db,
+        workspace_id,
+        role="agent",
+        actor="总编",
+        content="畸形 payload",
+        payload={"initiator": "agent", "kind": ["proactive_question"]},
+    )
+
+    listed = runner.invoke(app, ["talk", "list", workspace_id])
+    assert listed.exit_code == 0, listed.output
+    lines = listed.output.strip().splitlines()
+    assert len(lines) == 1
+    assert lines[0] == "[agent] 总编: 畸形 payload"
     assert "·主动·" not in listed.output
 
 

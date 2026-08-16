@@ -64,7 +64,7 @@ def _proactive_kind(payload: str | None) -> str | None:
     if data.get("initiator") != proactive.INITIATOR_AGENT:
         return None
     kind = data.get("kind")
-    return kind if kind in proactive.PROACTIVE_KINDS else None
+    return kind if isinstance(kind, str) and kind in proactive.PROACTIVE_KINDS else None
 
 
 @talk_app.command("send")
