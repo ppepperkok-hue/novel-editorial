@@ -18,7 +18,7 @@ from novel_editorial.events import EventType
 from novel_editorial.llm.client import MockLLMClient
 from novel_editorial.store.db import DB
 from novel_editorial.store.events import list_events
-from novel_editorial.store.models import Agent, AgentRole
+from novel_editorial.store.models import Agent, AgentRole, Message
 
 runner = CliRunner()
 
@@ -47,6 +47,21 @@ def _refusals(workspace_id: str) -> list:
     settings = load_settings()
     messages = list_messages(DB(settings), workspace_id)
     return [m for m in messages if '"kind": "refusal"' in m.payload]
+
+
+def _insert_raw_payload(db: DB, workspace_id: str, agent: Agent, payload: str) -> None:
+    """Insert one agent message whose payload column bypasses record_message."""
+    with db.workspace_session(workspace_id) as session:
+        session.add(
+            Message(
+                workspace_id=workspace_id,
+                role="agent",
+                actor=agent.name,
+                content="raw payload",
+                payload=payload,
+            )
+        )
+        session.commit()
 
 
 def test_writer_refuses_against_portrayal(tmp_path: Path, monkeypatch) -> None:
@@ -433,3 +448,114 @@ def test_has_same_rule_override_matches_rule_exactly(tmp_path: Path, monkeypatch
     assert has_same_rule_override(db, workspace_id, writer, "writer_portrayal") is False
     assert has_same_rule_override(db, workspace_id, writer, "writerXportrayal") is True
     assert has_same_rule_override(db, workspace_id, writer, "editor_hooks") is False
+
+
+def test_has_same_rule_refusal_ignores_malformed_payload(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+
+    _insert_raw_payload(
+        db,
+        workspace_id,
+        writer,
+        '{"kind": "refusal", "rule": "writer_portrayal"',
+    )
+
+    assert has_same_rule_refusal(db, workspace_id, writer, "writer_portrayal") is False
+
+
+def test_has_same_rule_refusal_ignores_non_object_payload(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+
+    _insert_raw_payload(
+        db,
+        workspace_id,
+        writer,
+        json.dumps([{"kind": "refusal", "rule": "writer_portrayal"}]),
+    )
+
+    assert has_same_rule_refusal(db, workspace_id, writer, "writer_portrayal") is False
+
+
+def test_has_same_rule_refusal_rejects_like_shape_and_wildcards(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+
+    for rule in (
+        "writer_portrayal_extra",
+        "writer_ortrayal",
+        "writerXportrayal",
+        "writer%portrayal",
+    ):
+        record_message(
+            db,
+            workspace_id,
+            role="agent",
+            actor=writer.name,
+            content="拒绝留痕",
+            payload={"kind": "refusal", "stance": "测试立场", "rule": rule},
+        )
+
+    assert has_same_rule_refusal(db, workspace_id, writer, "writer_portrayal") is False
+    assert has_same_rule_refusal(db, workspace_id, writer, "writer_portrayal_extra") is True
+    assert has_same_rule_refusal(db, workspace_id, writer, "writer_ortrayal") is True
+    assert has_same_rule_refusal(db, workspace_id, writer, "writerXportrayal") is True
+    assert has_same_rule_refusal(db, workspace_id, writer, "writer%portrayal") is True
+
+
+def test_kind_prefilter_keeps_real_refusal_and_override_hits(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+
+    record_message(
+        db,
+        workspace_id,
+        role="agent",
+        actor=writer.name,
+        content="拒绝留痕",
+        payload={"kind": "refusal", "stance": "测试立场", "rule": "writer_portrayal"},
+    )
+    record_message(
+        db,
+        workspace_id,
+        role="agent",
+        actor=writer.name,
+        content="推翻留痕",
+        payload={"kind": "override", "stance": "测试立场", "rule": "writer_portrayal"},
+    )
+
+    assert has_same_rule_refusal(db, workspace_id, writer, "writer_portrayal") is True
+    assert has_same_rule_override(db, workspace_id, writer, "writer_portrayal") is True
+
+
+def test_kind_prefilter_keeps_refusal_and_override_distinct(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+
+    record_message(
+        db,
+        workspace_id,
+        role="agent",
+        actor=writer.name,
+        content="推翻留痕",
+        payload={"kind": "override", "stance": "测试立场", "rule": "writer_portrayal"},
+    )
+
+    assert has_same_rule_override(db, workspace_id, writer, "writer_portrayal") is True
+    assert has_same_rule_refusal(db, workspace_id, writer, "writer_portrayal") is False

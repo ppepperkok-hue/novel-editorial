@@ -141,29 +141,33 @@ def _payload_data(payload: str | None) -> dict[str, object]:
     return data if isinstance(data, dict) else {}
 
 
-def _message_matches_rule(message: Message, kind: str, rule: str) -> bool:
+def _payload_matches_rule(payload: str | None, kind: str, rule: str) -> bool:
     """Compare a payload's kind/rule fields exactly, not via SQL LIKE."""
-    data = _payload_data(message.payload)
+    data = _payload_data(payload)
     return data.get("kind") == kind and data.get("rule") == rule
 
 
 def _has_rule_record(db: DB, workspace_id: str, agent: Agent, kind: str, rule: str) -> bool:
     """True when one partner already recorded ``kind`` for ``rule`` here.
 
-    Payload fields are parsed and compared exactly, so rule ids containing SQL
-    LIKE wildcards (``%`` and ``_``) can never match a different rule id.
+    SQL pre-filters on the fixed ``kind`` literal (``refusal`` / ``override``,
+    both free of LIKE wildcards) and fetches only the payload column, so long
+    conversations no longer materialize full message contents. Payload fields
+    are then parsed and compared exactly, so rule ids containing SQL LIKE
+    wildcards (``%`` and ``_``) can never match a different rule id.
     """
     with db.workspace_session(workspace_id) as session:
-        rows = (
-            session.query(Message)
+        payloads = (
+            session.query(Message.payload)
             .filter(
                 Message.workspace_id == workspace_id,
                 Message.role == "agent",
                 Message.actor == agent.name,
+                Message.payload.like(f'%"kind": "{kind}"%'),
             )
             .all()
         )
-    return any(_message_matches_rule(row, kind, rule) for row in rows)
+    return any(_payload_matches_rule(payload, kind, rule) for payload, in payloads)
 
 
 def has_same_rule_refusal(db: DB, workspace_id: str, agent: Agent, rule: str) -> bool:
