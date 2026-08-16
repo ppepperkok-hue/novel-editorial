@@ -484,6 +484,58 @@ def test_has_same_rule_refusal_ignores_non_object_payload(
     assert has_same_rule_refusal(db, workspace_id, writer, "writer_portrayal") is False
 
 
+def test_has_same_rule_refusal_skips_malformed_and_matches_legal(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+
+    _insert_raw_payload(
+        db,
+        workspace_id,
+        writer,
+        '{"kind": "refusal", "rule": "writer_portrayal"',
+    )
+    record_message(
+        db,
+        workspace_id,
+        role="agent",
+        actor=writer.name,
+        content="拒绝留痕",
+        payload={"kind": "refusal", "stance": "测试立场", "rule": "writer_portrayal"},
+    )
+
+    assert has_same_rule_refusal(db, workspace_id, writer, "writer_portrayal") is True
+    assert has_same_rule_refusal(db, workspace_id, writer, "reviewer_consistency") is False
+
+
+def test_has_same_rule_override_skips_malformed_and_matches_legal(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+
+    _insert_raw_payload(
+        db,
+        workspace_id,
+        writer,
+        '{"kind": "override", "rule": "writer_portrayal"',
+    )
+    record_message(
+        db,
+        workspace_id,
+        role="agent",
+        actor=writer.name,
+        content="推翻留痕",
+        payload={"kind": "override", "stance": "测试立场", "rule": "writer_portrayal"},
+    )
+
+    assert has_same_rule_override(db, workspace_id, writer, "writer_portrayal") is True
+    assert has_same_rule_refusal(db, workspace_id, writer, "writer_portrayal") is False
+
+
 def test_has_same_rule_refusal_rejects_like_shape_and_wildcards(
     tmp_path: Path, monkeypatch
 ) -> None:

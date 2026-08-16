@@ -6,7 +6,7 @@ import json
 import re
 from dataclasses import dataclass
 
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from novel_editorial.core.errors import ErrorCode, NovelError
@@ -136,12 +136,22 @@ def is_author_override(message: str) -> bool:
 def _has_rule_record(db: DB, workspace_id: str, agent: Agent, kind: str, rule: str) -> bool:
     """True when one partner already recorded ``kind`` for ``rule`` here.
 
-    Matching happens entirely in SQLite: ``json_valid`` keeps malformed payloads
-    away from ``json_extract`` (which raises on them), and the extracted
-    kind/rule fields are compared exactly. This is independent of JSON
-    serialization style (pretty or compact) and cannot be fooled by LIKE
-    wildcards, rule ids that share a prefix, or extra fields.
+    Matching happens entirely in SQLite. Each ``json_extract`` runs inside a
+    CASE guarded by ``json_valid``, so malformed payloads evaluate to NULL
+    without ever reaching ``json_extract`` (which raises on them), regardless
+    of how SQLite orders the WHERE terms. The extracted kind/rule fields are
+    compared exactly, independent of JSON serialization style (pretty or
+    compact), and cannot be fooled by LIKE wildcards, rule ids that share a
+    prefix, or extra fields.
     """
+    kind_match = case(
+        (func.json_valid(Message.payload), func.json_extract(Message.payload, "$.kind")),
+        else_=None,
+    )
+    rule_match = case(
+        (func.json_valid(Message.payload), func.json_extract(Message.payload, "$.rule")),
+        else_=None,
+    )
     with db.workspace_session(workspace_id) as session:
         row = (
             session.query(Message)
@@ -149,9 +159,8 @@ def _has_rule_record(db: DB, workspace_id: str, agent: Agent, kind: str, rule: s
                 Message.workspace_id == workspace_id,
                 Message.role == "agent",
                 Message.actor == agent.name,
-                func.json_valid(Message.payload),
-                func.json_extract(Message.payload, "$.kind") == kind,
-                func.json_extract(Message.payload, "$.rule") == rule,
+                kind_match == kind,
+                rule_match == rule,
             )
             .first()
         )
