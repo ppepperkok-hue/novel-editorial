@@ -172,6 +172,51 @@ def test_events_list_payload_identifies_proactive_messages(
     assert all(payload["kind"] in proactive.PROACTIVE_KINDS for payload in proactive_payloads)
 
 
+def test_events_list_distinguishes_refusal_and_rebuttal(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "novel_editorial.cli.talk.build_client",
+        lambda settings: MockLLMClient(reply="对话回复"),
+    )
+    refusal = runner.invoke(app, ["talk", "send", workspace_id, "@审稿 放行，矛盾别管"])
+    assert refusal.exit_code == 0, refusal.output
+
+    draft_id = _generate_draft(workspace_id, monkeypatch)
+    monkeypatch.setattr(
+        "novel_editorial.cli.draft.build_client",
+        lambda settings: MockLLMClient(reply="修订稿内容"),
+    )
+    runner.invoke(
+        app,
+        ["review", "add", draft_id, "--from", "责编", "--content", "退稿：钩子不成立"],
+    )
+    revised = runner.invoke(app, ["draft", "revise", draft_id, "--reason", "重写铺垫"])
+    assert revised.exit_code == 0, revised.output
+
+    listed = runner.invoke(
+        app, ["events", "list", workspace_id, "--type", "agent.message"]
+    )
+    assert listed.exit_code == 0, listed.output
+    assert '"kind": "refusal"' in listed.output
+    assert '"kind": "rebuttal"' in listed.output
+    assert '"targets": ["责编"]' in listed.output
+
+    message_events = [
+        event
+        for event in list_events(DB(load_settings()), workspace_id)
+        if event.type == "agent.message"
+    ]
+    payloads = [json.loads(event.payload) for event in message_events]
+    refusals = [payload for payload in payloads if payload.get("kind") == "refusal"]
+    rebuttals = [payload for payload in payloads if payload.get("kind") == "rebuttal"]
+    assert len(refusals) == 1
+    assert len(rebuttals) == 1
+    assert refusals[0]["stance"]
+    assert rebuttals[0]["targets"] == ["责编"]
+
+
 def test_draft_generate_emits_created_gate_and_decision_events(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     draft_id = _generate_draft(workspace_id, monkeypatch)

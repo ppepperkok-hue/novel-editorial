@@ -71,6 +71,31 @@ def _proactive_kind(payload: str | None) -> str | None:
     return kind if isinstance(kind, str) and kind in proactive.PROACTIVE_KINDS else None
 
 
+DISAGREEMENT_MARKS: dict[str, str] = {
+    "refusal": "拒绝",
+    "rebuttal": "反驳",
+    "override": "推翻",
+}
+
+
+def _disagreement_mark(payload: str | None) -> str | None:
+    """Return the disagreement mark for refusal/rebuttal/override payloads.
+
+    Malformed, non-object, and unknown-kind payloads return None so the
+    message keeps its plain role prefix instead of crashing the listing.
+    """
+    try:
+        data = json.loads(payload or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    kind = data.get("kind")
+    if not isinstance(kind, str):
+        return None
+    return DISAGREEMENT_MARKS.get(kind)
+
+
 @talk_app.command("send")
 def talk_send(
     workspace_id: str = typer.Argument(..., help="Workspace id"),
@@ -168,14 +193,18 @@ def talk_send(
 
 @talk_app.command("list")
 def talk_list(workspace_id: str = typer.Argument(..., help="Workspace id")) -> None:
-    """List the conversation history, marking agent-initiated proactive messages."""
+    """List the conversation, marking proactive and disagreement messages."""
     settings = load_settings()
     db = DB(settings)
     db.init_schema()
     get_workspace_or_raise(db, workspace_id)
     for message in list_messages(db, workspace_id):
         kind = _proactive_kind(message.payload)
-        if kind is None:
-            typer.echo(f"[{message.role}] {message.actor}: {message.content}")
+        if kind is not None:
+            typer.echo(f"[agent·主动·{kind}] {message.actor}: {message.content}")
             continue
-        typer.echo(f"[agent·主动·{kind}] {message.actor}: {message.content}")
+        mark = _disagreement_mark(message.payload)
+        if mark is not None and message.role == "agent":
+            typer.echo(f"[agent·分歧·{mark}] {message.actor}: {message.content}")
+            continue
+        typer.echo(f"[{message.role}] {message.actor}: {message.content}")

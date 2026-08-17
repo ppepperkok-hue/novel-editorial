@@ -6,7 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
-from novel_editorial.cli.talk import _proactive_kind
+from novel_editorial.cli.talk import _disagreement_mark, _proactive_kind
 from novel_editorial.core import proactive
 from novel_editorial.core.chat import has_proactive_message, list_messages, record_message
 from novel_editorial.core.config import load_settings
@@ -97,6 +97,27 @@ def test_proactive_kind_classification(payload: str | None, expected: str | None
     assert _proactive_kind(payload) == expected
 
 
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        (None, None),
+        ("{}", None),
+        ("not json", None),
+        ("[]", None),
+        ('{"initiator": "agent", "kind": "proactive_question"}', None),
+        ('{"kind": "mood_change"}', None),
+        ('{"kind": ["refusal"]}', None),
+        ('{"kind": {"name": "refusal"}}', None),
+        ('{"kind": "unknown"}', None),
+        ('{"kind": "refusal", "stance": "读者节奏优先"}', "拒绝"),
+        ('{"initiator": "agent", "kind": "rebuttal", "targets": ["责编"]}', "反驳"),
+        ('{"kind": "override", "rule": "editor_hooks"}', "推翻"),
+    ],
+)
+def test_disagreement_mark_classification(payload: str | None, expected: str | None) -> None:
+    assert _disagreement_mark(payload) == expected
+
+
 def test_talk_list_marks_proactive_messages_and_keeps_others_plain(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -119,7 +140,9 @@ def test_talk_list_marks_proactive_messages_and_keeps_others_plain(
     assert [line for line in lines if "·主动·" in line] == lines[3:]
 
 
-def test_talk_list_keeps_refusal_and_mood_unmarked(tmp_path: Path, monkeypatch) -> None:
+def test_talk_list_marks_refusal_and_keeps_mood_unmarked(
+    tmp_path: Path, monkeypatch
+) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     sent = runner.invoke(app, ["talk", "send", workspace_id, "@责编 删掉钩子"])
     assert sent.exit_code == 0, sent.output
@@ -129,9 +152,42 @@ def test_talk_list_keeps_refusal_and_mood_unmarked(tmp_path: Path, monkeypatch) 
     lines = listed.output.strip().splitlines()
     assert len(lines) == 3
     assert lines[0] == "[author] 作者: @责编 删掉钩子"
-    assert lines[1].startswith("[agent] 责编: 钩子删光")
+    assert lines[1].startswith("[agent·分歧·拒绝] 责编: ")
     assert lines[2].startswith("[system] 责编: 责编 的状态从")
     assert "·主动·" not in listed.output
+
+
+def test_talk_list_marks_override(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    sent = runner.invoke(app, ["talk", "send", workspace_id, "@责编 删掉钩子，我拍板"])
+    assert sent.exit_code == 0, sent.output
+
+    listed = runner.invoke(app, ["talk", "list", workspace_id])
+    assert listed.exit_code == 0, listed.output
+    lines = listed.output.strip().splitlines()
+    assert len(lines) == 3
+    assert lines[0] == "[author] 作者: @责编 删掉钩子，我拍板"
+    assert lines[1].startswith("[agent·分歧·推翻] 责编: ")
+    assert lines[2].startswith("[system] 责编: 责编 的状态从")
+
+
+def test_talk_list_marks_rebuttal(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    record_message(
+        db,
+        workspace_id,
+        role="agent",
+        actor="写手",
+        content="写手反驳：这版改好了。",
+        payload={"initiator": "agent", "kind": "rebuttal", "targets": ["责编"]},
+    )
+
+    listed = runner.invoke(app, ["talk", "list", workspace_id])
+    assert listed.exit_code == 0, listed.output
+    lines = listed.output.strip().splitlines()
+    assert len(lines) == 1
+    assert lines[0] == "[agent·分歧·反驳] 写手: 写手反驳：这版改好了。"
 
 
 def test_talk_list_survives_non_hashable_kind_payload(

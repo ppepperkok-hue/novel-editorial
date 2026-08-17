@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -161,13 +162,77 @@ def test_revise_generates_writer_rebuttal_message(tmp_path: Path, monkeypatch) -
     settings = load_settings()
     messages = list_messages(DB(settings), workspace_id)
     rebuttals = [
-        m
-        for m in messages
-        if '"initiator": "agent"' in m.payload and '"rebuttal"' in m.payload
+        m for m in messages if json.loads(m.payload).get("kind") == "rebuttal"
     ]
     assert len(rebuttals) == 1
     assert rebuttals[0].actor == "写手"
     assert "写手反驳" in rebuttals[0].content
+    assert json.loads(rebuttals[0].payload) == {
+        "initiator": "agent",
+        "kind": "rebuttal",
+        "targets": ["责编"],
+    }
+
+
+def test_revise_rebuttal_targets_follow_agent_review_order_and_dedupe(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    draft_id = _generate_draft(workspace_id, monkeypatch)
+    runner.invoke(
+        app,
+        ["review", "add", draft_id, "--from", "责编", "--content", "退稿：钩子不成立"],
+    )
+    runner.invoke(
+        app,
+        ["review", "add", draft_id, "--from", "作者", "--content", "我也觉得节奏慢"],
+    )
+    runner.invoke(
+        app,
+        ["review", "add", draft_id, "--from", "审稿", "--content", "伏笔没咬合"],
+    )
+    runner.invoke(
+        app,
+        ["review", "add", draft_id, "--from", "责编", "--content", "开头太长"],
+    )
+    monkeypatch.setattr(
+        "novel_editorial.cli.draft.build_client",
+        lambda settings: MockLLMClient(reply="修订稿内容"),
+    )
+    result = runner.invoke(app, ["draft", "revise", draft_id, "--reason", "重写铺垫"])
+    assert result.exit_code == 0, result.output
+
+    rebuttals = [
+        message
+        for message in list_messages(DB(load_settings()), workspace_id)
+        if json.loads(message.payload).get("kind") == "rebuttal"
+    ]
+    assert len(rebuttals) == 1
+    assert json.loads(rebuttals[0].payload) == {
+        "initiator": "agent",
+        "kind": "rebuttal",
+        "targets": ["责编", "审稿"],
+    }
+
+
+def test_revise_without_agent_review_emits_no_rebuttal(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    draft_id = _generate_draft(workspace_id, monkeypatch)
+    runner.invoke(
+        app,
+        ["review", "add", draft_id, "--from", "作者", "--content", "节奏太慢"],
+    )
+    monkeypatch.setattr(
+        "novel_editorial.cli.draft.build_client",
+        lambda settings: MockLLMClient(reply="修订稿内容"),
+    )
+    result = runner.invoke(app, ["draft", "revise", draft_id, "--reason", "重写铺垫"])
+    assert result.exit_code == 0, result.output
+
+    messages = list_messages(DB(load_settings()), workspace_id)
+    assert not any(json.loads(m.payload).get("kind") == "rebuttal" for m in messages)
 
 
 def test_review_list_and_decision_list(tmp_path: Path, monkeypatch) -> None:

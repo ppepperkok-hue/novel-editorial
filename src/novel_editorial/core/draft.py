@@ -227,7 +227,8 @@ def revise_draft(
                 payload={"draft_id": draft.id, "version": draft.current_version},
             )
         _update_agent_mood_in_session(session, workspace_id, writer.id, MOOD_REVISING)
-        if any(r.role == "agent" for r in reviews):
+        agent_reviews = [r for r in reviews if r.role == "agent"]
+        if agent_reviews:
             _record_message_in_session(
                 session,
                 workspace_id,
@@ -237,7 +238,11 @@ def revise_draft(
                     f"写手反驳：我看了意见后重新修订了正文。修订理由：{reason or 'revision'}。"
                     "这版针对反馈做了调整，请再审。"
                 ),
-                payload={"initiator": "agent", "kind": "rebuttal"},
+                payload={
+                    "initiator": "agent",
+                    "kind": "rebuttal",
+                    "targets": list(dict.fromkeys(r.actor for r in agent_reviews)),
+                },
             )
         session.commit()
     return draft
