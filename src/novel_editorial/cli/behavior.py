@@ -81,16 +81,9 @@ def behavior_timeline(
     agent_id = _resolve_agent_id(db, workspace_id, agent) if agent else None
     resolved_kinds = _resolve_kinds(kinds)
 
-    if resolved_kinds:
-        merged: list[BehaviorTimeline] = []
-        for kind in resolved_kinds:
-            merged.extend(
-                list_behavior_timeline(db, workspace_id, agent_id=agent_id, kind=kind, limit=limit)
-            )
-        merged.sort(key=lambda entry: entry.created_at)
-        entries = merged[:limit]
-    else:
-        entries = list_behavior_timeline(db, workspace_id, agent_id=agent_id, limit=limit)
+    entries = list_behavior_timeline(
+        db, workspace_id, agent_id=agent_id, kind=resolved_kinds, limit=limit
+    )
 
     if not entries:
         typer.echo("no behavior traces yet")

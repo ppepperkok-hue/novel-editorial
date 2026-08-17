@@ -161,6 +161,54 @@ def test_timeline_agent_kind_and_limit_filters(
     ]
 
 
+def test_timeline_multi_kind_replays_insertion_order_with_frozen_clock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    fixed_time = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None) -> datetime:
+            return fixed_time
+
+    monkeypatch.setattr("novel_editorial.store.models.datetime", FrozenDateTime)
+    db = DB(load_settings())
+    writer_id = _agent_id(workspace_id, AgentRole.WRITER)
+    record_behavior_entry(
+        db, workspace_id, agent_id=writer_id, kind="viewpoint", target="rule_a", summary="v0"
+    )
+    record_behavior_entry(
+        db, workspace_id, agent_id=writer_id, kind="impression", target="责编", summary="i0"
+    )
+    record_behavior_entry(
+        db, workspace_id, agent_id=writer_id, kind="relationship", target="作者", summary="r0"
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "behavior",
+            "timeline",
+            workspace_id,
+            "--agent",
+            "写手",
+            "--kind",
+            "relationship",
+            "--kind",
+            "impression",
+            "--kind",
+            "viewpoint",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert [_without_time(line) for line in result.output.strip().splitlines()] == [
+        "[viewpoint] 写手 -> rule_a: v0",
+        "[impression] 写手 -> 责编: i0",
+        "[relationship] 写手 -> 作者: r0",
+    ]
+
+
 def test_timeline_unknown_agent_is_usage_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

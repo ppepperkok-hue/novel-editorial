@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
 
 from sqlalchemy import literal_column
 
@@ -97,16 +98,21 @@ def list_behavior_timeline(
     workspace_id: str,
     *,
     agent_id: str | None = None,
-    kind: str | None = None,
+    kind: str | Sequence[str] | None = None,
     limit: int = 20,
 ) -> list[BehaviorTimeline]:
-    """Return behavior rows oldest first (insertion order), optionally filtered."""
+    """Return behavior rows oldest first (insertion order), optionally filtered.
+
+    ``kind`` accepts a single value or a sequence; multiple kinds are matched
+    in one query so the insertion-order limit applies across all of them.
+    """
     with db.workspace_session(workspace_id) as session:
         query = session.query(BehaviorTimeline).filter_by(workspace_id=workspace_id)
         if agent_id is not None:
             query = query.filter(BehaviorTimeline.agent_id == agent_id)
         if kind is not None:
-            query = query.filter(BehaviorTimeline.kind == kind)
+            kinds = [kind] if isinstance(kind, str) else list(kind)
+            query = query.filter(BehaviorTimeline.kind.in_(kinds))
         return query.order_by(_ROWID.asc()).limit(limit).all()
 
 

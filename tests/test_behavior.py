@@ -306,3 +306,61 @@ def test_timeline_insertion_order_not_timestamp_based(tmp_path: Path, monkeypatc
     entries = list_behavior_timeline(db, workspace_id)
     assert [entry.id for entry in entries] == [first.id, second.id]
     assert entries[0].created_at == entries[1].created_at == fixed_time.replace(tzinfo=None)
+
+
+def test_list_behavior_timeline_multi_kind_ignores_kind_order_and_keeps_rowid(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    fixed_time = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None) -> datetime:
+            return fixed_time
+
+    monkeypatch.setattr("novel_editorial.store.models.datetime", FrozenDateTime)
+    db = DB(load_settings())
+    first = record_behavior_entry(
+        db, workspace_id, agent_id="写手", kind="viewpoint", target="rule_a", summary="v0"
+    )
+    second = record_behavior_entry(
+        db, workspace_id, agent_id="写手", kind="impression", target="责编", summary="i0"
+    )
+    third = record_behavior_entry(
+        db, workspace_id, agent_id="写手", kind="relationship", target="作者", summary="r0"
+    )
+
+    entries = list_behavior_timeline(
+        db, workspace_id, kind=["relationship", "impression", "viewpoint"]
+    )
+    assert [entry.id for entry in entries] == [first.id, second.id, third.id]
+
+
+def test_list_behavior_timeline_multi_kind_applies_one_unified_limit(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    fixed_time = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None) -> datetime:
+            return fixed_time
+
+    monkeypatch.setattr("novel_editorial.store.models.datetime", FrozenDateTime)
+    db = DB(load_settings())
+    record_behavior_entry(
+        db, workspace_id, agent_id="写手", kind="viewpoint", target="rule_a", summary="v0"
+    )
+    record_behavior_entry(
+        db, workspace_id, agent_id="写手", kind="impression", target="责编", summary="i0"
+    )
+    record_behavior_entry(
+        db, workspace_id, agent_id="写手", kind="relationship", target="作者", summary="r0"
+    )
+
+    entries = list_behavior_timeline(
+        db, workspace_id, kind=("viewpoint", "impression", "relationship"), limit=2
+    )
+    assert [entry.summary for entry in entries] == ["v0", "i0"]
