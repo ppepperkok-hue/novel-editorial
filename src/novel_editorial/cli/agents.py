@@ -5,6 +5,7 @@ from __future__ import annotations
 import typer
 
 from novel_editorial.core.agents import resolve_agent, update_agent_field
+from novel_editorial.core.behavior import current_behavior_state
 from novel_editorial.core.chat import get_workspace_or_raise
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
@@ -25,6 +26,7 @@ def agents_show(workspace_id: str = typer.Argument(..., help="Workspace id")) ->
             raise NovelError(ErrorCode.NOT_FOUND, f"workspace not found: {workspace_id}")
     with db.workspace_session(workspace_id) as session:
         agents = session.query(Agent).order_by(Agent.created_at).all()
+    state = current_behavior_state(db, workspace_id)
     for agent in agents:
         typer.echo(f"[{agent.role}] {agent.name}")
         typer.echo(f"  当前状态: {agent.mood}")
@@ -37,6 +39,18 @@ def agents_show(workspace_id: str = typer.Argument(..., help="Workspace id")) ->
         typer.echo(f"  弱点: {agent.weaknesses}")
         typer.echo(f"  人际预设: {agent.relationship_presets}")
         typer.echo(f"  私心: {agent.private_motive}")
+        summaries = sorted(
+            (
+                entry
+                for (agent_id, kind, _target), entry in state.items()
+                if agent_id == agent.id and kind in ("impression", "relationship")
+            ),
+            key=lambda entry: (entry.kind, entry.target),
+        )
+        if summaries:
+            typer.echo("  印象与关系:")
+            for entry in summaries:
+                typer.echo(f"    {entry.kind} -> {entry.target}: {entry.summary}")
 
 
 @agents_app.command("edit")

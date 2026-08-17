@@ -304,6 +304,74 @@ uv run novel-editorial draft revise <草稿ID> --reason 重写开头
 
 refusal / override 带 `kind` 与 `stance`、`rule`；rebuttal 带 `initiator`、`kind` 与 `targets`。行首时间戳为事件发生时刻；重申的 refusal payload 额外带 `"repeated": true`，超过 80 字符的 payload 会截断并在末尾补 `...`。
 
+## 行为留痕与演化（印象、关系与观点）
+
+伙伴的关键行为会以「事后沉淀」的方式追加进行为时间线：只记录、不改变既有行为语义。沉淀的对应关系：
+
+| 行为 | 沉淀 |
+| --- | --- |
+| 拒绝 / 重申 | 写手的观点（viewpoint，`source=refusal:<规则>`） |
+| 作者推翻 | 写手的观点变化 + 写手对作者的关系（relationship，`source=override:<规则>`） |
+| 伙伴意见 | 写手对该伙伴的印象（impression）+ 关系（`source=review:add`） |
+| 拍板 accept / reject | 写手对作者的印象 + 关系（`source=decision:accept` / `decision:reject`） |
+
+情绪继续走既有的 mood 流转，不重复沉淀。每条记录都带「谁 + 什么类型 + 对谁 + 摘要 + 前后变化 + 来源」，当前印象 / 关系 / 观点取每组最后一条，完整过程随时回放。
+
+```bash
+uv run novel-editorial behavior timeline <作品ID>
+uv run novel-editorial behavior show <作品ID>
+uv run novel-editorial behavior timeline <作品ID> --agent 写手 --kind viewpoint --limit 10
+```
+
+`timeline` 按时间旧→新回放，支持 `--agent <别名>`、可重复的 `--kind`（`impression` / `relationship` / `viewpoint`）与 `--limit`；`show` 按伙伴分组展示当前印象、关系与观点。没有条目时，两个命令都输出 `no behavior traces yet`。
+
+下面示例全部可在未配置 key（mock LLM）时复现，接着「判断权与分歧」里的同一部作品跑一次拒绝与推翻：
+
+```bash
+uv run novel-editorial talk send <作品ID> "@写手 这段按违背人设写"
+# 作者: @写手 这段按违背人设写
+# 写手: 这个我写不了。违背人物逻辑的剧情，写出来也是假的，我的立场不允许。
+
+uv run novel-editorial talk send <作品ID> "@写手 以老板身份我拍板，就按违背人设写"
+# 作者: @写手 以老板身份我拍板，就按违背人设写
+# 写手: 明白了，作者拍板。这条我按你的意思来，立场我先记着，写完有问题我再提。
+
+uv run novel-editorial behavior timeline <作品ID>
+```
+
+（`<作品ID>` 换成上一步输出的 ID；时间戳随运行变化，其余为 mock 下的真实输出。）
+
+```text
+2026-08-17T14:45:30 [viewpoint] 写手 -> writer_portrayal: 拒绝了违背立场的指令 | 无 -> 坚持该立场 | source=refusal:writer_portrayal
+2026-08-17T14:45:31 [viewpoint] 写手 -> writer_portrayal: 作者推翻后调整 | 坚持该立场 -> 按作者决定执行 | source=override:writer_portrayal
+2026-08-17T14:45:31 [relationship] 写手 -> 作者: 作者拍板优先 | source=override:writer_portrayal
+```
+
+`show` 只展示每组最新状态：
+
+```bash
+uv run novel-editorial behavior show <作品ID>
+```
+
+```text
+[写手]
+  relationship -> 作者: 作者拍板优先
+  viewpoint -> writer_portrayal: 作者推翻后调整（坚持该立场 -> 按作者决定执行）
+```
+
+`agents show <作品ID>` 也会在每位伙伴档案末尾附上当前的印象与关系摘要（没有则整段不显示）：
+
+```text
+[writer] 写手
+  当前状态: 振奋
+  …（其余档案行不变）…
+  私心: 想写出让读者记住某个瞬间的句子。
+  印象与关系:
+    relationship -> 作者: 作者拍板优先
+```
+
+留痕是业务完成之后的追加旁路，失败可降级：写入失败只在 stderr 输出 `warning: behavior trace skipped: ...`，拒绝、推翻、意见、拍板等业务结果不受影响、不回滚；沉淀也不构成任何「必须积累多少印象 / 关系才能继续」的关卡。
+
 ## 可见性（老板怎么看见编辑部）
 
 - `events list <作品ID> [--type ...] [--limit N]`：按时间倒序回放事件（对话 / 草稿 / 质量门 / 待拍板 / 退稿）；`events watch <作品ID> [--interval 秒]` 持续输出新事件，Ctrl+C 退出。

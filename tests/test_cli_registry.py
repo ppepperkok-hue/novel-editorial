@@ -17,6 +17,7 @@ TOP_LEVEL_COMMANDS = ("init", "health", "version", "demo", "log", "inspect")
 SUBCOMMANDS = {
     "works": ("create", "list", "show"),
     "agents": ("show", "edit"),
+    "behavior": ("timeline", "show"),
     "talk": ("send", "list"),
     "style": ("set", "show"),
     "memory": ("pack", "view", "search", "note", "notes", "delete"),
@@ -77,6 +78,8 @@ def test_representative_commands_run() -> None:
         (["style", "show", workspace_id], "style show"),
         (["memory", "notes", workspace_id], "memory notes"),
         (["draft", "list", workspace_id], "draft list"),
+        (["behavior", "timeline", workspace_id], "behavior timeline"),
+        (["behavior", "show", workspace_id], "behavior show"),
         (["review", "list", draft_id], "review list"),
         (["decision", "pending", workspace_id], "decision pending"),
         (["quality", "check", draft_id], "quality check"),
@@ -86,3 +89,10 @@ def test_representative_commands_run() -> None:
     for args, label in cases:
         result = runner.invoke(app, args)
         assert result.exit_code == 0, f"{label}: {result.output}"
+
+    behavior_show = runner.invoke(app, ["behavior", "show", workspace_id])
+    assert behavior_show.exit_code == 0, behavior_show.output
+    assert behavior_show.output.strip() == "no behavior traces yet"
+    behavior_timeline = runner.invoke(app, ["behavior", "timeline", workspace_id])
+    assert behavior_timeline.exit_code == 0, behavior_timeline.output
+    assert behavior_timeline.output.strip() == "no behavior traces yet"
