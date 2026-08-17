@@ -84,6 +84,11 @@ pytest + ruff + pyright + 宪法校验 + smoke_m3 + CLI 冒烟。
 - 分歧演化时间线（N3）；
 - 编辑部讨论形态（N4）。
 
+### 变更记录（实施中已回写）
+
+- rebuttal payload 稳定为 `{"initiator": "agent", "kind": "rebuttal", "targets": [...]}`，targets 按 agent 意见出现顺序去重、排除写手自评；无其他伙伴意见时不产生反驳消息。
+- talk list 对 refusal / rebuttal / override 分别输出 `[agent·分歧·拒绝]` / `[agent·分歧·反驳]` / `[agent·分歧·推翻]`，主动标记不回退；docs/usage.md 已同步说明。
+
 ## 子阶段 B3：可见性、文档与收口
 
 ### 做什么
@@ -125,4 +130,5 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 ## 状态
 
 - B1 完成（2026-08-17；commits 9bc5ed9 / 7d800e5 / c47ed07 / 6803357 / e07f6c1 / f70c46b，全量 335 测试绿）。
-- B2 / B3：待派包。
+- B2 完成（2026-08-17；commits 4d289d8 / 897e20d，全量 354 测试绿）。
+- B3：待派包。
