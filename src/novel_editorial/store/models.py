@@ -190,3 +190,20 @@ class Event(Base):
     time: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     actor: Mapped[str] = mapped_column(String(100))
     payload: Mapped[str] = mapped_column(Text, default="{}")
+
+
+class BehaviorTimeline(Base):
+    """One append-only record of an impression, relationship, or viewpoint change."""
+
+    __tablename__ = "behavior_timeline"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(String(32), index=True)
+    agent_id: Mapped[str] = mapped_column(String(32), index=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    target: Mapped[str] = mapped_column(String(200))
+    summary: Mapped[str] = mapped_column(Text, default="")
+    before_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    after_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
