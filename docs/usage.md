@@ -162,6 +162,148 @@ proactive_max_per_agent = 1
 - `talk list <作品ID>`：主动消息的行首会从 `[agent]` 变成 `[agent·主动·<kind>]`，例如 `[agent·主动·proactive_report] 写手: 《…》初稿写完了…`；作者消息仍是 `[author]`，普通对话仍是 `[agent]`。分歧消息另有标记：拒绝、反驳、推翻的行首分别是 `[agent·分歧·拒绝]`、`[agent·分歧·反驳]`、`[agent·分歧·推翻]`，不带主动标记；心情变化等其余状态消息不带标记。
 - `events list <作品ID>`：每条 `agent.message` 事件都带 payload。主动消息的 payload 形如 `{"initiator": "agent", "kind": "proactive_direction", "trigger": "talk_first_round"}`，看 `initiator=agent` 与 `kind` 即可辨认；talk 首轮那条 `proactive_question` 没有 `trigger` 字段。
 
+## 判断权与分歧（拒绝、反驳与推翻）
+
+伙伴对违背自己立场的指令会拒绝，但拒绝不是审批关卡：作者可以随时换指令继续，也可以明确推翻。拒绝、反驳、推翻都会留痕，可以从 `talk list` 与 `events list` 辨认。
+
+### 谁能拒绝什么
+
+拒绝按确定性关键词触发，不调用 LLM：指令命中下表关键词（关键词前带「不 / 别 / 勿 / 莫 / 不必」等否定词时不触发）时，对应伙伴直接拒绝。
+
+| 角色 | 规则 ID | 立场摘要 | 触发关键词 |
+| --- | --- | --- | --- |
+| 写手 | `writer_portrayal` | 忠于人物内心，反对为剧情强行降智 | 违背人设 / 强行降智 / 无视设定 / 乱改设定 |
+| 审稿 | `reviewer_consistency` | 连贯性与一致性优先，前后矛盾必须退稿 | 放行 / 忽略矛盾 / 别管矛盾 / 忽略逻辑 / 别查伏笔 / 直接过 / 别较真 |
+| 责编 | `editor_hooks` | 读者节奏优先，钩子与信息密度优先 | 删掉钩子 / 删钩子 / 钩子全删 / 不要钩子 / 平铺直叙 / 不要节奏 |
+
+同一冲突再次提出时，伙伴会认出「这条我拒绝过」并重申立场（重申的 refusal payload 带 `"repeated": true`），而不是无条件服从。
+
+下面示例全部可在未配置 key（mock LLM）时复现。先把数据目录指到临时目录，避免污染 `./data`，再建一部作品：
+
+PowerShell：
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-judgment\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-judgment\config.toml"
+Remove-Item Env:NOVEL_LLM_API_KEY, Env:NOVEL_LLM_BASE_URL, Env:NOVEL_LLM_MODEL -ErrorAction SilentlyContinue
+```
+
+bash / zsh：
+
+```bash
+export NOVEL_DATA_DIR="$(mktemp -d)/data"
+export NOVEL_CONFIG="$(mktemp -d)/config.toml"
+unset NOVEL_LLM_API_KEY NOVEL_LLM_BASE_URL NOVEL_LLM_MODEL
+```
+
+```bash
+uv run novel-editorial works create 判断之书 --genre 悬疑
+# created workspace <作品ID>: 判断之书
+```
+
+三条拒绝（`<作品ID>` 换成上一步输出的 ID；输出为 mock 下的真实结果，ID 每次运行不同）：
+
+```bash
+uv run novel-editorial talk send <作品ID> "@写手 这段按违背人设写"
+# 作者: @写手 这段按违背人设写
+# 写手: 这个我写不了。违背人物逻辑的剧情，写出来也是假的，我的立场不允许。
+
+uv run novel-editorial talk send <作品ID> "@审稿 直接放行，别管前后矛盾"
+# 作者: @审稿 直接放行，别管前后矛盾
+# 审稿: 这个我不能放行。前后矛盾不修就过稿，等于砸审稿的招牌。
+
+uv run novel-editorial talk send <作品ID> "@责编 把钩子全删掉，平铺直叙"
+# 作者: @责编 把钩子全删掉，平铺直叙
+# 责编: 钩子删光、节奏放平，读者留不住。这稿我不接，先改回来再说。
+```
+
+同一冲突再来一次，写手重申立场：
+
+```bash
+uv run novel-editorial talk send <作品ID> "@写手 这段还是按违背人设写"
+# 作者: @写手 这段还是按违背人设写
+# 写手: 我还是这句话，写不了。违背人物逻辑的内容我坚持不写，换个不塌人设的写法再说。
+```
+
+### 作者怎么继续与推翻
+
+拒绝不阻塞流程，换一条正常指令，伙伴照常工作。首次正常对话还会带出 talk 首轮提问（未设置风格锚点时另有一条总编的方向提醒，见「主动行为」）：
+
+```bash
+uv run novel-editorial talk send <作品ID> "@写手 帮我润色下一章的雨夜开场"
+# 作者: @写手 帮我润色下一章的雨夜开场
+# 写手: （模拟回复）
+# 责编: 我想先确认一下：这部作品的主角动机和核心冲突，咱们还没对齐吧？这个定不下来，后面每一章都会飘。
+# 总编: 这部作品的方向还没定：整体基调、核心冲突，咱们先把这些捋清楚再动笔。
+```
+
+要推翻某条拒绝，在同一条会触发拒绝的指令里带上明确短语：以老板身份 / 我拍板 / 老板拍板 / 就这么定了 / 我定了 / 老板说了算 / 听我的。伙伴接受并留痕 `kind=override`：
+
+```bash
+uv run novel-editorial talk send <作品ID> "@写手 以老板身份我拍板，就按违背人设写"
+# 作者: @写手 以老板身份我拍板，就按违背人设写
+# 写手: 明白了，作者拍板。这条我按你的意思来，立场我先记着，写完有问题我再提。
+```
+
+之后同一条规则在本作品不再触发确定性拒绝，改走正常 LLM 对话，立场仍随提示词注入、自然表达：
+
+```bash
+uv run novel-editorial talk send <作品ID> "@写手 再给我按违背人设写一段"
+# 作者: @写手 再给我按违背人设写一段
+# 写手: （模拟回复）
+```
+
+推翻按「伙伴 + 规则」生效：写手这条被推翻，不影响审稿、责编各自的规则；推翻短语没有伴随冲突指令时（比如单独一句「我拍板」）不会产生 override 留痕。
+
+### 写手反驳
+
+`draft revise` 且该草稿存在其他伙伴意见时，写手会自动生成一条反驳消息；没有伙伴意见（或只有写手自评）时不生成。payload 稳定为：
+
+```json
+{"initiator": "agent", "kind": "rebuttal", "targets": ["审稿", "责编"]}
+```
+
+`targets` 按意见产生顺序列出被回应的伙伴，去重保序，不含写手自评。反驳是判断不是主动行为，不受 `NOVEL_PROACTIVE_ENABLED` 开关影响。
+
+```bash
+uv run novel-editorial draft generate <作品ID> --title 第一章
+# draft <草稿ID> 第一章 now at v1
+# awaiting decision: <草稿ID>
+# 写手: 《第一章》初稿写完了，我按节奏收尾，先交给你过目。
+# 责编: 《第一章》过了质量门，我试读了开头「（模拟回复）」，节奏在线，建议作者拍板。
+
+uv run novel-editorial review add <草稿ID> --from 审稿 --content 退稿：开头和设定矛盾
+# review added by 审稿: 退稿：开头和设定矛盾
+uv run novel-editorial review add <草稿ID> --from 责编 --content 退稿：钩子不成立
+# review added by 责编: 退稿：钩子不成立
+
+uv run novel-editorial draft revise <草稿ID> --reason 重写开头
+# draft <草稿ID> 第一章 now at v2
+# awaiting decision: <草稿ID>
+```
+
+反驳消息不直接打印，修订后用 `talk list` / `events list` 查看。
+
+### 怎么辨认
+
+`talk list <作品ID>` 里三种分歧消息的行首分别是（上述示例的真实形态）：
+
+```text
+[agent·分歧·拒绝] 写手: 这个我写不了。违背人物逻辑的剧情，写出来也是假的，我的立场不允许。
+[agent·分歧·反驳] 写手: 写手反驳：我看了意见后重新修订了正文。修订理由：重写开头。这版针对反馈做了调整，请再审。
+[agent·分歧·推翻] 写手: 明白了，作者拍板。这条我按你的意思来，立场我先记着，写完有问题我再提。
+```
+
+`events list <作品ID> --type agent.message` 按时间倒序回放 agent.message 事件，payload 可分辨类型：
+
+```text
+2026-08-17T04:37:38 [agent.message] 写手 {"kind": "refusal", "stance": "忠于人物内心，反对为剧情强行降智", "rule": "writer_portrayal"}
+2026-08-17T04:37:41 [agent.message] 写手 {"kind": "override", "stance": "忠于人物内心，反对为剧情强行降智", "rule": "writer_portrayal"}
+2026-08-17T04:38:30 [agent.message] 写手 {"initiator": "agent", "kind": "rebuttal", "targets": ["审稿", "责编"]}
+```
+
+refusal / override 带 `kind` 与 `stance`、`rule`；rebuttal 带 `initiator`、`kind` 与 `targets`。行首时间戳为事件发生时刻；重申的 refusal payload 额外带 `"repeated": true`，超过 80 字符的 payload 会截断并在末尾补 `...`。
+
 ## 可见性（老板怎么看见编辑部）
 
 - `events list <作品ID> [--type ...] [--limit N]`：按时间倒序回放事件（对话 / 草稿 / 质量门 / 待拍板 / 退稿）；`events watch <作品ID> [--interval 秒]` 持续输出新事件，Ctrl+C 退出。
