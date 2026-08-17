@@ -115,6 +115,10 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 - 面板/可视化（后置）；
 - 分歧统计/报告（N10）。
 
+### 变更记录（实施中已回写）
+
+- docs/usage.md 新增「判断权与分歧」完整章节，拒绝/重申/继续/推翻/反驳示例均在 mock 下实跑验证；events list 示例按最新在前排列。
+
 ## 影响评估（涉及基底）
 
 - 无表结构变更、无迁移：分歧继续走 messages（payload 标记）与 events（agent.message）。
@@ -131,4 +135,5 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 
 - B1 完成（2026-08-17；commits 9bc5ed9 / 7d800e5 / c47ed07 / 6803357 / e07f6c1 / f70c46b，全量 335 测试绿）。
 - B2 完成（2026-08-17；commits 4d289d8 / 897e20d，全量 354 测试绿）。
-- B3：待派包。
+- B3 完成（2026-08-17；commits 051fda2 / e1039bb）。
+- N2 收口（2026-08-17）：全量 354 测试、ruff、pyright、宪法、smoke_m3、stress_m3 全绿；审查链归档 docs/reviews/。N3 / N4 按 backlog 顺序待用户立项拆包。
