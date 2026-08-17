@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 from sqlalchemy import literal_column
 
 from novel_editorial.core.errors import ErrorCode, NovelError
@@ -53,6 +55,41 @@ def record_behavior_entry(
         session.add(entry)
         session.commit()
         return entry
+
+
+def record_behavior_entry_safe(
+    db: DB,
+    workspace_id: str,
+    *,
+    agent_id: str,
+    kind: str,
+    target: str,
+    summary: str = "",
+    before_value: str | None = None,
+    after_value: str | None = None,
+    source: str = "",
+) -> bool:
+    """Append one behavior record, degrading to a stderr warning on failure.
+
+    Behavior traces are post-hoc sediment: a trace write failure must never
+    roll the business result back, so every exception is caught and reported.
+    """
+    try:
+        record_behavior_entry(
+            db,
+            workspace_id,
+            agent_id=agent_id,
+            kind=kind,
+            target=target,
+            summary=summary,
+            before_value=before_value,
+            after_value=after_value,
+            source=source,
+        )
+    except Exception as exc:
+        print(f"warning: behavior trace skipped: {exc}", file=sys.stderr)
+        return False
+    return True
 
 
 def list_behavior_timeline(

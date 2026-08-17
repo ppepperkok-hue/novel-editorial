@@ -7,6 +7,7 @@ import json
 import typer
 
 from novel_editorial.core import proactive
+from novel_editorial.core.behavior import record_behavior_entry_safe
 from novel_editorial.core.chat import (
     AUTHOR_ACTOR,
     MOOD_ACCEPTED,
@@ -123,6 +124,26 @@ def talk_send(
             payload=payload,
         )
         update_agent_mood(db, workspace_id, agent, MOOD_ACCEPTED)
+        record_behavior_entry_safe(
+            db,
+            workspace_id,
+            agent_id=agent.id,
+            kind="viewpoint",
+            target=rule.rule,
+            summary="作者推翻后调整",
+            before_value="坚持该立场",
+            after_value="按作者决定执行",
+            source=f"override:{rule.rule}",
+        )
+        record_behavior_entry_safe(
+            db,
+            workspace_id,
+            agent_id=agent.id,
+            kind="relationship",
+            target=AUTHOR_ACTOR,
+            summary="作者拍板优先",
+            source=f"override:{rule.rule}",
+        )
         typer.echo(f"{AUTHOR_ACTOR}: {message}")
         typer.echo(f"{agent.name}: {content}")
         return
@@ -146,6 +167,17 @@ def talk_send(
             payload=payload,
         )
         update_agent_mood(db, workspace_id, agent, MOOD_TALK)
+        if not repeated:
+            record_behavior_entry_safe(
+                db,
+                workspace_id,
+                agent_id=agent.id,
+                kind="viewpoint",
+                target=rule.rule,
+                summary="拒绝了违背立场的指令",
+                after_value="坚持该立场",
+                source=f"refusal:{rule.rule}",
+            )
         typer.echo(f"{AUTHOR_ACTOR}: {message}")
         typer.echo(f"{agent.name}: {content}")
         return

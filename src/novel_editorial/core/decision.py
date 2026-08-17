@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from novel_editorial.core.behavior import record_behavior_entry_safe
 from novel_editorial.core.chat import (
+    AUTHOR_ACTOR,
     MOOD_ACCEPTED,
     MOOD_REJECTED,
     _update_agent_mood_in_session,
@@ -26,6 +28,7 @@ def decide(
     content: str = "",
 ) -> Draft:
     get_draft(db, workspace_id, draft_id)
+    writer_id: str | None = None
     with db.workspace_session(workspace_id) as session:
         draft = (
             session.query(Draft)
@@ -75,5 +78,26 @@ def decide(
                 )
             mood = MOOD_ACCEPTED if action == "accept" else MOOD_REJECTED
             _update_agent_mood_in_session(session, workspace_id, writer.id, mood)
+            writer_id = writer.id
         session.commit()
+    if writer_id is not None:
+        accepted = action == "accept"
+        record_behavior_entry_safe(
+            db,
+            workspace_id,
+            agent_id=writer_id,
+            kind="relationship",
+            target=AUTHOR_ACTOR,
+            summary="稿子被认可" if accepted else "稿子被退回",
+            source=f"decision:{action}",
+        )
+        record_behavior_entry_safe(
+            db,
+            workspace_id,
+            agent_id=writer_id,
+            kind="impression",
+            target=AUTHOR_ACTOR,
+            summary="认可我的产出" if accepted else "对我的要求高",
+            source=f"decision:{action}",
+        )
     return draft
