@@ -297,9 +297,9 @@ uv run novel-editorial draft revise <草稿ID> --reason 重写开头
 `events list <作品ID> --type agent.message` 按时间倒序回放 agent.message 事件，payload 可分辨类型：
 
 ```text
-2026-08-17T04:37:38 [agent.message] 写手 {"kind": "refusal", "stance": "忠于人物内心，反对为剧情强行降智", "rule": "writer_portrayal"}
-2026-08-17T04:37:41 [agent.message] 写手 {"kind": "override", "stance": "忠于人物内心，反对为剧情强行降智", "rule": "writer_portrayal"}
 2026-08-17T04:38:30 [agent.message] 写手 {"initiator": "agent", "kind": "rebuttal", "targets": ["审稿", "责编"]}
+2026-08-17T04:37:41 [agent.message] 写手 {"kind": "override", "stance": "忠于人物内心，反对为剧情强行降智", "rule": "writer_portrayal"}
+2026-08-17T04:37:38 [agent.message] 写手 {"kind": "refusal", "stance": "忠于人物内心，反对为剧情强行降智", "rule": "writer_portrayal"}
 ```
 
 refusal / override 带 `kind` 与 `stance`、`rule`；rebuttal 带 `initiator`、`kind` 与 `targets`。行首时间戳为事件发生时刻；重申的 refusal payload 额外带 `"repeated": true`，超过 80 字符的 payload 会截断并在末尾补 `...`。
