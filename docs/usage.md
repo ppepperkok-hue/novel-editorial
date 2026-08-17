@@ -159,13 +159,13 @@ proactive_max_per_agent = 1
 
 ### 怎么辨认哪条是主动发的
 
-- `talk list <作品ID>`：主动消息的行首会从 `[agent]` 变成 `[agent·主动·<kind>]`，例如 `[agent·主动·proactive_report] 写手: 《…》初稿写完了…`；作者消息仍是 `[author]`，普通对话仍是 `[agent]`，拒稿、心情变化等状态消息不带主动标记。
+- `talk list <作品ID>`：主动消息的行首会从 `[agent]` 变成 `[agent·主动·<kind>]`，例如 `[agent·主动·proactive_report] 写手: 《…》初稿写完了…`；作者消息仍是 `[author]`，普通对话仍是 `[agent]`。分歧消息另有标记：拒绝、反驳、推翻的行首分别是 `[agent·分歧·拒绝]`、`[agent·分歧·反驳]`、`[agent·分歧·推翻]`，不带主动标记；心情变化等其余状态消息不带标记。
 - `events list <作品ID>`：每条 `agent.message` 事件都带 payload。主动消息的 payload 形如 `{"initiator": "agent", "kind": "proactive_direction", "trigger": "talk_first_round"}`，看 `initiator=agent` 与 `kind` 即可辨认；talk 首轮那条 `proactive_question` 没有 `trigger` 字段。
 
 ## 可见性（老板怎么看见编辑部）
 
 - `events list <作品ID> [--type ...] [--limit N]`：按时间倒序回放事件（对话 / 草稿 / 质量门 / 待拍板 / 退稿）；`events watch <作品ID> [--interval 秒]` 持续输出新事件，Ctrl+C 退出。
-- `talk list <作品ID>`：对话回放；伙伴主动发的消息行首带 `[agent·主动·<kind>]` 标记，普通消息不带（见「主动行为」）。
+- `talk list <作品ID>`：对话回放；伙伴主动发的消息行首带 `[agent·主动·<kind>]` 标记，拒绝/反驳/推翻行首分别带 `[agent·分歧·拒绝]`、`[agent·分歧·反驳]`、`[agent·分歧·推翻]`，普通消息不带（见「主动行为」）；写手反驳的 payload 带 `targets`，指向被回应的伙伴，可在 `events list` 的 `agent.message` 事件 payload 里核对。
 - `inspect <作品ID> <关键词>`：跨层检索（作品档案、风格锚点、对话、意见、版本、伙伴笔记、决策、伏笔线索），结果带来源引用；无命中输出 `no matches`。
 - `decision pending <作品ID>`：列出质量门通过、等待拍板的草稿；草稿生成 / 修订通过质量门时，命令末尾会提示 `awaiting decision`。
 

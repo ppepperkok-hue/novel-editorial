@@ -235,6 +235,59 @@ def test_revise_without_agent_review_emits_no_rebuttal(
     assert not any(json.loads(m.payload).get("kind") == "rebuttal" for m in messages)
 
 
+def test_revise_with_only_writer_self_review_emits_no_rebuttal(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    draft_id = _generate_draft(workspace_id, monkeypatch)
+    runner.invoke(
+        app,
+        ["review", "add", draft_id, "--from", "写手", "--content", "我自评：铺垫可以再收一收"],
+    )
+    monkeypatch.setattr(
+        "novel_editorial.cli.draft.build_client",
+        lambda settings: MockLLMClient(reply="修订稿内容"),
+    )
+    result = runner.invoke(app, ["draft", "revise", draft_id, "--reason", "重写铺垫"])
+    assert result.exit_code == 0, result.output
+
+    messages = list_messages(DB(load_settings()), workspace_id)
+    assert not any(json.loads(m.payload).get("kind") == "rebuttal" for m in messages)
+
+
+def test_revise_rebuttal_targets_exclude_writer_self_review(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    draft_id = _generate_draft(workspace_id, monkeypatch)
+    runner.invoke(
+        app,
+        ["review", "add", draft_id, "--from", "写手", "--content", "我自评：铺垫可以再收一收"],
+    )
+    runner.invoke(
+        app,
+        ["review", "add", draft_id, "--from", "责编", "--content", "退稿：开头钩子不成立"],
+    )
+    monkeypatch.setattr(
+        "novel_editorial.cli.draft.build_client",
+        lambda settings: MockLLMClient(reply="修订稿内容"),
+    )
+    result = runner.invoke(app, ["draft", "revise", draft_id, "--reason", "重写铺垫"])
+    assert result.exit_code == 0, result.output
+
+    rebuttals = [
+        message
+        for message in list_messages(DB(load_settings()), workspace_id)
+        if json.loads(message.payload).get("kind") == "rebuttal"
+    ]
+    assert len(rebuttals) == 1
+    assert json.loads(rebuttals[0].payload) == {
+        "initiator": "agent",
+        "kind": "rebuttal",
+        "targets": ["责编"],
+    }
+
+
 def test_review_list_and_decision_list(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     draft_id = _generate_draft(workspace_id, monkeypatch)

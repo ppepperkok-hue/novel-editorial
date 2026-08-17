@@ -227,7 +227,7 @@ def revise_draft(
                 payload={"draft_id": draft.id, "version": draft.current_version},
             )
         _update_agent_mood_in_session(session, workspace_id, writer.id, MOOD_REVISING)
-        agent_reviews = [r for r in reviews if r.role == "agent"]
+        agent_reviews = [r for r in reviews if r.role == "agent" and r.actor != writer.name]
         if agent_reviews:
             _record_message_in_session(
                 session,
