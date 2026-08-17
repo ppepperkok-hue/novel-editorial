@@ -121,4 +121,5 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 
 - C1 完成（2026-08-17；commits abc09b5 / b6973b9，全量 365 测试绿；迁移 f80e112950a2，索引创建与表守卫解耦）。
 - C2 完成（2026-08-17；commit 6b760d8，全量 378 测试绿；拒绝/推翻/意见/拍板四类接入，失败降级不回滚）。
-- C3：待派包。
+- C3 完成（2026-08-17；commits 3a47db4 / 6b621c3，全量 394 测试绿；behavior timeline/show + agents show 摘要 + usage 文档）。
+- N3 收口（2026-08-17）：全量 394 测试、ruff、pyright、宪法、smoke_m3、stress_m3 全绿；审查链归档 docs/reviews/。N4 / N16 / N17 按 backlog 顺序待用户立项拆包。
