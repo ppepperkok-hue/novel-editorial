@@ -23,36 +23,32 @@ def upgrade() -> None:
 
     Idempotent: legacy-upgrade tests replay the chain from an earlier revision
     without dropping behavior_timeline, so a table that already exists must be
-    left untouched instead of failing CREATE.
+    left untouched instead of failing CREATE. Indexes are ensured separately so
+    an interrupted first run cannot stamp the revision without the indexes the
+    model metadata declares.
     """
     inspector = sa.inspect(op.get_bind())
-    if "behavior_timeline" in inspector.get_table_names():
-        return
-    op.create_table(
-        "behavior_timeline",
-        sa.Column("id", sa.String(length=32), nullable=False),
-        sa.Column("workspace_id", sa.String(length=32), nullable=False),
-        sa.Column("agent_id", sa.String(length=32), nullable=False),
-        sa.Column("kind", sa.String(length=20), nullable=False),
-        sa.Column("target", sa.String(length=200), nullable=False),
-        sa.Column("summary", sa.Text(), nullable=False),
-        sa.Column("before_value", sa.Text(), nullable=True),
-        sa.Column("after_value", sa.Text(), nullable=True),
-        sa.Column("source", sa.String(length=200), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.PrimaryKeyConstraint("id"),
+    if "behavior_timeline" not in inspector.get_table_names():
+        op.create_table(
+            "behavior_timeline",
+            sa.Column("id", sa.String(length=32), nullable=False),
+            sa.Column("workspace_id", sa.String(length=32), nullable=False),
+            sa.Column("agent_id", sa.String(length=32), nullable=False),
+            sa.Column("kind", sa.String(length=20), nullable=False),
+            sa.Column("target", sa.String(length=200), nullable=False),
+            sa.Column("summary", sa.Text(), nullable=False),
+            sa.Column("before_value", sa.Text(), nullable=True),
+            sa.Column("after_value", sa.Text(), nullable=True),
+            sa.Column("source", sa.String(length=200), nullable=False),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+            sa.PrimaryKeyConstraint("id"),
+        )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_behavior_timeline_workspace_id "
+        "ON behavior_timeline (workspace_id)"
     )
-    op.create_index(
-        op.f("ix_behavior_timeline_workspace_id"),
-        "behavior_timeline",
-        ["workspace_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_behavior_timeline_agent_id"),
-        "behavior_timeline",
-        ["agent_id"],
-        unique=False,
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_behavior_timeline_agent_id ON behavior_timeline (agent_id)"
     )
 
 

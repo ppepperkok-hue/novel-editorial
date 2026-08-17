@@ -95,6 +95,35 @@ def test_legacy_workspace_upgrades_and_rebuilds_behavior_timeline(
     assert entries[0].summary == "升级后仍可用"
 
 
+def test_migration_recreates_missing_behavior_timeline_indexes(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    path = workspace_db_path(settings, workspace_id)
+
+    connection = sqlite3.connect(path)
+    try:
+        connection.execute("DROP INDEX ix_behavior_timeline_workspace_id")
+        connection.execute("DROP INDEX ix_behavior_timeline_agent_id")
+        connection.execute("DELETE FROM alembic_version")
+        connection.execute(
+            "INSERT INTO alembic_version (version_num) VALUES (?)", (PRE_BEHAVIOR_HEAD,)
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    reopened = runner.invoke(app, ["agents", "show", workspace_id])
+    assert reopened.exit_code == 0, reopened.output
+
+    with sqlite3.connect(path) as connection:
+        indexes = [
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='index'")
+        ]
+    assert "ix_behavior_timeline_workspace_id" in indexes
+    assert "ix_behavior_timeline_agent_id" in indexes
+
+
 def test_record_and_list_roundtrip_oldest_first(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     db = DB(load_settings())
