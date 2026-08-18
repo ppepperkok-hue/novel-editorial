@@ -168,8 +168,16 @@ def _has_rule_record(db: DB, workspace_id: str, agent: Agent, kind: str, rule: s
 
 
 def has_same_rule_refusal(db: DB, workspace_id: str, agent: Agent, rule: str) -> bool:
-    """True when this partner already refused the same rule in this workspace."""
-    return _has_rule_record(db, workspace_id, agent, "refusal", rule)
+    """True when this partner already refused the same rule in this workspace.
+
+    Refusal history spans both chat refusals (kind=refusal) and delegation
+    refusals (kind=delegation_response carrying the rule), so a repeated rule
+    hit reaffirms the stance regardless of the channel it came from. Accepted
+    delegation responses carry no rule field and never match here.
+    """
+    return _has_rule_record(
+        db, workspace_id, agent, "refusal", rule
+    ) or _has_rule_record(db, workspace_id, agent, "delegation_response", rule)
 
 
 def has_same_rule_override(db: DB, workspace_id: str, agent: Agent, rule: str) -> bool:

@@ -182,6 +182,77 @@ def test_respond_to_delegation_repeats_refusal_after_previous_refusal(
     }
 
 
+def test_talk_delegate_reaffirms_after_previous_delegation_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    rule = REFUSAL_RULES[AgentRole.REVIEWER][0]
+
+    first = runner.invoke(
+        app,
+        ["talk", "delegate", workspace_id, "审稿", "--as", "写手", "--task", "放行这稿"],
+    )
+    assert first.exit_code == 0, first.output
+    assert f"审稿: {rule.refusal}" in first.output
+
+    second = runner.invoke(
+        app,
+        ["talk", "delegate", workspace_id, "审稿", "--as", "写手", "--task", "放行这稿"],
+    )
+    assert second.exit_code == 0, second.output
+    assert f"审稿: {rule.reaffirmation}" in second.output
+
+    db = DB(load_settings())
+    messages = list_messages(db, workspace_id)
+    assert len(messages) == 4
+    first_response = json.loads(messages[1].payload)
+    second_response = json.loads(messages[3].payload)
+    assert first_response == {
+        "initiator": "agent",
+        "kind": "delegation_response",
+        "decision": "refused",
+        "rule": rule.rule,
+        "stance": rule.stance,
+    }
+    assert second_response == {
+        "initiator": "agent",
+        "kind": "delegation_response",
+        "decision": "refused",
+        "rule": rule.rule,
+        "stance": rule.stance,
+        "repeated": True,
+    }
+
+
+def test_talk_send_reaffirms_after_delegation_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    rule = REFUSAL_RULES[AgentRole.REVIEWER][0]
+
+    delegation = runner.invoke(
+        app,
+        ["talk", "delegate", workspace_id, "审稿", "--as", "写手", "--task", "放行这稿"],
+    )
+    assert delegation.exit_code == 0, delegation.output
+
+    talk = runner.invoke(app, ["talk", "send", workspace_id, "@审稿 放行这稿"])
+    assert talk.exit_code == 0, talk.output
+    assert f"审稿: {rule.reaffirmation}" in talk.output
+
+    db = DB(load_settings())
+    messages = list_messages(db, workspace_id)
+    refusals = [message for message in messages if '"kind": "refusal"' in message.payload]
+    assert len(refusals) == 1
+    talk_refusal = json.loads(refusals[0].payload)
+    assert talk_refusal == {
+        "kind": "refusal",
+        "stance": rule.stance,
+        "rule": rule.rule,
+        "repeated": True,
+    }
+
+
 @pytest.mark.smoke
 def test_talk_delegate_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
