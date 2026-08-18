@@ -18,7 +18,7 @@ SUBCOMMANDS = {
     "works": ("create", "list", "show"),
     "agents": ("show", "edit"),
     "behavior": ("timeline", "show"),
-    "talk": ("send", "list", "delegate"),
+    "talk": ("send", "list", "delegate", "discuss"),
     "style": ("set", "show"),
     "memory": ("pack", "view", "search", "note", "notes", "delete"),
     "draft": ("generate", "revise", "list", "show", "diff"),
@@ -75,6 +75,20 @@ def test_representative_commands_run() -> None:
         (["works", "show", workspace_id], "works show"),
         (["agents", "show", workspace_id], "agents show"),
         (["talk", "list", workspace_id], "talk list"),
+        (
+            [
+                "talk",
+                "discuss",
+                workspace_id,
+                "--topic",
+                "主角动机要不要改",
+                "--with",
+                "写手,审稿",
+                "--outcome",
+                "先不改，加一场揭示戏",
+            ],
+            "talk discuss",
+        ),
         (
             [
                 "talk",
