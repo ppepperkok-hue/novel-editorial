@@ -151,6 +151,21 @@ def _discussion_contributions(
         )
 
 
+def _discussion_summary(db: DB, workspace_id: str, discussion_id: str) -> Message | None:
+    """Return the existing summary for one discussion, if any."""
+    with db.workspace_session(workspace_id) as session:
+        return (
+            session.query(Message)
+            .filter(
+                Message.workspace_id == workspace_id,
+                Message.payload.like('%"kind": "discussion_summary"%'),
+                Message.payload.like(f'%"discussion_id": "{discussion_id}"%'),
+            )
+            .order_by(literal_column("rowid"))
+            .first()
+        )
+
+
 def _parse_contribution_payload(message: Message) -> dict[str, object]:
     """Decode one contribution payload; malformed payloads fall back to empty."""
     try:
@@ -216,9 +231,12 @@ def summarize_discussion(
     topic: str,
     summarizer: Agent,
 ) -> Message:
-    """Summarize every contribution deterministically; the author keeps the call."""
+    """Summarize every contribution deterministically; idempotent per discussion."""
     if not _discussion_exists(db, workspace_id, discussion_id):
         raise NovelError(ErrorCode.NOT_FOUND, f"discussion not found: {discussion_id}")
+    existing = _discussion_summary(db, workspace_id, discussion_id)
+    if existing is not None:
+        return existing
     contributions = _discussion_contributions(db, workspace_id, discussion_id)
     if not contributions:
         raise NovelError(ErrorCode.USAGE_ERROR, "discussion 还没有任何发言")

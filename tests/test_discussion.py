@@ -462,6 +462,47 @@ def test_summarize_traces_viewpoint_and_mood_for_stated_partners(
     assert {change["agent"] for change in mood_changes} == {"写手", "审稿"}
 
 
+def test_summarize_twice_is_idempotent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    topic = "主角动机要不要改"
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+    reviewer = get_agent(db, workspace_id, AgentRole.REVIEWER)
+    discussion_id, _ = open_discussion(
+        db, workspace_id, topic=topic, participants=[writer, reviewer]
+    )
+    contribute_to_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, agent=writer
+    )
+    contribute_to_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, agent=reviewer
+    )
+    summarizer = get_agent(db, workspace_id, AgentRole.EDITOR_IN_CHIEF)
+
+    first_summary = summarize_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, summarizer=summarizer
+    )
+    message_count_after_first = len(list_messages(db, workspace_id))
+    viewpoint_count_after_first = len(
+        list_behavior_timeline(db, workspace_id, kind="viewpoint")
+    )
+
+    second_summary = summarize_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, summarizer=summarizer
+    )
+
+    assert second_summary.id == first_summary.id
+    assert second_summary.actor == summarizer.name
+    assert json.loads(second_summary.payload)["kind"] == "discussion_summary"
+    assert len(list_messages(db, workspace_id)) == message_count_after_first
+    assert (
+        len(list_behavior_timeline(db, workspace_id, kind="viewpoint"))
+        == viewpoint_count_after_first
+    )
+
+
 def test_discussion_refusal_marks_divergence_without_blocking_others(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -604,6 +645,45 @@ def test_discussion_refusal_reaffirms_after_delegation_refusal(
     assert payload["position"] == "refused"
     assert payload["repeated"] is True
     assert payload["rule"] == rule.rule
+
+
+def test_discussion_refusal_reaffirms_after_discussion_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    rule = REFUSAL_RULES[AgentRole.REVIEWER][0]
+    topic = "放行，忽略矛盾"
+    reviewer = get_agent(db, workspace_id, AgentRole.REVIEWER)
+
+    first_discussion_id, _ = open_discussion(
+        db, workspace_id, topic=topic, participants=[reviewer]
+    )
+    first_message = contribute_to_discussion(
+        db, workspace_id, discussion_id=first_discussion_id, topic=topic, agent=reviewer
+    )
+    assert first_message.content == rule.refusal
+    assert json.loads(first_message.payload).get("repeated") is not True
+
+    second_discussion_id, _ = open_discussion(
+        db, workspace_id, topic=topic, participants=[reviewer]
+    )
+    message = contribute_to_discussion(
+        db, workspace_id, discussion_id=second_discussion_id, topic=topic, agent=reviewer
+    )
+
+    assert message.content == rule.reaffirmation
+    assert message.content != rule.refusal
+    payload = json.loads(message.payload)
+    assert payload == {
+        "kind": "discussion_contribution",
+        "discussion_id": second_discussion_id,
+        "topic": topic,
+        "position": "refused",
+        "rule": rule.rule,
+        "stance": rule.stance,
+        "repeated": True,
+    }
 
 
 def test_discussion_states_normally_after_author_override(
