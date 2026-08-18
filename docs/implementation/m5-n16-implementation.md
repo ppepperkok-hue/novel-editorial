@@ -114,4 +114,5 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 
 - D1 完成（2026-08-18；commits fc6e800 / 3f9bb52 / e9473b1，全量 413 测试绿；委托/回应对话模型 + 跨通道立场历史）。
 - D2 完成（2026-08-18；commits 88f673b / 19fdc62，全量 415 测试绿；接受/拒绝的行为沉淀接入）。
-- D3：待派包。
+- D3 完成（2026-08-18；commit a89dfc9，全量 429 测试绿；talk list 互委标记 + usage 协作网络文档）。
+- N16 收口（2026-08-18）：全量 429 测试、ruff、pyright、宪法、smoke_m3、stress_m3 全绿；审查链归档 docs/reviews/。N4 / N14 / N17 按 backlog 顺序待用户立项拆包。
