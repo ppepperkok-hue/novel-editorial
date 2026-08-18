@@ -181,6 +181,8 @@ def conclude_discussion(
 ) -> Message:
     """Record the author's final decision that closes the discussion round."""
     _require_non_empty(outcome, "outcome")
+    if not _discussion_exists(db, workspace_id, discussion_id):
+        raise NovelError(ErrorCode.NOT_FOUND, f"discussion not found: {discussion_id}")
     payload = {
         "kind": "discussion_decision",
         "discussion_id": discussion_id,

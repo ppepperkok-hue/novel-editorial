@@ -280,6 +280,26 @@ def test_conclude_rejects_blank_outcome(
     assert excinfo.value.code is ErrorCode.USAGE_ERROR
 
 
+def test_conclude_unknown_discussion_raises_not_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+
+    with pytest.raises(NovelError) as excinfo:
+        conclude_discussion(
+            db,
+            workspace_id,
+            discussion_id="0" * 32,
+            topic="议题",
+            outcome="先不改",
+        )
+
+    assert excinfo.value.code is ErrorCode.NOT_FOUND
+    assert excinfo.value.message == f"discussion not found: {'0' * 32}"
+    assert list_messages(db, workspace_id) == []
+
+
 def test_talk_discuss_runs_full_flow_in_fixed_order(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
