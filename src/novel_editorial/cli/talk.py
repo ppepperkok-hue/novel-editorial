@@ -94,6 +94,30 @@ DISAGREEMENT_MARKS: dict[str, str] = {
 }
 
 
+COLLABORATION_MARKS: dict[str, str] = {
+    "delegation": "委托",
+    "delegation_response": "回应",
+}
+
+
+def _collaboration_mark(payload: str | None) -> str | None:
+    """Return the collaboration mark for delegation payloads.
+
+    Malformed, non-object, and unknown-kind payloads return None so the
+    message keeps its plain role prefix instead of crashing the listing.
+    """
+    try:
+        data = json.loads(payload or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    kind = data.get("kind")
+    if not isinstance(kind, str):
+        return None
+    return COLLABORATION_MARKS.get(kind)
+
+
 def _disagreement_mark(payload: str | None) -> str | None:
     """Return the disagreement mark for refusal/rebuttal/override payloads.
 
@@ -280,5 +304,9 @@ def talk_list(workspace_id: str = typer.Argument(..., help="Workspace id")) -> N
         mark = _disagreement_mark(message.payload)
         if mark is not None and message.role == "agent":
             typer.echo(f"[agent·分歧·{mark}] {message.actor}: {message.content}")
+            continue
+        mark = _collaboration_mark(message.payload)
+        if mark is not None and message.role == "agent":
+            typer.echo(f"[agent·互委·{mark}] {message.actor}: {message.content}")
             continue
         typer.echo(f"[{message.role}] {message.actor}: {message.content}")

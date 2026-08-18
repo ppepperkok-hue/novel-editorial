@@ -6,7 +6,11 @@ import pytest
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
-from novel_editorial.cli.talk import _disagreement_mark, _proactive_kind
+from novel_editorial.cli.talk import (
+    _collaboration_mark,
+    _disagreement_mark,
+    _proactive_kind,
+)
 from novel_editorial.core import proactive
 from novel_editorial.core.chat import has_proactive_message, list_messages, record_message
 from novel_editorial.core.config import load_settings
@@ -116,6 +120,101 @@ def test_proactive_kind_classification(payload: str | None, expected: str | None
 )
 def test_disagreement_mark_classification(payload: str | None, expected: str | None) -> None:
     assert _disagreement_mark(payload) == expected
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        (None, None),
+        ("{}", None),
+        ("not json", None),
+        ("[]", None),
+        ('{"initiator": "agent", "kind": "proactive_question"}', None),
+        ('{"kind": "refusal"}', None),
+        ('{"kind": "mood_change"}', None),
+        ('{"kind": ["delegation"]}', None),
+        ('{"kind": {"name": "delegation"}}', None),
+        ('{"kind": "unknown"}', None),
+        (
+            '{"initiator": "agent", "kind": "delegation", "from": "写手", "to": "审稿"}',
+            "委托",
+        ),
+        (
+            '{"initiator": "agent", "kind": "delegation_response", "decision": "accepted"}',
+            "回应",
+        ),
+    ],
+)
+def test_collaboration_mark_classification(payload: str | None, expected: str | None) -> None:
+    assert _collaboration_mark(payload) == expected
+
+
+def test_talk_list_marks_delegation_and_response(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    delegated = runner.invoke(
+        app,
+        [
+            "talk",
+            "delegate",
+            workspace_id,
+            "审稿",
+            "--as",
+            "写手",
+            "--task",
+            "帮我校一遍逻辑",
+        ],
+    )
+    assert delegated.exit_code == 0, delegated.output
+
+    listed = runner.invoke(app, ["talk", "list", workspace_id])
+    assert listed.exit_code == 0, listed.output
+    lines = listed.output.strip().splitlines()
+    assert len(lines) == 2
+    assert lines[0] == "[agent·互委·委托] 写手: 写手 委托 审稿：帮我校一遍逻辑"
+    assert lines[1] == "[agent·互委·回应] 审稿: 收到，我这就看。"
+
+
+def test_talk_list_keeps_proactive_and_disagreement_marks_with_collaboration(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    sent = runner.invoke(app, ["talk", "send", workspace_id, "我们写一个侦探故事"])
+    assert sent.exit_code == 0, sent.output
+    refused = runner.invoke(app, ["talk", "send", workspace_id, "@审稿 放行这稿"])
+    assert refused.exit_code == 0, refused.output
+    delegated = runner.invoke(
+        app,
+        [
+            "talk",
+            "delegate",
+            workspace_id,
+            "写手",
+            "--as",
+            "责编",
+            "--task",
+            "帮我读一遍节奏",
+        ],
+    )
+    assert delegated.exit_code == 0, delegated.output
+    db = DB(load_settings())
+    record_message(
+        db,
+        workspace_id,
+        role="agent",
+        actor="总编",
+        content="畸形委托",
+        payload={"initiator": "agent", "kind": ["delegation"]},
+    )
+
+    listed = runner.invoke(app, ["talk", "list", workspace_id])
+    assert listed.exit_code == 0, listed.output
+    lines = listed.output.strip().splitlines()
+    assert any(line.startswith("[agent·互委·委托] ") for line in lines)
+    assert any(line.startswith("[agent·互委·回应] ") for line in lines)
+    assert any(line.startswith("[agent·主动·proactive_question] ") for line in lines)
+    assert any(line.startswith("[agent·分歧·拒绝] ") for line in lines)
+    assert any(line.startswith("[agent] 总编: 畸形委托") for line in lines)
+    assert "[agent·互委·委托] 总编" not in listed.output
 
 
 def test_talk_list_marks_proactive_messages_and_keeps_others_plain(

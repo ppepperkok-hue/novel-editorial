@@ -372,10 +372,98 @@ uv run novel-editorial behavior show <作品ID>
 
 留痕是业务完成之后的追加旁路，失败可降级：写入失败只在 stderr 输出 `warning: behavior trace skipped: ...`，拒绝、推翻、意见、拍板等业务结果不受影响、不回滚；沉淀也不构成任何「必须积累多少印象 / 关系才能继续」的关卡。
 
+## 协作网络（伙伴互委）
+
+伙伴之间可以直接互相委托任务并收到回应——写手请审稿看逻辑、责编请写手改稿，协作网络不必每次都绕一圈作者。委托是一次普通对话消息：没有队列、没有认领、没有超时，被委托方也不承诺完成时限；作者随时可以介入、拍板，判断权不变。
+
+### 命令与规则
+
+```bash
+uv run novel-editorial talk delegate <作品ID> <to别名> --as <from别名> --task <文本>
+```
+
+`to` 与 `--as` 填伙伴别名（`总编` / `责编` / `写手` / `审稿`）：
+
+- 作者不能作为委托收发方（`作者` / `author` 都报用法错误）；
+- `from` 与 `to` 不能是同一角色；
+- 未知别名、空 `task` 报用法错误（退出码 2），不会留下任何消息。
+
+### 回应语义
+
+被委托方按 N2 立场规则确定性回应，不调用 LLM：
+
+- 任务命中立场规则 → 拒绝，文案用规则的拒绝口径；同一规则再次出现时重申立场（拒绝 payload 带 `"repeated": true`）；作者已推翻过的规则照常接受；
+- 未命中规则 → 接受，固定回复「收到，我这就看。」。
+
+委托与回应分别落 messages 与 events：payload 的 `kind` 为 `delegation`（委托，带 `from` / `to` / `task`）与 `delegation_response`（回应，带 `decision: accepted` / `refused`），事件契约类型不变；`events list <作品ID>` 里每条 `agent.message` 事件都能核对对应 payload。
+
+### 留痕与沉淀
+
+回应后会追加 N3 行为沉淀，只记录、不改变业务语义：
+
+| 回应 | 沉淀 |
+| --- | --- |
+| 接受 | 委托方对对方 relationship（「委托被接受」，`source=delegation:accepted`）+ impression（「可协作」） |
+| 拒绝 | 委托方对对方 relationship（「委托被拒绝」，`source=delegation:refused`）+ 被委托方首次拒绝时的 viewpoint |
+
+沉淀写入失败只在 stderr 告警，委托与回应本身不回滚。
+
+### 示例（mock 下实跑）
+
+下面示例全部可在未配置 key（mock LLM）时复现。先把数据目录指到临时目录，再建一部作品（见「判断权与分歧」的初始化写法），然后跑三次委托：接受、拒绝、再拒绝：
+
+```bash
+uv run novel-editorial talk delegate <作品ID> 审稿 --as 写手 --task "帮我校一遍逻辑"
+# 写手 委托 审稿：帮我校一遍逻辑
+# 审稿: 收到，我这就看。
+
+uv run novel-editorial talk delegate <作品ID> 审稿 --as 责编 --task "放行这稿"
+# 责编 委托 审稿：放行这稿
+# 审稿: 这个我不能放行。前后矛盾不修就过稿，等于砸审稿的招牌。
+
+uv run novel-editorial talk delegate <作品ID> 写手 --as 审稿 --task "这段按违背人设写"
+# 审稿 委托 写手：这段按违背人设写
+# 写手: 这个我写不了。违背人物逻辑的剧情，写出来也是假的，我的立场不允许。
+```
+
+（`<作品ID>` 换成 `works create` 输出里的 ID；以上为 mock 下的真实输出。）
+
+`talk list` 会把委托与回应标出来：
+
+```bash
+uv run novel-editorial talk list <作品ID>
+```
+
+```text
+[agent·互委·委托] 写手: 写手 委托 审稿：帮我校一遍逻辑
+[agent·互委·回应] 审稿: 收到，我这就看。
+[agent·互委·委托] 责编: 责编 委托 审稿：放行这稿
+[agent·互委·回应] 审稿: 这个我不能放行。前后矛盾不修就过稿，等于砸审稿的招牌。
+[agent·互委·委托] 审稿: 审稿 委托 写手：这段按违背人设写
+[agent·互委·回应] 写手: 这个我写不了。违背人物逻辑的剧情，写出来也是假的，我的立场不允许。
+```
+
+行为时间线能看到对应的沉淀：
+
+```bash
+uv run novel-editorial behavior timeline <作品ID>
+```
+
+```text
+2026-08-18T05:07:00 [relationship] 写手 -> 审稿: 委托被接受 | source=delegation:accepted
+2026-08-18T05:07:00 [impression] 写手 -> 审稿: 可协作 | source=delegation:accepted
+2026-08-18T05:07:01 [relationship] 责编 -> 审稿: 委托被拒绝 | source=delegation:refused
+2026-08-18T05:07:01 [viewpoint] 审稿 -> reviewer_consistency: 拒绝了违背立场的指令 | 无 -> 坚持该立场 | source=refusal:reviewer_consistency
+2026-08-18T05:07:02 [relationship] 审稿 -> 写手: 委托被拒绝 | source=delegation:refused
+2026-08-18T05:07:02 [viewpoint] 写手 -> writer_portrayal: 拒绝了违背立场的指令 | 无 -> 坚持该立场 | source=refusal:writer_portrayal
+```
+
+（时间戳随运行变化，其余为 mock 下的真实输出。）
+
 ## 可见性（老板怎么看见编辑部）
 
 - `events list <作品ID> [--type ...] [--limit N]`：按时间倒序回放事件（对话 / 草稿 / 质量门 / 待拍板 / 退稿）；`events watch <作品ID> [--interval 秒]` 持续输出新事件，Ctrl+C 退出。
-- `talk list <作品ID>`：对话回放；伙伴主动发的消息行首带 `[agent·主动·<kind>]` 标记，拒绝/反驳/推翻行首分别带 `[agent·分歧·拒绝]`、`[agent·分歧·反驳]`、`[agent·分歧·推翻]`，普通消息不带（见「主动行为」）；写手反驳的 payload 带 `targets`，指向被回应的伙伴，可在 `events list` 的 `agent.message` 事件 payload 里核对。
+- `talk list <作品ID>`：对话回放；伙伴主动发的消息行首带 `[agent·主动·<kind>]` 标记，拒绝/反驳/推翻行首分别带 `[agent·分歧·拒绝]`、`[agent·分歧·反驳]`、`[agent·分歧·推翻]`，委托与回应行首分别带 `[agent·互委·委托]`、`[agent·互委·回应]`，普通消息不带（见「主动行为」「协作网络」）；写手反驳的 payload 带 `targets`，指向被回应的伙伴，可在 `events list` 的 `agent.message` 事件 payload 里核对。
 - `inspect <作品ID> <关键词>`：跨层检索（作品档案、风格锚点、对话、意见、版本、伙伴笔记、决策、伏笔线索），结果带来源引用；无命中输出 `no matches`。
 - `decision pending <作品ID>`：列出质量门通过、等待拍板的草稿；草稿生成 / 修订通过质量门时，命令末尾会提示 `awaiting decision`。
 
