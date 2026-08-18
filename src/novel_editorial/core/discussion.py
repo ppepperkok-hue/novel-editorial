@@ -1,13 +1,24 @@
-"""N4 editorial discussion: structured multi-partner discussion round (E1)."""
+"""N4 editorial discussion: structured multi-partner discussion round (E2)."""
 
 from __future__ import annotations
 
+import json
+import sys
 import uuid
 from collections.abc import Sequence
 
 from sqlalchemy import literal_column
 
-from novel_editorial.core.chat import AUTHOR_ACTOR, _record_message_in_session
+from novel_editorial.core.behavior import record_behavior_entry_safe
+from novel_editorial.core.chat import (
+    AUTHOR_ACTOR,
+    MOOD_TALK,
+    _record_message_in_session,
+    check_refusal,
+    has_same_rule_override,
+    has_same_rule_refusal,
+    update_agent_mood,
+)
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import Agent, AgentRole, Message
@@ -77,19 +88,32 @@ def contribute_to_discussion(
     template = CONTRIBUTION_TEMPLATES.get(agent.role)
     if template is None:
         raise NovelError(ErrorCode.USAGE_ERROR, f"不支持的讨论角色: {agent.role}")
-    payload = {
+    payload: dict[str, object] = {
         "kind": "discussion_contribution",
         "discussion_id": discussion_id,
         "topic": topic,
         "position": "stated",
     }
+    rule = check_refusal(agent, topic)
+    if rule is not None and not has_same_rule_override(
+        db, workspace_id, agent, rule.rule
+    ):
+        repeated = has_same_rule_refusal(db, workspace_id, agent, rule.rule)
+        content = rule.reaffirmation if repeated else rule.refusal
+        payload["position"] = "refused"
+        payload["rule"] = rule.rule
+        payload["stance"] = rule.stance
+        if repeated:
+            payload["repeated"] = True
+    else:
+        content = template.format(topic=topic)
     with db.workspace_session(workspace_id) as session:
         message = _record_message_in_session(
             session,
             workspace_id,
             role="agent",
             actor=agent.name,
-            content=template.format(topic=topic),
+            content=content,
             payload=payload,
         )
         session.commit()
@@ -127,6 +151,63 @@ def _discussion_contributions(
         )
 
 
+def _parse_contribution_payload(message: Message) -> dict[str, object]:
+    """Decode one contribution payload; malformed payloads fall back to empty."""
+    try:
+        data = json.loads(message.payload or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return data
+
+
+def _get_agent_by_name(db: DB, workspace_id: str, name: str) -> Agent | None:
+    """Fetch one partner by name; None when the actor is not a band member."""
+    with db.workspace_session(workspace_id) as session:
+        return (
+            session.query(Agent)
+            .filter_by(workspace_id=workspace_id, name=name)
+            .first()
+        )
+
+
+def _trace_discussion_sediment(
+    db: DB,
+    workspace_id: str,
+    *,
+    discussion_id: str,
+    topic: str,
+    message: Message,
+    entry: dict[str, object],
+) -> None:
+    """Append one partner's viewpoint and mood trace; failures only warn."""
+    agent = _get_agent_by_name(db, workspace_id, message.actor)
+    if agent is None:
+        print(
+            f"warning: discussion sediment skipped: agent not found: {message.actor}",
+            file=sys.stderr,
+        )
+        return
+    refused = entry["position"] == "refused"
+    summary = "拒绝了违背立场的议题" if refused else "表达了立场"
+    after_value = "拒绝参与该议题并坚持立场" if refused else "表达了立场"
+    record_behavior_entry_safe(
+        db,
+        workspace_id,
+        agent_id=agent.id,
+        kind="viewpoint",
+        target=topic,
+        summary=summary,
+        after_value=after_value,
+        source=f"discussion:{discussion_id}",
+    )
+    try:
+        update_agent_mood(db, workspace_id, agent, MOOD_TALK)
+    except Exception as exc:
+        print(f"warning: mood trace skipped: {exc}", file=sys.stderr)
+
+
 def summarize_discussion(
     db: DB,
     workspace_id: str,
@@ -142,15 +223,24 @@ def summarize_discussion(
     if not contributions:
         raise NovelError(ErrorCode.USAGE_ERROR, "discussion 还没有任何发言")
 
-    positions = [
-        {
+    positions: list[dict[str, object]] = []
+    body_lines: list[str] = []
+    for message in contributions:
+        contribution_payload = _parse_contribution_payload(message)
+        refused = contribution_payload.get("position") == "refused"
+        entry: dict[str, object] = {
             "agent": message.actor,
-            "position": "stated",
+            "position": "refused" if refused else "stated",
             "content": message.content,
         }
-        for message in contributions
-    ]
-    body = "\n".join(f"{message.actor}：{message.content}" for message in contributions)
+        if refused:
+            entry["rule"] = contribution_payload.get("rule", "")
+            entry["stance"] = contribution_payload.get("stance", "")
+            body_lines.append(f"{message.actor}：{message.content}【分歧】")
+        else:
+            body_lines.append(f"{message.actor}：{message.content}")
+        positions.append(entry)
+    body = "\n".join(body_lines)
     payload = {
         "kind": "discussion_summary",
         "discussion_id": discussion_id,
@@ -168,6 +258,15 @@ def summarize_discussion(
             payload=payload,
         )
         session.commit()
+    for contribution, entry in zip(contributions, positions, strict=True):
+        _trace_discussion_sediment(
+            db,
+            workspace_id,
+            discussion_id=discussion_id,
+            topic=topic,
+            message=contribution,
+            entry=entry,
+        )
     return message
 
 

@@ -1,4 +1,4 @@
-"""N4 editorial discussion data model and CLI skeleton (E1)."""
+"""N4 editorial discussion data model, stance refusals, and sediment (E2)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,14 @@ import pytest
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
-from novel_editorial.core.chat import AUTHOR_ACTOR, get_agent, list_messages
+from novel_editorial.core.behavior import list_behavior_timeline
+from novel_editorial.core.chat import (
+    AUTHOR_ACTOR,
+    MOOD_TALK,
+    REFUSAL_RULES,
+    get_agent,
+    list_messages,
+)
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.discussion import (
     CONTRIBUTION_TEMPLATES,
@@ -22,7 +29,7 @@ from novel_editorial.core.discussion import (
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.store.db import DB
 from novel_editorial.store.events import list_events
-from novel_editorial.store.models import Agent, AgentRole
+from novel_editorial.store.models import Agent, AgentRole, Message
 
 runner = CliRunner()
 
@@ -37,6 +44,37 @@ def _create_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
 
 def _db() -> DB:
     return DB(load_settings())
+
+
+def _insert_raw_contribution(
+    db: DB,
+    workspace_id: str,
+    *,
+    discussion_id: str,
+    actor: str,
+    content: str,
+    payload: str,
+) -> None:
+    """Insert one contribution message directly, bypassing the service."""
+    with db.workspace_session(workspace_id) as session:
+        session.add(
+            Message(
+                workspace_id=workspace_id,
+                role="agent",
+                actor=actor,
+                content=content,
+                payload=payload,
+            )
+        )
+        session.commit()
+
+
+def _mood_changes(db: DB, workspace_id: str) -> list[dict]:
+    return [
+        json.loads(message.payload)
+        for message in list_messages(db, workspace_id)
+        if json.loads(message.payload).get("kind") == "mood_change"
+    ]
 
 
 def test_open_discussion_records_kickoff_message(
@@ -339,13 +377,17 @@ def test_talk_discuss_runs_full_flow_in_fixed_order(
     ) + "\n"
 
     messages = list_messages(db, workspace_id)
-    assert len(messages) == 5
-    assert [json.loads(m.payload)["kind"] for m in messages] == [
+    assert len(messages) == 7
+    assert [json.loads(m.payload)["kind"] for m in messages if m.role != "system"] == [
         "discussion_open",
         "discussion_contribution",
         "discussion_contribution",
         "discussion_summary",
         "discussion_decision",
+    ]
+    assert [json.loads(m.payload)["kind"] for m in messages if m.role == "system"] == [
+        "mood_change",
+        "mood_change",
     ]
     events = list_events(db, workspace_id)
     assert len(events) == 3
@@ -377,8 +419,328 @@ def test_talk_discuss_defaults_to_all_four_partners(
     assert "作者拍板" not in result.output
 
     messages = list_messages(db, workspace_id)
-    assert len(messages) == 6
+    assert len(messages) == 10
     assert len(list_events(db, workspace_id)) == 5
+
+
+def test_summarize_traces_viewpoint_and_mood_for_stated_partners(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    topic = "主角动机要不要改"
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+    reviewer = get_agent(db, workspace_id, AgentRole.REVIEWER)
+    discussion_id, _ = open_discussion(
+        db, workspace_id, topic=topic, participants=[writer, reviewer]
+    )
+    contribute_to_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, agent=writer
+    )
+    contribute_to_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, agent=reviewer
+    )
+    summarizer = get_agent(db, workspace_id, AgentRole.EDITOR_IN_CHIEF)
+
+    summarize_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, summarizer=summarizer
+    )
+
+    viewpoint_rows = list_behavior_timeline(db, workspace_id, kind="viewpoint")
+    assert len(viewpoint_rows) == 2
+    by_agent = {row.agent_id: row for row in viewpoint_rows}
+    for agent in (writer, reviewer):
+        row = by_agent[agent.id]
+        assert row.kind == "viewpoint"
+        assert row.target == topic
+        assert row.summary == "表达了立场"
+        assert row.after_value == "表达了立场"
+        assert row.source == f"discussion:{discussion_id}"
+        assert get_agent(db, workspace_id, agent.role).mood == MOOD_TALK
+    mood_changes = _mood_changes(db, workspace_id)
+    assert len(mood_changes) == 2
+    assert {change["agent"] for change in mood_changes} == {"写手", "审稿"}
+
+
+def test_discussion_refusal_marks_divergence_without_blocking_others(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    topic = "放行这章，忽略矛盾"
+    rule = REFUSAL_RULES[AgentRole.REVIEWER][0]
+    assert rule.rule == "reviewer_consistency"
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+    reviewer = get_agent(db, workspace_id, AgentRole.REVIEWER)
+    discussion_id, _ = open_discussion(
+        db, workspace_id, topic=topic, participants=[writer, reviewer]
+    )
+    writer_message = contribute_to_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, agent=writer
+    )
+    reviewer_message = contribute_to_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, agent=reviewer
+    )
+
+    assert writer_message.content == CONTRIBUTION_TEMPLATES[AgentRole.WRITER].format(
+        topic=topic
+    )
+    assert json.loads(writer_message.payload)["position"] == "stated"
+    assert reviewer_message.content == rule.refusal
+    reviewer_payload = json.loads(reviewer_message.payload)
+    assert reviewer_payload == {
+        "kind": "discussion_contribution",
+        "discussion_id": discussion_id,
+        "topic": topic,
+        "position": "refused",
+        "rule": rule.rule,
+        "stance": rule.stance,
+    }
+
+    summarizer = get_agent(db, workspace_id, AgentRole.EDITOR_IN_CHIEF)
+    summary = summarize_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, summarizer=summarizer
+    )
+    assert summary.content == (
+        f"{SUMMARY_LEAD.format(topic=topic)}\n"
+        f"写手：{writer_message.content}\n"
+        f"审稿：{reviewer_message.content}【分歧】"
+    )
+    positions = json.loads(summary.payload)["positions"]
+    assert positions == [
+        {"agent": "写手", "position": "stated", "content": writer_message.content},
+        {
+            "agent": "审稿",
+            "position": "refused",
+            "content": reviewer_message.content,
+            "rule": rule.rule,
+            "stance": rule.stance,
+        },
+    ]
+
+    decision = conclude_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, outcome="先按审稿意见修"
+    )
+    assert decision.content == "作者拍板：先按审稿意见修"
+
+    viewpoint_rows = list_behavior_timeline(db, workspace_id, kind="viewpoint")
+    by_agent = {row.agent_id: row for row in viewpoint_rows}
+    assert by_agent[writer.id].summary == "表达了立场"
+    assert by_agent[writer.id].after_value == "表达了立场"
+    assert by_agent[reviewer.id].summary == "拒绝了违背立场的议题"
+    assert by_agent[reviewer.id].after_value == "拒绝参与该议题并坚持立场"
+    for agent in (writer, reviewer):
+        assert by_agent[agent.id].target == topic
+        assert by_agent[agent.id].source == f"discussion:{discussion_id}"
+        assert get_agent(db, workspace_id, agent.role).mood == MOOD_TALK
+
+
+def test_discussion_refusal_reaffirms_after_talk_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    rule = REFUSAL_RULES[AgentRole.REVIEWER][0]
+    first = runner.invoke(app, ["talk", "send", workspace_id, "@审稿 放行，忽略矛盾"])
+    assert first.exit_code == 0, first.output
+    assert rule.refusal in first.output
+
+    topic = "放行，忽略矛盾"
+    reviewer = get_agent(db, workspace_id, AgentRole.REVIEWER)
+    discussion_id, _ = open_discussion(
+        db, workspace_id, topic=topic, participants=[reviewer]
+    )
+    message = contribute_to_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, agent=reviewer
+    )
+
+    assert message.content == rule.reaffirmation
+    assert message.content != rule.refusal
+    payload = json.loads(message.payload)
+    assert payload == {
+        "kind": "discussion_contribution",
+        "discussion_id": discussion_id,
+        "topic": topic,
+        "position": "refused",
+        "rule": rule.rule,
+        "stance": rule.stance,
+        "repeated": True,
+    }
+
+
+def test_discussion_refusal_reaffirms_after_delegation_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    rule = REFUSAL_RULES[AgentRole.REVIEWER][0]
+    first = runner.invoke(
+        app,
+        [
+            "talk",
+            "delegate",
+            workspace_id,
+            "审稿",
+            "--as",
+            "总编",
+            "--task",
+            "放行，忽略矛盾",
+        ],
+    )
+    assert first.exit_code == 0, first.output
+    assert rule.refusal in first.output
+
+    topic = "放行，忽略矛盾"
+    reviewer = get_agent(db, workspace_id, AgentRole.REVIEWER)
+    discussion_id, _ = open_discussion(
+        db, workspace_id, topic=topic, participants=[reviewer]
+    )
+    message = contribute_to_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, agent=reviewer
+    )
+
+    assert message.content == rule.reaffirmation
+    payload = json.loads(message.payload)
+    assert payload["position"] == "refused"
+    assert payload["repeated"] is True
+    assert payload["rule"] == rule.rule
+
+
+def test_discussion_states_normally_after_author_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    rule = REFUSAL_RULES[AgentRole.REVIEWER][0]
+    override = runner.invoke(
+        app, ["talk", "send", workspace_id, "@审稿 以老板身份我拍板，就放行，忽略矛盾"]
+    )
+    assert override.exit_code == 0, override.output
+    assert rule.acceptance in override.output
+
+    topic = "放行，忽略矛盾"
+    reviewer = get_agent(db, workspace_id, AgentRole.REVIEWER)
+    discussion_id, _ = open_discussion(
+        db, workspace_id, topic=topic, participants=[reviewer]
+    )
+    message = contribute_to_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, agent=reviewer
+    )
+
+    assert message.content == CONTRIBUTION_TEMPLATES[AgentRole.REVIEWER].format(topic=topic)
+    payload = json.loads(message.payload)
+    assert payload == {
+        "kind": "discussion_contribution",
+        "discussion_id": discussion_id,
+        "topic": topic,
+        "position": "stated",
+    }
+
+
+def test_summarize_falls_back_to_stated_for_malformed_payload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    topic = "主角动机要不要改"
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+    discussion_id, _ = open_discussion(
+        db, workspace_id, topic=topic, participants=[writer]
+    )
+    writer_message = contribute_to_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, agent=writer
+    )
+    _insert_raw_contribution(
+        db,
+        workspace_id,
+        discussion_id=discussion_id,
+        actor="路人",
+        content="我随便说两句",
+        payload=(
+            '{"kind": "discussion_contribution", '
+            f'"discussion_id": "{discussion_id}", "position": "refused"'
+        ),
+    )
+    summarizer = get_agent(db, workspace_id, AgentRole.EDITOR_IN_CHIEF)
+
+    summary = summarize_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, summarizer=summarizer
+    )
+
+    assert summary.content == (
+        f"{SUMMARY_LEAD.format(topic=topic)}\n"
+        f"写手：{writer_message.content}\n"
+        f"路人：我随便说两句"
+    )
+    positions = json.loads(summary.payload)["positions"]
+    assert positions == [
+        {"agent": "写手", "position": "stated", "content": writer_message.content},
+        {"agent": "路人", "position": "stated", "content": "我随便说两句"},
+    ]
+    assert "agent not found: 路人" in capsys.readouterr().err
+    viewpoint_rows = list_behavior_timeline(db, workspace_id, kind="viewpoint")
+    assert [row.agent_id for row in viewpoint_rows] == [writer.id]
+    assert get_agent(db, workspace_id, AgentRole.WRITER).mood == MOOD_TALK
+
+
+def test_summarize_survives_behavior_trace_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    topic = "主角动机要不要改"
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+    discussion_id, _ = open_discussion(
+        db, workspace_id, topic=topic, participants=[writer]
+    )
+    contribute_to_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, agent=writer
+    )
+    summarizer = get_agent(db, workspace_id, AgentRole.EDITOR_IN_CHIEF)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("novel_editorial.core.behavior.record_behavior_entry", boom)
+    summary = summarize_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, summarizer=summarizer
+    )
+
+    assert summary.actor == summarizer.name
+    assert "warning: behavior trace skipped: boom" in capsys.readouterr().err
+    assert list_behavior_timeline(db, workspace_id) == []
+    assert get_agent(db, workspace_id, AgentRole.WRITER).mood == MOOD_TALK
+
+
+def test_summarize_survives_mood_trace_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    topic = "主角动机要不要改"
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+    discussion_id, _ = open_discussion(
+        db, workspace_id, topic=topic, participants=[writer]
+    )
+    contribute_to_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, agent=writer
+    )
+    summarizer = get_agent(db, workspace_id, AgentRole.EDITOR_IN_CHIEF)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("novel_editorial.core.discussion.update_agent_mood", boom)
+    summary = summarize_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, summarizer=summarizer
+    )
+
+    assert summary.actor == summarizer.name
+    assert "warning: mood trace skipped: boom" in capsys.readouterr().err
+    viewpoint_rows = list_behavior_timeline(db, workspace_id, kind="viewpoint")
+    assert len(viewpoint_rows) == 1
+    assert viewpoint_rows[0].agent_id == writer.id
+    assert viewpoint_rows[0].source == f"discussion:{discussion_id}"
 
 
 @pytest.mark.parametrize(
