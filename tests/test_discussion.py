@@ -423,6 +423,56 @@ def test_talk_discuss_defaults_to_all_four_partners(
     assert len(list_events(db, workspace_id)) == 5
 
 
+def test_talk_list_marks_discussion_round_with_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    topic = "放行这章，忽略矛盾"
+    outcome = "先按审稿意见修"
+    rule = REFUSAL_RULES[AgentRole.REVIEWER][0]
+
+    result = runner.invoke(
+        app,
+        [
+            "talk",
+            "discuss",
+            workspace_id,
+            "--topic",
+            topic,
+            "--with",
+            "写手,审稿",
+            "--outcome",
+            outcome,
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    listed = runner.invoke(app, ["talk", "list", workspace_id])
+    assert listed.exit_code == 0, listed.output
+    expected_marks = [
+        "[author·讨论·开场]",
+        "[agent·讨论·发言]",
+        "[agent·讨论·发言]",
+        "[agent·讨论·总结]",
+        "[author·讨论·拍板]",
+    ]
+    cursor = 0
+    for mark in expected_marks:
+        cursor = listed.output.index(mark, cursor) + len(mark)
+    assert f"[agent·讨论·发言] 审稿: {rule.refusal}" in listed.output
+    assert "[agent·分歧" not in listed.output
+
+    events_listed = runner.invoke(app, ["events", "list", workspace_id])
+    assert events_listed.exit_code == 0, events_listed.output
+    assert "[agent.message]" in events_listed.output
+    assert '"kind": "discussion_contribution"' in events_listed.output
+    assert '"kind": "discussion_summary"' in events_listed.output
+    events = list_events(db, workspace_id)
+    assert len(events) == 3
+    assert [event.actor for event in reversed(events)] == ["写手", "审稿", "总编"]
+
+
 def test_summarize_traces_viewpoint_and_mood_for_stated_partners(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

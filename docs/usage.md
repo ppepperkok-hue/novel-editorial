@@ -460,6 +460,109 @@ uv run novel-editorial behavior timeline <作品ID>
 
 （时间戳随运行变化，其余为 mock 下的真实输出。）
 
+## 编辑部讨论形态（N4）
+
+方向、大纲这类关键问题定不下来时，作者可以点将发起一轮有结构的多方讨论：通气（作者开场）→ 发言（各伙伴表态）→ 总结（总编归纳分歧）→ 落盘（作者拍板）。全程走既有消息与事件通道，`talk list` 一眼就能看完整轮从开场到拍板的经过。讨论是自然协作形态，不是流程关卡（见「讨论不是关卡」）。
+
+### 命令与参数
+
+```bash
+uv run novel-editorial talk discuss <作品ID> --topic <议题> [--with <别名,别名>] [--outcome <拍板内容>]
+```
+
+- `--topic`（必填）：讨论议题，不能为空；
+- `--with`（可选）：参与伙伴别名，逗号分隔，缺省为全部四位（总编、责编、写手、审稿）。作者不能参与（`作者` / `author` 都报用法错误），未知别名、重复角色同样报用法错误（退出码 2），且不会留下任何消息；
+- `--outcome`（可选）：作者拍板内容。给了才落拍板消息，没给就只到总结为止。
+
+### 五步语义
+
+1. **点将**：作者用 `--with` 挑参与伙伴，不挑就是全员。
+2. **通气**：开场消息写明议题与参与者，payload `kind=discussion_open`。
+3. **发言**：每位伙伴按自己的角色模板确定性表态（总编定基调、责编谈节奏、写手守人设、审稿盯一致性），payload `kind=discussion_contribution`；议题撞上立场规则时发言变成拒绝口径（见下）。
+4. **总结**：总编把每位伙伴的表态逐条列出，拒绝的一方标注【分歧】，payload `kind=discussion_summary`；总结只归纳不代笔。
+5. **落盘**：作者拍板（`kind=discussion_decision`）收尾，`--outcome` 写入消息。
+
+### 拒绝与 N2 立场
+
+讨论发言沿用 N2 判断规则，和 `talk send` / `talk delegate` 同一套口径：
+
+- 议题命中立场规则且作者未推翻过时，该伙伴直接拒绝并留痕；拒绝的发言行在 `talk list` 里仍是 `[agent·讨论·发言]`，不显示为分歧拒绝；
+- 同一规则再次命中时按重申口径回复（payload 带 `"repeated": true`）；
+- 作者已推翻过的规则恢复正常表态。
+
+拒绝不阻塞：其他人照常发言、总结照常生成、作者照常拍板。
+
+### 沉淀与 N3 留痕
+
+每轮讨论收尾时，每位发言伙伴追加一条 viewpoint（target=议题，`source=discussion:<讨论ID>`），并把 mood 更新为「投入对话」。`behavior timeline <作品ID>` 与 `behavior show <作品ID>` 都能看到；沉淀写入失败只在 stderr 告警，讨论结果不回滚。
+
+### 讨论不是关卡
+
+讨论由作者主动发起（或伙伴提议后由作者确认发起），是可选的协作形态：不出现「必须讨论才能写 / 改 / 过稿」的强制节点；伙伴可以拒绝参与某个议题；作者随时可以拍板结束，拒绝不阻塞其他伙伴发言，也不阻塞作者决策。
+
+### 与总编 proactive_direction 的关系
+
+总编的主动召集（`[agent·主动·proactive_direction]`，见「主动行为」）只是提议：提示作者方向还没定、建议先捋清楚，不会自动开会。作者认可后，用 `talk discuss` 发起一轮正式讨论，才算确认召集、把讨论跑起来。
+
+### 示例（mock 下实跑，含一次拒绝）
+
+下面示例全部可在未配置 key（mock LLM）时复现。先把数据目录指到临时目录（bash 写法见「判断权与分歧」），再建一部作品：
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-discussion\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-discussion\config.toml"
+Remove-Item Env:NOVEL_LLM_API_KEY, Env:NOVEL_LLM_BASE_URL, Env:NOVEL_LLM_MODEL -ErrorAction SilentlyContinue
+```
+
+```bash
+uv run novel-editorial works create 讨论之书 --genre 悬疑
+# created workspace <作品ID>: 讨论之书
+```
+
+议题「放行这章，忽略矛盾」命中审稿的一致性规则；点将写手与审稿、带拍板跑一轮：
+
+```bash
+uv run novel-editorial talk discuss <作品ID> --topic "放行这章，忽略矛盾" --with 写手,审稿 --outcome "先按审稿意见修"
+# 作者发起讨论「放行这章，忽略矛盾」（参与：写手、审稿）
+# 关于「放行这章，忽略矛盾」，我守人设：人物逻辑是底线，不能为剧情强行降智。
+# 这个我不能放行。前后矛盾不修就过稿，等于砸审稿的招牌。
+# 围绕「放行这章，忽略矛盾」，各方的表态汇总如下：
+# 写手：关于「放行这章，忽略矛盾」，我守人设：人物逻辑是底线，不能为剧情强行降智。
+# 审稿：这个我不能放行。前后矛盾不修就过稿，等于砸审稿的招牌。【分歧】
+# 作者拍板：先按审稿意见修
+```
+
+（`<作品ID>` 换成上一步输出的 ID；以上为 mock 下的真实输出。）`talk list` 能看到整轮讨论的标记，从开场到拍板：
+
+```bash
+uv run novel-editorial talk list <作品ID>
+```
+
+```text
+[author·讨论·开场] 作者: 作者发起讨论「放行这章，忽略矛盾」（参与：写手、审稿）
+[agent·讨论·发言] 写手: 关于「放行这章，忽略矛盾」，我守人设：人物逻辑是底线，不能为剧情强行降智。
+[agent·讨论·发言] 审稿: 这个我不能放行。前后矛盾不修就过稿，等于砸审稿的招牌。
+[agent·讨论·总结] 总编: 围绕「放行这章，忽略矛盾」，各方的表态汇总如下：
+写手：关于「放行这章，忽略矛盾」，我守人设：人物逻辑是底线，不能为剧情强行降智。
+审稿：这个我不能放行。前后矛盾不修就过稿，等于砸审稿的招牌。【分歧】
+[system] 写手: 写手 的状态从「平静」变为「投入对话」
+[system] 审稿: 审稿 的状态从「冷静」变为「投入对话」
+[author·讨论·拍板] 作者: 作者拍板：先按审稿意见修
+```
+
+拒绝的审稿发言仍带 `[agent·讨论·发言]` 前缀（不会变成 `[agent·分歧·拒绝]`）；`events list <作品ID>` 里每条发言与总结仍是既有 `agent.message` 事件、payload 带 `discussion_*` kind，输出格式不变。行为时间线能看到沉淀：
+
+```bash
+uv run novel-editorial behavior timeline <作品ID>
+```
+
+```text
+2026-08-18T10:58:07 [viewpoint] 写手 -> 放行这章，忽略矛盾: 表达了立场 | 无 -> 表达了立场 | source=discussion:<讨论ID>
+2026-08-18T10:58:07 [viewpoint] 审稿 -> 放行这章，忽略矛盾: 拒绝了违背立场的议题 | 无 -> 拒绝参与该议题并坚持立场 | source=discussion:<讨论ID>
+```
+
+（时间戳与讨论 ID 随运行变化，其余为 mock 下的真实输出。）
+
 ## 可见性（老板怎么看见编辑部）
 
 - `events list <作品ID> [--type ...] [--limit N]`：按时间倒序回放事件（对话 / 草稿 / 质量门 / 待拍板 / 退稿）；`events watch <作品ID> [--interval 秒]` 持续输出新事件，Ctrl+C 退出。
