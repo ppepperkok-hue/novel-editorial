@@ -9,7 +9,7 @@
 5. 审查报告归档到 `docs/reviews/`：`<YYYYMMDD>-<范围>.md`。
 6. 总监督逐条核实审查意见，派修复任务包，回归验证，收口。
 
-> 省 token 约定：代码 commit 才派独立审查；纯文档 / 归档 commit 由总监复核即可。审查 CLI 默认 `-m deepseek-v4-flash -c model_reasoning_effort=high`，实现 / 修复 CLI 默认 `-m deepseek-v4-flash -c model_reasoning_effort=low`（详见开发 skill 的 09a-cli-dispatch.md）。
+> 省 token 约定：代码 commit 才派独立审查；纯文档 / 归档 commit 由总监复核即可。推理档位统一 `model_reasoning_effort=high`：审查 CLI 与实现 / 修复 CLI 都默认 `-m deepseek-v4-flash -c model_reasoning_effort=high`（详见开发 skill 的 09a-cli-dispatch.md）。
 
 ## 报告模板
 
