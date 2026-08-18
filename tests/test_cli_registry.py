@@ -105,7 +105,9 @@ def test_representative_commands_run() -> None:
 
     behavior_show = runner.invoke(app, ["behavior", "show", workspace_id])
     assert behavior_show.exit_code == 0, behavior_show.output
-    assert behavior_show.output.strip() == "no behavior traces yet"
+    assert "委托被接受" in behavior_show.output
+    assert "可协作" in behavior_show.output
     behavior_timeline = runner.invoke(app, ["behavior", "timeline", workspace_id])
     assert behavior_timeline.exit_code == 0, behavior_timeline.output
-    assert behavior_timeline.output.strip() == "no behavior traces yet"
+    assert "[relationship]" in behavior_timeline.output
+    assert "[impression]" in behavior_timeline.output
