@@ -16,7 +16,11 @@ AUTHOR_READ_ONLY = "作者只读，请用 --as <伙伴别名> 以伙伴身份写
 
 
 def _now_utc(now: datetime | None) -> datetime:
-    return now if now is not None else datetime.now(UTC)
+    if now is None:
+        return datetime.now(UTC)
+    if now.tzinfo is None:
+        return now.replace(tzinfo=UTC)
+    return now.astimezone(UTC)
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -26,16 +30,24 @@ def _as_utc(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
-def effective_strength(note: AgentMemory, now: datetime) -> int:
+def effective_strength(
+    note: AgentMemory,
+    now: datetime,
+    decay_per_day: int | None = None,
+) -> int:
     """Compute a note's strength after whole days since it was last accessed.
 
     Pure computation: never writes to the database. Negative day counts are
-    clamped to zero and the result is clamped to [0, 100].
+    clamped to zero and the result is clamped to [0, 100]. The decay rate is
+    loaded once when not supplied, so batch callers can pass it in to avoid
+    re-reading settings per note.
     """
     days = (_as_utc(now) - _as_utc(note.last_accessed_at)).days
     if days < 0:
         days = 0
-    decay = load_settings().memory_decay_per_day * days
+    if decay_per_day is None:
+        decay_per_day = load_settings().memory_decay_per_day
+    decay = decay_per_day * days
     return max(0, min(100, note.strength - decay))
 
 
@@ -121,6 +133,7 @@ def apply_memory_decay(
     otherwise the same interval would be re-decayed on the next run.
     """
     now = _now_utc(now)
+    decay_per_day = load_settings().memory_decay_per_day
     changed: list[AgentMemory] = []
     with db.workspace_session(workspace_id) as session:
         notes = (
@@ -131,7 +144,7 @@ def apply_memory_decay(
             .all()
         )
         for note in notes:
-            target = effective_strength(note, now)
+            target = effective_strength(note, now, decay_per_day=decay_per_day)
             if note.strength != target:
                 note.strength = target
                 note.last_accessed_at = now
@@ -147,7 +160,9 @@ def list_archive_candidates(
 ) -> list[AgentMemory]:
     """List active notes whose effective strength is at or below the threshold."""
     now = _now_utc(now)
-    threshold = load_settings().memory_archive_threshold
+    settings = load_settings()
+    threshold = settings.memory_archive_threshold
+    decay_per_day = settings.memory_decay_per_day
     candidates: list[AgentMemory] = []
     with db.workspace_session(workspace_id) as session:
         notes = (
@@ -158,7 +173,7 @@ def list_archive_candidates(
             .all()
         )
         for note in notes:
-            if effective_strength(note, now) <= threshold:
+            if effective_strength(note, now, decay_per_day=decay_per_day) <= threshold:
                 candidates.append(note)
     return candidates
 
@@ -208,7 +223,9 @@ def archive_memory_notes(
         )
     with db.workspace_session(workspace_id) as session:
         if candidates:
-            threshold = load_settings().memory_archive_threshold
+            settings = load_settings()
+            threshold = settings.memory_archive_threshold
+            decay_per_day = settings.memory_decay_per_day
             active = (
                 session.query(AgentMemory)
                 .filter_by(workspace_id=workspace_id)
@@ -216,7 +233,10 @@ def archive_memory_notes(
                 .all()
             )
             targets = [
-                note for note in active if effective_strength(note, now) <= threshold
+                note
+                for note in active
+                if effective_strength(note, now, decay_per_day=decay_per_day)
+                <= threshold
             ]
         else:
             targets = []

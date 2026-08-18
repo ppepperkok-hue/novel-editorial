@@ -1,5 +1,5 @@
 import sqlite3
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -617,6 +617,22 @@ def test_effective_strength_treats_naive_utc_timestamp_as_utc(
     assert effective_strength(note, now) == 85
 
 
+def test_effective_strength_aware_non_utc_now_uses_real_utc_days(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _memory_config(tmp_path, monkeypatch, decay=5)
+    note = AgentMemory(
+        id="n1",
+        workspace_id="w",
+        agent_id="a",
+        content="x",
+        strength=100,
+        last_accessed_at=datetime(2026, 8, 18, 0, 0, tzinfo=UTC),
+    )
+    now = datetime(2026, 8, 19, 0, 30, tzinfo=timezone(timedelta(hours=8)))
+    assert effective_strength(note, now) == 100
+
+
 def test_apply_memory_decay_writes_changes_and_is_idempotent(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -659,6 +675,122 @@ def test_apply_memory_decay_floor_at_zero(tmp_path: Path, monkeypatch) -> None:
     changed = apply_memory_decay(db, workspace_id, now=now)
     assert changed[0].id == note.id
     assert changed[0].strength == 0
+
+
+def test_apply_memory_decay_persists_normalized_utc_now(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    _memory_config(tmp_path, monkeypatch, decay=5)
+    db = DB(load_settings())
+    writer_id = _writer_id(db, workspace_id)
+    note = _add_raw_note(
+        db,
+        workspace_id,
+        writer_id,
+        "日界附近的笔记",
+        last_accessed_at=datetime(2026, 8, 17, 0, 0, tzinfo=UTC),
+    )
+    now = datetime(2026, 8, 19, 0, 30, tzinfo=timezone(timedelta(hours=8)))
+    changed = apply_memory_decay(db, workspace_id, now=now)
+    assert [item.id for item in changed] == [note.id]
+    assert changed[0].strength == 95
+    with db.workspace_session(workspace_id) as session:
+        refreshed = session.query(AgentMemory).filter_by(id=note.id).first()
+        assert refreshed is not None
+        assert _as_utc(refreshed.last_accessed_at) == datetime(
+            2026, 8, 18, 16, 30, tzinfo=UTC
+        )
+
+
+def test_apply_memory_decay_loads_settings_once(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    _memory_config(tmp_path, monkeypatch, decay=5)
+    db = DB(load_settings())
+    writer_id = _writer_id(db, workspace_id)
+    now = datetime(2026, 8, 18, 12, 0, tzinfo=UTC)
+    for index in range(3):
+        _add_raw_note(
+            db,
+            workspace_id,
+            writer_id,
+            f"批量笔记-{index}",
+            last_accessed_at=now - timedelta(days=3),
+        )
+    import novel_editorial.core.memory as memory_module
+
+    calls = {"count": 0}
+    real_load = memory_module.load_settings
+
+    def counting_load_settings():
+        calls["count"] += 1
+        return real_load()
+
+    monkeypatch.setattr(memory_module, "load_settings", counting_load_settings)
+    apply_memory_decay(db, workspace_id, now=now)
+    assert calls["count"] == 1
+
+
+def test_list_archive_candidates_loads_settings_once(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    _memory_config(tmp_path, monkeypatch, decay=5, threshold=20)
+    db = DB(load_settings())
+    writer_id = _writer_id(db, workspace_id)
+    now = datetime(2026, 8, 18, 12, 0, tzinfo=UTC)
+    for index in range(3):
+        _add_raw_note(
+            db,
+            workspace_id,
+            writer_id,
+            f"候选笔记-{index}",
+            last_accessed_at=now - timedelta(days=3),
+        )
+    import novel_editorial.core.memory as memory_module
+
+    calls = {"count": 0}
+    real_load = memory_module.load_settings
+
+    def counting_load_settings():
+        calls["count"] += 1
+        return real_load()
+
+    monkeypatch.setattr(memory_module, "load_settings", counting_load_settings)
+    list_archive_candidates(db, workspace_id, now=now)
+    assert calls["count"] == 1
+
+
+def test_archive_memory_notes_candidates_loads_settings_once(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    _memory_config(tmp_path, monkeypatch, decay=5, threshold=20)
+    db = DB(load_settings())
+    writer_id = _writer_id(db, workspace_id)
+    now = datetime(2026, 8, 18, 12, 0, tzinfo=UTC)
+    for index in range(3):
+        _add_raw_note(
+            db,
+            workspace_id,
+            writer_id,
+            f"归档笔记-{index}",
+            last_accessed_at=now - timedelta(days=3),
+        )
+    import novel_editorial.core.memory as memory_module
+
+    calls = {"count": 0}
+    real_load = memory_module.load_settings
+
+    def counting_load_settings():
+        calls["count"] += 1
+        return real_load()
+
+    monkeypatch.setattr(memory_module, "load_settings", counting_load_settings)
+    archive_memory_notes(db, workspace_id, candidates=True, now=now)
+    assert calls["count"] == 1
 
 
 def test_apply_memory_decay_skips_archived_notes(
