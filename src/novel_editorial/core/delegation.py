@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from novel_editorial.core.chat import _record_message_in_session, check_refusal
+from novel_editorial.core.chat import (
+    _record_message_in_session,
+    check_refusal,
+    has_same_rule_override,
+    has_same_rule_refusal,
+)
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import Agent, Message
 
@@ -51,19 +56,26 @@ def respond_to_delegation(
 ) -> Message:
     """Record the delegated partner's deterministic reply.
 
-    The reply follows the N2 stance rules: a rule hit refuses with the rule's
-    refusal wording, otherwise the partner accepts with the fixed reply.
+    The reply follows the N2 stance rules with the same history checks as talk
+    send: an already-overridden rule accepts with the fixed reply, a first rule
+    hit refuses with the rule's refusal wording, and a repeated rule hit
+    reaffirms the stance with the rule's reaffirmation wording.
     """
     rule = check_refusal(to_agent, task)
-    if rule is not None:
-        content = rule.refusal
-        payload = {
+    if rule is not None and not has_same_rule_override(
+        db, workspace_id, to_agent, rule.rule
+    ):
+        repeated = has_same_rule_refusal(db, workspace_id, to_agent, rule.rule)
+        content = rule.reaffirmation if repeated else rule.refusal
+        payload: dict[str, object] = {
             "initiator": "agent",
             "kind": "delegation_response",
             "decision": "refused",
             "rule": rule.rule,
             "stance": rule.stance,
         }
+        if repeated:
+            payload["repeated"] = True
     else:
         content = ACCEPT_REPLY
         payload = {

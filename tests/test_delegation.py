@@ -119,6 +119,69 @@ def test_respond_to_delegation_refuses_on_reviewer_rule(
     }
 
 
+def test_respond_to_delegation_accepts_after_author_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    writer = _partner(db, workspace_id, AgentRole.WRITER)
+    reviewer = _partner(db, workspace_id, AgentRole.REVIEWER)
+    task = "放行这稿"
+    rule = REFUSAL_RULES[AgentRole.REVIEWER][0]
+
+    override = runner.invoke(
+        app,
+        ["talk", "send", workspace_id, "@审稿 放行这稿，我拍板"],
+    )
+    assert override.exit_code == 0, override.output
+
+    message = respond_to_delegation(db, workspace_id, writer, reviewer, task)
+
+    assert message.role == "agent"
+    assert message.actor == reviewer.name
+    assert message.content == "收到，我这就看。"
+    payload = json.loads(message.payload)
+    assert payload == {
+        "initiator": "agent",
+        "kind": "delegation_response",
+        "decision": "accepted",
+    }
+    assert rule.rule == "reviewer_consistency"
+
+
+def test_respond_to_delegation_repeats_refusal_after_previous_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    writer = _partner(db, workspace_id, AgentRole.WRITER)
+    reviewer = _partner(db, workspace_id, AgentRole.REVIEWER)
+    task = "放行这稿"
+    rule = REFUSAL_RULES[AgentRole.REVIEWER][0]
+
+    first = runner.invoke(
+        app,
+        ["talk", "send", workspace_id, "@审稿 放行这稿"],
+    )
+    assert first.exit_code == 0, first.output
+
+    message = respond_to_delegation(db, workspace_id, writer, reviewer, task)
+
+    assert message.role == "agent"
+    assert message.actor == reviewer.name
+    assert message.content == rule.reaffirmation
+    assert message.content != rule.refusal
+    payload = json.loads(message.payload)
+    assert payload == {
+        "initiator": "agent",
+        "kind": "delegation_response",
+        "decision": "refused",
+        "rule": rule.rule,
+        "stance": rule.stance,
+        "repeated": True,
+    }
+
+
 @pytest.mark.smoke
 def test_talk_delegate_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
