@@ -30,6 +30,12 @@ from novel_editorial.core.chat import (
 )
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.delegation import record_delegation, respond_to_delegation
+from novel_editorial.core.discussion import (
+    conclude_discussion,
+    contribute_to_discussion,
+    open_discussion,
+    summarize_discussion,
+)
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.llm.client import LLMMessage, build_client
 from novel_editorial.store.db import DB
@@ -310,3 +316,80 @@ def talk_list(workspace_id: str = typer.Argument(..., help="Workspace id")) -> N
             typer.echo(f"[agent·互委·{mark}] {message.actor}: {message.content}")
             continue
         typer.echo(f"[{message.role}] {message.actor}: {message.content}")
+
+
+DISCUSSION_ORDER: tuple[tuple[str, str], ...] = (
+    ("总编", AgentRole.EDITOR_IN_CHIEF),
+    ("责编", AgentRole.EDITOR),
+    ("写手", AgentRole.WRITER),
+    ("审稿", AgentRole.REVIEWER),
+)
+
+
+def _resolve_discussion_participants(
+    db: DB, workspace_id: str, with_aliases: str | None
+) -> list[Agent]:
+    """Resolve --with aliases into band partners in the fixed speaking order."""
+    if with_aliases is None:
+        return [get_agent(db, workspace_id, role) for _, role in DISCUSSION_ORDER]
+    aliases = [alias.strip() for alias in with_aliases.split(",")]
+    if any(not alias for alias in aliases):
+        raise NovelError(ErrorCode.USAGE_ERROR, "--with 不能为空")
+    selected_roles: list[str] = []
+    for alias in aliases:
+        if alias in AUTHOR_FORBIDDEN_ALIASES:
+            raise NovelError(ErrorCode.USAGE_ERROR, f"作者不能参与讨论: {alias}")
+        role = ROLE_ALIASES.get(alias)
+        if role is None:
+            raise NovelError(ErrorCode.USAGE_ERROR, f"unknown partner alias: {alias}")
+        if role in selected_roles:
+            raise NovelError(ErrorCode.USAGE_ERROR, f"重复角色: {alias}")
+        selected_roles.append(role)
+    return [
+        get_agent(db, workspace_id, role)
+        for _, role in DISCUSSION_ORDER
+        if role in selected_roles
+    ]
+
+
+@talk_app.command("discuss")
+def talk_discuss(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+    topic: str = typer.Option(..., "--topic", help="Discussion topic"),
+    with_aliases: str | None = typer.Option(
+        None, "--with", help="Comma-separated partner aliases (default: all four)"
+    ),
+    outcome: str | None = typer.Option(
+        None, "--outcome", help="Author's final decision to close the round"
+    ),
+) -> None:
+    """Run one structured discussion round: open, contribute, summarize, decide."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    get_workspace_or_raise(db, workspace_id)
+    if not topic.strip():
+        raise NovelError(ErrorCode.USAGE_ERROR, "topic 不能为空")
+    if outcome is not None and not outcome.strip():
+        raise NovelError(ErrorCode.USAGE_ERROR, "outcome 不能为空")
+
+    participants = _resolve_discussion_participants(db, workspace_id, with_aliases)
+    discussion_id, opened = open_discussion(
+        db, workspace_id, topic=topic, participants=participants
+    )
+    typer.echo(opened.content)
+    for agent in participants:
+        contribution = contribute_to_discussion(
+            db, workspace_id, discussion_id=discussion_id, topic=topic, agent=agent
+        )
+        typer.echo(contribution.content)
+    summarizer = get_agent(db, workspace_id, AgentRole.EDITOR_IN_CHIEF)
+    summary = summarize_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, summarizer=summarizer
+    )
+    typer.echo(summary.content)
+    if outcome is not None:
+        decision = conclude_discussion(
+            db, workspace_id, discussion_id=discussion_id, topic=topic, outcome=outcome
+        )
+        typer.echo(decision.content)
