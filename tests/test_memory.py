@@ -306,7 +306,7 @@ def test_memory_notes_prints_deletable_id(tmp_path: Path, monkeypatch) -> None:
     assert len(lines) == 1
     memory_id = lines[0].split()[0]
     assert len(memory_id) == 32
-    assert lines[0] == f"{memory_id} [写手] 按 id 删"
+    assert lines[0] == f"{memory_id} [写手] strength=100 按 id 删"
     deleted = runner.invoke(app, ["memory", "delete", workspace_id, memory_id])
     assert deleted.exit_code == 0, deleted.output
     after = runner.invoke(app, ["memory", "notes", workspace_id])
@@ -1104,3 +1104,179 @@ def test_list_memory_notes_tiebreak_by_id(tmp_path: Path, monkeypatch) -> None:
     )
     listed = list_memory_notes(db, workspace_id)
     assert [note.id for note in listed] == sorted([first.id, second.id])
+
+
+def test_memory_notes_include_archived_flag(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    writer_id = _writer_id(db, workspace_id)
+    note = _add_raw_note(
+        db, workspace_id, writer_id, "已归档的旧账", strength=50
+    )
+    archive_memory_notes(db, workspace_id, [note.id])
+
+    hidden = runner.invoke(app, ["memory", "notes", workspace_id])
+    assert hidden.exit_code == 0, hidden.output
+    assert "已归档的旧账" not in hidden.output
+
+    shown = runner.invoke(
+        app, ["memory", "notes", workspace_id, "--include-archived"]
+    )
+    assert shown.exit_code == 0, shown.output
+    assert "已归档的旧账" in shown.output
+    assert "【归档】" in shown.output
+    assert "strength=50" in shown.output
+
+
+def test_memory_decay_cli_reports_changes_then_no_decay(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    _memory_config(tmp_path, monkeypatch, decay=5)
+    db = DB(load_settings())
+    writer_id = _writer_id(db, workspace_id)
+    note = _add_raw_note(
+        db,
+        workspace_id,
+        writer_id,
+        "会衰减的旧账",
+        last_accessed_at=datetime.now(UTC) - timedelta(days=3),
+    )
+
+    first = runner.invoke(app, ["memory", "decay", workspace_id])
+    assert first.exit_code == 0, first.output
+    assert f"{note.id}: 100 -> 85" in first.output
+
+    again = runner.invoke(app, ["memory", "decay", workspace_id])
+    assert again.exit_code == 0, again.output
+    assert "no decay this time" in again.output
+
+
+def test_memory_remember_cli_prints_new_strength(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    _memory_config(tmp_path, monkeypatch, boost=25)
+    db = DB(load_settings())
+    writer_id = _writer_id(db, workspace_id)
+    note = _add_raw_note(db, workspace_id, writer_id, "要保鲜的", strength=60)
+
+    result = runner.invoke(app, ["memory", "remember", workspace_id, note.id])
+    assert result.exit_code == 0, result.output
+    assert f"{note.id} strength=85" in result.output
+
+
+def test_memory_archive_cli_requires_target_or_candidates(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    result = runner.invoke(app, ["memory", "archive", workspace_id])
+    assert result.exit_code == 2
+    assert "provide at least one memory note id or --candidates" in result.output
+
+
+def test_memory_archive_cli_candidates_no_candidates(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    _memory_config(tmp_path, monkeypatch, decay=5, threshold=20)
+    db = DB(load_settings())
+    writer_id = _writer_id(db, workspace_id)
+    _add_raw_note(
+        db, workspace_id, writer_id, "强记忆", last_accessed_at=datetime.now(UTC)
+    )
+
+    result = runner.invoke(app, ["memory", "archive", workspace_id, "--candidates"])
+    assert result.exit_code == 0, result.output
+    assert "no archive candidates" in result.output
+
+
+def test_memory_archive_cli_explicit_ids(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    writer_id = _writer_id(db, workspace_id)
+    strong = _add_raw_note(db, workspace_id, writer_id, "强记忆")
+    weak = _add_raw_note(db, workspace_id, writer_id, "弱记忆")
+
+    result = runner.invoke(
+        app, ["memory", "archive", workspace_id, strong.id, weak.id]
+    )
+    assert result.exit_code == 0, result.output
+    assert "archived 2 note(s)" in result.output
+    assert list_memory_notes(db, workspace_id) == []
+
+
+def test_memory_restore_cli(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    writer_id = _writer_id(db, workspace_id)
+    note = _add_raw_note(db, workspace_id, writer_id, "可恢复的旧账")
+    archive_memory_notes(db, workspace_id, [note.id])
+    assert list_memory_notes(db, workspace_id) == []
+
+    restored = runner.invoke(app, ["memory", "restore", workspace_id, note.id])
+    assert restored.exit_code == 0, restored.output
+    assert "restored 1 note(s)" in restored.output
+    assert {item.id for item in list_memory_notes(db, workspace_id)} == {note.id}
+
+
+def test_memory_cli_end_to_end_decay_archive_visibility_restore(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    _memory_config(tmp_path, monkeypatch, decay=5, boost=25, threshold=20)
+    db = DB(load_settings())
+    writer_id = _writer_id(db, workspace_id)
+    fixed_now = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
+    _add_raw_note(
+        db,
+        workspace_id,
+        writer_id,
+        "强记忆-旧车站常驻",
+        last_accessed_at=datetime.now(UTC),
+    )
+    weak = _add_raw_note(
+        db,
+        workspace_id,
+        writer_id,
+        "弱记忆-旧车站细节",
+        last_accessed_at=fixed_now - timedelta(days=20),
+    )
+    changed = apply_memory_decay(db, workspace_id, now=fixed_now)
+    assert [item.id for item in changed] == [weak.id]
+
+    archived = runner.invoke(app, ["memory", "archive", workspace_id, "--candidates"])
+    assert archived.exit_code == 0, archived.output
+    assert "archived 1 note(s)" in archived.output
+
+    searched = runner.invoke(app, ["memory", "search", workspace_id, "旧车站"])
+    assert searched.exit_code == 0, searched.output
+    assert "强记忆-旧车站常驻" in searched.output
+    assert "弱记忆-旧车站细节" not in searched.output
+
+    notes = runner.invoke(app, ["memory", "notes", workspace_id])
+    assert notes.exit_code == 0, notes.output
+    assert "强记忆-旧车站常驻" in notes.output
+    assert "弱记忆-旧车站细节" not in notes.output
+
+    packed = runner.invoke(app, ["memory", "pack", workspace_id])
+    assert packed.exit_code == 0, packed.output
+    assert "强记忆-旧车站常驻" in packed.output
+    assert "弱记忆-旧车站细节" not in packed.output
+
+    archived_visible = runner.invoke(
+        app, ["memory", "notes", workspace_id, "--include-archived"]
+    )
+    assert archived_visible.exit_code == 0, archived_visible.output
+    assert "弱记忆-旧车站细节" in archived_visible.output
+    assert "【归档】" in archived_visible.output
+
+    restored = runner.invoke(app, ["memory", "restore", workspace_id, weak.id])
+    assert restored.exit_code == 0, restored.output
+    assert "restored 1 note(s)" in restored.output
+
+    notes_after = runner.invoke(app, ["memory", "notes", workspace_id])
+    assert notes_after.exit_code == 0, notes_after.output
+    assert "弱记忆-旧车站细节" in notes_after.output
+    assert "【归档】" not in notes_after.output
+    assert "强记忆-旧车站常驻" in notes_after.output

@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -8,12 +9,13 @@ from novel_editorial.cli.app import app
 from novel_editorial.core import proactive
 from novel_editorial.core.chat import list_messages
 from novel_editorial.core.config import load_settings
-from novel_editorial.core.draft import get_draft_version
+from novel_editorial.core.draft import build_memory_pack, get_draft_version
+from novel_editorial.core.memory import archive_memory_notes
 from novel_editorial.core.style import get_style_anchor
 from novel_editorial.llm.client import MockLLMClient
 from novel_editorial.store.db import DB
 from novel_editorial.store.events import list_events
-from novel_editorial.store.models import Draft
+from novel_editorial.store.models import Agent, AgentMemory, Draft
 
 runner = CliRunner()
 
@@ -24,6 +26,34 @@ def _create_workspace(tmp_path: Path, monkeypatch, title: str = "风格之书") 
     result = runner.invoke(app, ["works", "create", title, "--genre", "武侠"])
     assert result.exit_code == 0, result.output
     return result.output.split()[2].rstrip(":")
+
+
+def _writer_id(db: DB, workspace_id: str) -> str:
+    with db.workspace_session(workspace_id) as session:
+        writer = session.query(Agent).filter_by(workspace_id=workspace_id, role="writer").first()
+        assert writer is not None
+        return writer.id
+
+
+def _add_raw_note(
+    db: DB,
+    workspace_id: str,
+    agent_id: str,
+    content: str,
+    *,
+    strength: int = 100,
+) -> AgentMemory:
+    with db.workspace_session(workspace_id) as session:
+        note = AgentMemory(
+            workspace_id=workspace_id,
+            agent_id=agent_id,
+            content=content,
+            strength=strength,
+            last_accessed_at=datetime.now(UTC),
+        )
+        session.add(note)
+        session.commit()
+        return note
 
 
 @pytest.mark.smoke
@@ -69,6 +99,23 @@ def test_memory_pack_is_isolated_per_workspace(tmp_path: Path, monkeypatch) -> N
     assert "第一本的风格" in first_pack.output
     assert "第二本书" not in first_pack.output
     assert "第一本书" not in second_pack.output
+
+
+def test_memory_pack_excludes_archived_and_sorts_by_strength(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = DB(settings)
+    writer_id = _writer_id(db, workspace_id)
+    strong = _add_raw_note(db, workspace_id, writer_id, "强记忆", strength=100)
+    weak = _add_raw_note(db, workspace_id, writer_id, "弱记忆", strength=30)
+    archived = _add_raw_note(db, workspace_id, writer_id, "归档强记忆", strength=200)
+    archive_memory_notes(db, workspace_id, [archived.id])
+
+    packed = build_memory_pack(db, workspace_id)
+    assert packed.index(strong.content) < packed.index(weak.content)
+    assert archived.content not in packed
 
 
 @pytest.mark.smoke

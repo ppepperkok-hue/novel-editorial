@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import String, and_, bindparam, func, or_, text
@@ -15,8 +16,10 @@ from novel_editorial.core.chat import (
     get_workspace_or_raise,
     list_messages,
 )
+from novel_editorial.core.config import load_settings
 from novel_editorial.core.draft import build_memory_pack, list_drafts
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.memory import effective_strength, rehearse_memory_note
 from novel_editorial.core.plot import KIND_LABELS
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import (
@@ -271,6 +274,17 @@ def _content_filter(hits: Subquery | None, content_column: Any, needle: str) -> 
     return and_(hits.c.id.is_not(None), _like_contains(content_column, needle))
 
 
+def _rehearse_note_safely(db: DB, workspace_id: str, note: AgentMemory, now: datetime) -> None:
+    """Rehearse one hit note; a failure must never break the search result."""
+    try:
+        rehearse_memory_note(db, workspace_id, note.id, now=now)
+    except Exception as exc:  # noqa: BLE001 - search must survive any rehearsal failure
+        print(
+            f"warning: memory rehearsal failed for note {note.id}: {exc}",
+            file=sys.stderr,
+        )
+
+
 def search_memory(
     db: DB,
     workspace_id: str,
@@ -354,14 +368,25 @@ def search_memory(
             .order_by(DraftVersion.created_at, DraftVersion.id)
             .all()
         )
-        notes_query = session.query(AgentMemory).filter_by(workspace_id=workspace_id)
+        notes_query = (
+            session.query(AgentMemory)
+            .filter_by(workspace_id=workspace_id)
+            .filter(AgentMemory.archived_at.is_(None))
+        )
         if note_hits is not None:
             notes_query = notes_query.outerjoin(note_hits, note_hits.c.id == AgentMemory.id)
-        notes = (
-            notes_query.filter(note_content)
-            .order_by(AgentMemory.created_at, AgentMemory.id)
-            .all()
+        notes = notes_query.filter(note_content).all()
+        now = datetime.now(UTC)
+        decay_per_day = load_settings().memory_decay_per_day
+        notes.sort(
+            key=lambda note: (
+                -effective_strength(note, now, decay_per_day=decay_per_day),
+                note.created_at,
+                note.id,
+            )
         )
+        for note in notes:
+            _rehearse_note_safely(db, workspace_id, note, now)
         for message in messages:
             lines.append(
                 f"[对话] {_snippet(message.content, keyword)}（来源: {message.actor}）"
@@ -512,6 +537,7 @@ def search_all_layers(
                 (Agent.id == AgentMemory.agent_id)
                 & (Agent.workspace_id == AgentMemory.workspace_id),
             )
+            .filter(AgentMemory.archived_at.is_(None))
         )
         if note_hits is not None:
             notes_query = notes_query.outerjoin(note_hits, note_hits.c.id == AgentMemory.id)
@@ -523,9 +549,19 @@ def search_all_layers(
                     _like_contains(func.coalesce(Agent.name, AgentMemory.agent_id), needle),
                 ),
             )
-            .order_by(AgentMemory.created_at, AgentMemory.id)
             .all()
         )
+        now = datetime.now(UTC)
+        decay_per_day = load_settings().memory_decay_per_day
+        notes.sort(
+            key=lambda pair: (
+                -effective_strength(pair[0], now, decay_per_day=decay_per_day),
+                pair[0].created_at,
+                pair[0].id,
+            )
+        )
+        for note, _agent_name in notes:
+            _rehearse_note_safely(db, workspace_id, note, now)
         decisions = (
             session.query(Decision)
             .filter_by(workspace_id=workspace_id)

@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -8,9 +9,11 @@ from typer.testing import CliRunner
 from novel_editorial.cli.app import app
 from novel_editorial.core.chat import record_message
 from novel_editorial.core.config import load_settings
+from novel_editorial.core.memory import archive_memory_notes
 from novel_editorial.core.views import search_all_layers, search_memory
 from novel_editorial.llm.client import MockLLMClient
 from novel_editorial.store.db import DB
+from novel_editorial.store.models import Agent, AgentMemory
 
 runner = CliRunner()
 
@@ -47,6 +50,37 @@ def _add_note(workspace_id: str, target: str, content: str) -> None:
         ["memory", "note", workspace_id, target, "--content", content, "--as", target],
     )
     assert result.exit_code == 0, result.output
+
+
+def _writer_id(db: DB, workspace_id: str) -> str:
+    with db.workspace_session(workspace_id) as session:
+        writer = session.query(Agent).filter_by(workspace_id=workspace_id, role="writer").first()
+        assert writer is not None
+        return writer.id
+
+
+def _add_raw_note(
+    db: DB,
+    workspace_id: str,
+    agent_id: str,
+    content: str,
+    *,
+    strength: int = 100,
+    last_accessed_at: datetime | None = None,
+    created_at: datetime | None = None,
+) -> AgentMemory:
+    with db.workspace_session(workspace_id) as session:
+        note = AgentMemory(
+            workspace_id=workspace_id,
+            agent_id=agent_id,
+            content=content,
+            strength=strength,
+            last_accessed_at=last_accessed_at or datetime.now(UTC),
+            created_at=created_at or datetime.now(UTC),
+        )
+        session.add(note)
+        session.commit()
+        return note
 
 
 def test_writer_view_includes_own_notes_only(tmp_path: Path, monkeypatch) -> None:
@@ -300,3 +334,145 @@ def test_search_filters_text_layers_in_sql(
         assert all(
             "like" in statement.lower() for statement in selects[table]
         ), f"{table} layer was not filtered in SQL with LIKE"
+
+
+@pytest.mark.parametrize("searcher", [search_memory, search_all_layers])
+def test_search_excludes_archived_notes(
+    tmp_path: Path, monkeypatch, searcher
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = DB(settings)
+    writer_id = _writer_id(db, workspace_id)
+    note = _add_raw_note(db, workspace_id, writer_id, "归档前的秘密钩子")
+    archive_memory_notes(db, workspace_id, [note.id])
+
+    result = searcher(db, workspace_id, "秘密钩子")
+    assert "[笔记]" not in result
+    assert "归档前的秘密钩子" not in result
+
+
+def test_search_memory_orders_notes_by_effective_strength(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    (tmp_path / "config.toml").write_text(
+        "[defaults]\nmemory_decay_per_day = 5\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("NOVEL_CONFIG", str(tmp_path / "config.toml"))
+    settings = load_settings()
+    db = DB(settings)
+    writer_id = _writer_id(db, workspace_id)
+    now = datetime.now(UTC)
+    _add_raw_note(
+        db,
+        workspace_id,
+        writer_id,
+        "钩子甲",
+        strength=100,
+        last_accessed_at=now - timedelta(days=10),
+        created_at=now - timedelta(days=3),
+    )
+    _add_raw_note(
+        db,
+        workspace_id,
+        writer_id,
+        "钩子乙",
+        strength=80,
+        last_accessed_at=now - timedelta(days=2),
+        created_at=now - timedelta(days=2),
+    )
+    _add_raw_note(
+        db,
+        workspace_id,
+        writer_id,
+        "钩子丙",
+        strength=100,
+        last_accessed_at=now - timedelta(days=1),
+        created_at=now - timedelta(days=1),
+    )
+
+    result = search_memory(db, workspace_id, "钩子")
+    note_lines = [line for line in result.splitlines() if line.startswith("[笔记]")]
+    assert len(note_lines) == 3
+    # effective strength: 丙 95, 乙 70, 甲 50; stored strength would tie 甲/丙.
+    assert "钩子丙" in note_lines[0]
+    assert "钩子乙" in note_lines[1]
+    assert "钩子甲" in note_lines[2]
+
+
+def test_search_memory_fts_and_like_agree_on_notes(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = DB(settings)
+    writer_id = _writer_id(db, workspace_id)
+    now = datetime.now(UTC)
+    for index in range(3):
+        _add_raw_note(
+            db,
+            workspace_id,
+            writer_id,
+            f"共识钩子{index}",
+            strength=50,
+            last_accessed_at=now,
+            created_at=now - timedelta(minutes=3 - index),
+        )
+    archived = _add_raw_note(db, workspace_id, writer_id, "归档共识钩子")
+    archive_memory_notes(db, workspace_id, [archived.id])
+
+    liked = search_memory(db, workspace_id, "共识钩子", _force_fts=False)
+    ftsed = search_memory(db, workspace_id, "共识钩子", _force_fts=True)
+    assert ftsed == liked
+    assert "归档共识钩子" not in ftsed
+    note_lines = [line for line in ftsed.splitlines() if line.startswith("[笔记]")]
+    assert len(note_lines) == 3
+    assert "共识钩子0" in note_lines[0]
+    assert "共识钩子1" in note_lines[1]
+    assert "共识钩子2" in note_lines[2]
+
+
+def test_search_rehearses_hit_notes_and_caps_at_100(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    (tmp_path / "config.toml").write_text(
+        "[defaults]\nmemory_rehearsal_boost = 25\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("NOVEL_CONFIG", str(tmp_path / "config.toml"))
+    settings = load_settings()
+    db = DB(settings)
+    writer_id = _writer_id(db, workspace_id)
+    hit = _add_raw_note(db, workspace_id, writer_id, "会被想起的钩子", strength=90)
+    miss = _add_raw_note(db, workspace_id, writer_id, "无关内容", strength=90)
+
+    search_memory(db, workspace_id, "钩子")
+    with db.workspace_session(workspace_id) as session:
+        hit_refreshed = session.query(AgentMemory).filter_by(id=hit.id).first()
+        miss_refreshed = session.query(AgentMemory).filter_by(id=miss.id).first()
+    assert hit_refreshed is not None
+    assert hit_refreshed.strength == 100
+    assert miss_refreshed is not None
+    assert miss_refreshed.strength == 90
+
+
+def test_search_rehearsal_failure_keeps_result_and_warns(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = DB(settings)
+    writer_id = _writer_id(db, workspace_id)
+    _add_raw_note(db, workspace_id, writer_id, "抢救失败的钩子")
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("rehearsal write failed")
+
+    monkeypatch.setattr("novel_editorial.core.views.rehearse_memory_note", boom)
+    result = search_memory(db, workspace_id, "钩子")
+    assert "[笔记]" in result
+    assert "抢救失败的钩子" in result
+    captured = capsys.readouterr()
+    assert "warning: memory rehearsal failed" in captured.err
+    assert "rehearsal write failed" in captured.err
