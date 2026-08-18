@@ -72,6 +72,13 @@ class AgentMemory(Base):
     agent_id: Mapped[str] = mapped_column(String(32), index=True)
     content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    strength: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
+    last_accessed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, nullable=False
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
 
 
 class PlotThread(Base):

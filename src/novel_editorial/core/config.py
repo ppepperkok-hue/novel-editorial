@@ -23,6 +23,34 @@ def _parse_enabled(value: str) -> bool:
     raise NovelError(ErrorCode.CONFIG_ERROR, f"invalid proactive enabled: {value!r}")
 
 
+def _load_int_setting(
+    env: Mapping[str, str],
+    defaults: dict,
+    *,
+    env_key: str,
+    toml_key: str,
+    fallback: int,
+    label: str,
+    max_value: int | None = None,
+) -> int:
+    """Read one integer setting: TOML default first, then env override."""
+    default_value = defaults.get(toml_key, fallback)
+    raw_value = env.get(env_key, str(default_value))
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise NovelError(
+            ErrorCode.CONFIG_ERROR,
+            f"invalid {label}: {raw_value!r}",
+        ) from exc
+    if value < 0 or (max_value is not None and value > max_value):
+        raise NovelError(
+            ErrorCode.CONFIG_ERROR,
+            f"invalid {label}: {raw_value!r}",
+        )
+    return value
+
+
 @dataclass(frozen=True)
 class Settings:
     data_dir: Path
@@ -32,6 +60,9 @@ class Settings:
     llm_model: str = "deepseek-chat"
     log_level: str = "INFO"
     quality_threshold: int = 8
+    memory_decay_per_day: int = 5
+    memory_rehearsal_boost: int = 25
+    memory_archive_threshold: int = 20
     proactive_enabled: bool = True
     proactive_max_per_agent: int = 3
     defaults: dict = field(default_factory=dict)
@@ -76,6 +107,31 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             ErrorCode.CONFIG_ERROR,
             f"invalid proactive max per agent: {max_value!r}",
         )
+    memory_decay_per_day = _load_int_setting(
+        env,
+        defaults,
+        env_key="NOVEL_MEMORY_DECAY_PER_DAY",
+        toml_key="memory_decay_per_day",
+        fallback=5,
+        label="memory decay per day",
+    )
+    memory_rehearsal_boost = _load_int_setting(
+        env,
+        defaults,
+        env_key="NOVEL_MEMORY_REHEARSAL_BOOST",
+        toml_key="memory_rehearsal_boost",
+        fallback=25,
+        label="memory rehearsal boost",
+    )
+    memory_archive_threshold = _load_int_setting(
+        env,
+        defaults,
+        env_key="NOVEL_MEMORY_ARCHIVE_THRESHOLD",
+        toml_key="memory_archive_threshold",
+        fallback=20,
+        label="memory archive threshold",
+        max_value=100,
+    )
     return Settings(
         data_dir=data_dir,
         config_path=config_path,
@@ -84,6 +140,9 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         llm_model=env.get("NOVEL_LLM_MODEL", "deepseek-chat"),
         log_level=env.get("NOVEL_LOG_LEVEL", "INFO"),
         quality_threshold=quality_threshold,
+        memory_decay_per_day=memory_decay_per_day,
+        memory_rehearsal_boost=memory_rehearsal_boost,
+        memory_archive_threshold=memory_archive_threshold,
         proactive_enabled=proactive_enabled,
         proactive_max_per_agent=proactive_max_per_agent,
         defaults=defaults,
