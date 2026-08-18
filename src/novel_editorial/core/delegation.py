@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from novel_editorial.core.behavior import record_behavior_entry_safe
 from novel_editorial.core.chat import (
     _record_message_in_session,
     check_refusal,
@@ -59,12 +60,18 @@ def respond_to_delegation(
     The reply follows the N2 stance rules with the same history checks as talk
     send: an already-overridden rule accepts with the fixed reply, a first rule
     hit refuses with the rule's refusal wording, and a repeated rule hit
-    reaffirms the stance with the rule's reaffirmation wording.
+    reaffirms the stance with the rule's reaffirmation wording. After the
+    message and event commit, N3 sediment is appended via the safe entry point:
+    acceptance traces a relationship and an impression from the delegator to
+    the delegated partner, refusal traces the delegator's relationship plus a
+    first-time viewpoint held by the delegated partner. A trace failure only
+    warns on stderr and never rolls the business result back.
     """
     rule = check_refusal(to_agent, task)
     if rule is not None and not has_same_rule_override(
         db, workspace_id, to_agent, rule.rule
     ):
+        refused = True
         repeated = has_same_rule_refusal(db, workspace_id, to_agent, rule.rule)
         content = rule.reaffirmation if repeated else rule.refusal
         payload: dict[str, object] = {
@@ -77,6 +84,8 @@ def respond_to_delegation(
         if repeated:
             payload["repeated"] = True
     else:
+        refused = False
+        repeated = False
         content = ACCEPT_REPLY
         payload = {
             "initiator": "agent",
@@ -93,4 +102,45 @@ def respond_to_delegation(
             payload=payload,
         )
         session.commit()
-        return message
+    if refused:
+        assert rule is not None
+        record_behavior_entry_safe(
+            db,
+            workspace_id,
+            agent_id=from_agent.id,
+            kind="relationship",
+            target=to_agent.name,
+            summary="委托被拒绝",
+            source="delegation:refused",
+        )
+        if not repeated:
+            record_behavior_entry_safe(
+                db,
+                workspace_id,
+                agent_id=to_agent.id,
+                kind="viewpoint",
+                target=rule.rule,
+                summary="拒绝了违背立场的指令",
+                after_value="坚持该立场",
+                source=f"refusal:{rule.rule}",
+            )
+    else:
+        record_behavior_entry_safe(
+            db,
+            workspace_id,
+            agent_id=from_agent.id,
+            kind="relationship",
+            target=to_agent.name,
+            summary="委托被接受",
+            source="delegation:accepted",
+        )
+        record_behavior_entry_safe(
+            db,
+            workspace_id,
+            agent_id=from_agent.id,
+            kind="impression",
+            target=to_agent.name,
+            summary="可协作",
+            source="delegation:accepted",
+        )
+    return message

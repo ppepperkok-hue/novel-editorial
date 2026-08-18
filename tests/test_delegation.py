@@ -9,6 +9,7 @@ import pytest
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
+from novel_editorial.core.behavior import list_behavior_timeline
 from novel_editorial.core.chat import REFUSAL_RULES, get_agent, list_messages
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.delegation import record_delegation, respond_to_delegation
@@ -223,6 +224,48 @@ def test_talk_delegate_reaffirms_after_previous_delegation_refusal(
         "repeated": True,
     }
 
+    writer = _partner(db, workspace_id, AgentRole.WRITER)
+    reviewer = _partner(db, workspace_id, AgentRole.REVIEWER)
+    rows = list_behavior_timeline(db, workspace_id)
+    viewpoints = [row for row in rows if row.kind == "viewpoint"]
+    relationships = [row for row in rows if row.kind == "relationship"]
+    assert len(viewpoints) == 1
+    assert viewpoints[0].agent_id == reviewer.id
+    assert viewpoints[0].target == rule.rule
+    assert viewpoints[0].source == f"refusal:{rule.rule}"
+    assert len(relationships) == 2
+    assert all(row.agent_id == writer.id for row in relationships)
+    assert all(row.target == reviewer.name for row in relationships)
+    assert all(row.summary == "委托被拒绝" for row in relationships)
+    assert all(row.source == "delegation:refused" for row in relationships)
+
+
+@pytest.mark.parametrize("task", ["帮我校一遍逻辑", "放行这稿"])
+def test_talk_delegate_business_survives_behavior_trace_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    task: str,
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("novel_editorial.core.behavior.record_behavior_entry", boom)
+    result = runner.invoke(
+        app,
+        ["talk", "delegate", workspace_id, "审稿", "--as", "写手", "--task", task],
+    )
+    assert result.exit_code == 0, result.output
+    assert "warning: behavior trace skipped: boom" in result.output
+
+    db = DB(load_settings())
+    messages = list_messages(db, workspace_id)
+    assert len(messages) == 2
+    events = _agent_events(db, workspace_id)
+    assert len(events) == 2
+    assert list_behavior_timeline(db, workspace_id) == []
+
 
 def test_talk_send_reaffirms_after_delegation_refusal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -301,6 +344,21 @@ def test_talk_delegate_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert json.loads(events[0].payload) == delegation_payload
     assert json.loads(events[1].payload) == response_payload
 
+    rows = list_behavior_timeline(db, workspace_id)
+    assert len(rows) == 2
+    relationship = next(row for row in rows if row.kind == "relationship")
+    impression = next(row for row in rows if row.kind == "impression")
+    writer = _partner(db, workspace_id, AgentRole.WRITER)
+    reviewer = _partner(db, workspace_id, AgentRole.REVIEWER)
+    assert relationship.agent_id == writer.id
+    assert relationship.target == reviewer.name
+    assert relationship.summary == "委托被接受"
+    assert relationship.source == "delegation:accepted"
+    assert impression.agent_id == writer.id
+    assert impression.target == reviewer.name
+    assert impression.summary == "可协作"
+    assert impression.source == "delegation:accepted"
+
 
 def test_talk_delegate_refusal_end_to_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -337,6 +395,23 @@ def test_talk_delegate_refusal_end_to_end(
         "rule": rule.rule,
         "stance": rule.stance,
     }
+
+    writer = _partner(db, workspace_id, AgentRole.WRITER)
+    reviewer = _partner(db, workspace_id, AgentRole.REVIEWER)
+    rows = list_behavior_timeline(db, workspace_id)
+    assert len(rows) == 2
+    relationship = next(row for row in rows if row.kind == "relationship")
+    viewpoint = next(row for row in rows if row.kind == "viewpoint")
+    assert relationship.agent_id == writer.id
+    assert relationship.target == reviewer.name
+    assert relationship.summary == "委托被拒绝"
+    assert relationship.source == "delegation:refused"
+    assert viewpoint.agent_id == reviewer.id
+    assert viewpoint.target == rule.rule
+    assert viewpoint.summary == "拒绝了违背立场的指令"
+    assert viewpoint.before_value is None
+    assert viewpoint.after_value == "坚持该立场"
+    assert viewpoint.source == f"refusal:{rule.rule}"
 
 
 @pytest.mark.parametrize(
