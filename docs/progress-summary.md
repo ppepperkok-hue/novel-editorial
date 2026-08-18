@@ -4,6 +4,8 @@
 - 当前基线：全量 429 测试绿；ruff / pyright / 宪法校验 / smoke_m3 / stress_m3 全绿
 - 远端：`main` 与 `origin/main` 对齐（HEAD `eb29dc8`），工作区干净
 
+> 完整版（N1–N26、U1–U27 逐项）见 [docs/progress-report.md](progress-report.md)。
+
 ## 项目定位
 
 多 Agent 协作的文学编辑部：分层协作、行为自然发生、作者保有最终决定权；覆盖网文、同人、正统小说等创作形态。前身项目（`ppepperkok-hue/novel-editorial`）已打包归档，本仓库为重新开发版本。
