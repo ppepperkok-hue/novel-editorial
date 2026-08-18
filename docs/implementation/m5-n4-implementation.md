@@ -125,3 +125,4 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 
 - 立项（2026-08-18）：实施文档就绪，用户确认后拆包 E1。
 - E1 完成（2026-08-18；commits ebbed7b / 44dba7f，全量 453 测试绿；讨论数据模型与 CLI 骨架 + 独立审查 P3 修复，审查链归档 docs/reviews/）。E2 待拆包。
+- E2 完成（2026-08-18；commits 6962088 / bc71c99，全量 463 测试绿；N2 立场拒绝与 N3 沉淀接入 + 独立审查两条意见修复，审查链归档 docs/reviews/）。E3 待拆包。
