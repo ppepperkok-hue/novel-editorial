@@ -14,6 +14,7 @@ from novel_editorial.core.chat import (
     MOOD_TALK,
     PROACTIVE_PAYLOAD,
     PROACTIVE_QUESTION,
+    ROLE_ALIASES,
     build_agent_prompt,
     check_refusal,
     get_agent,
@@ -28,11 +29,25 @@ from novel_editorial.core.chat import (
     update_agent_mood,
 )
 from novel_editorial.core.config import load_settings
+from novel_editorial.core.delegation import record_delegation, respond_to_delegation
+from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.llm.client import LLMMessage, build_client
 from novel_editorial.store.db import DB
-from novel_editorial.store.models import AgentRole, StyleAnchor
+from novel_editorial.store.models import Agent, AgentRole, StyleAnchor
 
 talk_app = typer.Typer(help="Talk with the editorial band")
+
+AUTHOR_FORBIDDEN_ALIASES = ("作者", "author")
+
+
+def _resolve_partner_alias(db: DB, workspace_id: str, alias: str) -> Agent:
+    """Resolve a delegate alias to a partner; the author can never take part."""
+    if alias in AUTHOR_FORBIDDEN_ALIASES:
+        raise NovelError(ErrorCode.USAGE_ERROR, f"作者不能作为委托收发方: {alias}")
+    role = ROLE_ALIASES.get(alias)
+    if role is None:
+        raise NovelError(ErrorCode.USAGE_ERROR, f"unknown partner alias: {alias}")
+    return get_agent(db, workspace_id, role)
 
 
 def _has_style_anchor(db: DB, workspace_id: str) -> bool:
@@ -221,6 +236,33 @@ def talk_send(
                 "has_style_anchor": _has_style_anchor(db, workspace_id),
             },
         )
+
+
+@talk_app.command("delegate")
+def talk_delegate(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+    to_alias: str = typer.Argument(..., help="Target partner alias (写手/审稿/责编/总编)"),
+    from_alias: str = typer.Option(..., "--as", help="Delegating partner alias"),
+    task: str = typer.Option(..., "--task", help="Task text"),
+) -> None:
+    """Delegate a task to another partner and echo their response."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    get_workspace_or_raise(db, workspace_id)
+    if not task.strip():
+        raise NovelError(ErrorCode.USAGE_ERROR, "task 不能为空")
+    from_agent = _resolve_partner_alias(db, workspace_id, from_alias)
+    to_agent = _resolve_partner_alias(db, workspace_id, to_alias)
+    if from_agent.role == to_agent.role:
+        raise NovelError(
+            ErrorCode.USAGE_ERROR,
+            f"from 与 to 不能是同一角色: {from_alias}/{to_alias}",
+        )
+    delegation = record_delegation(db, workspace_id, from_agent, to_agent, task)
+    response = respond_to_delegation(db, workspace_id, from_agent, to_agent, task)
+    typer.echo(delegation.content)
+    typer.echo(f"{to_agent.name}: {response.content}")
 
 
 @talk_app.command("list")
