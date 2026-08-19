@@ -116,3 +116,5 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 - 立项（2026-08-19）：实施文档就绪，用户确认后拆包 H1。
 - H1 完成（2026-08-19；commits 547faf6 / 6f8c76c，全量 598 测试绿；设定分发到记忆包/编辑视图 + 修订事件留痕 + 独立审查多行渲染修复，审查链归档 docs/reviews/）。H2 待拆包。
 - H2 完成（2026-08-19；commit 84850c0，全量 608 测试绿；check_settings 报告 + setting check 命令，独立审查无意见，审查链归档 docs/reviews/）。H3 待拆包。
+- H3 完成（2026-08-19；commit 8166264，全量 608 测试绿；usage 文档章节 + 示例实跑，总监复核归档 docs/reviews/）。
+- N6 收口（2026-08-19）：全量 608 测试、ruff、pyright、宪法、smoke_m3、stress_m3 全绿；知识管家整体交付，红线（沉淀不是前置、只报告不改写、分发用当前版本）全程未破。后续单元 N7 按 backlog 顺序待用户立项拆包。
