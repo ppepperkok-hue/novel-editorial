@@ -779,6 +779,150 @@ uv run novel-editorial structure list <作品ID>
 
 （`<作品ID>`、`<卷ID>`、`<章ID-*>`、`<篇目ID>`、`<草稿ID>` 与 `<时间戳>` 换成前面输出的真实值，每次运行不同；其余为 mock 下的真实输出。）
 
+## 多写手并行（N14）
+
+一部作品可以配置多位写手分章并行创作：大长篇不用等单写手串行写完，谁执笔、写的是哪一版，都在草稿里留痕。多写手只是「作品里多了几位写手 + 指定谁写」，仍然保持对话委托形态——没有任务队列、没有认领、没有超时惩罚，作者随时可以介入和拍板。
+
+### agents add 与角色唯一性
+
+- `agents add <作品ID> <role> <名字> [--personality <人设文本>]`：新增一位伙伴。`role` 收英文或中文：`writer` / `写手`、`editor_in_chief` / `总编`、`editor` / `责编`、`reviewer` / `审稿`。写手可以加任意多实例，其余角色作品内保持唯一（已有同角色再加报用法错误）；名字在作品内唯一，大小写不敏感（与既有伙伴名冲突报用法错误）。成功输出 `created agent <ID>: <名字> (<role>)`，例如 `created agent <ID>: 写手乙 (writer)`。
+- 非法 role、重名、非写手角色重复都报用法错误（退出码 2）。
+- `agents list <作品ID>`：按创建顺序输出 `[<role>] <名字>（<ID>）`。默认四名伙伴在同一事务建成（created_at 相同），相对顺序按 id 兜底；后加的角色一定排在它们之后。
+- 名字是解析的主键：`draft generate` / `draft revise` 的 `--writer`、`memory note` / `memory notes` 的目标都先按 ID、再按名字（大小写不敏感）、最后按角色别名解析。重复名已被禁止，所以按名字解析不会歧义；角色别名（如「写手」）始终指向默认写手，也就是创建顺序的第一位写手。
+
+### draft generate / draft revise 指定写手
+
+- `draft generate <作品ID> [--title <标题>] [--writer <名字|ID>]`：`--writer` 指定执笔写手；不指定时走默认写手（创建顺序的第一位，与 N14 前完全一致）。指定非写手角色报用法错误（退出码 2），指定不存在的名字报业务错误（退出码 1）。
+- `draft revise <草稿ID> [--reason <原因>] [--writer <名字|ID>]`：同理。缺省沿用草稿原写手（`writer_id`），显式传 `--writer` 时换人并更新留痕。
+- 可见性：`draft list` 每行行尾带（写手名）；`draft show` 在标题行下输出 `writer: <写手名>` 行，执笔人一眼可辨。
+- 草稿生成 / 修订通过质量门后的主动汇报仍以角色名发声（`写手` / `责编`），执笔人看 `draft list` / `draft show` 的写手名区分。
+
+### 记忆隔离
+
+- 每位写手的私有记忆按伙伴隔离：`memory note <作品ID> <名字|ID> --content <内容> --as <角色别名>` 的目标按名字定位；`--as` 仍只接受角色别名（作者 / 总编 / 主编 / 责编 / 写手 / 审稿），按角色做权限校验——写手角色可以写给任一位写手实例，例如 `--as 写手` 写给 `写手乙` 或 `写手丙` 都合法。
+- `memory notes <作品ID> <名字|ID>` 按名查看某位写手的笔记；不带目标时列出全部伙伴的笔记，输出带 `[写手名]`。
+- 生成 / 修订按指定写手构建记忆包，只注入该写手自己的私有笔记；`memory pack`（无 `--writer` 参数）默认展示默认写手的记忆包，行为与 N14 前逐字一致。
+
+### 红线
+
+- 不工单化：没有任务队列、没有认领状态机、没有超时惩罚，多写手只是「指定谁写」。
+- 默认行为不变：不指定写手时，generate / revise / memory pack 与 N14 之前完全一致。
+- 记忆与产出隔离：私有记忆按伙伴隔离，草稿留痕 `writer_id`，互不串写。
+- 角色唯一性只对写手放开：总编 / 责编 / 审稿仍唯一。
+
+### 示例（mock 下实跑）
+
+下面示例全部可在未配置 key（mock LLM）时复现。先把数据目录指到临时目录（初始化写法见「判断权与分歧」），再建一部作品：
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-n14\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-n14\config.toml"
+Remove-Item Env:NOVEL_LLM_API_KEY, Env:NOVEL_LLM_BASE_URL, Env:NOVEL_LLM_MODEL -ErrorAction SilentlyContinue
+```
+
+```bash
+uv run novel-editorial works create 多写手之书 --genre 长篇 --description 两位写手并行创作的长篇
+# created workspace <作品ID>: 多写手之书
+```
+
+加两位写手，再看班底（输出为 mock 下的真实结果；ID 每次运行不同，默认四名伙伴的相对顺序按 id 兜底、可能不同）：
+
+```bash
+uv run novel-editorial agents add <作品ID> 写手 写手乙
+# created agent <ID-写手乙>: 写手乙 (writer)
+
+uv run novel-editorial agents add <作品ID> 写手 写手丙 --personality "冷峻克制，擅长动作场面"
+# created agent <ID-写手丙>: 写手丙 (writer)
+
+uv run novel-editorial agents list <作品ID>
+# [editor] 责编（<ID-1>）
+# [writer] 写手（<ID-2>）
+# [editor_in_chief] 总编（<ID-3>）
+# [reviewer] 审稿（<ID-4>）
+# [writer] 写手乙（<ID-5>）
+# [writer] 写手丙（<ID-6>）
+```
+
+两位写手各生成一章，`draft list` 行尾带写手名，`draft show` 有 `writer:` 行：
+
+```bash
+uv run novel-editorial draft generate <作品ID> --title 第一章 --writer 写手乙
+# draft <草稿ID-1> 第一章 now at v1
+# awaiting decision: <草稿ID-1>
+# 写手: 《第一章》初稿写完了，我按节奏收尾，先交给你过目。
+# 责编: 《第一章》过了质量门，我试读了开头「（模拟回复）」，节奏在线，建议作者拍板。
+
+uv run novel-editorial draft generate <作品ID> --title 第二章 --writer 写手丙
+# draft <草稿ID-2> 第二章 now at v1
+# awaiting decision: <草稿ID-2>
+# 写手: 《第二章》初稿写完了，我按节奏收尾，先交给你过目。
+# 责编: 《第二章》过了质量门，我试读了开头「（模拟回复）」，节奏在线，建议作者拍板。
+
+uv run novel-editorial draft list <作品ID>
+# <草稿ID-2>  第二章  v1  draft  （写手丙）
+# <草稿ID-1>  第一章  v1  draft  （写手乙）
+
+uv run novel-editorial draft show <草稿ID-1>
+# 第一章 (v1, draft)
+# writer: 写手乙
+# reason: initial
+# ---
+# （模拟回复）
+
+uv run novel-editorial draft show <草稿ID-2>
+# 第二章 (v1, draft)
+# writer: 写手丙
+# reason: initial
+# ---
+# （模拟回复）
+```
+
+私有记忆按写手隔离：`memory note` 目标按名字定位、`--as` 用角色别名，`memory notes` 按名只能看到该写手自己的笔记：
+
+```bash
+uv run novel-editorial memory note <作品ID> 写手乙 --content 主角的左手小指缺了一截 --as 写手
+# note added to 写手乙 by 写手
+
+uv run novel-editorial memory note <作品ID> 写手丙 --content 第二卷的反转要埋在前三章 --as 写手
+# note added to 写手丙 by 写手
+
+uv run novel-editorial memory notes <作品ID> 写手乙
+# <笔记ID-1> [写手乙] strength=100 主角的左手小指缺了一截
+
+uv run novel-editorial memory notes <作品ID> 写手丙
+# <笔记ID-2> [写手丙] strength=100 第二卷的反转要埋在前三章
+
+uv run novel-editorial memory notes <作品ID>
+# <笔记ID-1> [写手乙] strength=100 主角的左手小指缺了一截
+# <笔记ID-2> [写手丙] strength=100 第二卷的反转要埋在前三章
+```
+
+不指定 `--writer` 时仍走默认写手（第一位，也就是班底里的「写手」），行为与 N14 前一致：
+
+```bash
+uv run novel-editorial draft generate <作品ID> --title 第三章
+# draft <草稿ID-3> 第三章 now at v1
+# awaiting decision: <草稿ID-3>
+# 写手: 《第三章》初稿写完了，我按节奏收尾，先交给你过目。
+# 责编: 《第三章》过了质量门，我试读了开头「（模拟回复）」，节奏在线，建议作者拍板。
+
+uv run novel-editorial draft list <作品ID>
+# <草稿ID-3>  第三章  v1  draft  （写手）
+# <草稿ID-2>  第二章  v1  draft  （写手丙）
+# <草稿ID-1>  第一章  v1  draft  （写手乙）
+
+uv run novel-editorial draft show <草稿ID-3>
+# 第三章 (v1, draft)
+# writer: 写手
+# reason: initial
+# ---
+# （模拟回复）
+```
+
+（`<作品ID>`、`<ID-*>`、`<草稿ID-*>` 与 `<笔记ID-*>` 换成前面输出的真实值，每次运行不同；默认四名伙伴同一事务建成、created_at 相同，`agents list` 里它们的相对顺序按 id 兜底；其余为 mock 下的真实输出。）
+
+退出码验证：`agents add` 的非法 role、重名、非写手角色重复都报用法错误（退出码 2）；`draft generate` / `draft revise` 的 `--writer` 指定非写手角色报用法错误（退出码 2），指定不存在的名字报业务错误（退出码 1）。
+
 ## 数据目录与备份
 
 - `NOVEL_DATA_DIR`（默认 `./data`）：
@@ -1384,10 +1528,11 @@ uv run novel-editorial memory search <作品ID> 雨夜归乡的钟声 --semantic
 
 ### 私有记忆的权限规则是什么？
 
-作者只读；伙伴只能以自己的身份写自己的笔记；`--as` 只做权限校验、不落库。完整规则与示例见上文「私有记忆的权限规则」。
+作者只读；伙伴只能以自己的身份写自己的笔记；`--as` 只做权限校验、不落库。多写手下目标按名字定位、`--as` 按角色校验（`--as 写手` 可以写给任一位写手实例）。完整规则与示例见上文「私有记忆的权限规则」与「多写手并行（N14）」。
 
 ### 怎么查看编辑部当前状态？
 
+- `agents list <作品ID>`：按创建顺序列出班底（角色 + 名字 + ID，见「多写手并行（N14）」）；
 - `agents show <作品ID>`：完整档案与当前情绪；
 - `works show <作品ID>`：班子一览（含作品状态行与结构树，见「作品结构与创作进度（N13）」）；
 - `memory view <作品ID> --as 作者`：老板视图（档案、班子状态、草稿、最近意见与决策）；
