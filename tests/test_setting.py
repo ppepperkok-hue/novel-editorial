@@ -332,6 +332,34 @@ def test_revise_setting_rejects_blank_content_or_reason(
     assert len(list_setting_history(db, workspace_id, entry.id)) == 1
 
 
+@pytest.mark.parametrize("actor", ["", "   "])
+def test_revise_setting_rejects_blank_actor(
+    tmp_path: Path, monkeypatch, actor: str
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    entry = add_setting(
+        db, workspace_id, kind="world", name="世界观", content="原设定"
+    )
+
+    with pytest.raises(NovelError) as exc_info:
+        revise_setting(
+            db,
+            workspace_id,
+            entry.id,
+            content="修订后的设定",
+            reason="有理由",
+            actor=actor,
+        )
+    assert exc_info.value.code is ErrorCode.USAGE_ERROR
+    assert "setting actor must not be empty" in exc_info.value.message
+
+    fetched = get_setting(db, workspace_id, entry.id)
+    assert fetched.content == "原设定"
+    assert fetched.current_version == 1
+    assert len(list_setting_history(db, workspace_id, entry.id)) == 1
+
+
 def test_revise_setting_unknown_setting_is_not_found(
     tmp_path: Path, monkeypatch
 ) -> None:
