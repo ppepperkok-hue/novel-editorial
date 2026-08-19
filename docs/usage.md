@@ -20,11 +20,19 @@
 quality_threshold = 8
 proactive_enabled = true
 proactive_max_per_agent = 3
+embedding_backend = "local"
+embedding_model = ""
+embedding_dim = 256
+embedding_top_k = 5
 ```
 
 - `quality_threshold`：质量门阈值（整数），默认 `8`；草稿得分 ≤ 阈值才算通过。
 - `proactive_enabled`：主动行为总开关（布尔），默认 `true`；`false` 时伙伴的主动发言停发（talk 首轮的责编确认提问除外，见「主动行为」）。
 - `proactive_max_per_agent`：每位伙伴在一部作品里的主动发言上限（整数），默认 `3`；达到上限后不再新增，设 `0` 等于不发（talk 首轮提问除外）。
+- `embedding_backend`：语义记忆检索的嵌入后端（`local` / `api`），默认 `local`；`api` 需显式配置 `embedding_model`。
+- `embedding_model`：api 后端的嵌入模型名，默认空；api 后端必须显式配置，local 后端忽略。
+- `embedding_dim`：local 后端的向量维度（整数），默认 `256`，范围 32–4096。
+- `embedding_top_k`：单次语义检索返回上限（整数），默认 `5`，范围 1–50。
 - 仓库里的 `config.example.toml` 只写了空的 `[defaults]` 段头，把上面的键补进你自己生成的 `config.toml` 即可。
 - 每次运行命令都会重新读取，改完无需重启任何服务。
 
@@ -41,10 +49,14 @@ proactive_max_per_agent = 3
 | `NOVEL_QUALITY_THRESHOLD` | 质量门阈值 | `config.toml` 的 `quality_threshold`，再退到 `8` | `6` |
 | `NOVEL_PROACTIVE_ENABLED` | 主动行为总开关 | `config.toml` 的 `proactive_enabled`，再退到 `true` | `false` |
 | `NOVEL_PROACTIVE_MAX_PER_AGENT` | 每位伙伴主动发言上限 | `config.toml` 的 `proactive_max_per_agent`，再退到 `3` | `1` |
+| `NOVEL_EMBEDDING_BACKEND` | 语义检索嵌入后端（`local` / `api`） | `local` | `api` |
+| `NOVEL_EMBEDDING_MODEL` | api 后端的嵌入模型名；api 后端必须显式配置 | 空 | `text-embedding-3-small` |
+| `NOVEL_EMBEDDING_DIM` | local 后端向量维度 | `256` | `512` |
+| `NOVEL_EMBEDDING_TOP_K` | 单次语义检索返回上限 | `5` | `10` |
 
 阈值优先级：`NOVEL_QUALITY_THRESHOLD` > `config.toml [defaults].quality_threshold` > 内置默认 `8`。
 
-仓库里的 `.env.example` 模板列了 `NOVEL_LLM_API_KEY`、`NOVEL_LLM_BASE_URL`、`NOVEL_LLM_MODEL`、`NOVEL_DATA_DIR`、`NOVEL_LOG_LEVEL`；本表另外补充的 `NOVEL_CONFIG`、`NOVEL_QUALITY_THRESHOLD`、`NOVEL_PROACTIVE_ENABLED` 与 `NOVEL_PROACTIVE_MAX_PER_AGENT` 同样受支持。
+仓库里的 `.env.example` 模板列了 `NOVEL_LLM_API_KEY`、`NOVEL_LLM_BASE_URL`、`NOVEL_LLM_MODEL`、`NOVEL_DATA_DIR`、`NOVEL_LOG_LEVEL`；本表另外补充的 `NOVEL_CONFIG`、`NOVEL_QUALITY_THRESHOLD`、`NOVEL_PROACTIVE_ENABLED`、`NOVEL_PROACTIVE_MAX_PER_AGENT` 与 `NOVEL_EMBEDDING_BACKEND`、`NOVEL_EMBEDDING_MODEL`、`NOVEL_EMBEDDING_DIM`、`NOVEL_EMBEDDING_TOP_K` 同样受支持。
 
 Windows PowerShell 示例：
 
@@ -1012,6 +1024,132 @@ uv run novel-editorial setting check <作品ID>
 
 （`<作品ID>`、`<设定ID-*>` 与 `<时间戳>` 换成前面输出的真实值，每次运行不同；其余为 mock 下的真实输出。）
 
+## 语义记忆检索（N7）
+
+`memory search` 除了按关键词子串命中，还能按「意思相近」联想记忆片段：私有笔记与设定条目在字面查不到时，仍可能凭语义相似被想起。语义检索是显式增强——不加 `--semantic` 时默认输出完全不变，加了才在关键词结果之后追加语义命中。
+
+### 两档后端能力边界
+
+| 后端 | 是否默认 | 行为 | 适用 |
+| --- | --- | --- | --- |
+| `local` | 是 | 字符 n-gram（n=1..3）哈希桶向量 + 余弦相似度；离线确定性（同文本同向量），零外部依赖；是字面近义近似，能捕捉词序变化与字形近义 | 默认零配置、可离线复现 |
+| `api` | 否 | OpenAI 兼容 `/embeddings`，真语义；复用 `NOVEL_LLM_BASE_URL` 与 `NOVEL_LLM_API_KEY` | 显式配置 `embedding_model` 后启用 |
+
+两档共用同一张向量索引表与检索服务：换后端后索引里的向量来自不同算法，需要 `memory reindex` 重建才能正确检索。local 的「语义」是字面近义近似，不是语言模型级语义——它靠字符重叠打分，比如「雨夜归乡」能靠近「雨夜回乡」，但完全换了写法就不保证命中。
+
+### 配置
+
+四项配置的优先级与其他配置一致：环境变量 > `config.toml [defaults]` 同名键 > 内置默认值。
+
+| 变量 | 作用 | 默认值 | 校验 |
+| --- | --- | --- | --- |
+| `NOVEL_EMBEDDING_BACKEND` | 嵌入后端（`local` / `api`） | `local` | 只允许 `local` 与 `api`，其余报配置错误（退出码 1） |
+| `NOVEL_EMBEDDING_MODEL` | api 后端模型名；api 后端必须显式配置 | 空 | api 后端为空时语义功能降级为空结果并在 stderr 告警（命令退出码不变） |
+| `NOVEL_EMBEDDING_DIM` | local 后端向量维度 | `256` | 正整数 32–4096 |
+| `NOVEL_EMBEDDING_TOP_K` | 单次语义检索返回上限 | `5` | 正整数 1–50 |
+
+写进 `config.toml`：
+
+```toml
+[defaults]
+embedding_backend = "local"
+embedding_model = ""
+embedding_dim = 256
+embedding_top_k = 5
+```
+
+切换 api 后端的示例（PowerShell 用 `$env:NOVEL_EMBEDDING_BACKEND = "api"` 等写法）：
+
+```bash
+export NOVEL_EMBEDDING_BACKEND=api
+export NOVEL_EMBEDDING_MODEL="text-embedding-3-small"
+# 复用 NOVEL_LLM_BASE_URL / NOVEL_LLM_API_KEY 指向 OpenAI 兼容 /embeddings 接口
+```
+
+### 语义检索行为
+
+`memory search <作品ID> <关键词> --semantic`：
+
+- 默认输出不变：不加 `--semantic` 与之前完全一致；加了之后关键词结果原样输出，语义命中追加在最后。
+- 行格式沿用引用式：`[笔记] <片段>（来源: <伙伴>）[语义 0.87]`、`[设定] <标签>：<名称>——<片段>（来源: <来源> v<版本>）[语义 0.91]`，相似度保留两位小数。
+- 按相似度降序排列；字面命中（笔记内容或设定名称含关键词）不重复输出。
+- 字面无命中、语义也无命中时仍输出 `no matches`（退出码 0）。
+- 检索层：笔记（当前内容）与设定条目（当前版本内容）；对话、意见、正文版本等层暂不参与。
+
+### memory reindex
+
+`memory reindex <作品ID>` 遍历本作品的笔记与设定，把当前内容全部重新嵌入，输出 `reindexed N entries`：
+
+- 幂等：重复执行结果一致（第二次仍是同样的 `N`，不会重复计数）。
+- 覆盖全部笔记（含已归档），但查询时归档笔记与已删除来源不参与语义命中——与关键词检索口径一致。
+- 笔记增删改、设定增改时索引自动增量同步，正常使用不需要手动 reindex；reindex 用于换后端或补齐存量。
+
+### 降级语义（红线）
+
+语义是增强不是依赖，以下情况一律优雅降级，关键词检索照常，不报错、不打断命令：
+
+- 索引为空：语义结果为空，静默返回（无告警）；
+- 后端不可用或嵌入失败（含 api 配置无效）：语义结果为空，stderr 输出 `warning: semantic search skipped: ...`；
+- 索引同步失败只向 stderr 告警，业务写入不回滚。
+
+红线三句：检索不阻塞、增量一致、配置驱动且默认离线。
+
+### 示例（mock 下实跑）
+
+下面示例全部可在未配置 key（mock LLM）时复现，语义走默认 `local` 后端、零外部依赖。先把数据目录指到临时目录（初始化写法见「判断权与分歧」），再建一部作品：
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-n7\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-n7\config.toml"
+Remove-Item Env:NOVEL_LLM_API_KEY, Env:NOVEL_LLM_BASE_URL, Env:NOVEL_LLM_MODEL -ErrorAction SilentlyContinue
+```
+
+```bash
+uv run novel-editorial works create 语义之书 --genre 悬疑 --description 侦探深夜查案
+# created workspace <作品ID>: 语义之书
+```
+
+以写手身份写两条意思相近但无共同关键词的笔记（「归乡/回乡」「钟声/钟鸣」「想起/在耳边响起」互为近义写法，两条笔记没有任何共同双字词）：
+
+```bash
+uv run novel-editorial memory note <作品ID> 写手 --content 深夜归乡他总想起钟声 --as 写手
+# note added to 写手 by 写手
+
+uv run novel-editorial memory note <作品ID> 写手 --content 雨夜回乡的钟鸣在耳边响起 --as 写手
+# note added to 写手 by 写手
+```
+
+查询词「雨夜归乡的钟声」与两条笔记都没有字面重叠，普通检索查不到：
+
+```bash
+uv run novel-editorial memory search <作品ID> 雨夜归乡的钟声
+# no matches
+```
+
+加 `--semantic` 后按意思联想命中，相似度降序追加在结果末尾：
+
+```bash
+uv run novel-editorial memory search <作品ID> 雨夜归乡的钟声 --semantic
+# [笔记] 深夜归乡他总想起钟声（来源: 写手）[语义 0.51]
+# [笔记] 雨夜回乡的钟鸣在耳边响起（来源: 写手）[语义 0.44]
+```
+
+`memory reindex` 重建索引（幂等，重复执行条数不变），重建后语义检索结果不变：
+
+```bash
+uv run novel-editorial memory reindex <作品ID>
+# reindexed 2 entries
+
+uv run novel-editorial memory reindex <作品ID>
+# reindexed 2 entries
+
+uv run novel-editorial memory search <作品ID> 雨夜归乡的钟声 --semantic
+# [笔记] 深夜归乡他总想起钟声（来源: 写手）[语义 0.51]
+# [笔记] 雨夜回乡的钟鸣在耳边响起（来源: 写手）[语义 0.44]
+```
+
+（`<作品ID>` 换成上一步输出的 ID，每次运行不同；`local` 后端是确定性算法，相似度分数每次运行一致，换 `api` 后端后会不同。）
+
 ## 退出码
 
 | 退出码 | 含义 |
@@ -1025,7 +1163,7 @@ uv run novel-editorial setting check <作品ID>
 
 ### 不配 key 能跑吗？
 
-能。没有 `NOVEL_LLM_API_KEY` 时程序使用确定性 mock：对话回复固定为「（模拟回复）」，`demo` 也能一条命令跑通完整闭环。配了 key 后同样的命令自动换成真实模型，不需要改代码。
+能。没有 `NOVEL_LLM_API_KEY` 时程序使用确定性 mock：对话回复固定为「（模拟回复）」，`demo` 也能一条命令跑通完整闭环。语义记忆检索的默认 `local` 后端同样不需要 key，离线可复现（见「语义记忆检索（N7）」）。配了 key 后同样的命令自动换成真实模型，不需要改代码。
 
 ### 数据存在哪？怎么换目录？
 
@@ -1033,7 +1171,7 @@ uv run novel-editorial setting check <作品ID>
 
 ### 怎么换 LLM 供应商？
 
-改 `NOVEL_LLM_API_KEY`、`NOVEL_LLM_BASE_URL`、`NOVEL_LLM_MODEL` 三个环境变量，指向任意 OpenAI 兼容的 `/chat/completions` 接口即可，示例见上文「换 LLM 供应商」。
+改 `NOVEL_LLM_API_KEY`、`NOVEL_LLM_BASE_URL`、`NOVEL_LLM_MODEL` 三个环境变量，指向任意 OpenAI 兼容的 `/chat/completions` 接口即可，示例见上文「换 LLM 供应商」。语义检索的 `api` 后端复用 `NOVEL_LLM_BASE_URL` / `NOVEL_LLM_API_KEY`，再单独配置 `NOVEL_EMBEDDING_MODEL`（见「语义记忆检索（N7）」）。
 
 ### 质量门怎么调？quality_failed 是什么意思？
 
