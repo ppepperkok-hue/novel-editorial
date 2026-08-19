@@ -115,3 +115,7 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 ## 状态
 
 - 立项（2026-08-20）：实施文档就绪，用户授权低价窗口内自主推进，拆包 K1。
+- K1 完成（2026-08-20；commit 07160c4，全量 762 测试绿；多写手模型、Draft.writer_id 迁移与写手感知草稿服务；解析缺口随 K2 一并补齐）。
+- K2 完成（2026-08-20；commits 6a5d617 / f9c0731，全量 779 测试绿；agents add/list、draft --writer、写手可见性 + 独立审查 P3（非 ASCII casefold）修复，审查链归档 docs/reviews/）。K3 待拆包。
+- K3 完成（2026-08-20；commit 9bad8fd，全量 779 测试绿；usage 文档章节 + 示例实跑，独立审查 Ready 无意见，审查链归档 docs/reviews/）。
+- N14 收口（2026-08-20）：全量 779 测试、ruff、pyright、宪法、smoke_m3、stress_m3 全绿；多写手并行整体交付，红线（不工单化、默认行为不变、记忆与产出隔离、角色唯一性只对写手放开）全程未破。后续单元 N18 / N10 / N8 按 backlog 顺序待立项拆包。
