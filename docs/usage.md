@@ -1224,6 +1224,180 @@ uv run novel-editorial inspect <作品ID> 车站
 
 （`<作品ID>` 与 `<设定ID-*>` 换成前面输出的真实 ID，每次运行不同；其余为 mock 下的真实输出。）
 
+### 设定影响分析（N18）
+
+改动一条设定之前，先跑 `setting impact` 看它牵动了哪些内容：草稿正文版本、对话、意见、伏笔线索、伙伴笔记、其它设定条目都会按关键词扫一遍。输出是只读报告——只回答「哪些层、哪些条目、为什么命中」，不代笔、不构成任何创作前置。设定修订后同一命令仍可跑，报告自动按新版本内容重新检索。
+
+#### 命令
+
+- `setting impact <作品ID> <设定ID> [--limit N] [--verbose]`：只读报告一条设定牵动的层。
+  - 无影响输出一行：`no impact found for <设定名> v<N>`。
+  - 有影响先输出标题行 `impact for <设定名> v<N>（共 M 条）：`，再逐行输出 `[层标签] <来源>：<片段>`；`M` 是命中总数，`--limit` 只截断展示行数、不改总数。
+  - 层顺序固定：版本 → 对话 → 意见 → 线索 → 笔记 → 设定；层内按更新时间/创建时间倒序。
+  - `--limit` 默认 `20`；小于 `1` 报用法错误（退出码 `2`）。设定或作品不存在报业务错误（退出码 `1`）。
+  - `--verbose` 在标题前先输出一行 `keywords: ...`（关键词用「、」连接），便于排查为什么命中或没命中。
+
+#### 关键词口径
+
+- 关键词集 = 设定名称（整体一个关键词）+ 内容折叠片段：内容按空白折叠后切出的词块，只保留 ≥2 字的，去重、按长度降序取前 5；没有合格词块时退到折叠内容前 20 字。
+- 命中判定是大小写不敏感的子串匹配；参与检索的层：版本正文（草稿全部版本）、对话、意见、伏笔线索、活跃伙伴笔记、其它设定条目（名称或内容）。
+- 排除自身条目：自己的名称与内容不会出现在报告里，自身历史版本也不参与检索；归档笔记不参与。
+- 命中片段折叠空白并截断 60 字，超长末尾补 `…`。
+
+#### 红线
+
+- 只报告不代笔：影响分析只输出「哪些层、哪些条目、为什么命中」，绝不自动改写正文、不绕过角色判断；修订仍是显式动作。
+- 不阻塞：impact 是纯只读检索命令，不构成任何创作前置；单层查询失败只向 stderr 告警并跳过该层，报告不整体失败，其它命令不受影响。
+
+#### 影响分析示例（mock 下实跑）
+
+下面示例全部可在未配置 key（mock LLM）时复现，用独立数据目录，可单独从头复现。先把数据目录指到临时目录（初始化写法见「判断权与分歧」），再建一部作品：
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-n18\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-n18\config.toml"
+Remove-Item Env:NOVEL_LLM_API_KEY, Env:NOVEL_LLM_BASE_URL, Env:NOVEL_LLM_MODEL -ErrorAction SilentlyContinue
+```
+
+```bash
+uv run novel-editorial works create 影响之书 --genre 悬疑
+# created workspace <作品ID>: 影响之书
+
+uv run novel-editorial setting add <作品ID> --kind 人物 --name 钟声 --content "雨夜的旧城 回荡着钟声" --source 作者
+# added <设定ID-1> [人物] 钟声 v1
+```
+
+生成第一章草稿，再给第一章补一条含「钟声」的正文版本。mock 模式下写手正文固定为「（模拟回复）」，不会命中关键词，所以这一步用项目 API 直接落一条含「钟声」的正文版本（与测试用例同一口径）；配了真实 key 后正文由模型生成，命中与否取决于正文本身。bash 用 heredoc：
+
+```bash
+uv run novel-editorial draft generate <作品ID> --title 第一章
+# draft <草稿ID> 第一章 now at v1
+# awaiting decision: <草稿ID>
+# 写手: 《第一章》初稿写完了，我按节奏收尾，先交给你过目。
+# 责编: 《第一章》过了质量门，我试读了开头「（模拟回复）」，节奏在线，建议作者拍板。
+
+uv run python - <<'PY'
+from novel_editorial.core.config import load_settings
+from novel_editorial.store.db import DB
+from novel_editorial.store.models import Draft, DraftVersion
+
+settings = load_settings()
+db = DB(settings)
+db.init_schema()
+workspace_id = "<作品ID>"
+draft_id = "<草稿ID>"
+with db.workspace_session(workspace_id) as session:
+    draft = session.query(Draft).filter_by(id=draft_id).first()
+    draft.current_version = 2
+    session.add(DraftVersion(draft_id=draft_id, version=2, content="雨夜的旧城，钟声在十点差一刻准时响起，回荡在空无一人的站台。", reason="示例注入"))
+    session.commit()
+print("draft version injected: 第一章 v2")
+PY
+# draft version injected: 第一章 v2
+```
+
+PowerShell 用户可把上面 heredoc 里的内容存成临时脚本后 `uv run python <脚本路径>` 运行。接着写对话、意见、伏笔、笔记和另一条设定，全部走 CLI：
+
+```bash
+uv run novel-editorial talk send <作品ID> "雨夜的旧城，氛围要再压一压。"
+# 作者: 雨夜的旧城，氛围要再压一压。
+# 总编: （模拟回复）
+# 责编: 我想先确认一下：这部作品的主角动机和核心冲突，咱们还没对齐吧？这个定不下来，后面每一章都会飘。
+# 总编: 这部作品的方向还没定：整体基调、核心冲突，咱们先把这些捋清楚再动笔。
+
+uv run novel-editorial review add <草稿ID> --from 责编 --content "钟声段落的雨夜氛围再打磨"
+# review added by 责编: 钟声段落的雨夜氛围再打磨
+
+uv run novel-editorial plot plant <作品ID> --kind foreshadow --content "钟声是解开旧城雨夜之谜的钥匙"
+# planted <线索ID> [伏笔] 钟声是解开旧城雨夜之谜的钥匙
+# 审稿: 线索「钟声是解开旧城雨夜之谜的钥匙」埋下了。我记进时间线，回头逐章对照，别让它断在半路。
+
+uv run novel-editorial memory note <作品ID> 写手 --content "钟声响起时注意旧城雨夜的节奏" --as 写手
+# note added to 写手 by 写手
+
+uv run novel-editorial setting add <作品ID> --kind 世界观 --name 旧城 --content "钟声会改变旧城的时间流向" --source 作者
+# added <设定ID-2> [世界观] 旧城 v1
+```
+
+第一次 impact：六层全命中，共 7 条。对话层有两条——作者消息命中内容片段「雨夜的旧城」，审稿的埋线回复命中名称「钟声」：
+
+```bash
+uv run novel-editorial setting impact <作品ID> <设定ID-1>
+# impact for 钟声 v1（共 7 条）：
+# [版本] 第一章 v2：雨夜的旧城，钟声在十点差一刻准时响起，回荡在空无一人的站台。
+# [对话] 审稿：线索「钟声是解开旧城雨夜之谜的钥匙」埋下了。我记进时间线，回头逐章对照，别让它断在半路。
+# [对话] 作者：雨夜的旧城，氛围要再压一压。
+# [意见] 责编 的意见：钟声段落的雨夜氛围再打磨
+# [线索] 伏笔：伏笔：钟声是解开旧城雨夜之谜的钥匙
+# [笔记] 写手：钟声响起时注意旧城雨夜的节奏
+# [设定] 旧城（世界观）：钟声会改变旧城的时间流向
+```
+
+修订设定后 impact 仍可跑：内容从「雨夜的旧城 回荡着钟声」改为「晨光 山岭」，名称仍是「钟声」，关键词集变成「钟声、晨光、山岭」。只命中旧内容片段的引用会消失（v1 的 7 条变 v2 的 6 条，作者那条「雨夜的旧城」不再计入），命中名称「钟声」的引用全部保留：
+
+```bash
+uv run novel-editorial setting revise <作品ID> <设定ID-1> --content "晨光 山岭" --reason 旧城线重写 --actor 作者
+# revised <设定ID-1> 钟声 v2
+
+uv run novel-editorial setting impact <作品ID> <设定ID-1>
+# impact for 钟声 v2（共 6 条）：
+# [版本] 第一章 v2：雨夜的旧城，钟声在十点差一刻准时响起，回荡在空无一人的站台。
+# [对话] 审稿：线索「钟声是解开旧城雨夜之谜的钥匙」埋下了。我记进时间线，回头逐章对照，别让它断在半路。
+# [意见] 责编 的意见：钟声段落的雨夜氛围再打磨
+# [线索] 伏笔：伏笔：钟声是解开旧城雨夜之谜的钥匙
+# [笔记] 写手：钟声响起时注意旧城雨夜的节奏
+# [设定] 旧城（世界观）：钟声会改变旧城的时间流向
+```
+
+新建一条没有任何引用的设定，impact 输出空态（退出码 0）：
+
+```bash
+uv run novel-editorial setting add <作品ID> --kind 时间线 --name 灯塔 --content "灯塔 渔船" --source 作者
+# added <设定ID-3> [时间线] 灯塔 v1
+
+uv run novel-editorial setting impact <作品ID> <设定ID-3>
+# no impact found for 灯塔 v1
+```
+
+`--verbose` 在标题前输出关键词集，无影响时也一样先打印 keywords 再打印 no impact：
+
+```bash
+uv run novel-editorial setting impact <作品ID> <设定ID-3> --verbose
+# keywords: 灯塔、渔船
+# no impact found for 灯塔 v1
+
+uv run novel-editorial setting impact <作品ID> <设定ID-1> --verbose
+# keywords: 钟声、晨光、山岭
+# impact for 钟声 v2（共 6 条）：
+# [版本] 第一章 v2：雨夜的旧城，钟声在十点差一刻准时响起，回荡在空无一人的站台。
+# [对话] 审稿：线索「钟声是解开旧城雨夜之谜的钥匙」埋下了。我记进时间线，回头逐章对照，别让它断在半路。
+# [意见] 责编 的意见：钟声段落的雨夜氛围再打磨
+# [线索] 伏笔：伏笔：钟声是解开旧城雨夜之谜的钥匙
+# [笔记] 写手：钟声响起时注意旧城雨夜的节奏
+# [设定] 旧城（世界观）：钟声会改变旧城的时间流向
+```
+
+`--limit` 只截断展示行数，标题里的总数不变：
+
+```bash
+uv run novel-editorial setting impact <作品ID> <设定ID-1> --limit 2
+# impact for 钟声 v2（共 6 条）：
+# [版本] 第一章 v2：雨夜的旧城，钟声在十点差一刻准时响起，回荡在空无一人的站台。
+# [对话] 审稿：线索「钟声是解开旧城雨夜之谜的钥匙」埋下了。我记进时间线，回头逐章对照，别让它断在半路。
+```
+
+退出码：`--limit 0` 报用法错误（退出码 2）；未知设定报业务错误（退出码 1）：
+
+```bash
+uv run novel-editorial setting impact <作品ID> <设定ID-1> --limit 0
+# Error: limit must be at least 1, got 0（退出码 2）
+
+uv run novel-editorial setting impact <作品ID> <不存在的设定ID>
+# Error: setting not found: <不存在的设定ID>（退出码 1）
+```
+
+（`<作品ID>`、`<设定ID-*>`、`<草稿ID>` 与 `<线索ID>` 换成前面输出的真实 ID，每次运行不同；时间戳与 stderr 日志已省略；其余为 mock 下的真实输出。）
+
 ## 知识管家（N6）
 
 设定沉淀进库之后不能只躺在库里：写手动笔和编辑审稿时应该自动看到当前版本，改过的地方要在事件流里有迹可循，陈旧条目与同名矛盾候选要被指出来由作者判断。N6 就是把这条分发闭环补上——`memory pack` 与编辑视图自动带「设定：」段，修订在 `events list` 留痕，`setting check` 负责只读报告。
