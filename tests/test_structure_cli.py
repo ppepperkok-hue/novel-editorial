@@ -234,6 +234,138 @@ def test_structure_move_cycle_and_flag_conflict_rejected(
     assert "mutually exclusive" in conflict.output
 
 
+def test_structure_move_order_only_keeps_current_parent(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    volume_id = _node_id(
+        runner.invoke(app, ["structure", "add", workspace_id, "volume", "第一卷"]).output
+    )
+    first_id = _node_id(
+        runner.invoke(
+            app,
+            [
+                "structure",
+                "add",
+                workspace_id,
+                "chapter",
+                "第一章",
+                "--parent",
+                volume_id,
+            ],
+        ).output
+    )
+    second_id = _node_id(
+        runner.invoke(
+            app,
+            [
+                "structure",
+                "add",
+                workspace_id,
+                "chapter",
+                "第二章",
+                "--parent",
+                volume_id,
+            ],
+        ).output
+    )
+
+    moved = runner.invoke(
+        app, ["structure", "move", workspace_id, first_id, "--order", "5"]
+    )
+    assert moved.exit_code == 0, moved.output
+    assert moved.output.strip() == f"moved {first_id}"
+
+    listed = runner.invoke(app, ["structure", "list", workspace_id])
+    assert listed.exit_code == 0, listed.output
+    assert listed.output.splitlines() == [
+        f"[卷] 第一卷（{volume_id}）",
+        f"  [章] 第二章（{second_id}）",
+        f"  [章] 第一章（{first_id}）",
+    ]
+
+
+def test_structure_move_order_combinations_preserve_semantics(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    volume_id = _node_id(
+        runner.invoke(app, ["structure", "add", workspace_id, "volume", "第一卷"]).output
+    )
+    chapter_id = _node_id(
+        runner.invoke(
+            app,
+            [
+                "structure",
+                "add",
+                workspace_id,
+                "chapter",
+                "第一章",
+                "--parent",
+                volume_id,
+            ],
+        ).output
+    )
+
+    to_root = runner.invoke(
+        app,
+        [
+            "structure",
+            "move",
+            workspace_id,
+            chapter_id,
+            "--root",
+            "--order",
+            "3",
+        ],
+    )
+    assert to_root.exit_code == 0, to_root.output
+    listed = runner.invoke(app, ["structure", "list", workspace_id])
+    assert listed.exit_code == 0, listed.output
+    assert listed.output.splitlines() == [
+        f"[卷] 第一卷（{volume_id}）",
+        f"[章] 第一章（{chapter_id}）",
+    ]
+
+    to_parent = runner.invoke(
+        app,
+        [
+            "structure",
+            "move",
+            workspace_id,
+            chapter_id,
+            "--parent",
+            volume_id,
+            "--order",
+            "1",
+        ],
+    )
+    assert to_parent.exit_code == 0, to_parent.output
+    listed = runner.invoke(app, ["structure", "list", workspace_id])
+    assert listed.exit_code == 0, listed.output
+    assert listed.output.splitlines() == [
+        f"[卷] 第一卷（{volume_id}）",
+        f"  [章] 第一章（{chapter_id}）",
+    ]
+
+    conflict = runner.invoke(
+        app,
+        [
+            "structure",
+            "move",
+            workspace_id,
+            chapter_id,
+            "--parent",
+            volume_id,
+            "--root",
+            "--order",
+            "1",
+        ],
+    )
+    assert conflict.exit_code == 2
+    assert "mutually exclusive" in conflict.output
+
+
 def test_structure_status_three_states_and_invalid(
     tmp_path: Path, monkeypatch
 ) -> None:

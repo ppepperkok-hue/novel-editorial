@@ -24,7 +24,8 @@ def upgrade() -> None:
     without dropping the outline table, so an existing table must be left
     untouched instead of failing CREATE. The workspace_id index is ensured
     separately so an interrupted first run cannot stamp the revision without
-    the index the model metadata declares.
+    the index the model metadata declares. The (workspace_id, version) unique
+    constraint guards concurrent outline revisions and is ensured the same way.
     """
     inspector = sa.inspect(op.get_bind())
     if "outlines" not in inspector.get_table_names():
@@ -38,10 +39,19 @@ def upgrade() -> None:
             sa.Column("actor", sa.String(length=100), nullable=False),
             sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
             sa.PrimaryKeyConstraint("id"),
+            sa.UniqueConstraint(
+                "workspace_id",
+                "version",
+                name="uq_outlines_workspace_version",
+            ),
         )
     op.execute(
         "CREATE INDEX IF NOT EXISTS ix_outlines_workspace_id "
         "ON outlines (workspace_id)"
+    )
+    op.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_outlines_workspace_version "
+        "ON outlines (workspace_id, version)"
     )
 
 

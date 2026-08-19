@@ -21,7 +21,7 @@ from novel_editorial.core.structure import (
     set_node_status,
 )
 from novel_editorial.store.db import DB
-from novel_editorial.store.models import Draft
+from novel_editorial.store.models import Draft, WorkspaceStructureNode
 
 structure_app = typer.Typer(help="Manage the optional structure tree of a work")
 
@@ -65,6 +65,21 @@ def _draft_titles(db: DB, workspace_id: str) -> dict[str, str]:
     with db.workspace_session(workspace_id) as session:
         drafts = session.query(Draft).filter_by(workspace_id=workspace_id).all()
     return {draft.id: draft.title for draft in drafts}
+
+
+def _current_parent_id(db: DB, workspace_id: str, node_id: str) -> str | None:
+    """Return a node's current parent id (None means the root level)."""
+    with db.workspace_session(workspace_id) as session:
+        node = (
+            session.query(WorkspaceStructureNode)
+            .filter_by(workspace_id=workspace_id, id=node_id)
+            .first()
+        )
+        if node is None:
+            raise NovelError(
+                ErrorCode.NOT_FOUND, f"structure node not found: {node_id}"
+            )
+        return node.parent_id
 
 
 def render_structure_lines(db: DB, workspace_id: str) -> list[str]:
@@ -163,7 +178,14 @@ def structure_move(
     settings = load_settings()
     db = DB(settings)
     db.init_schema()
-    parent_id = None if root or parent is None else parent
+    if root:
+        parent_id = None
+    elif parent is not None:
+        parent_id = parent
+    elif order is not None:
+        parent_id = _current_parent_id(db, workspace_id, node_id)
+    else:
+        parent_id = None
     node = move_node(db, workspace_id, node_id, parent_id=parent_id, sort_order=order)
     typer.echo(f"moved {node.id}")
 

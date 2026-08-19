@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 
 import pytest
+from sqlalchemy import UniqueConstraint
+from sqlalchemy.exc import IntegrityError
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
@@ -19,6 +21,7 @@ from novel_editorial.core.outline import (
 )
 from novel_editorial.store.db import DB
 from novel_editorial.store.events import list_events
+from novel_editorial.store.models import Outline
 
 runner = CliRunner()
 
@@ -317,3 +320,58 @@ def test_outline_cli_history_truncates_long_reason_and_limit(
     assert lines[1].startswith("v2 ")
     assert ("长" * 40) + "…" in lines[1]
     assert "v1" not in history.output
+
+
+def test_outline_model_declares_workspace_version_unique() -> None:
+    uniques = [
+        item
+        for item in Outline.__table_args__
+        if isinstance(item, UniqueConstraint)
+    ]
+    assert any(
+        item.name == "uq_outlines_workspace_version"
+        and set(item.columns.keys()) == {"workspace_id", "version"}
+        for item in uniques
+    )
+
+
+def test_outlines_migration_mirrors_unique_constraint() -> None:
+    migration_path = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "versions"
+        / "d3c2b1a09f8e_add_outlines_table.py"
+    )
+    source = migration_path.read_text(encoding="utf-8")
+    assert 'name="uq_outlines_workspace_version"' in source
+    assert "sa.UniqueConstraint(" in source
+
+
+def test_outline_duplicate_workspace_version_rejected_by_database(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Two concurrent revise-like inserts with the same version are rejected."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    with db.workspace_session(workspace_id) as session:
+        session.add(
+            Outline(
+                workspace_id=workspace_id,
+                content="v1",
+                version=1,
+                actor="作者",
+            )
+        )
+        session.commit()
+
+    with pytest.raises(IntegrityError):
+        with db.workspace_session(workspace_id) as session:
+            session.add(
+                Outline(
+                    workspace_id=workspace_id,
+                    content="并发重复 v1",
+                    version=1,
+                    actor="作者",
+                )
+            )
+            session.commit()

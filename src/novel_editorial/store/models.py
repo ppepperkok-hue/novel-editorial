@@ -61,6 +61,11 @@ class Outline(Base):
     """One version of a workspace's optional outline plan (N13 J2)."""
 
     __tablename__ = "outlines"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id", "version", name="uq_outlines_workspace_version"
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     workspace_id: Mapped[str] = mapped_column(String(32), index=True)
