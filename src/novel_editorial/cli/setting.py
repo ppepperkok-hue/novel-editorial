@@ -9,6 +9,7 @@ from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.setting import (
     KIND_LABELS,
     add_setting,
+    check_settings,
     get_setting,
     list_setting_history,
     list_settings,
@@ -77,6 +78,17 @@ def setting_list(
         typer.echo(
             f"{entry.id} [{label}] {entry.name} v{entry.current_version} {entry.content}"
         )
+
+
+@setting_app.command("check")
+def setting_check(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+) -> None:
+    """Report stale settings and same-name conflict candidates."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    typer.echo(check_settings(db, workspace_id))
 
 
 @setting_app.command("show")

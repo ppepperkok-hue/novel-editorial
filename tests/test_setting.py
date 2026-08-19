@@ -14,6 +14,7 @@ from novel_editorial.core.setting import (
     KIND_LABELS,
     SETTING_KINDS,
     add_setting,
+    check_settings,
     get_setting,
     list_setting_history,
     list_settings,
@@ -1045,3 +1046,217 @@ def test_multiline_setting_content_renders_single_line_in_sections(
         assert expected in block.splitlines()
         for fragment in fragments:
             assert fragment not in stripped_lines
+
+
+def test_check_settings_empty_state_is_a_single_line(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+
+    report = check_settings(db, workspace_id)
+
+    assert report == "settings: 0 entries (0 revised)；同名冲突：无"
+    assert len(report.splitlines()) == 1
+
+
+def test_check_settings_lists_revised_entries_in_kind_order(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    world = add_setting(
+        db, workspace_id, kind="world", name="世界观", content="灵气复苏", source="大纲"
+    )
+    char = add_setting(
+        db, workspace_id, kind="character", name="沈夜", content="侦探", source="手稿"
+    )
+    revise_setting(
+        db, workspace_id, world.id, content="灵气复苏三百年", reason="调整", actor="作者"
+    )
+    revise_setting(
+        db, workspace_id, char.id, content="表面冷漠", reason="调整", actor="作者"
+    )
+
+    report = check_settings(db, workspace_id)
+    lines = report.splitlines()
+
+    assert lines[0] == "settings: 2 entries (2 revised)"
+    assert lines[1] == "陈旧（已修订）："
+    assert lines[2] == "- 沈夜（人物）v2 表面冷漠（来源: 手稿）—— 已修订，旧版本见 history"
+    world_line = (
+        "- 世界观（世界观）v2 灵气复苏三百年（来源: 大纲）—— 已修订，旧版本见 history"
+    )
+    assert lines[3] == world_line
+    assert len(lines) == 4
+    assert "同名冲突：" not in report
+
+
+def test_check_settings_revised_content_collapses_whitespace(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    entry = add_setting(
+        db,
+        workspace_id,
+        kind="character",
+        name="沈夜",
+        content="初版设定",
+        source="作者",
+    )
+    revise_setting(
+        db,
+        workspace_id,
+        entry.id,
+        content="第一段：雨夜侦探\n第二段：习惯沉默",
+        reason="调整",
+        actor="责编",
+    )
+
+    report = check_settings(db, workspace_id)
+
+    assert (
+        "- 沈夜（人物）v2 第一段：雨夜侦探 第二段：习惯沉默（来源: 作者）"
+        "—— 已修订，旧版本见 history" in report
+    )
+
+
+def test_check_settings_same_name_conflict_across_kinds(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    add_setting(db, workspace_id, kind="character", name="沈夜", content="侦探", source="A")
+    add_setting(db, workspace_id, kind="world", name="沈夜", content="古城", source="B")
+
+    report = check_settings(db, workspace_id)
+    lines = report.splitlines()
+
+    assert lines[0] == "settings: 2 entries (0 revised)"
+    assert lines[1] == "同名冲突："
+    assert "- 「沈夜」：人物 v1 与 世界观 v1 —— 同名条目，请确认是否矛盾" in lines
+
+
+def test_check_settings_same_name_conflict_joins_three_or_more(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    add_setting(db, workspace_id, kind="character", name="沈夜", content="侦探", source="A")
+    add_setting(db, workspace_id, kind="timeline", name="沈夜", content="旧历", source="B")
+    add_setting(db, workspace_id, kind="world", name="沈夜", content="古城", source="C")
+
+    report = check_settings(db, workspace_id)
+
+    assert (
+        "- 「沈夜」：人物 v1 与 时间线 v1 与 世界观 v1"
+        " —— 同名条目，请确认是否矛盾" in report
+    )
+
+
+def test_check_settings_distinct_names_have_no_conflict_section(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    add_setting(db, workspace_id, kind="character", name="沈夜", content="侦探", source="A")
+    add_setting(db, workspace_id, kind="character", name="江晚", content="法医", source="B")
+
+    report = check_settings(db, workspace_id)
+
+    assert report == "settings: 2 entries (0 revised)；同名冲突：无"
+
+
+def test_check_settings_isolated_between_workspaces(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_a = _create_workspace(tmp_path, monkeypatch, "甲书")
+    workspace_b = _create_workspace(tmp_path, monkeypatch, "乙书")
+    db = _db()
+    entry = add_setting(
+        db, workspace_a, kind="character", name="沈夜", content="甲书", source="A"
+    )
+    revise_setting(
+        db, workspace_a, entry.id, content="甲书修订", reason="调整", actor="作者"
+    )
+
+    report_a = check_settings(db, workspace_a)
+    assert report_a.startswith("settings: 1 entries (1 revised)")
+    assert "沈夜（人物）v2 甲书修订" in report_a
+    assert check_settings(db, workspace_b) == "settings: 0 entries (0 revised)；同名冲突：无"
+
+
+def test_check_settings_unknown_workspace_is_not_found(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+
+    with pytest.raises(NovelError) as exc_info:
+        check_settings(db, "nope")
+    assert exc_info.value.code is ErrorCode.NOT_FOUND
+    assert "workspace not found" in exc_info.value.message
+
+
+def test_setting_check_cli_end_to_end(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    added = runner.invoke(
+        app,
+        [
+            "setting",
+            "add",
+            workspace_id,
+            "--kind",
+            "人物",
+            "--name",
+            "沈夜",
+            "--content",
+            "初版设定",
+        ],
+    )
+    assert added.exit_code == 0, added.output
+    setting_id = added.output.split()[1]
+    revised = runner.invoke(
+        app,
+        [
+            "setting",
+            "revise",
+            workspace_id,
+            setting_id,
+            "--content",
+            "修订版",
+            "--reason",
+            "角色调整",
+            "--actor",
+            "责编",
+        ],
+    )
+    assert revised.exit_code == 0, revised.output
+    duplicated = runner.invoke(
+        app,
+        [
+            "setting",
+            "add",
+            workspace_id,
+            "--kind",
+            "世界观",
+            "--name",
+            "沈夜",
+            "--content",
+            "古城设定",
+        ],
+    )
+    assert duplicated.exit_code == 0, duplicated.output
+
+    checked = runner.invoke(app, ["setting", "check", workspace_id])
+    assert checked.exit_code == 0, checked.output
+    assert "settings: 2 entries (1 revised)" in checked.output
+    assert "陈旧（已修订）：" in checked.output
+    assert "沈夜（人物）v2 修订版（来源: 作者）—— 已修订，旧版本见 history" in checked.output
+    assert "同名冲突：" in checked.output
+    assert "- 「沈夜」：人物 v2 与 世界观 v1 —— 同名条目，请确认是否矛盾" in checked.output
+
+    missing = runner.invoke(app, ["setting", "check", "nope"])
+    assert missing.exit_code == 1
+    assert "workspace not found" in missing.output

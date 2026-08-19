@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import datetime
 
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.events import EventType
@@ -16,6 +17,9 @@ KIND_LABELS: dict[str, str] = {
     "relation": "关系",
     "timeline": "时间线",
     "world": "世界观",
+}
+_KIND_ORDER: dict[str, int] = {
+    kind: index for index, kind in enumerate(SETTING_KINDS)
 }
 
 
@@ -31,6 +35,11 @@ def _validate_kind(kind: str) -> None:
         raise NovelError(
             ErrorCode.USAGE_ERROR, f"invalid kind: {kind} (expected one of: {expected})"
         )
+
+
+def _setting_sort_key(entry: SettingEntry) -> tuple[int, datetime, str]:
+    """Order entries by kind order, then updated_at, then id as a tiebreak."""
+    return (_KIND_ORDER[entry.kind], entry.updated_at, entry.id)
 
 
 def add_setting(
@@ -176,8 +185,7 @@ def settings_section(db: DB, workspace_id: str) -> str:
         )
     if not entries:
         return ""
-    kind_order = {kind: index for index, kind in enumerate(SETTING_KINDS)}
-    entries.sort(key=lambda entry: (kind_order[entry.kind], entry.updated_at, entry.id))
+    entries.sort(key=_setting_sort_key)
     lines = ["设定："]
     for entry in entries:
         label = KIND_LABELS.get(entry.kind, entry.kind)
@@ -186,6 +194,56 @@ def settings_section(db: DB, workspace_id: str) -> str:
             f"- [{label}] {entry.name} v{entry.current_version} "
             f"{collapsed}（来源: {entry.source}）"
         )
+    return "\n".join(lines)
+
+
+def check_settings(db: DB, workspace_id: str) -> str:
+    """Render a deterministic report of stale and same-name conflict candidates."""
+    _ensure_workspace(db, workspace_id)
+    with db.workspace_session(workspace_id) as session:
+        entries = (
+            session.query(SettingEntry)
+            .filter_by(workspace_id=workspace_id)
+            .all()
+        )
+    total = len(entries)
+    revised = [entry for entry in entries if entry.current_version > 1]
+    revised_count = len(revised)
+
+    lines = [f"settings: {total} entries ({revised_count} revised)"]
+    if revised:
+        revised.sort(key=_setting_sort_key)
+        lines.append("陈旧（已修订）：")
+        for entry in revised:
+            label = KIND_LABELS.get(entry.kind, entry.kind)
+            collapsed = " ".join(entry.content.split())
+            lines.append(
+                f"- {entry.name}（{label}）v{entry.current_version} {collapsed}"
+                f"（来源: {entry.source}）—— 已修订，旧版本见 history"
+            )
+
+    by_name: dict[str, list[SettingEntry]] = {}
+    for entry in entries:
+        by_name.setdefault(entry.name, []).append(entry)
+    conflict_groups = [group for group in by_name.values() if len(group) >= 2]
+    if conflict_groups:
+        lines.append("同名冲突：")
+        for group in sorted(conflict_groups, key=lambda entries: entries[0].name):
+            group.sort(
+                key=lambda entry: (
+                    _KIND_ORDER[entry.kind],
+                    entry.current_version,
+                    entry.id,
+                )
+            )
+            parts = " 与 ".join(
+                f"{KIND_LABELS.get(entry.kind, entry.kind)} v{entry.current_version}"
+                for entry in group
+            )
+            lines.append(f"- 「{group[0].name}」：{parts} —— 同名条目，请确认是否矛盾")
+
+    if not revised and not conflict_groups:
+        return f"settings: {total} entries ({revised_count} revised)；同名冲突：无"
     return "\n".join(lines)
 
 
