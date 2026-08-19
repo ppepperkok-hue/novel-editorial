@@ -69,6 +69,14 @@ def _validate_status(status: str) -> None:
         )
 
 
+def _validate_sort_order(sort_order: int | None) -> None:
+    """Raise USAGE_ERROR unless sort_order is non-negative."""
+    if sort_order is not None and sort_order < 0:
+        raise NovelError(
+            ErrorCode.USAGE_ERROR, f"invalid sort order: {sort_order}"
+        )
+
+
 def _validate_parent(kind: str, parent: WorkspaceStructureNode | None) -> None:
     """Raise USAGE_ERROR when the parent kind is not a valid parent for kind."""
     if parent is None:
@@ -152,6 +160,7 @@ def create_node(
     _validate_kind(kind)
     if not title.strip():
         raise NovelError(ErrorCode.USAGE_ERROR, "node title must not be empty")
+    _validate_sort_order(sort_order)
     _ensure_workspace(db, workspace_id)
     with db.workspace_session(workspace_id) as session:
         parent = None
@@ -273,6 +282,7 @@ def move_node(
             raise NovelError(
                 ErrorCode.NOT_FOUND, f"structure node not found: {node_id}"
             )
+        _validate_sort_order(sort_order)
         parent = None
         if parent_id is not None:
             parent = (
@@ -293,6 +303,8 @@ def move_node(
                 "cannot move a node into itself or its own subtree",
             )
         _validate_parent(node.kind, parent)
+        if parent_id == node.parent_id and sort_order is None:
+            return node
         next_order = (
             sort_order
             if sort_order is not None

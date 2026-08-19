@@ -171,6 +171,20 @@ def test_create_rejects_blank_title_and_invalid_kind(
     assert exc_info.value.code is ErrorCode.USAGE_ERROR
 
 
+def test_create_node_rejects_negative_sort_order(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    with pytest.raises(NovelError) as exc_info:
+        create_node(
+            db, workspace_id, kind=KIND_CHAPTER, title="负序", sort_order=-5
+        )
+    assert exc_info.value.code is ErrorCode.USAGE_ERROR
+    assert "invalid sort order" in exc_info.value.message
+    assert list_structure(db, workspace_id) == []
+
+
 def test_create_parent_missing_or_other_workspace(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -325,6 +339,57 @@ def test_move_node_to_root_and_reorder(tmp_path: Path, monkeypatch) -> None:
     ]
 
 
+def test_move_node_to_same_parent_without_order_is_noop(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    volume = create_node(db, workspace_id, kind=KIND_VOLUME, title="卷")
+    first = create_node(
+        db, workspace_id, kind=KIND_CHAPTER, title="甲", parent_id=volume.id
+    )
+    second = create_node(
+        db, workspace_id, kind=KIND_CHAPTER, title="乙", parent_id=volume.id
+    )
+    assert [node.title for node in list_structure(db, workspace_id)] == [
+        volume.title,
+        first.title,
+        second.title,
+    ]
+    events_before = len(_event_kinds(db, workspace_id))
+
+    moved = move_node(db, workspace_id, first.id, parent_id=volume.id)
+
+    assert moved.parent_id == volume.id
+    assert moved.sort_order == 1
+    assert [node.title for node in list_structure(db, workspace_id)] == [
+        volume.title,
+        first.title,
+        second.title,
+    ]
+    assert len(_event_kinds(db, workspace_id)) == events_before
+
+
+def test_move_root_to_root_without_order_is_noop(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    root = create_node(db, workspace_id, kind=KIND_VOLUME, title="卷甲")
+    create_node(db, workspace_id, kind=KIND_VOLUME, title="卷乙")
+    events_before = len(_event_kinds(db, workspace_id))
+
+    moved = move_node(db, workspace_id, root.id, parent_id=None)
+
+    assert moved.parent_id is None
+    assert moved.sort_order == 1
+    assert [node.title for node in list_structure(db, workspace_id)] == [
+        root.title,
+        "卷乙",
+    ]
+    assert len(_event_kinds(db, workspace_id)) == events_before
+
+
 def test_move_node_default_sort_appends_to_new_parent(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -344,6 +409,28 @@ def test_move_node_default_sort_appends_to_new_parent(
         root_b.title,
         chapter.title,
     ]
+
+
+def test_move_node_rejects_negative_sort_order(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    volume = create_node(db, workspace_id, kind=KIND_VOLUME, title="卷")
+    chapter = create_node(
+        db, workspace_id, kind=KIND_CHAPTER, title="章", parent_id=volume.id
+    )
+
+    with pytest.raises(NovelError) as exc_info:
+        move_node(db, workspace_id, chapter.id, sort_order=-5)
+    assert exc_info.value.code is ErrorCode.USAGE_ERROR
+    assert "invalid sort order" in exc_info.value.message
+
+    with db.workspace_session(workspace_id) as session:
+        stored = session.get(WorkspaceStructureNode, chapter.id)
+        assert stored is not None
+        assert stored.parent_id == volume.id
+        assert stored.sort_order == 1
 
 
 def test_move_node_cycle_self_and_descendant(tmp_path: Path, monkeypatch) -> None:
@@ -541,6 +628,8 @@ def test_structure_events_leave_system_trace(tmp_path: Path, monkeypatch) -> Non
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     db = _db()
     node = create_node(db, workspace_id, kind=KIND_CHAPTER, title="事件章")
+    parent = create_node(db, workspace_id, kind=KIND_VOLUME, title="事件卷")
+    move_node(db, workspace_id, node.id, parent_id=parent.id)
     rename_node(db, workspace_id, node.id, "新事件章")
     move_node(db, workspace_id, node.id, parent_id=None)
     set_node_status(db, workspace_id, node.id, STATUS_COMPLETED)
@@ -557,10 +646,14 @@ def test_structure_events_leave_system_trace(tmp_path: Path, monkeypatch) -> Non
         "structure_status_changed",
         "structure_moved",
         "structure_renamed",
+        "structure_moved",
+        "structure_created",
         "structure_created",
     ]
     created = next(
-        payload for payload in payloads if payload["kind"] == "structure_created"
+        payload
+        for payload in payloads
+        if payload["kind"] == "structure_created" and payload["node_id"] == node.id
     )
     assert created["node_id"] == node.id
     assert created["kind"] == "structure_created"
