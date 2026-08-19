@@ -122,3 +122,5 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 - 立项（2026-08-19）：实施文档就绪，用户确认后拆包 G1。
 - G1 完成（2026-08-19；commits 5bec3b6 / 2f0974b，全量 561 测试绿；两表迁移与五个核心函数 + 独立审查 actor 校验修复，审查链归档 docs/reviews/）。G2 待拆包。
 - G2 完成（2026-08-19；commit 956a41e，全量 586 测试绿；setting 五命令 + 检索 [设定] 层 + source 校验补漏，独立审查无意见，审查链归档 docs/reviews/）。G3 待拆包。
+- G3 完成（2026-08-19；commit ee2cbfd，全量 586 测试绿；usage 文档章节 + 示例实跑，总监复核归档 docs/reviews/）。
+- N5 收口（2026-08-19）：全量 586 测试、ruff、pyright、宪法、smoke_m3、stress_m3 全绿；作品设定库整体交付，红线（沉淀不是前置、只记录不改写、通用体裁）全程未破。后续单元 N6 按 backlog 顺序待用户立项拆包。
