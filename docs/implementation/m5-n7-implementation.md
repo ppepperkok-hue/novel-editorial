@@ -22,7 +22,7 @@
 
 - 表结构增量：新增 `memory_embeddings` 表（workspace_id / layer / source_id / vector(Text JSON) / dim / updated_at，UniqueConstraint(layer, source_id)），走新 Alembic migration，纯追加。
 - 新增模块：`llm/embeddings.py`（EmbeddingClient 抽象 + LocalNGramEmbedder + OpenAICompatEmbedder）、`core/retrieval.py`（索引同步与语义检索服务）。
-- 配置增量：Settings 新增 embedding_backend（local|api，默认 local）、embedding_model（默认空串表示后端默认）、embedding_dim（默认 256）、embedding_top_k（默认 5）；NOVEL_EMBEDDING_* 环境变量与 config.toml [defaults] 同名键。
+- 配置增量：Settings 新增 embedding_backend（local|api，默认 local）、embedding_model（local 后端可空；api 后端必须显式配置，空则报 CONFIG_ERROR）、embedding_dim（默认 256）、embedding_top_k（默认 5）；NOVEL_EMBEDDING_* 环境变量与 config.toml [defaults] 同名键。
 - 事件契约、错误码、依赖方向（cli → core → store/llm/quality）不变。
 - 若实现中发现必须破坏性改表 / 改事件契约 / 改错误码，先停下回报，不硬做。
 

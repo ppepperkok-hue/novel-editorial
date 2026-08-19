@@ -293,15 +293,18 @@ def restore_memory_notes(
 
 
 def delete_memory_note(db: DB, workspace_id: str, memory_id: str) -> None:
-    """Delete one private note by id."""
+    """Delete one private note by id, always syncing the vector index."""
+    found = False
     with db.workspace_session(workspace_id) as session:
         note = (
             session.query(AgentMemory)
             .filter_by(workspace_id=workspace_id, id=memory_id)
             .first()
         )
-        if note is None:
-            raise NovelError(ErrorCode.NOT_FOUND, f"memory note not found: {memory_id}")
-        session.delete(note)
-        session.commit()
+        if note is not None:
+            found = True
+            session.delete(note)
+            session.commit()
     delete_embedding_safe(db, workspace_id, layer=LAYER_NOTE, source_id=memory_id)
+    if not found:
+        raise NovelError(ErrorCode.NOT_FOUND, f"memory note not found: {memory_id}")

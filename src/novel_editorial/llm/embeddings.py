@@ -65,11 +65,18 @@ class OpenAICompatEmbedder(EmbeddingClient):
         from openai import OpenAI
 
         self._model = model
-        self._client = OpenAI(
-            api_key=api_key,
-            base_url=base_url,
-            timeout=timeout,
-        )
+        try:
+            self._client = OpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                timeout=timeout,
+            )
+        except Exception as exc:
+            raise NovelError(
+                ErrorCode.LLM_ERROR,
+                "embedding client construction failed",
+                context={"error": "unknown"},
+            ) from exc
 
     def embed(self, text: str) -> list[float]:
         from openai import (
@@ -129,10 +136,16 @@ def build_embedding_client(settings: Settings) -> EmbeddingClient:
     if settings.embedding_backend == "local":
         return LocalNGramEmbedder(settings.embedding_dim)
     if settings.embedding_backend == "api":
+        if not settings.embedding_model:
+            raise NovelError(
+                ErrorCode.CONFIG_ERROR,
+                "embedding_model must be explicitly configured when "
+                "embedding_backend is 'api'",
+            )
         return OpenAICompatEmbedder(
             base_url=settings.llm_base_url,
             api_key=settings.llm_api_key or "",
-            model=settings.embedding_model or settings.llm_model,
+            model=settings.embedding_model,
         )
     raise NovelError(
         ErrorCode.CONFIG_ERROR,

@@ -1381,3 +1381,31 @@ def test_delete_memory_note_embedding_failure_keeps_delete_and_warns(
     with db.workspace_session(workspace_id) as session:
         assert session.query(AgentMemory).filter_by(id=note.id).count() == 0
         assert session.query(MemoryEmbedding).count() == 1
+
+
+def test_delete_memory_note_retry_cleans_orphan_embedding(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = DB(settings)
+    writer_id = _writer_id(db, workspace_id)
+    note = add_memory_note(
+        db, workspace_id, writer_id, actor="写手", content="索引删除失败留下孤儿"
+    )
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("index delete failed")
+
+    monkeypatch.setattr("novel_editorial.core.retrieval.delete_embedding", boom)
+    delete_memory_note(db, workspace_id, note.id)
+    with db.workspace_session(workspace_id) as session:
+        assert session.query(AgentMemory).filter_by(id=note.id).count() == 0
+        assert session.query(MemoryEmbedding).count() == 1
+
+    monkeypatch.undo()
+    with pytest.raises(NovelError) as exc_info:
+        delete_memory_note(db, workspace_id, note.id)
+    assert exc_info.value.code is ErrorCode.NOT_FOUND
+    with db.workspace_session(workspace_id) as session:
+        assert session.query(MemoryEmbedding).count() == 0

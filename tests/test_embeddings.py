@@ -156,7 +156,10 @@ def test_build_embedding_client_dispatches_api(monkeypatch) -> None:
     assert seen["api_key"] == ""
 
 
-def test_build_embedding_client_api_uses_llm_model_fallback(monkeypatch) -> None:
+def test_build_embedding_client_api_without_model_is_config_error(
+    monkeypatch,
+) -> None:
+    """api backend requires an explicit embedding model; never uses llm_model."""
     seen: dict = {}
 
     class FakeOpenAI:
@@ -165,18 +168,40 @@ def test_build_embedding_client_api_uses_llm_model_fallback(monkeypatch) -> None
             self.embeddings = SimpleNamespace(create=lambda **kwargs: None)
 
     monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
-    client = build_embedding_client(
-        Settings(
-            data_dir=Path("."),
-            config_path=Path("."),
-            llm_base_url="https://custom.example/v1",
-            llm_model="deepseek-chat",
-            embedding_backend="api",
-            embedding_model="",
+    with pytest.raises(NovelError) as info:
+        build_embedding_client(
+            Settings(
+                data_dir=Path("."),
+                config_path=Path("."),
+                llm_base_url="https://custom.example/v1",
+                llm_model="deepseek-chat",
+                embedding_backend="api",
+                embedding_model="",
+            )
         )
-    )
-    assert isinstance(client, OpenAICompatEmbedder)
-    assert client._model == "deepseek-chat"
+    assert info.value.code is ErrorCode.CONFIG_ERROR
+    assert "embedding_model" in info.value.message
+    assert seen == {}
+
+
+def test_openai_compat_embedder_construction_failure_wraps_llm_error(
+    monkeypatch,
+) -> None:
+    """Missing credentials surface as NovelError(LLM_ERROR), not a raw exception."""
+    import openai
+
+    class BoomOpenAI:
+        def __init__(self, **kwargs):
+            raise openai.OpenAIError("The api_key client option must be set")
+
+    monkeypatch.setattr("openai.OpenAI", BoomOpenAI)
+    with pytest.raises(NovelError) as info:
+        OpenAICompatEmbedder(
+            base_url="https://example.com/v1",
+            api_key="",
+            model="text-embedding-3-small",
+        )
+    assert info.value.code is ErrorCode.LLM_ERROR
 
 
 def test_build_embedding_client_unknown_backend_reports_config_error() -> None:
