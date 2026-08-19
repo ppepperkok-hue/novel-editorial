@@ -4,8 +4,14 @@ from __future__ import annotations
 
 import typer
 
+from novel_editorial.cli.structure import (
+    STATUS_LABELS,
+    render_structure_lines,
+    status_from_label,
+)
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.structure import set_workspace_status
 from novel_editorial.core.workspace import create_workspace
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import Agent, Workspace
@@ -54,8 +60,10 @@ def works_show(workspace_id: str = typer.Argument(..., help="Workspace id")) -> 
         title = workspace.title
         genre = workspace.genre
         description = workspace.description
+        status = workspace.status
     typer.echo(f"id: {workspace_id}")
     typer.echo(f"title: {title}")
+    typer.echo(f"状态: {STATUS_LABELS.get(status, status)}")
     typer.echo(f"genre: {genre}")
     if description:
         typer.echo(f"description: {description}")
@@ -64,3 +72,23 @@ def works_show(workspace_id: str = typer.Argument(..., help="Workspace id")) -> 
     typer.echo("band:")
     for agent in agents:
         typer.echo(f"  {agent.role}: {agent.name}")
+    structure_lines = render_structure_lines(db, workspace_id)
+    if structure_lines:
+        typer.echo("结构：")
+        for line in structure_lines:
+            typer.echo(line)
+
+
+@works_app.command("status")
+def works_status(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+    status: str = typer.Argument(..., help="writing/completed/shelved（创作中/已完成/搁置）"),
+) -> None:
+    """Set a workspace's progress status."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    workspace = set_workspace_status(
+        db, workspace_id, status_from_label(status)
+    )
+    typer.echo(f"status updated: {workspace.id} {workspace.status}")

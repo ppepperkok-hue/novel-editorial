@@ -11,6 +11,7 @@ from novel_editorial.core.chat import list_messages
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.draft import build_memory_pack, get_draft_version
 from novel_editorial.core.memory import archive_memory_notes
+from novel_editorial.core.outline import create_outline, revise_outline
 from novel_editorial.core.setting import add_setting, revise_setting
 from novel_editorial.core.style import get_style_anchor
 from novel_editorial.llm.client import MockLLMClient
@@ -193,6 +194,58 @@ def test_memory_pack_without_settings_has_no_setting_section(
     packed = build_memory_pack(DB(load_settings()), workspace_id)
     assert "设定：" not in packed
     assert "（来源:" not in packed
+
+
+def test_memory_pack_keeps_outline_placeholder_without_outline(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    packed = build_memory_pack(DB(load_settings()), workspace_id)
+    assert "章纲：暂无（占位）" in packed
+
+
+def test_memory_pack_injects_current_outline_content(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    create_outline(db, workspace_id, content="楔子：雨夜车站", actor="作者")
+
+    packed = build_memory_pack(db, workspace_id)
+    assert "章纲：楔子：雨夜车站" in packed
+    assert "章纲：暂无（占位）" not in packed
+
+    revise_outline(
+        db,
+        workspace_id,
+        content="楔子：雨夜车站，钟停十一点",
+        reason="加悬念",
+        actor="责编",
+    )
+    packed = build_memory_pack(db, workspace_id)
+    assert "章纲：楔子：雨夜车站，钟停十一点" in packed
+
+
+def test_memory_pack_collapses_and_truncates_outline(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    create_outline(db, workspace_id, content="第一行\n\n  第二行  内容", actor="作者")
+
+    packed = build_memory_pack(db, workspace_id)
+    assert "章纲：第一行 第二行 内容" in packed
+
+    revise_outline(
+        db,
+        workspace_id,
+        content="字" * 150,
+        reason="超长",
+        actor="作者",
+    )
+    packed = build_memory_pack(db, workspace_id)
+    assert f"章纲：{'字' * 120}…" in packed
+    assert "章纲：第一行" not in packed
 
 
 def test_memory_pack_shows_revised_setting_version(

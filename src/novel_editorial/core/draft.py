@@ -13,6 +13,7 @@ from novel_editorial.core.chat import (
 )
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.memory import list_memory_notes
+from novel_editorial.core.outline import get_outline
 from novel_editorial.core.plot import plot_threads_section
 from novel_editorial.core.review import list_reviews
 from novel_editorial.core.setting import settings_section
@@ -23,6 +24,8 @@ from novel_editorial.quality.gate import check_quality
 from novel_editorial.store.db import DB, list_workspace_ids
 from novel_editorial.store.events import record_event_in_session
 from novel_editorial.store.models import Agent, AgentRole, Draft, DraftVersion
+
+OUTLINE_DISPLAY_LIMIT = 120
 
 
 def build_memory_pack(db: DB, workspace_id: str) -> str:
@@ -36,7 +39,14 @@ def build_memory_pack(db: DB, workspace_id: str) -> str:
         lines.append(f"风格说明：{anchor.description}")
     if anchor.forbidden_words:
         lines.append(f"禁忌词：{anchor.forbidden_words}")
-    lines.append("章纲：暂无（占位）")
+    outline = get_outline(db, workspace_id)
+    if outline is None:
+        lines.append("章纲：暂无（占位）")
+    else:
+        collapsed = " ".join(outline.content.split())
+        if len(collapsed) > OUTLINE_DISPLAY_LIMIT:
+            collapsed = collapsed[:OUTLINE_DISPLAY_LIMIT] + "…"
+        lines.append(f"章纲：{collapsed}")
     writer = get_agent(db, workspace_id, AgentRole.WRITER)
     notes = list_memory_notes(db, workspace_id, agent_id=writer.id)
     if notes:

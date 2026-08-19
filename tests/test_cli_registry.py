@@ -39,6 +39,8 @@ SUBCOMMANDS = {
     "quality": ("check", "explain"),
     "plot": ("plant", "list", "recover"),
     "setting": ("add", "list", "show", "revise", "history", "check"),
+    "structure": ("add", "list", "rename", "move", "remove", "status"),
+    "outline": ("create", "revise", "show", "history"),
     "events": ("list", "watch"),
 }
 

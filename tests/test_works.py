@@ -63,3 +63,99 @@ def test_works_show_missing_returns_business_error(tmp_path: Path, monkeypatch) 
     result = runner.invoke(app, ["works", "show", "does-not-exist"])
     assert result.exit_code == 1
     assert "workspace not found" in result.output
+
+
+def _created_workspace_id(create_output: str) -> str:
+    match = re.search(r"created workspace (\w+):", create_output)
+    assert match is not None
+    return match.group(1)
+
+
+def test_works_status_flow_and_invalid(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("NOVEL_DATA_DIR", str(tmp_path))
+    create = runner.invoke(app, ["works", "create", "状态之书"])
+    assert create.exit_code == 0, create.output
+    workspace_id = _created_workspace_id(create.output)
+
+    for status in ("completed", "shelved", "writing"):
+        result = runner.invoke(app, ["works", "status", workspace_id, status])
+        assert result.exit_code == 0, result.output
+        assert result.output.strip() == f"status updated: {workspace_id} {status}"
+
+    invalid = runner.invoke(app, ["works", "status", workspace_id, "done"])
+    assert invalid.exit_code == 2
+    assert "invalid status" in invalid.output
+
+
+def test_works_show_zero_structure_output_only_adds_status_line(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("NOVEL_DATA_DIR", str(tmp_path))
+    create = runner.invoke(
+        app,
+        ["works", "create", "零结构之书", "--genre", "短篇", "--description", "没有结构的简介"],
+    )
+    assert create.exit_code == 0, create.output
+    workspace_id = _created_workspace_id(create.output)
+
+    shown = runner.invoke(app, ["works", "show", workspace_id])
+    assert shown.exit_code == 0, shown.output
+    assert shown.output.splitlines() == [
+        f"id: {workspace_id}",
+        "title: 零结构之书",
+        "状态: 创作中",
+        "genre: 短篇",
+        "description: 没有结构的简介",
+        "band:",
+        "  editor_in_chief: 总编",
+        "  editor: 责编",
+        "  writer: 写手",
+        "  reviewer: 审稿",
+    ]
+
+
+def test_works_show_status_line_and_structure_tree(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("NOVEL_DATA_DIR", str(tmp_path))
+    create = runner.invoke(
+        app,
+        ["works", "create", "结构展示之书", "--genre", "长篇", "--description", "一段简介"],
+    )
+    assert create.exit_code == 0, create.output
+    workspace_id = _created_workspace_id(create.output)
+
+    empty_show = runner.invoke(app, ["works", "show", workspace_id])
+    assert empty_show.exit_code == 0, empty_show.output
+    assert "状态: 创作中" in empty_show.output
+    assert "结构：" not in empty_show.output
+
+    add_volume = runner.invoke(
+        app, ["structure", "add", workspace_id, "volume", "第一卷"]
+    )
+    assert add_volume.exit_code == 0, add_volume.output
+    volume_id = add_volume.output.split()[1]
+    add_chapter = runner.invoke(
+        app,
+        ["structure", "add", workspace_id, "chapter", "第一章", "--parent", volume_id],
+    )
+    assert add_chapter.exit_code == 0, add_chapter.output
+    chapter_id = add_chapter.output.split()[1]
+
+    status = runner.invoke(app, ["works", "status", workspace_id, "completed"])
+    assert status.exit_code == 0, status.output
+    assert status.output.strip() == f"status updated: {workspace_id} completed"
+
+    shown = runner.invoke(app, ["works", "show", workspace_id])
+    assert shown.exit_code == 0, shown.output
+    lines = shown.output.splitlines()
+    assert "title: 结构展示之书" in lines
+    status_index = lines.index("状态: 已完成")
+    description_index = lines.index("description: 一段简介")
+    assert status_index < description_index
+    assert lines[status_index + 1] == "genre: 长篇"
+    assert lines[status_index + 2] == "description: 一段简介"
+
+    structure_index = lines.index("结构：")
+    assert lines[structure_index + 1] == f"[卷] 第一卷（{volume_id}）"
+    assert lines[structure_index + 2] == f"  [章] 第一章（{chapter_id}）"

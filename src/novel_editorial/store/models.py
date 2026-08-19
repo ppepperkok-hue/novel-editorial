@@ -57,6 +57,20 @@ class WorkspaceStructureNode(Base):
     )
 
 
+class Outline(Base):
+    """One version of a workspace's optional outline plan (N13 J2)."""
+
+    __tablename__ = "outlines"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(String(32), index=True)
+    content: Mapped[str] = mapped_column(Text)
+    version: Mapped[int] = mapped_column(Integer)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    actor: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class AgentRole:
     EDITOR_IN_CHIEF = "editor_in_chief"
     EDITOR = "editor"
