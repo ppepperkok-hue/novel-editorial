@@ -871,6 +871,147 @@ uv run novel-editorial inspect <作品ID> 车站
 
 （`<作品ID>` 与 `<设定ID-*>` 换成前面输出的真实 ID，每次运行不同；其余为 mock 下的真实输出。）
 
+## 知识管家（N6）
+
+设定沉淀进库之后不能只躺在库里：写手动笔和编辑审稿时应该自动看到当前版本，改过的地方要在事件流里有迹可循，陈旧条目与同名矛盾候选要被指出来由作者判断。N6 就是把这条分发闭环补上——`memory pack` 与编辑视图自动带「设定：」段，修订在 `events list` 留痕，`setting check` 负责只读报告。
+
+### 分发语义
+
+- 写手记忆包（`memory pack`）与编辑视图（`memory view --as 责编` / `--as 总编`）自动带「设定：」段，放在私有记忆之后、悬置线索之前；每行格式 `- [人物] 沈夜 v2 当前内容（来源: 作者）`。
+- 行序固定：kind 固定序（人物→关系→时间线→世界观），同 kind 按更新时间升序、id 兜底；无设定条目时整段不出现，记忆包与视图其余部分照常。
+- 分发永远用当前版本：记忆包、编辑视图、检索一律读 `current_version` 的内容，旧版本只留在 `setting history` 可溯，绝不分发历史版本。
+- 检索 [设定] 层同源：`memory search` 与 `inspect` 命中设定层时输出与 N5 相同的 `[设定] <标签>：<名称>——<摘要>（来源: <来源> v<版本>）`，版本号即当前版本；分发、视图、检索三路读的是同一份当前内容。
+
+### 修订事件留痕
+
+`setting revise` 在版本落库后追加一条 system 事件（复用既有事件流，不新增事件类型），payload 为：
+
+```json
+{"kind": "setting_revised", "setting_id": "<设定ID>", "name": "沈夜", "version": 2, "actor": "作者", "reason": "第二章补充人物背景"}
+```
+
+`events list` 可以看到该事件，行格式 `[system] <操作者> <payload>`；payload 超过 80 字符时列表截断显示（末尾 `...`），完整内容留在事件流内。事件写入失败只向 stderr 告警，不阻塞修订本身。
+
+### setting check
+
+- `setting check <作品ID>`：只读报告，输出统计行 `settings: N entries (M revised)`（N 为总条目数，M 为已修订条目数，即 `current_version > 1`）。
+- 存在已修订条目时列出陈旧列表：`- 沈夜（人物）v2 <当前内容>（来源: 作者）—— 已修订，旧版本见 history`。
+- 同名条目（任意 kind）按名称分组列出矛盾候选：`- 「沈夜」：人物 v2 与 世界观 v1 —— 同名条目，请确认是否矛盾`；同名条目即使 kind 不同也会被识别。
+- 没有陈旧也没有同名冲突时输出单行：`settings: N entries (M revised)；同名冲突：无`（空库为 `settings: 0 entries (0 revised)；同名冲突：无`）。
+- 退出码沿用全局语义：成功 `0`，作品不存在等业务错误 `1`，用法错误 `2`（如 `setting add` 传未知 kind）。
+
+### 红线
+
+- 沉淀不是前置：不建设定条目不影响写稿、修订与过稿；无设定时记忆包与编辑视图照常，只是没有「设定：」段。
+- 只报告不改写：`setting check` 只输出报告供作者判断，不自动改设定、不改正文、不绕过角色判断；修订仍是显式动作。
+- 分发用当前版本：记忆包、编辑视图、检索只读 `current_version`，旧版本只留在 history 可溯，绝不用陈旧版本污染创作上下文。
+
+### 示例（mock 下实跑）
+
+下面示例全部可在未配置 key（mock LLM）时复现。先把数据目录指到临时目录（初始化写法见「判断权与分歧」），再建一部作品：
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-n6\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-n6\config.toml"
+Remove-Item Env:NOVEL_LLM_API_KEY, Env:NOVEL_LLM_BASE_URL, Env:NOVEL_LLM_MODEL -ErrorAction SilentlyContinue
+```
+
+```bash
+uv run novel-editorial works create 设定之书 --genre 悬疑
+# created workspace <作品ID>: 设定之书
+```
+
+沉淀一条人物设定，再沉淀一条世界观设定，故意同名（制造同名冲突候选）：
+
+```bash
+uv run novel-editorial setting add <作品ID> --kind 人物 --name 沈夜 --content 二十岁出头的古董修复师，最怕旧车站的钟声。 --source 作者
+# added <设定ID-1> [人物] 沈夜 v1
+
+uv run novel-editorial setting add <作品ID> --kind 世界观 --name 沈夜 --content 全城只有一座钟楼，钟声在午夜后会把人带回二十年前。 --source 作者
+# added <设定ID-2> [世界观] 沈夜 v1
+```
+
+修订人物设定：版本从 v1 升到 v2：
+
+```bash
+uv run novel-editorial setting revise <作品ID> <设定ID-1> --content "二十岁出头的古董修复师，能修好任何钟，唯独不肯靠近旧车站。" --reason 第二章补充人物背景 --actor 作者
+# revised <设定ID-1> 沈夜 v2
+```
+
+写手记忆包自动带「设定：」段，人物显示的是 v2 当前内容，kind 固定序（人物先于世界观）：
+
+```bash
+uv run novel-editorial memory pack <作品ID>
+# 作品：《设定之书》（悬疑）
+# 简介：
+# 章纲：暂无（占位）
+# 设定：
+# - [人物] 沈夜 v2 二十岁出头的古董修复师，能修好任何钟，唯独不肯靠近旧车站。（来源: 作者）
+# - [世界观] 沈夜 v1 全城只有一座钟楼，钟声在午夜后会把人带回二十年前。（来源: 作者）
+```
+
+责编视图同样带设定段，内容与记忆包一致：
+
+```bash
+uv run novel-editorial memory view <作品ID> --as 责编
+# 作品档案：
+# 标题：《设定之书》
+# 体裁：悬疑
+# 简介：
+# 最近对话：
+# （暂无）
+# 设定：
+# - [人物] 沈夜 v2 二十岁出头的古董修复师，能修好任何钟，唯独不肯靠近旧车站。（来源: 作者）
+# - [世界观] 沈夜 v1 全城只有一座钟楼，钟声在午夜后会把人带回二十年前。（来源: 作者）
+```
+
+修订在事件流留痕，`events list` 可见 `[system]` 事件（payload 超 80 字符时截断显示）：
+
+```bash
+uv run novel-editorial events list <作品ID>
+# <时间戳> [system] 作者 {"kind": "setting_revised", "setting_id": "<设定ID-1>", "n...
+```
+
+`setting check` 输出统计、陈旧列表与同名冲突候选：
+
+```bash
+uv run novel-editorial setting check <作品ID>
+# settings: 2 entries (1 revised)
+# 陈旧（已修订）：
+# - 沈夜（人物）v2 二十岁出头的古董修复师，能修好任何钟，唯独不肯靠近旧车站。（来源: 作者）—— 已修订，旧版本见 history
+# 同名冲突：
+# - 「沈夜」：人物 v2 与 世界观 v1 —— 同名条目，请确认是否矛盾
+```
+
+检索 [设定] 层与分发同源，版本号为当前版本；`inspect` 输出相同：
+
+```bash
+uv run novel-editorial memory search <作品ID> 车站
+# [设定] 人物：沈夜——二十岁出头的古董修复师，能修好任何钟，唯独不肯靠近旧车站。（来源: 作者 v2）
+
+uv run novel-editorial inspect <作品ID> 车站
+# [设定] 人物：沈夜——二十岁出头的古董修复师，能修好任何钟，唯独不肯靠近旧车站。（来源: 作者 v2）
+```
+
+不建设定也不影响创作：新作品没有任何设定条目时，记忆包没有「设定：」段，`setting check` 输出空态单行（退出码 0）：
+
+```bash
+uv run novel-editorial works create 空态之书 --genre 悬疑
+# created workspace <作品ID>: 空态之书
+
+uv run novel-editorial memory pack <作品ID>
+# 作品：《空态之书》（悬疑）
+# 简介：
+# 章纲：暂无（占位）
+
+uv run novel-editorial setting check <作品ID>
+# settings: 0 entries (0 revised)；同名冲突：无
+```
+
+退出码验证：`setting check` 正常完成退出码 0；对不存在的作品运行 `setting check` 报业务错误（退出码 1）；`setting add` 传未知 kind 报用法错误（退出码 2）。
+
+（`<作品ID>`、`<设定ID-*>` 与 `<时间戳>` 换成前面输出的真实值，每次运行不同；其余为 mock 下的真实输出。）
+
 ## 退出码
 
 | 退出码 | 含义 |
