@@ -16,7 +16,7 @@ TOP_LEVEL_COMMANDS = ("init", "health", "version", "demo", "log", "inspect")
 
 SUBCOMMANDS = {
     "works": ("create", "list", "show"),
-    "agents": ("show", "edit"),
+    "agents": ("add", "list", "show", "edit"),
     "behavior": ("timeline", "show"),
     "talk": ("send", "list", "delegate", "discuss"),
     "style": ("set", "show"),

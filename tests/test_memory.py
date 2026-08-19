@@ -177,6 +177,60 @@ def test_memory_note_and_notes_by_agent_id(tmp_path: Path, monkeypatch) -> None:
     assert "按 id 记的" in listed.output
 
 
+def test_memory_note_and_notes_by_name_after_second_writer(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    assert (
+        runner.invoke(app, ["agents", "add", workspace_id, "写手", "写手乙"]).exit_code
+        == 0
+    )
+    assert (
+        runner.invoke(
+            app,
+            [
+                "memory",
+                "note",
+                workspace_id,
+                "写手乙",
+                "--content",
+                "写手乙私藏",
+                "--as",
+                "写手",
+            ],
+        ).exit_code
+        == 0
+    )
+    assert (
+        runner.invoke(
+            app,
+            [
+                "memory",
+                "note",
+                workspace_id,
+                "写手",
+                "--content",
+                "默认写手私藏",
+                "--as",
+                "写手",
+            ],
+        ).exit_code
+        == 0
+    )
+
+    second_notes = runner.invoke(app, ["memory", "notes", workspace_id, "写手乙"])
+    assert second_notes.exit_code == 0, second_notes.output
+    assert "写手乙私藏" in second_notes.output
+    assert "默认写手私藏" not in second_notes.output
+    assert "[写手乙]" in second_notes.output
+
+    default_notes = runner.invoke(app, ["memory", "notes", workspace_id, "写手"])
+    assert default_notes.exit_code == 0, default_notes.output
+    assert "默认写手私藏" in default_notes.output
+    assert "写手乙私藏" not in default_notes.output
+    assert "[写手]" in default_notes.output
+
+
 def test_memory_notes_empty(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     result = runner.invoke(app, ["memory", "notes", workspace_id])

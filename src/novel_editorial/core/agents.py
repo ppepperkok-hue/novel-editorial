@@ -117,6 +117,17 @@ def get_default_writer(db: DB, workspace_id: str) -> Agent:
     return writer
 
 
+def list_agents(db: DB, workspace_id: str) -> list[Agent]:
+    """Return every partner in the workspace, ordered by created_at (id tiebreak)."""
+    with db.workspace_session(workspace_id) as session:
+        return (
+            session.query(Agent)
+            .filter_by(workspace_id=workspace_id)
+            .order_by(Agent.created_at.asc(), Agent.id.asc())
+            .all()
+        )
+
+
 def get_agent_by_id(db: DB, workspace_id: str, agent_id: str) -> Agent | None:
     """Return one agent by id, or None when it does not exist."""
     with db.workspace_session(workspace_id) as session:
@@ -128,15 +139,29 @@ def get_agent_by_id(db: DB, workspace_id: str, agent_id: str) -> Agent | None:
 
 
 def resolve_agent(db: DB, workspace_id: str, target: str) -> Agent:
-    """Resolve an agent by role alias (e.g. 写手) or by id."""
+    """Resolve an agent by exact id, then by name, then by role alias.
+
+    Name matching is case-insensitive and unique per workspace (create_agent
+    enforces it); a name wins over a role alias when they collide.
+    """
+    with db.workspace_session(workspace_id) as session:
+        agent = session.query(Agent).filter_by(workspace_id=workspace_id, id=target).first()
+        if agent is not None:
+            return agent
+        agent = (
+            session.query(Agent)
+            .filter(
+                Agent.workspace_id == workspace_id,
+                func.lower(Agent.name) == target.lower(),
+            )
+            .first()
+        )
+        if agent is not None:
+            return agent
     role = ROLE_ALIASES.get(target)
     if role is not None:
         return get_agent(db, workspace_id, role)
-    with db.workspace_session(workspace_id) as session:
-        agent = session.query(Agent).filter_by(workspace_id=workspace_id, id=target).first()
-    if agent is None:
-        raise NovelError(ErrorCode.NOT_FOUND, f"agent not found: {target}")
-    return agent
+    raise NovelError(ErrorCode.NOT_FOUND, f"agent not found: {target}")
 
 
 def update_agent_field(

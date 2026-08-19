@@ -710,3 +710,176 @@ def test_draft_migration_backfills_default_writer(
             draft = session.query(Draft).filter_by(id=old_draft_id).first()
             assert draft is not None
             assert draft.writer_id == default_writer.id
+
+
+def test_draft_generate_cli_with_writer_and_list_visibility(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "novel_editorial.cli.draft.build_client",
+        lambda settings: MockLLMClient(reply="正文内容"),
+    )
+    assert (
+        runner.invoke(
+            app, ["agents", "add", workspace_id, "写手", "写手乙"]
+        ).exit_code
+        == 0
+    )
+    assert (
+        runner.invoke(
+            app, ["agents", "add", workspace_id, "writer", "写手丙"]
+        ).exit_code
+        == 0
+    )
+
+    first = runner.invoke(
+        app,
+        ["draft", "generate", workspace_id, "--title", "第一章", "--writer", "写手乙"],
+    )
+    assert first.exit_code == 0, first.output
+    first_id = first.output.split()[1]
+
+    second = runner.invoke(
+        app,
+        ["draft", "generate", workspace_id, "--title", "第二章", "--writer", "写手丙"],
+    )
+    assert second.exit_code == 0, second.output
+    second_id = second.output.split()[1]
+
+    listing = runner.invoke(app, ["draft", "list", workspace_id])
+    assert listing.exit_code == 0, listing.output
+    assert f"{first_id}  第一章" in listing.output
+    assert f"{second_id}  第二章" in listing.output
+    assert "（写手乙）" in listing.output
+    assert "（写手丙）" in listing.output
+
+    shown = runner.invoke(app, ["draft", "show", first_id])
+    assert shown.exit_code == 0, shown.output
+    assert "writer: 写手乙" in shown.output
+
+    shown_second = runner.invoke(app, ["draft", "show", second_id])
+    assert shown_second.exit_code == 0, shown_second.output
+    assert "writer: 写手丙" in shown_second.output
+
+
+def test_draft_generate_cli_writer_memory_isolation(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    writer_id = _writer_id(db, workspace_id)
+    second = create_agent(db, workspace_id, name="写手乙", role=AgentRole.WRITER)
+    _add_raw_note(db, workspace_id, writer_id, "默认写手的私记")
+    _add_raw_note(db, workspace_id, second.id, "写手乙的私记")
+
+    client = _CaptureClient()
+    monkeypatch.setattr(
+        "novel_editorial.cli.draft.build_client", lambda settings: client
+    )
+    result = runner.invoke(
+        app,
+        ["draft", "generate", workspace_id, "--title", "第一章", "--writer", "写手乙"],
+    )
+    assert result.exit_code == 0, result.output
+    prompt = client.calls[0][0].content
+    assert "写手乙的私记" in prompt
+    assert "默认写手的私记" not in prompt
+    with db.workspace_session(workspace_id) as session:
+        draft = session.query(Draft).filter_by(title="第一章").first()
+    assert draft is not None
+    assert draft.writer_id == second.id
+
+
+def test_draft_generate_cli_rejects_non_writer_and_unknown(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "novel_editorial.cli.draft.build_client",
+        lambda settings: MockLLMClient(reply="正文内容"),
+    )
+    non_writer = runner.invoke(
+        app,
+        ["draft", "generate", workspace_id, "--title", "第一章", "--writer", "责编"],
+    )
+    assert non_writer.exit_code == 2
+    assert "not a writer" in non_writer.output
+
+    unknown = runner.invoke(
+        app,
+        ["draft", "generate", workspace_id, "--title", "第一章", "--writer", "路人"],
+    )
+    assert unknown.exit_code == 1
+    assert "agent not found" in unknown.output
+
+
+def test_draft_revise_cli_default_keeps_original_writer(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    second = create_agent(db, workspace_id, name="写手乙", role=AgentRole.WRITER)
+    _add_raw_note(db, workspace_id, second.id, "写手乙的私记")
+    monkeypatch.setattr(
+        "novel_editorial.cli.draft.build_client",
+        lambda settings: MockLLMClient(reply="初稿内容"),
+    )
+    created = runner.invoke(
+        app,
+        ["draft", "generate", workspace_id, "--title", "第一章", "--writer", "写手乙"],
+    )
+    assert created.exit_code == 0, created.output
+    draft_id = created.output.split()[1]
+
+    revised = runner.invoke(app, ["draft", "revise", draft_id, "--reason", "收钩子"])
+    assert revised.exit_code == 0, revised.output
+    with db.workspace_session(workspace_id) as session:
+        draft = session.query(Draft).filter_by(id=draft_id).first()
+    assert draft is not None
+    assert draft.writer_id == second.id
+
+    shown = runner.invoke(app, ["draft", "show", draft_id])
+    assert shown.exit_code == 0, shown.output
+    assert "writer: 写手乙" in shown.output
+
+
+def test_draft_revise_cli_explicit_writer_switch(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    default_writer = get_default_writer(db, workspace_id)
+    second = create_agent(db, workspace_id, name="写手乙", role=AgentRole.WRITER)
+    _add_raw_note(db, workspace_id, default_writer.id, "默认写手的私记")
+    _add_raw_note(db, workspace_id, second.id, "写手乙的私记")
+    monkeypatch.setattr(
+        "novel_editorial.cli.draft.build_client",
+        lambda settings: MockLLMClient(reply="初稿内容"),
+    )
+    created = runner.invoke(app, ["draft", "generate", workspace_id, "--title", "第一章"])
+    assert created.exit_code == 0, created.output
+    draft_id = created.output.split()[1]
+
+    client = _CaptureClient(reply="修订稿内容")
+    monkeypatch.setattr(
+        "novel_editorial.cli.draft.build_client", lambda settings: client
+    )
+    revised = runner.invoke(
+        app,
+        [
+            "draft",
+            "revise",
+            draft_id,
+            "--reason",
+            "换人改",
+            "--writer",
+            "写手乙",
+        ],
+    )
+    assert revised.exit_code == 0, revised.output
+    prompt = client.calls[0][0].content
+    assert "写手乙的私记" in prompt
+    assert "默认写手的私记" not in prompt
+    with db.workspace_session(workspace_id) as session:
+        draft = session.query(Draft).filter_by(id=draft_id).first()
+    assert draft is not None
+    assert draft.writer_id == second.id

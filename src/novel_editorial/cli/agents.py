@@ -4,15 +4,72 @@ from __future__ import annotations
 
 import typer
 
-from novel_editorial.core.agents import resolve_agent, update_agent_field
+from novel_editorial.core.agents import (
+    create_agent,
+    list_agents,
+    resolve_agent,
+    update_agent_field,
+)
 from novel_editorial.core.behavior import current_behavior_state
 from novel_editorial.core.chat import get_workspace_or_raise
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.store.db import DB
-from novel_editorial.store.models import Agent, Workspace
+from novel_editorial.store.models import Agent, AgentRole, Workspace
 
 agents_app = typer.Typer(help="Manage editorial partners")
+
+ROLE_LABELS: dict[str, str] = {
+    "writer": AgentRole.WRITER,
+    "写手": AgentRole.WRITER,
+    "editor_in_chief": AgentRole.EDITOR_IN_CHIEF,
+    "总编": AgentRole.EDITOR_IN_CHIEF,
+    "editor": AgentRole.EDITOR,
+    "责编": AgentRole.EDITOR,
+    "reviewer": AgentRole.REVIEWER,
+    "审稿": AgentRole.REVIEWER,
+}
+
+
+@agents_app.command("add")
+def agents_add(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+    role: str = typer.Argument(
+        ...,
+        help="Role label: writer/写手, editor_in_chief/总编, editor/责编, reviewer/审稿",
+    ),
+    name: str = typer.Argument(..., help="Partner name"),
+    personality: str = typer.Option(
+        "", "--personality", help="Personality profile text"
+    ),
+) -> None:
+    """Add one partner; writers may repeat, every other role stays unique."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    get_workspace_or_raise(db, workspace_id)
+    canonical_role = ROLE_LABELS.get(role)
+    if canonical_role is None:
+        raise NovelError(ErrorCode.USAGE_ERROR, f"unknown agent role: {role}")
+    agent = create_agent(
+        db,
+        workspace_id,
+        name=name,
+        role=canonical_role,
+        personality=personality,
+    )
+    typer.echo(f"created agent {agent.id}: {agent.name} ({agent.role})")
+
+
+@agents_app.command("list")
+def agents_list(workspace_id: str = typer.Argument(..., help="Workspace id")) -> None:
+    """List the editorial band in creation order."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    get_workspace_or_raise(db, workspace_id)
+    for agent in list_agents(db, workspace_id):
+        typer.echo(f"[{agent.role}] {agent.name}（{agent.id}）")
 
 
 @agents_app.command("show")
