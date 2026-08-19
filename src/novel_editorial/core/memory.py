@@ -7,6 +7,11 @@ from datetime import UTC, datetime
 from novel_editorial.core.chat import AUTHOR_ACTOR, ROLE_ALIASES
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.retrieval import (
+    LAYER_NOTE,
+    delete_embedding_safe,
+    upsert_embedding_safe,
+)
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import Agent, AgentMemory
 
@@ -90,7 +95,10 @@ def add_memory_note(
         )
         session.add(note)
         session.commit()
-        return note
+    upsert_embedding_safe(
+        db, workspace_id, layer=LAYER_NOTE, source_id=note.id, text=note.content
+    )
+    return note
 
 
 def list_memory_notes(
@@ -296,3 +304,4 @@ def delete_memory_note(db: DB, workspace_id: str, memory_id: str) -> None:
             raise NovelError(ErrorCode.NOT_FOUND, f"memory note not found: {memory_id}")
         session.delete(note)
         session.commit()
+    delete_embedding_safe(db, workspace_id, layer=LAYER_NOTE, source_id=memory_id)

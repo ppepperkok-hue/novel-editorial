@@ -31,6 +31,7 @@ def _load_int_setting(
     toml_key: str,
     fallback: int,
     label: str,
+    min_value: int | None = None,
     max_value: int | None = None,
 ) -> int:
     """Read one integer setting: TOML default first, then env override."""
@@ -43,7 +44,9 @@ def _load_int_setting(
             ErrorCode.CONFIG_ERROR,
             f"invalid {label}: {raw_value!r}",
         ) from exc
-    if value < 0 or (max_value is not None and value > max_value):
+    if value < 0 or (min_value is not None and value < min_value) or (
+        max_value is not None and value > max_value
+    ):
         raise NovelError(
             ErrorCode.CONFIG_ERROR,
             f"invalid {label}: {raw_value!r}",
@@ -65,6 +68,10 @@ class Settings:
     memory_archive_threshold: int = 20
     proactive_enabled: bool = True
     proactive_max_per_agent: int = 3
+    embedding_backend: str = "local"
+    embedding_model: str = ""
+    embedding_dim: int = 256
+    embedding_top_k: int = 5
     defaults: dict = field(default_factory=dict)
 
 
@@ -132,6 +139,39 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         label="memory archive threshold",
         max_value=100,
     )
+    embedding_backend = env.get(
+        "NOVEL_EMBEDDING_BACKEND", defaults.get("embedding_backend", "local")
+    )
+    if embedding_backend not in ("local", "api"):
+        raise NovelError(
+            ErrorCode.CONFIG_ERROR,
+            f"invalid embedding backend: {embedding_backend!r} "
+            "(expected one of: local, api)",
+        )
+    raw_embedding_model = env.get("NOVEL_EMBEDDING_MODEL")
+    if raw_embedding_model is None:
+        raw_embedding_model = defaults.get("embedding_model", "")
+    embedding_model = str(raw_embedding_model)
+    embedding_dim = _load_int_setting(
+        env,
+        defaults,
+        env_key="NOVEL_EMBEDDING_DIM",
+        toml_key="embedding_dim",
+        fallback=256,
+        label="embedding dim",
+        min_value=32,
+        max_value=4096,
+    )
+    embedding_top_k = _load_int_setting(
+        env,
+        defaults,
+        env_key="NOVEL_EMBEDDING_TOP_K",
+        toml_key="embedding_top_k",
+        fallback=5,
+        label="embedding top k",
+        min_value=1,
+        max_value=50,
+    )
     return Settings(
         data_dir=data_dir,
         config_path=config_path,
@@ -145,5 +185,9 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         memory_archive_threshold=memory_archive_threshold,
         proactive_enabled=proactive_enabled,
         proactive_max_per_agent=proactive_max_per_agent,
+        embedding_backend=embedding_backend,
+        embedding_model=embedding_model,
+        embedding_dim=embedding_dim,
+        embedding_top_k=embedding_top_k,
         defaults=defaults,
     )

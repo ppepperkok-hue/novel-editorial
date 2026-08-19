@@ -6,6 +6,7 @@ import sys
 from datetime import datetime
 
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.retrieval import LAYER_SETTING, upsert_embedding_safe
 from novel_editorial.events import EventType
 from novel_editorial.store.db import DB
 from novel_editorial.store.events import record_event
@@ -83,7 +84,10 @@ def add_setting(
             )
         )
         session.commit()
-        return entry
+    upsert_embedding_safe(
+        db, workspace_id, layer=LAYER_SETTING, source_id=entry.id, text=entry.content
+    )
+    return entry
 
 
 def list_settings(
@@ -172,6 +176,9 @@ def revise_setting(
         )
     except Exception as exc:
         print(f"warning: setting revision event skipped: {exc}", file=sys.stderr)
+    upsert_embedding_safe(
+        db, workspace_id, layer=LAYER_SETTING, source_id=entry.id, text=entry.content
+    )
     return entry
 
 

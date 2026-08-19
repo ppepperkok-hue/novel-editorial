@@ -10,6 +10,7 @@ from novel_editorial.cli.app import app
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.draft import build_memory_pack
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.retrieval import LAYER_SETTING
 from novel_editorial.core.setting import (
     KIND_LABELS,
     SETTING_KINDS,
@@ -23,9 +24,10 @@ from novel_editorial.core.setting import (
 )
 from novel_editorial.core.views import build_editor_view
 from novel_editorial.events import EventType
+from novel_editorial.llm.embeddings import build_embedding_client
 from novel_editorial.store.db import DB, workspace_db_path
 from novel_editorial.store.events import list_events
-from novel_editorial.store.models import SettingEntry, SettingVersion
+from novel_editorial.store.models import MemoryEmbedding, SettingEntry, SettingVersion
 
 runner = CliRunner()
 
@@ -1260,3 +1262,131 @@ def test_setting_check_cli_end_to_end(tmp_path: Path, monkeypatch) -> None:
     missing = runner.invoke(app, ["setting", "check", "nope"])
     assert missing.exit_code == 1
     assert "workspace not found" in missing.output
+
+
+def test_add_setting_syncs_embedding(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = _db()
+
+    entry = add_setting(
+        db,
+        workspace_id,
+        kind="character",
+        name="林墨",
+        content="沉默寡言的侦探",
+        source="第一章手稿",
+    )
+
+    with db.workspace_session(workspace_id) as session:
+        row = (
+            session.query(MemoryEmbedding)
+            .filter_by(layer=LAYER_SETTING, source_id=entry.id)
+            .first()
+        )
+        assert row is not None
+        assert json.loads(row.vector) == build_embedding_client(settings).embed(
+            "沉默寡言的侦探"
+        )
+        assert row.dim == settings.embedding_dim
+        assert row.workspace_id == workspace_id
+
+
+def test_revise_setting_syncs_new_content(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = _db()
+    entry = add_setting(
+        db,
+        workspace_id,
+        kind="character",
+        name="林墨",
+        content="初版设定",
+        source="第一章手稿",
+    )
+
+    revise_setting(
+        db,
+        workspace_id,
+        entry.id,
+        content="修订后的设定",
+        reason="角色弧线调整",
+        actor="责编",
+    )
+
+    with db.workspace_session(workspace_id) as session:
+        rows = (
+            session.query(MemoryEmbedding)
+            .filter_by(layer=LAYER_SETTING, source_id=entry.id)
+            .all()
+        )
+        assert len(rows) == 1
+        assert json.loads(rows[0].vector) == build_embedding_client(settings).embed(
+            "修订后的设定"
+        )
+
+
+def test_add_setting_embedding_failure_keeps_setting_and_warns(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("embedding backend down")
+
+    monkeypatch.setattr("novel_editorial.core.retrieval.upsert_embedding", boom)
+    entry = add_setting(
+        db,
+        workspace_id,
+        kind="world",
+        name="世界观",
+        content="灵气复苏三百年",
+    )
+
+    assert entry.current_version == 1
+    assert entry.content == "灵气复苏三百年"
+    captured = capsys.readouterr()
+    assert "warning: embedding index skipped" in captured.err
+    assert "embedding backend down" in captured.err
+    with db.workspace_session(workspace_id) as session:
+        assert session.query(MemoryEmbedding).count() == 0
+        assert session.get(SettingEntry, entry.id) is not None
+
+
+def test_revise_setting_embedding_failure_keeps_revision_and_warns(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    entry = add_setting(
+        db,
+        workspace_id,
+        kind="world",
+        name="世界观",
+        content="原设定",
+    )
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("embedding backend down")
+
+    monkeypatch.setattr("novel_editorial.core.retrieval.upsert_embedding", boom)
+    revised = revise_setting(
+        db,
+        workspace_id,
+        entry.id,
+        content="修订后的设定",
+        reason="有理由",
+        actor="作者",
+    )
+
+    assert revised.current_version == 2
+    assert revised.content == "修订后的设定"
+    captured = capsys.readouterr()
+    assert "warning: embedding index skipped" in captured.err
+    assert "embedding backend down" in captured.err
+    with db.workspace_session(workspace_id) as session:
+        stored = session.get(SettingEntry, entry.id)
+        assert stored is not None
+        assert stored.current_version == 2
+        assert stored.content == "修订后的设定"

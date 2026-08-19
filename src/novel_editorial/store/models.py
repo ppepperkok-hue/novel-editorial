@@ -249,3 +249,24 @@ class BehaviorTimeline(Base):
     after_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     source: Mapped[str] = mapped_column(String(200), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class MemoryEmbedding(Base):
+    """Vector index row for one memory note or setting entry (N7)."""
+
+    __tablename__ = "memory_embeddings"
+    __table_args__ = (
+        UniqueConstraint(
+            "layer", "source_id", name="uq_memory_embeddings_layer_source"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(String(32), index=True)
+    layer: Mapped[str] = mapped_column(String(50))
+    source_id: Mapped[str] = mapped_column(String(32))
+    vector: Mapped[str] = mapped_column(Text)
+    dim: Mapped[int] = mapped_column(Integer)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )

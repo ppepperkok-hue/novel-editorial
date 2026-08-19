@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
@@ -12,14 +13,17 @@ from novel_editorial.core.memory import (
     add_memory_note,
     apply_memory_decay,
     archive_memory_notes,
+    delete_memory_note,
     effective_strength,
     list_archive_candidates,
     list_memory_notes,
     rehearse_memory_note,
     restore_memory_notes,
 )
+from novel_editorial.core.retrieval import LAYER_NOTE
+from novel_editorial.llm.embeddings import build_embedding_client
 from novel_editorial.store.db import DB, workspace_db_path
-from novel_editorial.store.models import Agent, AgentMemory
+from novel_editorial.store.models import Agent, AgentMemory, MemoryEmbedding
 
 runner = CliRunner()
 
@@ -1280,3 +1284,100 @@ def test_memory_cli_end_to_end_decay_archive_visibility_restore(
     assert "弱记忆-旧车站细节" in notes_after.output
     assert "【归档】" not in notes_after.output
     assert "强记忆-旧车站常驻" in notes_after.output
+
+
+def test_add_memory_note_syncs_embedding(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = DB(settings)
+    writer_id = _writer_id(db, workspace_id)
+
+    note = add_memory_note(
+        db, workspace_id, writer_id, actor="写手", content="雨夜归乡"
+    )
+
+    with db.workspace_session(workspace_id) as session:
+        row = (
+            session.query(MemoryEmbedding)
+            .filter_by(layer=LAYER_NOTE, source_id=note.id)
+            .first()
+        )
+        assert row is not None
+        assert json.loads(row.vector) == build_embedding_client(settings).embed(
+            "雨夜归乡"
+        )
+        assert row.dim == settings.embedding_dim
+        assert row.workspace_id == workspace_id
+
+
+def test_delete_memory_note_removes_embedding(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = DB(settings)
+    writer_id = _writer_id(db, workspace_id)
+    note = add_memory_note(
+        db, workspace_id, writer_id, actor="写手", content="删掉就没了"
+    )
+
+    delete_memory_note(db, workspace_id, note.id)
+
+    with db.workspace_session(workspace_id) as session:
+        row = (
+            session.query(MemoryEmbedding)
+            .filter_by(layer=LAYER_NOTE, source_id=note.id)
+            .first()
+        )
+        assert row is None
+
+
+def test_add_memory_note_embedding_failure_keeps_note_and_warns(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = DB(settings)
+    writer_id = _writer_id(db, workspace_id)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("embedding backend down")
+
+    monkeypatch.setattr("novel_editorial.core.retrieval.upsert_embedding", boom)
+    note = add_memory_note(
+        db, workspace_id, writer_id, actor="写手", content="照常记"
+    )
+
+    assert note is not None
+    assert note.content == "照常记"
+    captured = capsys.readouterr()
+    assert "warning: embedding index skipped" in captured.err
+    assert "embedding backend down" in captured.err
+    with db.workspace_session(workspace_id) as session:
+        assert session.query(AgentMemory).filter_by(id=note.id).count() == 1
+        assert session.query(MemoryEmbedding).count() == 0
+
+
+def test_delete_memory_note_embedding_failure_keeps_delete_and_warns(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = DB(settings)
+    writer_id = _writer_id(db, workspace_id)
+    note = add_memory_note(
+        db, workspace_id, writer_id, actor="写手", content="删除不回头"
+    )
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("index delete failed")
+
+    monkeypatch.setattr("novel_editorial.core.retrieval.delete_embedding", boom)
+    delete_memory_note(db, workspace_id, note.id)
+
+    captured = capsys.readouterr()
+    assert "warning: embedding index delete skipped" in captured.err
+    assert "index delete failed" in captured.err
+    with db.workspace_session(workspace_id) as session:
+        assert session.query(AgentMemory).filter_by(id=note.id).count() == 0
+        assert session.query(MemoryEmbedding).count() == 1
