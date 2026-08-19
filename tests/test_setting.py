@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from novel_editorial.cli.app import app
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.draft import build_memory_pack
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.plot import plant_thread
 from novel_editorial.core.retrieval import LAYER_SETTING
 from novel_editorial.core.setting import (
     KIND_LABELS,
@@ -27,7 +29,18 @@ from novel_editorial.events import EventType
 from novel_editorial.llm.embeddings import build_embedding_client
 from novel_editorial.store.db import DB, workspace_db_path
 from novel_editorial.store.events import list_events
-from novel_editorial.store.models import MemoryEmbedding, SettingEntry, SettingVersion
+from novel_editorial.store.models import (
+    Agent,
+    AgentMemory,
+    Draft,
+    DraftVersion,
+    MemoryEmbedding,
+    Message,
+    PlotThread,
+    Review,
+    SettingEntry,
+    SettingVersion,
+)
 
 runner = CliRunner()
 
@@ -1390,3 +1403,266 @@ def test_revise_setting_embedding_failure_keeps_revision_and_warns(
         assert stored is not None
         assert stored.current_version == 2
         assert stored.content == "修订后的设定"
+
+
+def _impact_writer_id(db: DB, workspace_id: str) -> str:
+    with db.workspace_session(workspace_id) as session:
+        writer = (
+            session.query(Agent)
+            .filter_by(workspace_id=workspace_id, role="writer")
+            .first()
+        )
+        assert writer is not None
+        return writer.id
+
+
+def _impact_add_message(
+    db: DB,
+    workspace_id: str,
+    content: str,
+    *,
+    created_at: datetime | None = None,
+) -> Message:
+    with db.workspace_session(workspace_id) as session:
+        row = Message(
+            workspace_id=workspace_id,
+            role="author",
+            actor="作者",
+            content=content,
+            created_at=created_at or datetime.now(UTC),
+        )
+        session.add(row)
+        session.commit()
+        return row
+
+
+def _impact_add_draft_version(
+    db: DB, workspace_id: str, *, content: str
+) -> tuple[Draft, DraftVersion]:
+    with db.workspace_session(workspace_id) as session:
+        draft = Draft(
+            workspace_id=workspace_id, title="第一章", current_version=1
+        )
+        session.add(draft)
+        session.flush()
+        version = DraftVersion(
+            draft_id=draft.id, version=1, content=content
+        )
+        session.add(version)
+        session.commit()
+        return draft, version
+
+
+def _impact_add_review(
+    db: DB, workspace_id: str, draft_id: str, content: str
+) -> Review:
+    with db.workspace_session(workspace_id) as session:
+        row = Review(
+            workspace_id=workspace_id,
+            draft_id=draft_id,
+            role="reviewer",
+            actor="责编",
+            content=content,
+        )
+        session.add(row)
+        session.commit()
+        return row
+
+
+def _impact_add_note(
+    db: DB, workspace_id: str, agent_id: str, content: str
+) -> AgentMemory:
+    with db.workspace_session(workspace_id) as session:
+        row = AgentMemory(
+            workspace_id=workspace_id,
+            agent_id=agent_id,
+            content=content,
+        )
+        session.add(row)
+        session.commit()
+        return row
+
+
+def _impact_add_setting(
+    tmp_path: Path, monkeypatch, name: str = "钟声", content: str = "雨夜 旧城 回荡"
+) -> tuple[str, str]:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    added = runner.invoke(
+        app,
+        [
+            "setting",
+            "add",
+            workspace_id,
+            "--kind",
+            "人物",
+            "--name",
+            name,
+            "--content",
+            content,
+        ],
+    )
+    assert added.exit_code == 0, added.output
+    return workspace_id, added.output.split()[1]
+
+
+def test_setting_impact_cli_end_to_end_hits_all_layers(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id, setting_id = _impact_add_setting(tmp_path, monkeypatch)
+    db = _db()
+    draft, _ = _impact_add_draft_version(
+        db, workspace_id, content="钟声在教堂响起"
+    )
+    _impact_add_message(db, workspace_id, "钟声问题确认")
+    _impact_add_review(db, workspace_id, draft.id, "钟声段落再打磨")
+    plant_thread(db, workspace_id, kind="foreshadow", content="钟声是关键")
+    _impact_add_note(db, workspace_id, _impact_writer_id(db, workspace_id), "钟声备忘")
+    add_setting(db, workspace_id, kind="world", name="世界观", content="钟声来自旧城")
+
+    result = runner.invoke(app, ["setting", "impact", workspace_id, setting_id])
+    assert result.exit_code == 0, result.output
+    lines = result.output.strip().splitlines()
+    assert lines[0] == "impact for 钟声 v1（共 6 条）："
+    assert lines[1:] == [
+        "[版本] 第一章 v1：钟声在教堂响起",
+        "[对话] 作者：钟声问题确认",
+        "[意见] 责编 的意见：钟声段落再打磨",
+        "[线索] 伏笔：伏笔：钟声是关键",
+        "[笔记] 写手：钟声备忘",
+        "[设定] 世界观（世界观）：钟声来自旧城",
+    ]
+
+    revised = runner.invoke(
+        app,
+        [
+            "setting",
+            "revise",
+            workspace_id,
+            setting_id,
+            "--content",
+            "晨光 山岭",
+            "--reason",
+            "旧城线重写",
+        ],
+    )
+    assert revised.exit_code == 0, revised.output
+    after = runner.invoke(app, ["setting", "impact", workspace_id, setting_id])
+    assert after.exit_code == 0, after.output
+    assert after.output.splitlines()[0] == "impact for 钟声 v2（共 6 条）："
+
+    with db.workspace_session(workspace_id) as session:
+        session.query(Message).delete()
+        session.query(Review).delete()
+        session.query(PlotThread).delete()
+        session.query(AgentMemory).delete()
+        session.query(DraftVersion).delete()
+        session.query(Draft).delete()
+        session.query(SettingEntry).filter(SettingEntry.name == "世界观").delete()
+        session.commit()
+
+    cleared = runner.invoke(app, ["setting", "impact", workspace_id, setting_id])
+    assert cleared.exit_code == 0, cleared.output
+    assert cleared.output.strip() == "no impact found for 钟声 v2"
+
+
+def test_setting_impact_no_references_prints_empty_state(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id, setting_id = _impact_add_setting(tmp_path, monkeypatch)
+
+    result = runner.invoke(app, ["setting", "impact", workspace_id, setting_id])
+    assert result.exit_code == 0
+    assert result.output.strip() == "no impact found for 钟声 v1"
+
+    verbose = runner.invoke(
+        app,
+        ["setting", "impact", workspace_id, setting_id, "--verbose"],
+    )
+    assert verbose.exit_code == 0
+    assert verbose.output.strip() == (
+        "keywords: 钟声、雨夜、旧城、回荡\nno impact found for 钟声 v1"
+    )
+
+
+def test_setting_impact_verbose_prints_keyword_line_before_title(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id, setting_id = _impact_add_setting(tmp_path, monkeypatch)
+    _impact_add_message(_db(), workspace_id, "钟声问题确认")
+
+    result = runner.invoke(
+        app,
+        ["setting", "impact", workspace_id, setting_id, "--verbose"],
+    )
+    assert result.exit_code == 0, result.output
+    lines = result.output.strip().splitlines()
+    assert lines[0] == "keywords: 钟声、雨夜、旧城、回荡"
+    assert lines[1] == "impact for 钟声 v1（共 1 条）："
+    assert lines[2] == "[对话] 作者：钟声问题确认"
+
+    quiet = runner.invoke(app, ["setting", "impact", workspace_id, setting_id])
+    assert quiet.exit_code == 0, quiet.output
+    assert "keywords:" not in quiet.output
+
+
+def test_setting_impact_limit_truncates_rows_but_keeps_total(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id, setting_id = _impact_add_setting(
+        tmp_path, monkeypatch, content="雨夜 旧城"
+    )
+    db = _db()
+    now = datetime.now(UTC)
+    for index in range(3):
+        _impact_add_message(
+            db,
+            workspace_id,
+            f"钟声消息{index}",
+            created_at=now - timedelta(minutes=index),
+        )
+
+    result = runner.invoke(
+        app,
+        ["setting", "impact", workspace_id, setting_id, "--limit", "2"],
+    )
+    assert result.exit_code == 0, result.output
+    lines = result.output.strip().splitlines()
+    assert lines[0] == "impact for 钟声 v1（共 3 条）："
+    assert lines[1:] == [
+        "[对话] 作者：钟声消息0",
+        "[对话] 作者：钟声消息1",
+    ]
+
+
+@pytest.mark.parametrize("limit", ["0", "-1", "-5"])
+def test_setting_impact_rejects_limit_below_one(
+    tmp_path: Path, monkeypatch, limit: str
+) -> None:
+    workspace_id, setting_id = _impact_add_setting(
+        tmp_path, monkeypatch, content="雨夜"
+    )
+    result = runner.invoke(
+        app,
+        ["setting", "impact", workspace_id, setting_id, "--limit", limit],
+    )
+    assert result.exit_code == 2
+    assert "limit" in result.output
+
+
+def test_setting_impact_unknown_setting_and_workspace_are_business_errors(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id, _ = _impact_add_setting(tmp_path, monkeypatch, content="雨夜")
+    missing_id = "deadbeefdeadbeefdeadbeefdeadbeef"
+
+    unknown_setting = runner.invoke(
+        app, ["setting", "impact", workspace_id, missing_id]
+    )
+    assert unknown_setting.exit_code == 1
+    assert "setting not found" in unknown_setting.output
+
+    unknown_workspace = runner.invoke(
+        app, ["setting", "impact", "nope", missing_id]
+    )
+    assert unknown_workspace.exit_code == 1
+    assert "workspace not found" in unknown_workspace.output

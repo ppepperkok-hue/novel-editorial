@@ -6,6 +6,7 @@ import typer
 
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.impact import analyze_setting_impact, extract_keywords
 from novel_editorial.core.setting import (
     KIND_LABELS,
     add_setting,
@@ -145,3 +146,40 @@ def setting_history(
     versions = list_setting_history(db, workspace_id, setting_id)
     for version in versions:
         typer.echo(f"v{version.version} {version.actor} {version.reason} {version.content}")
+
+
+@setting_app.command("impact")
+def setting_impact(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+    setting_id: str = typer.Argument(..., help="Setting id"),
+    limit: int = typer.Option(
+        20, "--limit", help="Max impact rows (default: 20)"
+    ),
+    verbose: bool = typer.Option(
+        False, "--verbose", help="Print the keyword set used for matching"
+    ),
+) -> None:
+    """Report which layers reference one setting (read-only)."""
+    if limit < 1:
+        raise NovelError(
+            ErrorCode.USAGE_ERROR, f"limit must be at least 1, got {limit}"
+        )
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    report = analyze_setting_impact(db, workspace_id, setting_id, limit=limit)
+    if verbose:
+        entry = get_setting(db, workspace_id, setting_id)
+        keywords = extract_keywords(entry.name, entry.content)
+        typer.echo(f"keywords: {'、'.join(keywords)}")
+    if report.total == 0:
+        typer.echo(
+            f"no impact found for {report.setting_name} v{report.setting_version}"
+        )
+        return
+    typer.echo(
+        f"impact for {report.setting_name} v{report.setting_version}"
+        f"（共 {report.total} 条）："
+    )
+    for item in report.impacts:
+        typer.echo(f"[{item.layer}] {item.source}：{item.snippet}")

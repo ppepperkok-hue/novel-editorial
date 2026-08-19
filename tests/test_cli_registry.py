@@ -38,7 +38,7 @@ SUBCOMMANDS = {
     "decision": ("list", "pending", "accept", "reject", "note"),
     "quality": ("check", "explain"),
     "plot": ("plant", "list", "recover"),
-    "setting": ("add", "list", "show", "revise", "history", "check"),
+    "setting": ("add", "list", "show", "revise", "history", "check", "impact"),
     "structure": ("add", "list", "rename", "move", "remove", "status"),
     "outline": ("create", "revise", "show", "history"),
     "events": ("list", "watch"),
