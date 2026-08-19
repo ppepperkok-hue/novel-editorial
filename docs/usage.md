@@ -769,6 +769,108 @@ uv run novel-editorial memory notes <作品ID>
 
 （`<作品ID>` 与 `<笔记ID-*>` 换成前面输出的真实 ID，每次运行不同；其余为 mock 下的真实输出。）
 
+## 作品设定库（N5）
+
+作品设定（人物、关系、时间线、世界观）可以条目化沉淀，每条设定从 v1 开始，修订一次版本递增一次，来源、原因、操作者逐版本留痕——随时知道一条设定从哪来、改过什么、现在是什么。设定库只记录，不自动改写正文；也没有「先建设定才能写」的关卡，创作路径完全不受影响。
+
+### kind 与版本语义
+
+- 四种 kind：`人物`、`关系`、`时间线`、`世界观`（内部为 `character` / `relation` / `timeline` / `world`），CLI 统一用中文标签；kind 只是标签，不构成流程关卡，不按体裁特化。
+- 新条目从 v1 起：`setting add` 落 v1，同时写入第一条版本记录（原因固定 `initial`，操作者取来源）。
+- 修订版本递增：每次 `setting revise` 版本 +1、当前内容同步更新；每条修订必须有原因（`--reason`）与操作者（`--actor`），两者非空——来源可溯是红线，任何版本都说得清「谁、为什么、改成了什么」。
+- 来源：`setting add` 用 `--source` 记录设定出处（默认「作者」），v1 的操作者即来源；之后每个版本的操作者由 `--actor` 单独留痕（默认「作者」）。
+
+### 命令
+
+- `setting add <作品ID> --kind <人物|关系|时间线|世界观> --name <名称> --content <内容> [--source <来源>]`：新建设定条目并落 v1，成功输出 `added <设定ID> [人物] 沈夜 v1`。名称必须非空且单行，内容与来源必须非空；未知 kind 或空值报用法错误（退出码 2），作品不存在报业务错误（退出码 1）。
+- `setting list <作品ID> [--kind <人物|关系|时间线|世界观>]`：按创建顺序列出设定，输出 `<设定ID> [人物] 沈夜 v1 <内容>`；`--kind` 只列指定标签；没有设定时输出 `no settings yet`。
+- `setting show <作品ID> <设定ID>`：显示名称、标签、当前版本、来源与当前内容，输出为 `沈夜 [人物] v1`、`source: 作者`、`---`、内容四行；设定不存在报业务错误（退出码 1）。
+- `setting revise <作品ID> <设定ID> --content <新内容> --reason <原因> [--actor <操作者>]`：显式修订，版本 +1，成功输出 `revised <设定ID> 沈夜 v2`；内容、原因、操作者必须非空，空值报用法错误（退出码 2），设定不存在报业务错误（退出码 1）。
+- `setting history <作品ID> <设定ID>`：逐版本输出 `v1 作者 initial <内容>`，版本升序，v1 的原因固定 `initial`；设定不存在报业务错误（退出码 1）。
+
+内容含空格时用引号包起来（PowerShell 与 bash 写法一致），例如 `--content "1998 年车站停运，钟永远停在十点差一刻。"`；不带引号的参数遇空格会被拆开。命令退出码沿用全局语义：`0` 成功、`1` 业务错误、`2` 用法错误（见「退出码」一节）。
+
+### 检索 [设定] 层
+
+`memory search <作品ID> <关键词>` 与 `inspect <作品ID> <关键词>` 都会检索设定层：对设定的名称与内容做子串匹配，命中后输出 `[设定] <标签>：<名称>——<摘要>（来源: <来源> v<版本>）`，按更新时间升序、id 兜底；两条命令的设定层输出完全一致。检索只读，不依赖 FTS 可用性，也不影响创作流程。
+
+### 红线
+
+- 沉淀不是前置：设定库随创作自然沉淀，不建设定不影响写稿、修订与过稿，没有一条流程要求先建设定。
+- 只记录不改写：设定条目与版本只做记录，绝不自动改写正文、不绕过角色判断；修订是显式动作，每次都要原因与操作者。
+
+### 示例（mock 下实跑）
+
+下面示例全部可在未配置 key（mock LLM）时复现。先把数据目录指到临时目录（初始化写法见「判断权与分歧」），再建一部作品：
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-n5\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-n5\config.toml"
+Remove-Item Env:NOVEL_LLM_API_KEY, Env:NOVEL_LLM_BASE_URL, Env:NOVEL_LLM_MODEL -ErrorAction SilentlyContinue
+```
+
+```bash
+uv run novel-editorial works create 设定之书 --genre 悬疑
+# created workspace <作品ID>: 设定之书
+```
+
+沉淀一条人物设定和一条时间线设定（来源都留痕）：
+
+```bash
+uv run novel-editorial setting add <作品ID> --kind 人物 --name 沈夜 --content 二十岁出头的古董修复师，最怕旧车站的钟声。 --source 作者
+# added <设定ID-1> [人物] 沈夜 v1
+
+uv run novel-editorial setting add <作品ID> --kind 时间线 --name 旧车站 --content "1998 年车站停运，钟永远停在十点差一刻。" --source 第一章手稿
+# added <设定ID-2> [时间线] 旧车站 v1
+```
+
+`setting list` 按创建顺序列出两条设定，每条带当前版本与内容：
+
+```bash
+uv run novel-editorial setting list <作品ID>
+# <设定ID-1> [人物] 沈夜 v1 二十岁出头的古董修复师，最怕旧车站的钟声。
+# <设定ID-2> [时间线] 旧车站 v1 1998 年车站停运，钟永远停在十点差一刻。
+```
+
+`setting show` 显示当前版本、来源与内容：
+
+```bash
+uv run novel-editorial setting show <作品ID> <设定ID-1>
+# 沈夜 [人物] v1
+# source: 作者
+# ---
+# 二十岁出头的古董修复师，最怕旧车站的钟声。
+```
+
+修订人物设定：版本从 v1 升到 v2，原因与操作者必须留下：
+
+```bash
+uv run novel-editorial setting revise <作品ID> <设定ID-1> --content "二十岁出头的古董修复师，能修好任何钟，唯独不肯靠近旧车站。" --reason 第二章补充人物背景 --actor 作者
+# revised <设定ID-1> 沈夜 v2
+```
+
+`setting history` 逐版本可溯：v1 是来源初版，v2 带原因与操作者：
+
+```bash
+uv run novel-editorial setting history <作品ID> <设定ID-1>
+# v1 作者 initial 二十岁出头的古董修复师，最怕旧车站的钟声。
+# v2 作者 第二章补充人物背景 二十岁出头的古董修复师，能修好任何钟，唯独不肯靠近旧车站。
+```
+
+`memory search` 按内容命中设定层，结果带来源与版本号；`inspect` 输出相同：
+
+```bash
+uv run novel-editorial memory search <作品ID> 车站
+# [设定] 时间线：旧车站——1998 年车站停运，钟永远停在十点差一刻。（来源: 第一章手稿 v1）
+# [设定] 人物：沈夜——二十岁出头的古董修复师，能修好任何钟，唯独不肯靠近旧车站。（来源: 作者 v2）
+
+uv run novel-editorial inspect <作品ID> 车站
+# [设定] 时间线：旧车站——1998 年车站停运，钟永远停在十点差一刻。（来源: 第一章手稿 v1）
+# [设定] 人物：沈夜——二十岁出头的古董修复师，能修好任何钟，唯独不肯靠近旧车站。（来源: 作者 v2）
+```
+
+（`<作品ID>` 与 `<设定ID-*>` 换成前面输出的真实 ID，每次运行不同；其余为 mock 下的真实输出。）
+
 ## 退出码
 
 | 退出码 | 含义 |
