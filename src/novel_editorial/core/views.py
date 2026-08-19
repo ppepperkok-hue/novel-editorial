@@ -22,6 +22,7 @@ from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.memory import effective_strength, rehearse_memory_note
 from novel_editorial.core.plot import KIND_LABELS
 from novel_editorial.core.setting import KIND_LABELS as SETTING_KIND_LABELS
+from novel_editorial.core.setting import settings_section
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import (
     Agent,
@@ -94,6 +95,9 @@ def build_editor_view(db: DB, workspace_id: str) -> str:
     else:
         for message in messages[-RECENT_CONVERSATION_LIMIT:]:
             lines.append(f"[{message.role}] {message.actor}: {message.content}")
+    setting_block = settings_section(db, workspace_id)
+    if setting_block:
+        lines.append(setting_block)
     return "\n".join(lines)
 
 

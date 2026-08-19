@@ -15,6 +15,7 @@ from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.memory import list_memory_notes
 from novel_editorial.core.plot import plot_threads_section
 from novel_editorial.core.review import list_reviews
+from novel_editorial.core.setting import settings_section
 from novel_editorial.core.style import extract_style_keywords, get_style_anchor
 from novel_editorial.events import EventType
 from novel_editorial.llm.client import LLMClient, LLMMessage
@@ -42,6 +43,9 @@ def build_memory_pack(db: DB, workspace_id: str) -> str:
         lines.append("私有记忆：")
         for note in notes:
             lines.append(f"- {note.content}")
+    setting_block = settings_section(db, workspace_id)
+    if setting_block:
+        lines.append(setting_block)
     plot_section = plot_threads_section(db, workspace_id)
     if plot_section:
         lines.append(plot_section)

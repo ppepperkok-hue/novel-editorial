@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from pathlib import Path
 
@@ -17,7 +18,9 @@ from novel_editorial.core.setting import (
     list_settings,
     revise_setting,
 )
+from novel_editorial.events import EventType
 from novel_editorial.store.db import DB, workspace_db_path
+from novel_editorial.store.events import list_events
 from novel_editorial.store.models import SettingEntry, SettingVersion
 
 runner = CliRunner()
@@ -315,6 +318,106 @@ def test_revise_setting_bumps_version_and_syncs_content(
         2,
         3,
     ]
+
+
+def test_revise_setting_records_system_event(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    entry = add_setting(
+        db,
+        workspace_id,
+        kind="character",
+        name="林墨",
+        content="初版设定",
+        source="第一章手稿",
+    )
+
+    revise_setting(
+        db,
+        workspace_id,
+        entry.id,
+        content="修订后的设定",
+        reason="角色弧线调整",
+        actor="责编",
+    )
+
+    events = list_events(db, workspace_id)
+    revised_events = [
+        event
+        for event in events
+        if json.loads(event.payload).get("kind") == "setting_revised"
+    ]
+    assert len(revised_events) == 1
+    assert revised_events[0].type == EventType.SYSTEM
+    assert revised_events[0].actor == "责编"
+    assert json.loads(revised_events[0].payload) == {
+        "kind": "setting_revised",
+        "setting_id": entry.id,
+        "name": "林墨",
+        "version": 2,
+        "actor": "责编",
+        "reason": "角色弧线调整",
+    }
+
+
+def test_revise_setting_event_failure_keeps_revision_and_warns(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    entry = add_setting(
+        db, workspace_id, kind="world", name="世界观", content="原设定"
+    )
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("event write failed")
+
+    monkeypatch.setattr("novel_editorial.core.setting.record_event", boom)
+    revised = revise_setting(
+        db,
+        workspace_id,
+        entry.id,
+        content="修订后的设定",
+        reason="有理由",
+        actor="作者",
+    )
+
+    assert revised.current_version == 2
+    assert revised.content == "修订后的设定"
+    captured = capsys.readouterr()
+    assert "warning: setting revision event skipped" in captured.err
+    assert "event write failed" in captured.err
+    with db.workspace_session(workspace_id) as session:
+        stored = session.get(SettingEntry, entry.id)
+        assert stored is not None
+        assert stored.current_version == 2
+        assert stored.content == "修订后的设定"
+    assert [version.version for version in list_setting_history(db, workspace_id, entry.id)] == [
+        1,
+        2,
+    ]
+
+
+def test_setting_revision_events_are_isolated_between_workspaces(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_a = _create_workspace(tmp_path, monkeypatch, "甲书")
+    workspace_b = _create_workspace(tmp_path, monkeypatch, "乙书")
+    db = _db()
+    entry = add_setting(
+        db, workspace_a, kind="character", name="林墨", content="甲书设定"
+    )
+    revise_setting(
+        db,
+        workspace_a,
+        entry.id,
+        content="甲书修订",
+        reason="甲书理由",
+        actor="作者",
+    )
+
+    assert list_events(db, workspace_a) != []
+    assert list_events(db, workspace_b) == []
 
 
 @pytest.mark.parametrize(

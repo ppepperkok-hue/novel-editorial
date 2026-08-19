@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import sys
+
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.events import EventType
 from novel_editorial.store.db import DB
+from novel_editorial.store.events import record_event
 from novel_editorial.store.models import SettingEntry, SettingVersion, Workspace
 
 SETTING_KINDS: tuple[str, ...] = ("character", "relation", "timeline", "world")
@@ -140,7 +144,48 @@ def revise_setting(
             )
         )
         session.commit()
-        return entry
+        name = entry.name
+        version = entry.current_version
+    try:
+        record_event(
+            db,
+            workspace_id,
+            type=EventType.SYSTEM,
+            actor=actor,
+            payload={
+                "kind": "setting_revised",
+                "setting_id": setting_id,
+                "name": name,
+                "version": version,
+                "actor": actor,
+                "reason": reason,
+            },
+        )
+    except Exception as exc:
+        print(f"warning: setting revision event skipped: {exc}", file=sys.stderr)
+    return entry
+
+
+def settings_section(db: DB, workspace_id: str) -> str:
+    """Render the current-version setting block, or an empty string when empty."""
+    with db.workspace_session(workspace_id) as session:
+        entries = (
+            session.query(SettingEntry)
+            .filter_by(workspace_id=workspace_id)
+            .all()
+        )
+    if not entries:
+        return ""
+    kind_order = {kind: index for index, kind in enumerate(SETTING_KINDS)}
+    entries.sort(key=lambda entry: (kind_order[entry.kind], entry.updated_at, entry.id))
+    lines = ["设定："]
+    for entry in entries:
+        label = KIND_LABELS.get(entry.kind, entry.kind)
+        lines.append(
+            f"- [{label}] {entry.name} v{entry.current_version} "
+            f"{entry.content}（来源: {entry.source}）"
+        )
+    return "\n".join(lines)
 
 
 def list_setting_history(

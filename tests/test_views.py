@@ -10,8 +10,12 @@ from novel_editorial.cli.app import app
 from novel_editorial.core.chat import record_message
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.memory import archive_memory_notes
-from novel_editorial.core.setting import add_setting
-from novel_editorial.core.views import search_all_layers, search_memory
+from novel_editorial.core.setting import add_setting, revise_setting
+from novel_editorial.core.views import (
+    build_editor_view,
+    search_all_layers,
+    search_memory,
+)
 from novel_editorial.llm.client import MockLLMClient
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import Agent, AgentMemory, SettingEntry
@@ -121,6 +125,75 @@ def test_editor_view_profile_and_conversation_without_private_memory(
     assert "主角动机到底是什么" in viewed.output
     assert "他想要一场公平的雨" in viewed.output
     assert "写手私藏" not in viewed.output
+
+
+def test_editor_view_includes_current_settings_in_kind_order(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    add_setting(db, workspace_id, kind="world", name="世界观", content="灵气复苏三百年")
+    add_setting(db, workspace_id, kind="character", name="沈夜", content="雨夜归乡的侦探")
+    add_setting(db, workspace_id, kind="relation", name="沈夜与林墨", content="旧识")
+    add_setting(db, workspace_id, kind="timeline", name="时间线", content="第一章在雨夜")
+
+    view = build_editor_view(db, workspace_id)
+    assert "设定：" in view
+    assert "- [人物] 沈夜 v1 雨夜归乡的侦探（来源: 作者）" in view
+    assert "- [关系] 沈夜与林墨 v1 旧识（来源: 作者）" in view
+    assert "- [时间线] 时间线 v1 第一章在雨夜（来源: 作者）" in view
+    assert "- [世界观] 世界观 v1 灵气复苏三百年（来源: 作者）" in view
+    setting_lines = [
+        line
+        for line in view.splitlines()
+        if line.startswith("- [人物] ")
+        or line.startswith("- [关系] ")
+        or line.startswith("- [时间线] ")
+        or line.startswith("- [世界观] ")
+    ]
+    assert [
+        line.split()[1].strip("[]") for line in setting_lines
+    ] == ["人物", "关系", "时间线", "世界观"]
+    assert view.index("最近对话") < view.index("设定：")
+
+
+def test_editor_view_shows_revised_setting_version(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    entry = add_setting(
+        db,
+        workspace_id,
+        kind="character",
+        name="沈夜",
+        content="初版设定",
+    )
+
+    assert "v1 初版设定" in build_editor_view(db, workspace_id)
+    revise_setting(
+        db,
+        workspace_id,
+        entry.id,
+        content="修订后的设定",
+        reason="角色弧线调整",
+        actor="责编",
+    )
+    view = build_editor_view(db, workspace_id)
+    assert "v2 修订后的设定" in view
+    assert "v1 初版设定" not in view
+
+
+def test_editor_view_without_settings_has_no_setting_section(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    record_message(db, workspace_id, role="author", actor="作者", content="角色动机是什么")
+
+    view = build_editor_view(db, workspace_id)
+    assert "最近对话" in view
+    assert "角色动机是什么" in view
+    assert "设定：" not in view
+    assert "（来源:" not in view
 
 
 def test_boss_view_band_drafts_reviews_decisions(tmp_path: Path, monkeypatch) -> None:

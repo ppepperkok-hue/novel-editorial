@@ -11,6 +11,7 @@ from novel_editorial.core.chat import list_messages
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.draft import build_memory_pack, get_draft_version
 from novel_editorial.core.memory import archive_memory_notes
+from novel_editorial.core.setting import add_setting, revise_setting
 from novel_editorial.core.style import get_style_anchor
 from novel_editorial.llm.client import MockLLMClient
 from novel_editorial.store.db import DB
@@ -116,6 +117,108 @@ def test_memory_pack_excludes_archived_and_sorts_by_strength(
     packed = build_memory_pack(db, workspace_id)
     assert packed.index(strong.content) < packed.index(weak.content)
     assert archived.content not in packed
+
+
+def test_memory_pack_includes_current_settings_in_kind_order(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    add_setting(
+        db,
+        workspace_id,
+        kind="character",
+        name="沈夜",
+        content="雨夜归乡的侦探",
+    )
+    add_setting(
+        db,
+        workspace_id,
+        kind="timeline",
+        name="时间线",
+        content="第一章发生在雨夜",
+    )
+    add_setting(
+        db,
+        workspace_id,
+        kind="world",
+        name="世界观",
+        content="灵气复苏三百年",
+    )
+    add_setting(
+        db,
+        workspace_id,
+        kind="relation",
+        name="沈夜与林墨",
+        content="旧识",
+    )
+
+    packed = build_memory_pack(db, workspace_id)
+    assert "设定：" in packed
+    assert "- [人物] 沈夜 v1 雨夜归乡的侦探（来源: 作者）" in packed
+    assert "- [关系] 沈夜与林墨 v1 旧识（来源: 作者）" in packed
+    assert "- [时间线] 时间线 v1 第一章发生在雨夜（来源: 作者）" in packed
+    assert "- [世界观] 世界观 v1 灵气复苏三百年（来源: 作者）" in packed
+    setting_lines = [
+        line
+        for line in packed.splitlines()
+        if line.startswith("- [人物] ")
+        or line.startswith("- [关系] ")
+        or line.startswith("- [时间线] ")
+        or line.startswith("- [世界观] ")
+    ]
+    assert [
+        line.split()[1].strip("[]") for line in setting_lines
+    ] == ["人物", "关系", "时间线", "世界观"]
+
+
+def test_memory_pack_settings_follow_private_memory_before_hanging_threads(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    add_setting(db, workspace_id, kind="character", name="沈夜", content="侦探")
+    writer_id = _writer_id(db, workspace_id)
+    _add_raw_note(db, workspace_id, writer_id, "写手私记")
+
+    packed = build_memory_pack(db, workspace_id)
+    assert packed.index("私有记忆") < packed.index("设定：")
+    assert "悬置线索" not in packed
+
+
+def test_memory_pack_without_settings_has_no_setting_section(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    packed = build_memory_pack(DB(load_settings()), workspace_id)
+    assert "设定：" not in packed
+    assert "（来源:" not in packed
+
+
+def test_memory_pack_shows_revised_setting_version(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    entry = add_setting(
+        db,
+        workspace_id,
+        kind="character",
+        name="沈夜",
+        content="初版设定",
+    )
+
+    assert "v1 初版设定" in build_memory_pack(db, workspace_id)
+    revise_setting(
+        db,
+        workspace_id,
+        entry.id,
+        content="修订后的设定",
+        reason="角色弧线调整",
+        actor="责编",
+    )
+    assert "v2 修订后的设定" in build_memory_pack(db, workspace_id)
+    assert "v1 初版设定" not in build_memory_pack(db, workspace_id)
 
 
 @pytest.mark.smoke
