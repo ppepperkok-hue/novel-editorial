@@ -582,6 +582,203 @@ uv run novel-editorial behavior timeline <作品ID>
 - `inspect <作品ID> <关键词>`：跨层检索（作品档案、风格锚点、对话、意见、版本、伙伴笔记、决策、伏笔线索），结果带来源引用；无命中输出 `no matches`。
 - `decision pending <作品ID>`：列出质量门通过、等待拍板的草稿；草稿生成 / 修订通过质量门时，命令末尾会提示 `awaiting decision`。
 
+## 作品结构与创作进度（N13）
+
+作品可以组织成可选的层级结构（卷 / 章 / 篇目），大纲作为可选的创作计划按版本演进，创作进度（创作中 / 已完成 / 搁置）可跟踪。三者全部可选：不建任何结构、不写大纲、不设进度，既有创作命令照常跑，不构成任何关卡。
+
+### structure 命令组
+
+- `structure add <作品ID> <kind> <标题> [--parent <节点ID>] [--draft <草稿ID>] [--order N]`：新增结构节点，`kind` 接受 `volume` / `chapter` / `section` 或中文 `卷` / `章` / `篇目`；卷下可挂章、章下可挂篇目，同级可任意并列；`--parent` 缺省放根级，`--draft` 把草稿挂到节点上（可选引用，不移动草稿本体），`--order` 指定同级排序（缺省追加到末尾，不能为负数）。输出 `created <节点ID> <kind> <标题>`。
+- `structure list <作品ID>`：树形缩进输出，每行 `[卷]` / `[章]` / `[篇目]` + 标题 + （节点ID），节点完成后加 ` [已完成]`、搁置加 ` [搁置]`，挂载了草稿时行尾附草稿标题；没有节点时输出 `no structure`。
+- `structure rename <作品ID> <节点ID> <新标题>`：改名，输出 `renamed <节点ID>`。
+- `structure move <作品ID> <节点ID> [--parent <节点ID> | --root] [--order N]`：把节点移到新父级下或移回根级；`--parent` 与 `--root` 互斥（同时给报用法错误），层级校验不变（卷下只能放章、章下只能放篇目），不能移进自己的子树；输出 `moved <节点ID>`。
+- `structure remove <作品ID> <节点ID>`：级联删除该节点及其整棵子树，输出 `removed N node(s)`；只删结构节点，不删草稿本体，挂过草稿的节点删掉后草稿照常存在。
+- `structure status <作品ID> <节点ID> <writing|completed|shelved>`：设置节点级进度三态，可传中文 `创作中` / `已完成` / `搁置`；输出 `status updated: <节点ID> <状态>`。
+
+### outline 命令组
+
+- `outline create <作品ID> --content <内容> [--actor <操作者>]`：首次创建 v1（原因固定 `initial`，操作者默认「作者」）；已有大纲时报用法错误（须走 `revise`）。输出 `outline v1 created`。
+- `outline revise <作品ID> --content <新内容> --reason <原因> [--actor <操作者>]`：版本递增，原因与操作者都必填并留痕；输出 `outline vN saved`。
+- `outline show <作品ID>`：输出 `outline vN：` + 当前大纲内容；没有大纲时输出 `no outline`。
+- `outline history <作品ID> [--limit N]`：按版本倒序列出，每行 `vN <时间戳> <操作者> <原因>`，原因超 40 字截断并补 `…`；没有大纲时输出 `no outline`。
+
+### 创作进度
+
+- `works status <作品ID> <writing|completed|shelved>`：设置作品级进度三态，可传中文 `创作中` / `已完成` / `搁置`；输出 `status updated: <作品ID> <状态>`。进度只是可跟踪标记，不阻塞 talk / draft / decision / review 任何命令，搁置的作品随时可以恢复继续创作。
+- `works show <作品ID>`：title 之后、genre 之前新增 `状态: 创作中/已完成/搁置` 行；班底之后有结构时追加 `结构：` 树（与 `structure list` 相同的缩进与标记），零结构作品输出与之前一致，只有状态行是新增。
+- 节点级进度用 `structure status`（见上），章级 completed 会显示在树形输出的 `[已完成]` 标记里。
+
+### 大纲与记忆包
+
+写手记忆包（`memory pack`）的章纲段读当前大纲：无大纲时维持 `章纲：暂无（占位）` 不变；有大纲时注入当前大纲内容（折叠连续空白），超过 120 字截断并补 `…`。旧版本只留在 `outline history` 可溯，分发永远用最新版本。
+
+结构创建 / 改名 / 移动 / 删除、大纲创建 / 修订、作品进度变更都追加 `[system]` 事件（复用既有事件流，不新增事件类型），`events list <作品ID>` 可见，payload 的 `kind` 分别为 `structure_created` / `structure_renamed` / `structure_moved` / `structure_removed` / `outline_created` / `outline_revised` / `workspace_status_changed`，超 80 字符时列表截断显示。
+
+### 红线
+
+- **全部可选**：零卷、零章、零大纲均合法；不建结构、不写大纲不改变任何既有命令行为与输出。
+- **大纲不是前置**：大纲只是随创作自然沉淀、按版本演进的创作计划，绝不构成「先写大纲才能写正文」的强制节点。
+- **进度是状态不是关卡**：创作中 / 已完成 / 搁置只做跟踪，不阻塞任何创作命令。
+- **结构不绑架草稿**：结构节点只是组织视图，草稿可挂可不挂，删除节点绝不删草稿本体，未挂载的草稿照常存在。
+
+### 示例（mock 下实跑）
+
+下面示例全部可在未配置 key（mock LLM）时复现。先把数据目录指到临时目录（初始化写法见「判断权与分歧」），再建一部作品：
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-n13\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-n13\config.toml"
+Remove-Item Env:NOVEL_LLM_API_KEY, Env:NOVEL_LLM_BASE_URL, Env:NOVEL_LLM_MODEL -ErrorAction SilentlyContinue
+```
+
+```bash
+uv run novel-editorial works create 结构之书 --genre 长篇 --description 雨夜车站的悬疑长篇
+# created workspace <作品ID>: 结构之书
+```
+
+零结构基线：`works show` 只有新增的「状态」行、没有「结构：」段，`memory pack` 章纲保持占位：
+
+```bash
+uv run novel-editorial works show <作品ID>
+# id: <作品ID>
+# title: 结构之书
+# 状态: 创作中
+# genre: 长篇
+# description: 雨夜车站的悬疑长篇
+# band:
+#   editor_in_chief: 总编
+#   editor: 责编
+#   writer: 写手
+#   reviewer: 审稿
+
+uv run novel-editorial memory pack <作品ID>
+# 作品：《结构之书》（长篇）
+# 简介：雨夜车站的悬疑长篇
+# 章纲：暂无（占位）
+```
+
+建结构：卷下挂章、章下挂篇目，章可挂草稿（先 `draft generate` 拿到草稿 ID，kind 用英文或中文标签均可）：
+
+```bash
+uv run novel-editorial structure add <作品ID> volume 第一卷
+# created <卷ID> volume 第一卷
+
+uv run novel-editorial draft generate <作品ID> --title 第一章
+# draft <草稿ID> 第一章 now at v1
+# awaiting decision: <草稿ID>
+# 写手: 《第一章》初稿写完了，我按节奏收尾，先交给你过目。
+# 责编: 《第一章》过了质量门，我试读了开头「（模拟回复）」，节奏在线，建议作者拍板。
+
+uv run novel-editorial structure add <作品ID> chapter 第一章 --parent <卷ID>
+# created <章ID-1> chapter 第一章
+
+uv run novel-editorial structure add <作品ID> chapter 第二章 --parent <卷ID> --draft <草稿ID>
+# created <章ID-2> chapter 第二章
+
+uv run novel-editorial structure add <作品ID> section 第一篇 --parent <章ID-1>
+# created <篇目ID> section 第一篇
+```
+
+树形输出带缩进；未完成节点无标记，挂草稿的节点行尾带草稿标题；`structure status` 标记后显示 `[已完成]`：
+
+```bash
+uv run novel-editorial structure list <作品ID>
+# [卷] 第一卷（<卷ID>）
+#   [章] 第一章（<章ID-1>）
+#     [篇目] 第一篇（<篇目ID>）
+#   [章] 第二章（<章ID-2>） <草稿标题>
+
+uv run novel-editorial structure status <作品ID> <章ID-2> completed
+# status updated: <章ID-2> completed
+
+uv run novel-editorial structure list <作品ID>
+# [卷] 第一卷（<卷ID>）
+#   [章] 第一章（<章ID-1>）
+#     [篇目] 第一篇（<篇目ID>）
+#   [章] 第二章（<章ID-2>） [已完成] <草稿标题>
+```
+
+改名与大纲：`structure rename` 立即生效；`outline create` 首次落 v1，之后只能 `outline revise` 递增版本：
+
+```bash
+uv run novel-editorial structure rename <作品ID> <卷ID> 第一卷·雨夜
+# renamed <卷ID>
+
+uv run novel-editorial outline create <作品ID> --content "楔子：雨夜车站，钟停在十点差一刻。第一卷讲钟楼的来历，第一章埋下车站停运的伏笔。" --actor 作者
+# outline v1 created
+
+uv run novel-editorial outline revise <作品ID> --content "楔子：雨夜车站，钟停在十点差一刻。第一卷讲钟楼的来历，第二章揭晓车站停运的真相。" --reason 补充第二章悬念 --actor 责编
+# outline v2 saved
+
+uv run novel-editorial outline show <作品ID>
+# outline v2：
+# 楔子：雨夜车站，钟停在十点差一刻。第一卷讲钟楼的来历，第二章揭晓车站停运的真相。
+
+uv run novel-editorial outline history <作品ID>
+# v2 <时间戳> 责编 补充第二章悬念
+# v1 <时间戳> 作者 initial
+```
+
+修订原因超 40 字时 history 截断补 `…`；大纲内容超 120 字时记忆包章纲截断：
+
+```bash
+uv run novel-editorial outline revise <作品ID> --content "楔子：雨夜车站，钟停在十点差一刻，没有人记得这座小站是什么时候废弃的。第一卷讲钟楼的来历，第一章埋下车站停运的伏笔，第二章揭晓钟声会把人带回二十年前的真相，第三章写沈夜在午夜钟声里发现站台尽头多出来的一班列车，第四章回到第一卷，把钟楼工匠的失踪案和车站废弃的真相缝在一起，结尾让整座车站连同钟声一起消失在雾里。" --reason 这一版把第三卷的线索也收进来了，还顺带调整了车站停运的时间线，让它和钟楼的来历对得上，同时把沈夜在午夜钟声里的戏份往前挪了一点。 --actor 作者
+# outline v3 saved
+
+uv run novel-editorial outline history <作品ID>
+# v3 <时间戳> 作者 这一版把第三卷的线索也收进来了，还顺带调整了车站停运的时间线，让它和钟楼的来历对…
+# v2 <时间戳> 责编 补充第二章悬念
+# v1 <时间戳> 作者 initial
+
+uv run novel-editorial memory pack <作品ID>
+# 作品：《结构之书》（长篇）
+# 简介：雨夜车站的悬疑长篇
+# 章纲：楔子：雨夜车站，钟停在十点差一刻，没有人记得这座小站是什么时候废弃的。第一卷讲钟楼的来历，第一章埋下车站停运的伏笔，第二章揭晓钟声会把人带回二十年前的真相，第三章写沈夜在午夜钟声里发现站台尽头多出来的一班列车，第四章回到第一卷，把钟楼工匠的…
+```
+
+进度流转与可见性：`works status` 可传中文标签，输出规范三态；`works show` 的状态行在 title 之后、genre 之前，结构树在末尾（有结构才出现）：
+
+```bash
+uv run novel-editorial works status <作品ID> 已完成
+# status updated: <作品ID> completed
+
+uv run novel-editorial works show <作品ID>
+# id: <作品ID>
+# title: 结构之书
+# 状态: 已完成
+# genre: 长篇
+# description: 雨夜车站的悬疑长篇
+# band:
+#   editor_in_chief: 总编
+#   editor: 责编
+#   writer: 写手
+#   reviewer: 审稿
+# 结构：
+# [卷] 第一卷·雨夜（<卷ID>）
+#   [章] 第一章（<章ID-1>）
+#     [篇目] 第一篇（<篇目ID>）
+#   [章] 第二章（<章ID-2>） [已完成] <草稿标题>
+```
+
+维护操作：`structure move` 换父级、`structure remove` 级联删除子树（输出删除的节点数），删完 `structure list` 变回无该子树：
+
+```bash
+uv run novel-editorial structure move <作品ID> <篇目ID> --parent <章ID-2>
+# moved <篇目ID>
+
+uv run novel-editorial structure remove <作品ID> <篇目ID>
+# removed 1 node(s)
+
+uv run novel-editorial structure list <作品ID>
+# [卷] 第一卷·雨夜（<卷ID>）
+#   [章] 第一章（<章ID-1>）
+#   [章] 第二章（<章ID-2>） [已完成] <草稿标题>
+```
+
+空态与错误路径（mock 下实跑确认）：没有结构时 `structure list` 输出 `no structure`；没有大纲时 `outline show` / `outline history` 输出 `no outline`，`outline revise` 报业务错误（退出码 1）；`structure add` 传未知 kind、`structure move` 同时给 `--parent` 与 `--root`、`structure status` / `works status` 传非三态值、已有大纲再 `outline create` 都报用法错误（退出码 2）。
+
+（`<作品ID>`、`<卷ID>`、`<章ID-*>`、`<篇目ID>`、`<草稿ID>` 与 `<时间戳>` 换成前面输出的真实值，每次运行不同；其余为 mock 下的真实输出。）
+
 ## 数据目录与备份
 
 - `NOVEL_DATA_DIR`（默认 `./data`）：
@@ -1192,7 +1389,7 @@ uv run novel-editorial memory search <作品ID> 雨夜归乡的钟声 --semantic
 ### 怎么查看编辑部当前状态？
 
 - `agents show <作品ID>`：完整档案与当前情绪；
-- `works show <作品ID>`：班子一览；
+- `works show <作品ID>`：班子一览（含作品状态行与结构树，见「作品结构与创作进度（N13）」）；
 - `memory view <作品ID> --as 作者`：老板视图（档案、班子状态、草稿、最近意见与决策）；
 - `log <作品ID>`：全流程回顾（对话 / 状态 / 草稿 / 意见 / 决策）；
 - `talk list <作品ID>`：对话记录；
