@@ -181,9 +181,10 @@ def settings_section(db: DB, workspace_id: str) -> str:
     lines = ["设定："]
     for entry in entries:
         label = KIND_LABELS.get(entry.kind, entry.kind)
+        collapsed = " ".join(entry.content.split())
         lines.append(
             f"- [{label}] {entry.name} v{entry.current_version} "
-            f"{entry.content}（来源: {entry.source}）"
+            f"{collapsed}（来源: {entry.source}）"
         )
     return "\n".join(lines)
 

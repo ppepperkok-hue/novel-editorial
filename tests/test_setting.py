@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
 from novel_editorial.core.config import load_settings
+from novel_editorial.core.draft import build_memory_pack
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.setting import (
     KIND_LABELS,
@@ -17,7 +18,9 @@ from novel_editorial.core.setting import (
     list_setting_history,
     list_settings,
     revise_setting,
+    settings_section,
 )
+from novel_editorial.core.views import build_editor_view
 from novel_editorial.events import EventType
 from novel_editorial.store.db import DB, workspace_db_path
 from novel_editorial.store.events import list_events
@@ -1005,3 +1008,40 @@ def test_setting_revise_default_actor_is_author(
     history = runner.invoke(app, ["setting", "history", workspace_id, setting_id])
     assert history.exit_code == 0, history.output
     assert "v2 作者 作者修订 新设定" in history.output
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "第一段：雨夜侦探，习惯沉默\n第二段：只会对熟人露出破绽",
+        "第一段：雨夜侦探，习惯沉默\r\n第二段：只会对熟人露出破绽",
+    ],
+)
+def test_multiline_setting_content_renders_single_line_in_sections(
+    tmp_path: Path, monkeypatch, content: str
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    entry = add_setting(
+        db,
+        workspace_id,
+        kind="character",
+        name="沈夜",
+        content=content,
+        source="作者",
+    )
+    assert entry.current_version == 1
+
+    collapsed = " ".join(content.split())
+    expected = f"- [人物] 沈夜 v1 {collapsed}（来源: 作者）"
+    fragments = [fragment.strip() for fragment in content.splitlines() if fragment.strip()]
+
+    for block in (
+        settings_section(db, workspace_id),
+        build_memory_pack(db, workspace_id),
+        build_editor_view(db, workspace_id),
+    ):
+        stripped_lines = [line.strip() for line in block.splitlines()]
+        assert expected in block.splitlines()
+        for fragment in fragments:
+            assert fragment not in stripped_lines
