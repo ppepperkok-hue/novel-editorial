@@ -21,6 +21,7 @@ from novel_editorial.core.memory import (
     restore_memory_notes,
 )
 from novel_editorial.core.retrieval import LAYER_NOTE
+from novel_editorial.core.setting import add_setting
 from novel_editorial.llm.embeddings import build_embedding_client
 from novel_editorial.store.db import DB, workspace_db_path
 from novel_editorial.store.models import Agent, AgentMemory, MemoryEmbedding
@@ -1409,3 +1410,132 @@ def test_delete_memory_note_retry_cleans_orphan_embedding(
     assert exc_info.value.code is ErrorCode.NOT_FOUND
     with db.workspace_session(workspace_id) as session:
         assert session.query(MemoryEmbedding).count() == 0
+
+
+def test_memory_search_semantic_off_by_default(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = DB(settings)
+    writer_id = _writer_id(db, workspace_id)
+    add_memory_note(
+        db,
+        workspace_id,
+        writer_id,
+        actor="写手",
+        content="雨夜回乡 客船靠岸",
+    )
+
+    result = runner.invoke(
+        app, ["memory", "search", workspace_id, "雨夜归乡 客船"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "[语义" not in result.output
+    assert result.output.strip() == "no matches"
+
+
+def test_memory_search_semantic_appends_and_dedupes_literal(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = DB(settings)
+    with db.workspace_session(workspace_id) as session:
+        editor = (
+            session.query(Agent)
+            .filter_by(workspace_id=workspace_id, role="editor")
+            .first()
+        )
+        assert editor is not None
+        editor_id = editor.id
+    writer_id = _writer_id(db, workspace_id)
+    add_memory_note(
+        db,
+        workspace_id,
+        editor_id,
+        actor="责编",
+        content="雨夜归乡 客船",
+    )
+    add_memory_note(
+        db,
+        workspace_id,
+        writer_id,
+        actor="写手",
+        content="雨夜回乡 客船靠岸",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "search",
+            workspace_id,
+            "雨夜归乡 客船",
+            "--semantic",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    lines = result.output.splitlines()
+    keyword_lines = [line for line in lines if "[笔记] 雨夜归乡 客船" in line]
+    semantic_lines = [line for line in lines if "[语义" in line]
+    assert len(keyword_lines) == 1
+    assert len(semantic_lines) == 1
+    assert "雨夜回乡 客船靠岸" in semantic_lines[0]
+    assert "（来源: 写手）" in semantic_lines[0]
+    assert lines.index(keyword_lines[0]) < lines.index(semantic_lines[0])
+
+
+def test_memory_search_semantic_no_hits_still_no_matches(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+
+    result = runner.invoke(
+        app,
+        ["memory", "search", workspace_id, "任意词", "--semantic"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == "no matches"
+
+
+def test_memory_reindex_cli_reports_count(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = DB(settings)
+    writer_id = _writer_id(db, workspace_id)
+    add_memory_note(
+        db,
+        workspace_id,
+        writer_id,
+        actor="写手",
+        content="雨夜回乡",
+    )
+    add_setting(
+        db,
+        workspace_id,
+        kind="world",
+        name="客船",
+        content="客船靠岸",
+        source="作者",
+    )
+
+    result = runner.invoke(app, ["memory", "reindex", workspace_id])
+
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == "reindexed 2 entries"
+
+
+def test_memory_reindex_unknown_workspace(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("NOVEL_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("NOVEL_CONFIG", str(tmp_path / "config.toml"))
+
+    result = runner.invoke(app, ["memory", "reindex", "nope"])
+
+    assert result.exit_code == 1
+    assert "workspace not found" in result.output

@@ -29,6 +29,7 @@ SUBCOMMANDS = {
         "delete",
         "decay",
         "remember",
+        "reindex",
         "archive",
         "restore",
     ),

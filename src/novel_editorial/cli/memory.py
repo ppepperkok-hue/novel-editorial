@@ -18,6 +18,11 @@ from novel_editorial.core.memory import (
     rehearse_memory_note,
     restore_memory_notes,
 )
+from novel_editorial.core.retrieval import (
+    reindex_embeddings,
+    render_semantic_hit,
+    semantic_search,
+)
 from novel_editorial.core.views import build_role_view, search_memory
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import Agent
@@ -57,12 +62,46 @@ def memory_view(
 def memory_search(
     workspace_id: str = typer.Argument(..., help="Workspace id"),
     keyword: str = typer.Argument(..., help="Search keyword"),
+    semantic: bool = typer.Option(
+        False,
+        "--semantic",
+        help="Append semantic matches after the keyword results",
+    ),
 ) -> None:
     """Search archive, messages, reviews, versions, and notes with source citations."""
     settings = load_settings()
     db = DB(settings)
     db.init_schema()
-    typer.echo(search_memory(db, workspace_id, keyword))
+    base_output = search_memory(db, workspace_id, keyword)
+    if not semantic:
+        typer.echo(base_output)
+        return
+    hits = semantic_search(db, workspace_id, keyword)
+    semantic_lines = [
+        render_semantic_hit(hit, keyword)
+        for hit in hits
+        if keyword.lower() not in hit.content.lower()
+    ]
+    if base_output == "no matches" and not semantic_lines:
+        typer.echo(base_output)
+        return
+    if base_output != "no matches":
+        typer.echo(base_output)
+    if semantic_lines:
+        typer.echo("\n".join(semantic_lines))
+
+
+@memory_app.command("reindex")
+def memory_reindex(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+) -> None:
+    """Rebuild semantic embeddings for every note and setting entry."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    get_workspace_or_raise(db, workspace_id)
+    count = reindex_embeddings(db, workspace_id)
+    typer.echo(f"reindexed {count} entries")
 
 
 def _agent_names(db: DB, workspace_id: str) -> dict[str, str]:
