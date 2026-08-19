@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from sqlalchemy import func
-
 from novel_editorial.core.chat import ROLE_ALIASES, get_agent
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.store.db import DB, DEFAULT_BAND
@@ -60,15 +58,16 @@ def create_agent(
     defaults = _role_defaults(role)
     cleaned_personality = personality.strip() if isinstance(personality, str) else ""
     with db.workspace_session(workspace_id) as session:
-        existing = (
-            session.query(Agent)
-            .filter(
-                Agent.workspace_id == workspace_id,
-                func.lower(Agent.name) == cleaned_name.lower(),
-            )
-            .first()
-        )
-        if existing is not None:
+        existing_names = [
+            agent.name
+            for agent in session.query(Agent)
+            .filter(Agent.workspace_id == workspace_id)
+            .all()
+        ]
+        if any(
+            existing.casefold() == cleaned_name.casefold()
+            for existing in existing_names
+        ):
             raise NovelError(
                 ErrorCode.USAGE_ERROR, f"agent already exists: {cleaned_name}"
             )
@@ -148,16 +147,9 @@ def resolve_agent(db: DB, workspace_id: str, target: str) -> Agent:
         agent = session.query(Agent).filter_by(workspace_id=workspace_id, id=target).first()
         if agent is not None:
             return agent
-        agent = (
-            session.query(Agent)
-            .filter(
-                Agent.workspace_id == workspace_id,
-                func.lower(Agent.name) == target.lower(),
-            )
-            .first()
-        )
-        if agent is not None:
-            return agent
+        for candidate in session.query(Agent).filter_by(workspace_id=workspace_id).all():
+            if candidate.name.casefold() == target.casefold():
+                return candidate
     role = ROLE_ALIASES.get(target)
     if role is not None:
         return get_agent(db, workspace_id, role)

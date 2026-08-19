@@ -298,6 +298,29 @@ def test_resolve_agent_name_is_case_insensitive(tmp_path: Path, monkeypatch) -> 
     assert resolve_agent(db, workspace_id, "WRITER-BETA").id == created.id
 
 
+def test_create_agent_rejects_duplicate_non_ascii_casefold(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    create_agent(db, workspace_id, name="Émilie", role=AgentRole.WRITER)
+    with pytest.raises(NovelError) as exc:
+        create_agent(db, workspace_id, name="émilie", role=AgentRole.WRITER)
+    assert exc.value.code == ErrorCode.USAGE_ERROR
+    assert "already exists" in exc.value.message
+
+
+def test_resolve_agent_name_matches_non_ascii_casefold(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    created = create_agent(
+        db, workspace_id, name="Émilie", role=AgentRole.WRITER
+    )
+    assert resolve_agent(db, workspace_id, "émilie").id == created.id
+
+
 def test_resolve_agent_name_wins_over_role_alias(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     db = DB(load_settings())
