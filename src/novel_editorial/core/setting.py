@@ -46,6 +46,8 @@ def add_setting(
         raise NovelError(ErrorCode.USAGE_ERROR, "setting name must not contain newlines")
     if not content.strip():
         raise NovelError(ErrorCode.USAGE_ERROR, "setting content must not be empty")
+    if not source.strip():
+        raise NovelError(ErrorCode.USAGE_ERROR, "setting source must not be empty")
     _ensure_workspace(db, workspace_id)
     with db.workspace_session(workspace_id) as session:
         entry = SettingEntry(

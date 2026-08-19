@@ -21,6 +21,7 @@ from novel_editorial.core.draft import build_memory_pack, list_drafts
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.memory import effective_strength, rehearse_memory_note
 from novel_editorial.core.plot import KIND_LABELS
+from novel_editorial.core.setting import KIND_LABELS as SETTING_KIND_LABELS
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import (
     Agent,
@@ -31,6 +32,7 @@ from novel_editorial.store.models import (
     Message,
     PlotThread,
     Review,
+    SettingEntry,
     StyleAnchor,
 )
 
@@ -387,6 +389,24 @@ def search_memory(
         )
         for note in notes:
             _rehearse_note_safely(db, workspace_id, note, now)
+        setting_entries = (
+            session.query(SettingEntry)
+            .filter_by(workspace_id=workspace_id)
+            .filter(
+                or_(
+                    _like_contains(SettingEntry.name, needle),
+                    _like_contains(SettingEntry.content, needle),
+                )
+            )
+            .order_by(SettingEntry.updated_at, SettingEntry.id)
+            .all()
+        )
+        for entry in setting_entries:
+            label = SETTING_KIND_LABELS.get(entry.kind, entry.kind)
+            lines.append(
+                f"[设定] {label}：{entry.name}——{_snippet(entry.content, keyword)}"
+                f"（来源: {entry.source} v{entry.current_version}）"
+            )
         for message in messages:
             lines.append(
                 f"[对话] {_snippet(message.content, keyword)}（来源: {message.actor}）"
@@ -562,6 +582,24 @@ def search_all_layers(
         )
         for note, _agent_name in notes:
             _rehearse_note_safely(db, workspace_id, note, now)
+        setting_entries = (
+            session.query(SettingEntry)
+            .filter_by(workspace_id=workspace_id)
+            .filter(
+                or_(
+                    _like_contains(SettingEntry.name, needle),
+                    _like_contains(SettingEntry.content, needle),
+                )
+            )
+            .order_by(SettingEntry.updated_at, SettingEntry.id)
+            .all()
+        )
+        for entry in setting_entries:
+            label = SETTING_KIND_LABELS.get(entry.kind, entry.kind)
+            lines.append(
+                f"[设定] {label}：{entry.name}——{_snippet(entry.content, keyword)}"
+                f"（来源: {entry.source} v{entry.current_version}）"
+            )
         decisions = (
             session.query(Decision)
             .filter_by(workspace_id=workspace_id)

@@ -104,6 +104,27 @@ def test_add_setting_default_source_is_author(tmp_path: Path, monkeypatch) -> No
     assert [version.actor for version in history] == ["作者"]
 
 
+@pytest.mark.parametrize("source", ["", "   "])
+def test_add_setting_rejects_blank_source(
+    tmp_path: Path, monkeypatch, source: str
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+
+    with pytest.raises(NovelError) as exc_info:
+        add_setting(
+            db,
+            workspace_id,
+            kind="character",
+            name="林墨",
+            content="沉默寡言的侦探",
+            source=source,
+        )
+    assert exc_info.value.code is ErrorCode.USAGE_ERROR
+    assert "setting source must not be empty" in exc_info.value.message
+    assert list_settings(db, workspace_id) == []
+
+
 @pytest.mark.parametrize("kind", ["teaser", "", "WORLD"])
 def test_add_setting_rejects_invalid_kind(tmp_path: Path, monkeypatch, kind: str) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
@@ -517,3 +538,367 @@ def test_setting_upgrades_pre_migration_workspace(
     with db.workspace_session(workspace_id) as session:
         assert session.get(SettingEntry, entry.id) is not None
         assert session.query(SettingVersion).filter_by(entry_id=entry.id).count() == 1
+
+
+@pytest.mark.smoke
+def test_setting_cli_end_to_end(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+
+    added = runner.invoke(
+        app,
+        [
+            "setting",
+            "add",
+            workspace_id,
+            "--kind",
+            "人物",
+            "--name",
+            "林墨",
+            "--content",
+            "沉默寡言的侦探",
+            "--source",
+            "第一章手稿",
+        ],
+    )
+    assert added.exit_code == 0, added.output
+    assert added.output.startswith("added ")
+    setting_id = added.output.split()[1]
+    assert "[人物] 林墨 v1" in added.output
+
+    listed = runner.invoke(app, ["setting", "list", workspace_id])
+    assert listed.exit_code == 0, listed.output
+    assert f"{setting_id} [人物] 林墨 v1 沉默寡言的侦探" in listed.output
+
+    shown = runner.invoke(app, ["setting", "show", workspace_id, setting_id])
+    assert shown.exit_code == 0, shown.output
+    assert "林墨 [人物] v1" in shown.output
+    assert "source: 第一章手稿" in shown.output
+    assert "沉默寡言的侦探" in shown.output
+
+    revised = runner.invoke(
+        app,
+        [
+            "setting",
+            "revise",
+            workspace_id,
+            setting_id,
+            "--content",
+            "表面冷漠、暗地护短",
+            "--reason",
+            "角色弧线调整",
+            "--actor",
+            "责编",
+        ],
+    )
+    assert revised.exit_code == 0, revised.output
+    assert f"revised {setting_id} 林墨 v2" in revised.output
+
+    shown_again = runner.invoke(app, ["setting", "show", workspace_id, setting_id])
+    assert shown_again.exit_code == 0, shown_again.output
+    assert "林墨 [人物] v2" in shown_again.output
+    assert "表面冷漠、暗地护短" in shown_again.output
+
+    history = runner.invoke(app, ["setting", "history", workspace_id, setting_id])
+    assert history.exit_code == 0, history.output
+    assert "v1 第一章手稿 initial 沉默寡言的侦探" in history.output
+    assert "v2 责编 角色弧线调整 表面冷漠、暗地护短" in history.output
+
+
+@pytest.mark.parametrize(
+    ("label", "kind"),
+    [
+        ("人物", "character"),
+        ("关系", "relation"),
+        ("时间线", "timeline"),
+        ("世界观", "world"),
+    ],
+)
+def test_setting_add_accepts_chinese_kind_labels(
+    tmp_path: Path, monkeypatch, label: str, kind: str
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    result = runner.invoke(
+        app,
+        [
+            "setting",
+            "add",
+            workspace_id,
+            "--kind",
+            label,
+            "--name",
+            "名称",
+            "--content",
+            "内容",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    setting_id = result.output.split()[1]
+    assert get_setting(_db(), workspace_id, setting_id).kind == kind
+
+
+@pytest.mark.parametrize("label", ["teaser", "作者", ""])
+def test_setting_add_rejects_unknown_kind_label(
+    tmp_path: Path, monkeypatch, label: str
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    result = runner.invoke(
+        app,
+        [
+            "setting",
+            "add",
+            workspace_id,
+            "--kind",
+            label,
+            "--name",
+            "x",
+            "--content",
+            "y",
+        ],
+    )
+    assert result.exit_code == 2
+    assert "invalid kind" in result.output
+    assert (
+        runner.invoke(app, ["setting", "list", workspace_id]).output.strip()
+        == "no settings yet"
+    )
+
+
+def test_setting_list_empty_and_kind_filter(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    empty = runner.invoke(app, ["setting", "list", workspace_id])
+    assert empty.exit_code == 0
+    assert empty.output.strip() == "no settings yet"
+
+    assert (
+        runner.invoke(
+            app,
+            [
+                "setting",
+                "add",
+                workspace_id,
+                "--kind",
+                "人物",
+                "--name",
+                "林墨",
+                "--content",
+                "侦探",
+            ],
+        ).exit_code
+        == 0
+    )
+    assert (
+        runner.invoke(
+            app,
+            [
+                "setting",
+                "add",
+                workspace_id,
+                "--kind",
+                "世界观",
+                "--name",
+                "灵气复苏",
+                "--content",
+                "三百年",
+            ],
+        ).exit_code
+        == 0
+    )
+
+    filtered = runner.invoke(app, ["setting", "list", workspace_id, "--kind", "世界观"])
+    assert filtered.exit_code == 0, filtered.output
+    assert "灵气复苏" in filtered.output
+    assert "林墨" not in filtered.output
+
+
+def test_setting_cli_error_paths(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+
+    blank_name = runner.invoke(
+        app,
+        [
+            "setting",
+            "add",
+            workspace_id,
+            "--kind",
+            "人物",
+            "--name",
+            "   ",
+            "--content",
+            "x",
+        ],
+    )
+    assert blank_name.exit_code == 2
+    assert "setting name must not be empty" in blank_name.output
+
+    blank_content = runner.invoke(
+        app,
+        [
+            "setting",
+            "add",
+            workspace_id,
+            "--kind",
+            "人物",
+            "--name",
+            "x",
+            "--content",
+            "   ",
+        ],
+    )
+    assert blank_content.exit_code == 2
+    assert "setting content must not be empty" in blank_content.output
+
+    blank_source = runner.invoke(
+        app,
+        [
+            "setting",
+            "add",
+            workspace_id,
+            "--kind",
+            "人物",
+            "--name",
+            "x",
+            "--content",
+            "y",
+            "--source",
+            "   ",
+        ],
+    )
+    assert blank_source.exit_code == 2
+    assert "setting source must not be empty" in blank_source.output
+
+    assert (
+        runner.invoke(app, ["setting", "list", workspace_id]).output.strip()
+        == "no settings yet"
+    )
+
+    missing_workspace = runner.invoke(app, ["setting", "list", "nope"])
+    assert missing_workspace.exit_code == 1
+    assert "workspace not found" in missing_workspace.output
+
+    missing_id = "deadbeefdeadbeefdeadbeefdeadbeef"
+    show_missing = runner.invoke(app, ["setting", "show", workspace_id, missing_id])
+    assert show_missing.exit_code == 1
+    assert "setting not found" in show_missing.output
+
+    history_missing = runner.invoke(
+        app, ["setting", "history", workspace_id, missing_id]
+    )
+    assert history_missing.exit_code == 1
+    assert "setting not found" in history_missing.output
+
+    revise_missing = runner.invoke(
+        app,
+        [
+            "setting",
+            "revise",
+            workspace_id,
+            missing_id,
+            "--content",
+            "x",
+            "--reason",
+            "y",
+        ],
+    )
+    assert revise_missing.exit_code == 1
+    assert "setting not found" in revise_missing.output
+
+
+def test_setting_revise_cli_rejects_blank_content_or_reason(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    added = runner.invoke(
+        app,
+        [
+            "setting",
+            "add",
+            workspace_id,
+            "--kind",
+            "人物",
+            "--name",
+            "林墨",
+            "--content",
+            "原设定",
+        ],
+    )
+    assert added.exit_code == 0, added.output
+    setting_id = added.output.split()[1]
+
+    blank_content = runner.invoke(
+        app,
+        [
+            "setting",
+            "revise",
+            workspace_id,
+            setting_id,
+            "--content",
+            "   ",
+            "--reason",
+            "有理由",
+        ],
+    )
+    assert blank_content.exit_code == 2
+    assert "setting content must not be empty" in blank_content.output
+
+    blank_reason = runner.invoke(
+        app,
+        [
+            "setting",
+            "revise",
+            workspace_id,
+            setting_id,
+            "--content",
+            "新设定",
+            "--reason",
+            "   ",
+        ],
+    )
+    assert blank_reason.exit_code == 2
+    assert "setting reason must not be empty" in blank_reason.output
+
+    shown = runner.invoke(app, ["setting", "show", workspace_id, setting_id])
+    assert shown.exit_code == 0, shown.output
+    assert "林墨 [人物] v1" in shown.output
+    assert "原设定" in shown.output
+
+
+def test_setting_revise_default_actor_is_author(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    added = runner.invoke(
+        app,
+        [
+            "setting",
+            "add",
+            workspace_id,
+            "--kind",
+            "人物",
+            "--name",
+            "林墨",
+            "--content",
+            "原设定",
+        ],
+    )
+    assert added.exit_code == 0, added.output
+    setting_id = added.output.split()[1]
+
+    revised = runner.invoke(
+        app,
+        [
+            "setting",
+            "revise",
+            workspace_id,
+            setting_id,
+            "--content",
+            "新设定",
+            "--reason",
+            "作者修订",
+        ],
+    )
+    assert revised.exit_code == 0, revised.output
+    assert f"revised {setting_id} 林墨 v2" in revised.output
+
+    history = runner.invoke(app, ["setting", "history", workspace_id, setting_id])
+    assert history.exit_code == 0, history.output
+    assert "v2 作者 作者修订 新设定" in history.output

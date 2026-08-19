@@ -10,10 +10,11 @@ from novel_editorial.cli.app import app
 from novel_editorial.core.chat import record_message
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.memory import archive_memory_notes
+from novel_editorial.core.setting import add_setting
 from novel_editorial.core.views import search_all_layers, search_memory
 from novel_editorial.llm.client import MockLLMClient
 from novel_editorial.store.db import DB
-from novel_editorial.store.models import Agent, AgentMemory
+from novel_editorial.store.models import Agent, AgentMemory, SettingEntry
 
 runner = CliRunner()
 
@@ -476,3 +477,146 @@ def test_search_rehearsal_failure_keeps_result_and_warns(
     captured = capsys.readouterr()
     assert "warning: memory rehearsal failed" in captured.err
     assert "rehearsal write failed" in captured.err
+
+
+@pytest.mark.smoke
+def test_search_memory_hits_setting_layer_with_citation(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    add_setting(
+        db,
+        workspace_id,
+        kind="character",
+        name="林墨",
+        content="雨夜里沉默寡言的侦探",
+        source="第一章手稿",
+    )
+
+    result = search_memory(db, workspace_id, "雨夜")
+    assert "[设定] 人物：林墨——雨夜里沉默寡言的侦探（来源: 第一章手稿 v1）" in result
+
+    all_layers = search_all_layers(db, workspace_id, "雨夜")
+    assert "[设定] 人物：林墨——雨夜里沉默寡言的侦探（来源: 第一章手稿 v1）" in all_layers
+
+
+def test_search_setting_layer_matches_name_only(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    add_setting(
+        db,
+        workspace_id,
+        kind="timeline",
+        name="雨夜时间线",
+        content="第一章",
+        source="作者",
+    )
+
+    result = search_memory(db, workspace_id, "雨夜")
+    assert "[设定] 时间线：雨夜时间线——第一章（来源: 作者 v1）" in result
+
+
+def test_search_setting_layer_fts_and_like_agree(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    add_setting(
+        db,
+        workspace_id,
+        kind="world",
+        name="世界观",
+        content="灵气复苏三百年",
+        source="大纲",
+    )
+
+    liked = search_memory(db, workspace_id, "灵气复苏", _force_fts=False)
+    ftsed = search_memory(db, workspace_id, "灵气复苏", _force_fts=True)
+    assert ftsed == liked
+    assert "[设定]" in ftsed
+
+    liked_all = search_all_layers(db, workspace_id, "灵气复苏", _force_fts=False)
+    ftsed_all = search_all_layers(db, workspace_id, "灵气复苏", _force_fts=True)
+    assert ftsed_all == liked_all
+    assert "[设定]" in ftsed_all
+
+
+def test_search_without_settings_keeps_other_layers(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    _add_note(workspace_id, "写手", "钩子埋在下雨天")
+    db = DB(load_settings())
+
+    result = search_memory(db, workspace_id, "钩子")
+    assert "[设定]" not in result
+    assert "[笔记]" in result
+
+    all_layers = search_all_layers(db, workspace_id, "钩子")
+    assert "[设定]" not in all_layers
+    assert "[笔记]" in all_layers
+
+
+def test_search_setting_layer_isolated_between_workspaces(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_a = _create_workspace(tmp_path, monkeypatch, title="甲书")
+    workspace_b = _create_workspace(tmp_path, monkeypatch, title="乙书")
+    db = DB(load_settings())
+    add_setting(
+        db,
+        workspace_a,
+        kind="character",
+        name="甲书角色",
+        content="只属于甲书的秘密钩子",
+        source="作者",
+    )
+
+    leaked = search_memory(db, workspace_b, "只属于甲书的秘密钩子")
+    assert leaked == "no matches"
+    leaked_all = search_all_layers(db, workspace_b, "只属于甲书的秘密钩子")
+    assert leaked_all == "no matches"
+
+    found = search_memory(db, workspace_a, "只属于甲书的秘密钩子")
+    assert "[设定]" in found
+
+
+def test_search_setting_layer_orders_by_updated_at(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    now = datetime.now(UTC)
+    with db.workspace_session(workspace_id) as session:
+        session.add(
+            SettingEntry(
+                workspace_id=workspace_id,
+                kind="character",
+                name="甲",
+                content="钩子甲",
+                source="作者",
+                current_version=1,
+                created_at=now - timedelta(days=2),
+                updated_at=now - timedelta(days=2),
+            )
+        )
+        session.add(
+            SettingEntry(
+                workspace_id=workspace_id,
+                kind="character",
+                name="乙",
+                content="钩子乙",
+                source="作者",
+                current_version=1,
+                created_at=now - timedelta(days=1),
+                updated_at=now - timedelta(days=1),
+            )
+        )
+        session.commit()
+
+    result = search_memory(db, workspace_id, "钩子")
+    setting_lines = [line for line in result.splitlines() if line.startswith("[设定]")]
+    assert len(setting_lines) == 2
+    assert "钩子甲" in setting_lines[0]
+    assert "钩子乙" in setting_lines[1]
