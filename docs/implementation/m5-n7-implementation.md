@@ -127,3 +127,4 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 
 - 立项（2026-08-19）：实施文档就绪，用户确认后拆包 I1。
 - I1 完成（2026-08-19；commits 92ded53 / 85cfb01，全量 653 测试绿；嵌入抽象、索引表与增量同步 + 独立审查 P2/P3 修复，审查链归档 docs/reviews/）。I2 待拆包。
+- I2 完成（2026-08-19；commits b95abd2 / b65b42c，全量 676 测试绿；语义检索、reindex 与 --semantic + 独立审查 P2/P3 修复，审查链归档 docs/reviews/）。I3 待拆包。
