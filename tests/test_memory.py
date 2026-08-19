@@ -1488,6 +1488,89 @@ def test_memory_search_semantic_appends_and_dedupes_literal(
     assert lines.index(keyword_lines[0]) < lines.index(semantic_lines[0])
 
 
+def test_memory_search_semantic_keeps_related_hit_when_literal_fills_top_k(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = DB(settings)
+    writer_id = _writer_id(db, workspace_id)
+    literals = [
+        "雨夜归乡 客船靠岸",
+        "雨夜归乡 客船启航",
+        "雨夜归乡 客船鸣笛",
+        "雨夜归乡 客船灯火",
+        "雨夜归乡 客船汽笛",
+    ]
+    for content in literals:
+        add_memory_note(
+            db,
+            workspace_id,
+            writer_id,
+            actor="写手",
+            content=content,
+        )
+    related = "雨夜回乡 客船靠岸"
+    add_memory_note(
+        db,
+        workspace_id,
+        writer_id,
+        actor="写手",
+        content=related,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "search",
+            workspace_id,
+            "雨夜归乡 客船",
+            "--semantic",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    semantic_lines = [line for line in result.output.splitlines() if "[语义" in line]
+    assert len(semantic_lines) == 1
+    assert related in semantic_lines[0]
+    assert all(literal not in semantic_lines[0] for literal in literals)
+
+
+def test_memory_search_semantic_dedupes_setting_by_name(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = DB(settings)
+    add_setting(
+        db,
+        workspace_id,
+        kind="world",
+        name="雨夜归乡 客船",
+        content="客船靠岸",
+        source="作者",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "search",
+            workspace_id,
+            "雨夜归乡 客船",
+            "--semantic",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    setting_lines = [
+        line for line in result.output.splitlines() if line.startswith("[设定]")
+    ]
+    assert len(setting_lines) == 1
+    assert "[语义" not in result.output
+
+
 def test_memory_search_semantic_no_hits_still_no_matches(
     tmp_path: Path, monkeypatch
 ) -> None:

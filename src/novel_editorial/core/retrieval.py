@@ -179,13 +179,18 @@ def semantic_search(
     workspace_id: str,
     query: str,
     top_k: int | None = None,
+    exclude_literal: str | None = None,
 ) -> list[SemanticHit]:
     """Return the top semantic matches for ``query`` inside one workspace.
 
     Rows are scored with cosine similarity against the query embedding and
     read back from the live note/setting tables, so archived notes and deleted
-    sources are skipped. An empty index degrades silently; an embedding
-    failure warns on stderr and degrades to an empty result (fail-closed).
+    sources are skipped before the top_k cut, so discarded candidates cannot
+    crowd out active matches. When ``exclude_literal`` is set, every candidate
+    whose content (or setting name) contains that substring, case-insensitive,
+    is dropped before the top_k cut. An empty index degrades silently; an
+    embedding failure warns on stderr and degrades to an empty result
+    (fail-closed).
     """
     settings = load_settings()
     if top_k is None:
@@ -223,10 +228,9 @@ def semantic_search(
             continue
         scored.append((_cosine(query_vector, values), row))
     scored.sort(key=lambda pair: pair[0], reverse=True)
-    top = scored[:top_k]
 
-    note_ids = [row.source_id for _, row in top if row.layer == LAYER_NOTE]
-    setting_ids = [row.source_id for _, row in top if row.layer == LAYER_SETTING]
+    note_ids = [row.source_id for _, row in scored if row.layer == LAYER_NOTE]
+    setting_ids = [row.source_id for _, row in scored if row.layer == LAYER_SETTING]
     hits: list[SemanticHit] = []
     with db.workspace_session(workspace_id) as session:
         notes: dict[str, AgentMemory] = {}
@@ -263,7 +267,7 @@ def semantic_search(
                 )
                 .all()
             }
-        for score, row in top:
+        for score, row in scored:
             if row.layer == LAYER_NOTE:
                 note = notes.get(row.source_id)
                 if note is None or note.archived_at is not None:
@@ -294,7 +298,14 @@ def semantic_search(
                         label=_setting_label(entry.kind),
                     )
                 )
-    return hits
+    if exclude_literal:
+        needle = exclude_literal.lower()
+        hits = [
+            hit
+            for hit in hits
+            if needle not in hit.content.lower() and needle not in hit.name.lower()
+        ]
+    return hits[:top_k]
 
 
 def reindex_embeddings(db: DB, workspace_id: str) -> int:

@@ -76,12 +76,8 @@ def memory_search(
     if not semantic:
         typer.echo(base_output)
         return
-    hits = semantic_search(db, workspace_id, keyword)
-    semantic_lines = [
-        render_semantic_hit(hit, keyword)
-        for hit in hits
-        if keyword.lower() not in hit.content.lower()
-    ]
+    hits = semantic_search(db, workspace_id, keyword, exclude_literal=keyword)
+    semantic_lines = [render_semantic_hit(hit, keyword) for hit in hits]
     if base_output == "no matches" and not semantic_lines:
         typer.echo(base_output)
         return

@@ -487,6 +487,90 @@ def test_semantic_search_top_k_orders_by_score(
     )
 
 
+def test_semantic_search_top_k_fills_after_archived_filter(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    writer_id = _writer_id(db, workspace_id)
+    archived = add_memory_note(
+        db,
+        workspace_id,
+        writer_id,
+        actor="写手",
+        content="雨夜归乡 客船",
+    )
+    archive_memory_notes(db, workspace_id, [archived.id])
+    active_a = add_memory_note(
+        db,
+        workspace_id,
+        writer_id,
+        actor="写手",
+        content="雨夜归乡",
+    )
+    active_b = add_memory_note(
+        db,
+        workspace_id,
+        writer_id,
+        actor="写手",
+        content="雨夜回乡 客船靠岸",
+    )
+
+    hits = semantic_search(db, workspace_id, "雨夜归乡 客船", top_k=2)
+
+    assert {hit.source_id for hit in hits} == {active_a.id, active_b.id}
+    assert archived.id not in {hit.source_id for hit in hits}
+    assert [hit.score for hit in hits] == sorted(
+        (hit.score for hit in hits), reverse=True
+    )
+
+
+def test_semantic_search_exclude_literal_filters_content_and_setting_name(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    writer_id = _writer_id(db, workspace_id)
+    literal = add_memory_note(
+        db,
+        workspace_id,
+        writer_id,
+        actor="写手",
+        content="雨夜归乡 客船",
+    )
+    related = add_memory_note(
+        db,
+        workspace_id,
+        writer_id,
+        actor="写手",
+        content="雨夜回乡 客船靠岸",
+    )
+    setting = add_setting(
+        db,
+        workspace_id,
+        kind="world",
+        name="雨夜归乡 客船",
+        content="客船靠岸",
+        source="作者",
+    )
+
+    hits = semantic_search(
+        db,
+        workspace_id,
+        "雨夜归乡 客船",
+        exclude_literal="雨夜归乡 客船",
+    )
+
+    assert [hit.source_id for hit in hits] == [related.id]
+
+    all_hits = semantic_search(db, workspace_id, "雨夜归乡 客船")
+    assert {hit.source_id for hit in all_hits} == {
+        literal.id,
+        related.id,
+        setting.id,
+    }
+
+
 def test_semantic_search_default_top_k_from_settings(
     tmp_path: Path, monkeypatch
 ) -> None:
