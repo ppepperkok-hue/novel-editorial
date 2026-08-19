@@ -599,6 +599,176 @@ uv run novel-editorial memory delete <作品ID> <笔记ID>
 
 写手的笔记会进入 `memory pack` 的「私有记忆」段，创作时注入给写手本人。
 
+## 记忆衰减与归档（N17）
+
+伙伴的私有笔记不再无限堆叠：没人想起来的笔记会随时间自然变淡，弱到一定程度就可以归档；归档的笔记默认不出现在检索、笔记清单和写作记忆包里，但随时可以无损恢复。衰减只是改变权重，归档只是藏起来，两者都不删除内容——真正的删除只有 `memory delete`。
+
+### 衰减模型
+
+每条笔记有一个强度值 `strength`，范围 0–100：
+
+- 新笔记初始 `strength=100`；
+- 距上次访问每过一个整天，`strength` 按 `NOVEL_MEMORY_DECAY_PER_DAY`（默认 `5`）线性下降，下限 0；
+- 检索命中或 `memory remember` 会保鲜：`strength` 增加 `NOVEL_MEMORY_REHEARSAL_BOOST`（默认 `25`），上限 100，同时把「上次访问时间」更新为当前时刻；
+- 归档候选 = 活跃笔记中当前有效强度 ≤ `NOVEL_MEMORY_ARCHIVE_THRESHOLD`（默认 `20`）的笔记。
+
+有效强度按整天折算，不满一天的部分不计；`memory decay` 会把上次访问时间推进到执行时刻，所以同一天重复执行不会再衰减（幂等）。
+
+三项配置的优先级与其他配置一致：环境变量 > `config.toml` > 内置默认值。写进 `config.toml` 用的是 `[defaults]` 同名键：
+
+```toml
+[defaults]
+memory_decay_per_day = 5
+memory_rehearsal_boost = 25
+memory_archive_threshold = 20
+```
+
+| 变量 | 作用 | 默认值 |
+| --- | --- | --- |
+| `NOVEL_MEMORY_DECAY_PER_DAY` | 每整天的强度衰减量 | `5` |
+| `NOVEL_MEMORY_REHEARSAL_BOOST` | 检索命中 / remember 的保鲜增量 | `25` |
+| `NOVEL_MEMORY_ARCHIVE_THRESHOLD` | 归档候选的强度阈值 | `20` |
+
+三项都必须是非负整数，阈值还不得超过 100；非法值报配置错误（退出码 1）。
+
+### 命令
+
+- `memory decay <作品ID>`：对活跃笔记应用衰减，逐条输出 `笔记ID: 旧强度 -> 新强度`；没有笔记变化时输出 `no decay this time`。
+- `memory remember <作品ID> <笔记ID>`：保鲜一条笔记，输出 `笔记ID strength=新强度`；已归档的笔记报用法错误（退出码 2），未知笔记报业务错误（退出码 1）。
+- `memory archive <作品ID> [笔记ID...] [--candidates]`：显式传笔记 ID 直接归档（不限强度，供作者整理）；加 `--candidates` 则归档全部阈值候选。成功输出 `archived N note(s)`；没有候选时输出 `no archive candidates`；既不传 ID 也不加 `--candidates` 报用法错误（退出码 2），`--candidates` 与显式笔记 ID 混用同样报用法错误。
+- `memory restore <作品ID> <笔记ID...>`：恢复已归档笔记，输出 `restored N note(s)`；`strength` 与上次访问时间保持原值，不额外加权；未知笔记报业务错误（退出码 1）。
+- `memory notes <作品ID> [伙伴别名] [--include-archived]`：默认只列活跃笔记，输出 `笔记ID [伙伴] strength=N 内容`；加 `--include-archived` 后已归档笔记也会列出，行尾带【归档】标记。
+
+### 归档语义
+
+归档只置归档时间戳（`archived_at`）留痕，内容原样保留：
+
+- `memory search`、`memory notes`、`memory pack` 默认都看不到已归档笔记；
+- `memory notes --include-archived` 可以查看，行尾带【归档】标记；
+- `memory restore` 随时恢复，恢复后重新出现在检索与记忆包里；
+- 归档不删除内容，`memory delete` 仍是唯一真正删除的通道，语义不变。
+
+### 红线
+
+- 衰减只是权重不是删除：只改变 `strength`、排序与默认可见性，绝不自动删内容；
+- 归档可逆且留痕：`archived_at` 记录归档时间，恢复无损；
+- 衰减不阻塞：检索与记忆包只按强度排序、默认排除归档，但永不因强度低而阻断注入或检索；检索保鲜失败只向 stderr 告警，检索结果不受影响。
+
+### 示例（mock 下实跑）
+
+下面示例全部可在未配置 key（mock LLM）时复现。先把数据目录指到临时目录（初始化写法见「判断权与分歧」），再建一部作品：
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-n17\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-n17\config.toml"
+Remove-Item Env:NOVEL_LLM_API_KEY, Env:NOVEL_LLM_BASE_URL, Env:NOVEL_LLM_MODEL -ErrorAction SilentlyContinue
+```
+
+```bash
+uv run novel-editorial works create 记忆之书 --genre 悬疑
+# created workspace <作品ID>: 记忆之书
+```
+
+以写手身份写两条笔记：
+
+```bash
+uv run novel-editorial memory note <作品ID> 写手 --content 主角害怕旧车站的钟声 --as 写手
+# note added to 写手 by 写手
+
+uv run novel-editorial memory note <作品ID> 写手 --content 旧车站的钟每天慢三分钟 --as 写手
+# note added to 写手 by 写手
+```
+
+`memory notes` 能看到两条笔记和各自的笔记 ID（ID 每次运行不同）：
+
+```bash
+uv run novel-editorial memory notes <作品ID>
+# <笔记ID-1> [写手] strength=100 主角害怕旧车站的钟声
+# <笔记ID-2> [写手] strength=100 旧车站的钟每天慢三分钟
+```
+
+为了演示跨天衰减，把两条笔记的「上次访问时间」拨到 20 天前（真实使用中时间自然流逝，不需要这一步）：
+
+```bash
+uv run python -c '
+import os, sqlite3, pathlib
+from datetime import UTC, datetime, timedelta
+db = pathlib.Path(os.environ["NOVEL_DATA_DIR"]) / "works" / "<作品ID>" / "data.db"
+conn = sqlite3.connect(db)
+old = (datetime.now(UTC) - timedelta(days=20)).strftime("%Y-%m-%d %H:%M:%S")
+conn.execute("UPDATE agent_memories SET last_accessed_at = ?", (old,))
+conn.commit()
+'
+```
+
+跑 `memory decay`：20 个整天 × 每天 5，两条都从 100 衰减到下限 0；立刻再跑一次没有变化（幂等）：
+
+```bash
+uv run novel-editorial memory decay <作品ID>
+# <笔记ID-1>: 100 -> 0
+# <笔记ID-2>: 100 -> 0
+
+uv run novel-editorial memory decay <作品ID>
+# no decay this time
+```
+
+强度 0 低于默认阈值 20，两条笔记都是归档候选，`memory archive --candidates` 把它们全部归档：
+
+```bash
+uv run novel-editorial memory archive <作品ID> --candidates
+# archived 2 note(s)
+```
+
+归档后，检索、笔记清单和写作记忆包默认都看不到这两条：
+
+```bash
+uv run novel-editorial memory search <作品ID> 旧车站
+# no matches
+
+uv run novel-editorial memory notes <作品ID>
+# no memory notes yet
+
+uv run novel-editorial memory pack <作品ID>
+# 作品：《记忆之书》（悬疑）
+# 简介：
+# 章纲：暂无（占位）
+```
+
+`memory notes --include-archived` 能查到它们，行尾带【归档】标记，`strength` 保持 0：
+
+```bash
+uv run novel-editorial memory notes <作品ID> --include-archived
+# <笔记ID-1> [写手] strength=0 【归档】 主角害怕旧车站的钟声
+# <笔记ID-2> [写手] strength=0 【归档】 旧车站的钟每天慢三分钟
+```
+
+恢复后重新可见，`strength` 与上次访问时间保持原值：
+
+```bash
+uv run novel-editorial memory restore <作品ID> <笔记ID-1> <笔记ID-2>
+# restored 2 note(s)
+
+uv run novel-editorial memory notes <作品ID>
+# <笔记ID-1> [写手] strength=0 主角害怕旧车站的钟声
+# <笔记ID-2> [写手] strength=0 旧车站的钟每天慢三分钟
+```
+
+`memory remember` 保鲜一条（0 + 25 = 25）；检索命中也会自动保鲜，搜索「钟声」命中第一条后，它的 `strength` 从 25 升到 50：
+
+```bash
+uv run novel-editorial memory remember <作品ID> <笔记ID-1>
+# <笔记ID-1> strength=25
+
+uv run novel-editorial memory search <作品ID> 钟声
+# [笔记] 主角害怕旧车站的钟声（来源: 写手）
+
+uv run novel-editorial memory notes <作品ID>
+# <笔记ID-1> [写手] strength=50 主角害怕旧车站的钟声
+# <笔记ID-2> [写手] strength=0 旧车站的钟每天慢三分钟
+```
+
+（`<作品ID>` 与 `<笔记ID-*>` 换成前面输出的真实 ID，每次运行不同；其余为 mock 下的真实输出。）
+
 ## 退出码
 
 | 退出码 | 含义 |
