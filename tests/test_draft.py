@@ -1,4 +1,5 @@
 import json
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -7,19 +8,35 @@ from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
 from novel_editorial.core import proactive
+from novel_editorial.core.agents import create_agent, get_default_writer
 from novel_editorial.core.chat import list_messages
 from novel_editorial.core.config import load_settings
-from novel_editorial.core.draft import build_memory_pack, get_draft_version
+from novel_editorial.core.draft import (
+    build_memory_pack,
+    generate_draft,
+    get_draft_version,
+    revise_draft,
+)
 from novel_editorial.core.memory import archive_memory_notes
 from novel_editorial.core.outline import create_outline, revise_outline
 from novel_editorial.core.setting import add_setting, revise_setting
 from novel_editorial.core.style import get_style_anchor
-from novel_editorial.llm.client import MockLLMClient
-from novel_editorial.store.db import DB
+from novel_editorial.llm.client import LLMResult, MockLLMClient
+from novel_editorial.store.db import DB, workspace_db_path
 from novel_editorial.store.events import list_events
-from novel_editorial.store.models import Agent, AgentMemory, Draft
+from novel_editorial.store.models import Agent, AgentMemory, AgentRole, Draft
 
 runner = CliRunner()
+
+
+class _CaptureClient(MockLLMClient):
+    def __init__(self, reply: str = "正文内容") -> None:
+        super().__init__(reply)
+        self.calls: list = []
+
+    def complete(self, messages):
+        self.calls.append(messages)
+        return LLMResult(content=self.reply)
 
 
 def _create_workspace(tmp_path: Path, monkeypatch, title: str = "风格之书") -> str:
@@ -553,3 +570,143 @@ def test_proactive_failure_does_not_roll_back_business(tmp_path: Path, monkeypat
         draft = session.query(Draft).filter_by(title="第一章").first()
     assert draft is not None
     assert draft.current_version == 1
+
+
+def test_generate_draft_with_explicit_writer_isolates_memory(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    default_writer = get_default_writer(db, workspace_id)
+    second_writer = create_agent(
+        db, workspace_id, name="写手乙", role=AgentRole.WRITER
+    )
+    _add_raw_note(db, workspace_id, default_writer.id, "默认写手的私记")
+    _add_raw_note(db, workspace_id, second_writer.id, "写手乙的私记")
+
+    client = _CaptureClient()
+    draft = generate_draft(
+        db, workspace_id, title="第一章", client=client, writer=second_writer
+    )
+    assert draft.writer_id == second_writer.id
+    prompt = client.calls[0][0].content
+    assert "写手乙的私记" in prompt
+    assert "默认写手的私记" not in prompt
+
+    default_pack = build_memory_pack(db, workspace_id)
+    assert "默认写手的私记" in default_pack
+    assert "写手乙的私记" not in default_pack
+
+
+def test_generate_draft_without_writer_uses_default_writer(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    default_writer = get_default_writer(db, workspace_id)
+    second_writer = create_agent(
+        db, workspace_id, name="写手乙", role=AgentRole.WRITER
+    )
+    _add_raw_note(db, workspace_id, default_writer.id, "默认写手的私记")
+    _add_raw_note(db, workspace_id, second_writer.id, "写手乙的私记")
+
+    client = _CaptureClient()
+    draft = generate_draft(db, workspace_id, title="第一章", client=client)
+    assert draft.writer_id == default_writer.id
+    prompt = client.calls[0][0].content
+    assert "默认写手的私记" in prompt
+    assert "写手乙的私记" not in prompt
+
+
+def test_revise_draft_defaults_to_original_writer(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    second_writer = create_agent(
+        db, workspace_id, name="写手乙", role=AgentRole.WRITER
+    )
+    _add_raw_note(db, workspace_id, second_writer.id, "写手乙的私记")
+    draft = generate_draft(
+        db,
+        workspace_id,
+        title="第一章",
+        client=_CaptureClient(),
+        writer=second_writer,
+    )
+    assert draft.writer_id == second_writer.id
+
+    revised_client = _CaptureClient(reply="修订稿内容")
+    revised = revise_draft(
+        db,
+        workspace_id,
+        draft.id,
+        reason="收钩子",
+        client=revised_client,
+    )
+    assert revised.writer_id == second_writer.id
+    prompt = revised_client.calls[0][0].content
+    assert "写手乙的私记" in prompt
+
+
+def test_revise_draft_explicit_writer_switches(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    default_writer = get_default_writer(db, workspace_id)
+    second_writer = create_agent(
+        db, workspace_id, name="写手乙", role=AgentRole.WRITER
+    )
+    _add_raw_note(db, workspace_id, default_writer.id, "默认写手的私记")
+    _add_raw_note(db, workspace_id, second_writer.id, "写手乙的私记")
+    draft = generate_draft(
+        db, workspace_id, title="第一章", client=_CaptureClient()
+    )
+    assert draft.writer_id == default_writer.id
+
+    revised_client = _CaptureClient(reply="修订稿内容")
+    revised = revise_draft(
+        db,
+        workspace_id,
+        draft.id,
+        reason="换人改",
+        client=revised_client,
+        writer=second_writer,
+    )
+    assert revised.writer_id == second_writer.id
+    prompt = revised_client.calls[0][0].content
+    assert "写手乙的私记" in prompt
+    assert "默认写手的私记" not in prompt
+
+
+def test_draft_migration_backfills_default_writer(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = DB(settings)
+    default_writer = get_default_writer(db, workspace_id)
+    create_agent(db, workspace_id, name="写手乙", role=AgentRole.WRITER)
+    with db.workspace_session(workspace_id) as session:
+        old_draft = Draft(workspace_id=workspace_id, title="旧章")
+        session.add(old_draft)
+        session.commit()
+        old_draft_id = old_draft.id
+
+    path = workspace_db_path(settings, workspace_id)
+    for _ in range(2):
+        connection = sqlite3.connect(path)
+        connection.execute("ALTER TABLE drafts DROP COLUMN writer_id")
+        connection.execute("DELETE FROM alembic_version")
+        connection.execute(
+            "INSERT INTO alembic_version (version_num) VALUES ('d3c2b1a09f8e')"
+        )
+        connection.commit()
+        connection.close()
+
+        upgraded = DB(settings)
+        with upgraded.workspace_session(workspace_id) as session:
+            draft = session.query(Draft).filter_by(id=old_draft_id).first()
+            assert draft is not None
+            assert draft.writer_id == default_writer.id

@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from difflib import unified_diff
 
+from novel_editorial.core.agents import get_agent_by_id, get_default_writer
 from novel_editorial.core.chat import (
     MOOD_REVISING,
     _record_message_in_session,
     _update_agent_mood_in_session,
-    get_agent,
     get_workspace_or_raise,
 )
 from novel_editorial.core.errors import ErrorCode, NovelError
@@ -23,12 +23,14 @@ from novel_editorial.llm.client import LLMClient, LLMMessage
 from novel_editorial.quality.gate import check_quality
 from novel_editorial.store.db import DB, list_workspace_ids
 from novel_editorial.store.events import record_event_in_session
-from novel_editorial.store.models import Agent, AgentRole, Draft, DraftVersion
+from novel_editorial.store.models import Agent, Draft, DraftVersion
 
 OUTLINE_DISPLAY_LIMIT = 120
 
 
-def build_memory_pack(db: DB, workspace_id: str) -> str:
+def build_memory_pack(
+    db: DB, workspace_id: str, writer: Agent | None = None
+) -> str:
     workspace = get_workspace_or_raise(db, workspace_id)
     anchor = get_style_anchor(db, workspace_id)
     lines = [
@@ -47,7 +49,7 @@ def build_memory_pack(db: DB, workspace_id: str) -> str:
         if len(collapsed) > OUTLINE_DISPLAY_LIMIT:
             collapsed = collapsed[:OUTLINE_DISPLAY_LIMIT] + "…"
         lines.append(f"章纲：{collapsed}")
-    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+    writer = writer or get_default_writer(db, workspace_id)
     notes = list_memory_notes(db, workspace_id, agent_id=writer.id)
     if notes:
         lines.append("私有记忆：")
@@ -101,10 +103,11 @@ def generate_draft(
     title: str,
     client: LLMClient,
     quality_threshold: int = 8,
+    writer: Agent | None = None,
 ) -> Draft:
     workspace = get_workspace_or_raise(db, workspace_id)
-    writer = get_agent(db, workspace_id, AgentRole.WRITER)
-    memory_pack = build_memory_pack(db, workspace_id)
+    writer = writer or get_default_writer(db, workspace_id)
+    memory_pack = build_memory_pack(db, workspace_id, writer=writer)
     prompt = _build_writer_prompt(workspace, writer, memory_pack, title)
     content = client.complete([LLMMessage(role="user", content=prompt)]).content
     if not content.strip():
@@ -133,6 +136,7 @@ def generate_draft(
             raise NovelError(
                 ErrorCode.USAGE_ERROR, "cannot regenerate an accepted draft"
             )
+        draft.writer_id = writer.id
         draft.current_version += 1
         draft.status = "draft" if quality_report.passed else "quality_failed"
         reason = "initial" if draft.current_version == 1 else "revision"
@@ -175,13 +179,18 @@ def revise_draft(
     reason: str,
     client: LLMClient,
     quality_threshold: int = 8,
+    writer: Agent | None = None,
 ) -> Draft:
     current = get_draft(db, workspace_id, draft_id)
     if current.status == "accepted":
         raise NovelError(ErrorCode.USAGE_ERROR, "cannot revise an accepted draft")
     workspace = get_workspace_or_raise(db, workspace_id)
-    writer = get_agent(db, workspace_id, AgentRole.WRITER)
-    memory_pack = build_memory_pack(db, workspace_id)
+    if writer is None:
+        if current.writer_id is not None:
+            writer = get_agent_by_id(db, workspace_id, current.writer_id)
+        if writer is None:
+            writer = get_default_writer(db, workspace_id)
+    memory_pack = build_memory_pack(db, workspace_id, writer=writer)
     previous = get_draft_version(db, workspace_id, draft_id, current.current_version)
     reviews = list_reviews(db, workspace_id, draft_id)
     prompt = _build_writer_prompt(
@@ -211,6 +220,7 @@ def revise_draft(
         )
         if draft is None:
             raise NovelError(ErrorCode.NOT_FOUND, f"draft not found: {draft_id}")
+        draft.writer_id = writer.id
         draft.current_version += 1
         draft.status = "draft" if quality_report.passed else "quality_failed"
         session.add(

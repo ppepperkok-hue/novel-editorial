@@ -4,9 +4,11 @@ import pytest
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
+from novel_editorial.core.agents import create_agent, get_default_writer
 from novel_editorial.core.config import load_settings
-from novel_editorial.store.db import DB
-from novel_editorial.store.models import Agent
+from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.store.db import DB, DEFAULT_BAND
+from novel_editorial.store.models import Agent, AgentRole
 
 runner = CliRunner()
 
@@ -154,3 +156,119 @@ def test_agents_edit_unknown_agent(tmp_path: Path, monkeypatch) -> None:
     )
     assert result.exit_code == 1
     assert "agent not found" in result.output
+
+
+def test_create_agent_writer_multi_instances_allowed(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    first = create_agent(db, workspace_id, name="写手乙", role=AgentRole.WRITER)
+    second = create_agent(db, workspace_id, name="写手丙", role=AgentRole.WRITER)
+    assert first.id != second.id
+    with db.workspace_session(workspace_id) as session:
+        writers = (
+            session.query(Agent)
+            .filter_by(workspace_id=workspace_id, role=AgentRole.WRITER)
+            .all()
+        )
+    assert len(writers) == 3
+
+
+def test_create_agent_rejects_duplicate_name_case_insensitive(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    create_agent(db, workspace_id, name="Writer-Beta", role=AgentRole.WRITER)
+    with pytest.raises(NovelError) as exc:
+        create_agent(db, workspace_id, name="writer-beta", role=AgentRole.WRITER)
+    assert exc.value.code == ErrorCode.USAGE_ERROR
+    assert "already exists" in exc.value.message
+
+
+def test_create_agent_rejects_duplicate_non_writer_role(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    with pytest.raises(NovelError) as exc:
+        create_agent(db, workspace_id, name="责编乙", role=AgentRole.EDITOR)
+    assert exc.value.code == ErrorCode.USAGE_ERROR
+    assert "already has a" in exc.value.message
+
+
+def test_create_agent_rejects_invalid_role_and_empty_name(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    with pytest.raises(NovelError) as exc:
+        create_agent(db, workspace_id, name="打杂", role="intern")
+    assert exc.value.code == ErrorCode.USAGE_ERROR
+    assert "unknown agent role" in exc.value.message
+    with pytest.raises(NovelError) as exc2:
+        create_agent(db, workspace_id, name="   ", role=AgentRole.WRITER)
+    assert exc2.value.code == ErrorCode.USAGE_ERROR
+    assert "must not be empty" in exc2.value.message
+
+
+def test_create_agent_uses_default_profile_and_personality(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    created = create_agent(
+        db,
+        workspace_id,
+        name="写手乙",
+        role=AgentRole.WRITER,
+        personality="我行我素",
+    )
+    defaults = next(member for member in DEFAULT_BAND if member["role"] == AgentRole.WRITER)
+    assert created.name == "写手乙"
+    assert created.personality == "我行我素"
+    for field in (
+        "stance",
+        "values",
+        "aesthetic",
+        "emotion_baseline",
+        "mood",
+        "work_habits",
+        "weaknesses",
+        "relationship_presets",
+        "private_motive",
+    ):
+        assert getattr(created, field) == defaults[field]
+
+    defaulted = create_agent(db, workspace_id, name="写手丙", role=AgentRole.WRITER)
+    assert defaulted.personality == defaults["personality"]
+
+
+def test_get_default_writer_returns_earliest_writer(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    seed_writer = get_default_writer(db, workspace_id)
+    assert seed_writer.name == "写手"
+    create_agent(db, workspace_id, name="写手乙", role=AgentRole.WRITER)
+    create_agent(db, workspace_id, name="写手丙", role=AgentRole.WRITER)
+    assert get_default_writer(db, workspace_id).id == seed_writer.id
+
+
+def test_get_default_writer_not_found_without_writer(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    with db.workspace_session(workspace_id) as session:
+        writers = (
+            session.query(Agent)
+            .filter_by(workspace_id=workspace_id, role=AgentRole.WRITER)
+            .all()
+        )
+        for writer in writers:
+            session.delete(writer)
+        session.commit()
+    with pytest.raises(NovelError) as exc:
+        get_default_writer(db, workspace_id)
+    assert exc.value.code == ErrorCode.NOT_FOUND

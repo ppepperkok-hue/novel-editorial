@@ -176,6 +176,9 @@ class Draft(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     workspace_id: Mapped[str] = mapped_column(String(32), index=True)
+    writer_id: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, default=None
+    )
     title: Mapped[str] = mapped_column(String(200), default="")
     status: Mapped[str] = mapped_column(String(20), default="draft")
     current_version: Mapped[int] = mapped_column(Integer, default=0)
