@@ -285,6 +285,9 @@ def _scan_chunk(
             index += 1
             continue
         if in_string == '"""':
+            if char == "\\":
+                index += 2
+                continue
             if text.startswith('"""', index):
                 in_string = None
                 index += 3

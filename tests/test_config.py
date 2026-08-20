@@ -1,3 +1,4 @@
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -763,5 +764,50 @@ def test_set_quality_threshold_replaces_multiline_string_value(
 
     content = config_path.read_text(encoding="utf-8")
     assert content == "[defaults]\nquality_threshold = 15  # keep\n"
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.quality_threshold == 15
+
+
+def test_set_quality_threshold_keeps_escaped_triple_quote_in_multiline_string(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "[defaults]\n"
+        'desc = """a\\"""b"""\n'
+        "quality_threshold = 8\n",
+        encoding="utf-8",
+    )
+
+    set_quality_threshold(config_path, 15)
+
+    content = config_path.read_text(encoding="utf-8")
+    assert content == (
+        "[defaults]\n"
+        'desc = """a\\"""b"""\n'
+        "quality_threshold = 15\n"
+    )
+    tomllib.loads(content)
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.quality_threshold == 15
+
+
+def test_set_quality_threshold_replaces_multiline_string_value_with_escaped_triple_quote(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "[defaults]\n"
+        'quality_threshold = """\n'
+        '8\\"""9\n'
+        '"""  # keep\n',
+        encoding="utf-8",
+    )
+
+    set_quality_threshold(config_path, 15)
+
+    content = config_path.read_text(encoding="utf-8")
+    assert content == "[defaults]\nquality_threshold = 15  # keep\n"
+    tomllib.loads(content)
     settings = load_settings({"NOVEL_CONFIG": str(config_path)})
     assert settings.quality_threshold == 15
