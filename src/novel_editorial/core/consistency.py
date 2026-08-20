@@ -10,17 +10,20 @@ Checks
   the text. Appearing names are recorded in ``character_mentions`` and do not
   produce issues.
 - ``number_conflict``: a ``timeline`` / ``world`` / ``character`` setting that
-  states a number+unit pair contradicted by a sentence that also mentions the
-  topic word (the entry name, plus any ``前缀：`` prefix found in the content).
-  Arabic and Chinese numerals are normalized to integers; supported units are
-  点/时/分/年/月/日/岁/号. Same values, different units, and sentences without
-  the topic word are never reported.
+  states a number+unit pair, when a sentence that also mentions the topic word
+  (the entry name, plus any ``前缀：`` prefix found in the content) uses a value
+  that is absent from the setting's value set for that unit. Arabic and Chinese
+  numerals (including 两) are normalized to integers; supported units are
+  点/时/分/年/月/日/岁/号. Values already present in the setting, different
+  units, and sentences without the topic word are never reported.
 - ``thread_missing``: an open (``planted`` / ``pending``) plot thread whose
   keywords never appear in the text.
 
 Keyword extraction follows the spec's recommended option: the 2-4 char n-gram
-set of the thread content. Whitespace and punctuation are stripped from both
-the content and the text before n-gram generation and substring matching.
+set of the thread content; content that normalizes to a single character uses
+that character as its only keyword. Whitespace and punctuation are stripped
+from both the content and the text before n-gram generation and substring
+matching.
 
 Report counts: ``settings_checked`` counts the entries that actually
 participate in a check (kind in ``character`` / ``timeline`` / ``world``;
@@ -56,6 +59,7 @@ _CHINESE_DIGITS: dict[str, int] = {
     "零": 0,
     "一": 1,
     "二": 2,
+    "两": 2,
     "三": 3,
     "四": 4,
     "五": 5,
@@ -65,7 +69,7 @@ _CHINESE_DIGITS: dict[str, int] = {
     "九": 9,
 }
 _NUMBER_RE = re.compile(
-    r"(?P<num>\d+|[零一二三四五六七八九十百千]+)"
+    r"(?P<num>\d+|[零一二三四五六七八九十百千两]+)"
     r"[ \t\u3000]*(?P<unit>[点时分年月日岁号])"
 )
 _STRIP_RE = re.compile(
@@ -168,21 +172,23 @@ def _number_conflicts(entries: list[SettingEntry], sentences: list[str]) -> list
                 sentence_values = sentence_by_unit.get(unit)
                 if not sentence_values:
                     continue
-                mismatch = _first_mismatch(setting_values, sentence_values)
-                if mismatch is None:
-                    continue
-                setting_pair, text_pair = mismatch
-                issues.append(
-                    ConsistencyIssue(
-                        kind="number_conflict",
-                        severity="conflict",
-                        setting_name=entry.name,
-                        detail=(
-                            f"设定「{setting_pair.raw}」vs 正文「{text_pair.raw}」（句 {index}）"
-                        ),
-                        sentence=index,
+                setting_value_set = {pair.value for pair in setting_values}
+                setting_value_list = "、".join(pair.raw for pair in setting_values)
+                for text_pair in sentence_values:
+                    if text_pair.value in setting_value_set:
+                        continue
+                    issues.append(
+                        ConsistencyIssue(
+                            kind="number_conflict",
+                            severity="conflict",
+                            setting_name=entry.name,
+                            detail=(
+                                f"正文「{text_pair.raw}」不在设定值中"
+                                f"（设定含：{setting_value_list}）（句 {index}）"
+                            ),
+                            sentence=index,
+                        )
                     )
-                )
     return issues
 
 
@@ -237,17 +243,6 @@ def _group_by_unit(pairs: list[_NumberPair]) -> dict[str, list[_NumberPair]]:
     return grouped
 
 
-def _first_mismatch(
-    setting_values: list[_NumberPair], sentence_values: list[_NumberPair]
-) -> tuple[_NumberPair, _NumberPair] | None:
-    """Return the first setting/text pair with the same unit but different value."""
-    for setting_pair in setting_values:
-        for text_pair in sentence_values:
-            if setting_pair.value != text_pair.value:
-                return setting_pair, text_pair
-    return None
-
-
 def _topic_words(entry: SettingEntry) -> list[str]:
     """Return the entry name plus any ``前缀：`` prefix from its content."""
     topics = [entry.name]
@@ -280,8 +275,17 @@ def _chinese_numeral_to_int(text: str) -> int:
 
 
 def _thread_keywords(content: str) -> list[str]:
-    """Build the 2-4 char n-gram keyword set of normalized thread content."""
+    """Build the keyword set of normalized thread content.
+
+    Content that normalizes to fewer than 2 chars uses the normalized content
+    itself as its only keyword, so a single-char foreshadow still matches when
+    the character appears in the text.
+    """
     cleaned = _normalize(content)
+    if not cleaned:
+        return []
+    if len(cleaned) < 2:
+        return [cleaned]
     keywords: list[str] = []
     seen: set[str] = set()
     for size in range(2, 5):

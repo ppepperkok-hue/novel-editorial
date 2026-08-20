@@ -81,7 +81,7 @@ def test_number_conflict_reports_on_same_unit_different_value(tmp_path: Path, mo
     assert issue.severity == "conflict"
     assert issue.setting_name == "旧车站"
     assert issue.sentence == 2
-    assert issue.detail == "设定「十一点」vs 正文「十二点」（句 2）"
+    assert issue.detail == "正文「十二点」不在设定值中（设定含：十一点）（句 2）"
 
 
 def test_number_conflict_same_value_is_not_reported(tmp_path: Path, monkeypatch) -> None:
@@ -124,7 +124,7 @@ def test_number_conflict_normalizes_chinese_and_arabic_digits(tmp_path: Path, mo
 
     conflicts = _number_conflicts(check_consistency(db, workspace_id, "钟楼的指针停在12 点。"))
     assert len(conflicts) == 1
-    assert conflicts[0].detail == "设定「十一点」vs 正文「12点」（句 1）"
+    assert conflicts[0].detail == "正文「12点」不在设定值中（设定含：十一点）（句 1）"
 
 
 def test_number_conflict_uses_content_prefix_as_topic_word(tmp_path: Path, monkeypatch) -> None:
@@ -143,7 +143,7 @@ def test_number_conflict_uses_content_prefix_as_topic_word(tmp_path: Path, monke
     conflicts = _number_conflicts(report)
     assert len(conflicts) == 1
     assert conflicts[0].setting_name == "旧站档案"
-    assert conflicts[0].detail == "设定「十一点」vs 正文「十二点」（句 1）"
+    assert conflicts[0].detail == "正文「十二点」不在设定值中（设定含：十一点）（句 1）"
 
 
 def test_number_conflict_covers_character_kind(tmp_path: Path, monkeypatch) -> None:
@@ -155,7 +155,67 @@ def test_number_conflict_covers_character_kind(tmp_path: Path, monkeypatch) -> N
 
     conflicts = _number_conflicts(report)
     assert len(conflicts) == 1
-    assert conflicts[0].detail == "设定「二十岁」vs 正文「二十五岁」（句 1）"
+    assert conflicts[0].detail == "正文「二十五岁」不在设定值中（设定含：二十岁）（句 1）"
+
+
+def test_number_conflict_value_present_in_multi_value_setting_is_not_reported(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    add_setting(
+        db, workspace_id, kind="timeline", name="旧车站", content="钟在十一点闭站，十二点发车"
+    )
+
+    report = check_consistency(db, workspace_id, "旧车站的末班车十二点发车。")
+
+    assert _number_conflicts(report) == []
+
+
+def test_number_conflict_reports_value_absent_from_multi_value_setting(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    add_setting(
+        db, workspace_id, kind="timeline", name="旧车站", content="钟在十一点闭站，十二点发车"
+    )
+
+    report = check_consistency(
+        db,
+        workspace_id,
+        "雨夜里他回到旧车站，站台上没有人。旧车站的末班车十三点发车。",
+    )
+
+    conflicts = _number_conflicts(report)
+    assert len(conflicts) == 1
+    issue = conflicts[0]
+    assert issue.severity == "conflict"
+    assert issue.setting_name == "旧车站"
+    assert issue.sentence == 2
+    assert issue.detail == "正文「十三点」不在设定值中（设定含：十一点、十二点）（句 2）"
+
+
+def test_number_conflict_supports_chinese_two(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    add_setting(db, workspace_id, kind="timeline", name="车站", content="两点到站")
+
+    report = check_consistency(db, workspace_id, "车站三点到站。")
+
+    conflicts = _number_conflicts(report)
+    assert len(conflicts) == 1
+    assert conflicts[0].detail == "正文「三点」不在设定值中（设定含：两点）（句 1）"
+
+
+def test_number_conflict_chinese_two_matches_arabic_two(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    add_setting(db, workspace_id, kind="timeline", name="车站", content="两点到站")
+
+    report = check_consistency(db, workspace_id, "车站2点到站。")
+
+    assert _number_conflicts(report) == []
 
 
 def test_thread_hit_suppresses_issue_and_miss_reports(tmp_path: Path, monkeypatch) -> None:
@@ -194,6 +254,31 @@ def test_thread_missing_name_is_truncated(tmp_path: Path, monkeypatch) -> None:
     assert thread_issues[0].setting_name.endswith("…")
     assert len(thread_issues[0].setting_name) <= 20
     assert thread_issues[0].setting_name.startswith("一条特别长")
+
+
+def test_thread_single_char_keyword_hit_suppresses_issue(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    plant_thread(db, workspace_id, kind="foreshadow", content="伞")
+
+    report = check_consistency(db, workspace_id, "候车室角落立着一把伞。")
+
+    assert report.threads_checked == 1
+    assert [issue for issue in report.issues if issue.kind == "thread_missing"] == []
+
+
+def test_thread_single_char_keyword_miss_reports(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    plant_thread(db, workspace_id, kind="foreshadow", content="伞")
+
+    report = check_consistency(db, workspace_id, "候车室角落空无一物。")
+
+    assert report.threads_checked == 1
+    thread_issues = [issue for issue in report.issues if issue.kind == "thread_missing"]
+    assert len(thread_issues) == 1
+    assert thread_issues[0].setting_name == "伞"
+    assert thread_issues[0].detail == "伏笔关键词未出现"
 
 
 def test_recovered_thread_is_not_checked_but_pending_is(tmp_path: Path, monkeypatch) -> None:
