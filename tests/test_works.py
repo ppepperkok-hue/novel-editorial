@@ -309,3 +309,20 @@ def test_works_overview_chinese_status_labels_for_all_states(
     assert any(line.startswith("[已完成] 完书") for line in lines)
     assert any(line.startswith("[创作中] 写书") for line in lines)
     assert any(line.startswith("[搁置] 搁书") for line in lines)
+
+
+def test_works_overview_orphan_entry_skips_empty_state(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """All-skipped (orphan registry entries) must not print the empty-state text."""
+    db = _overview_db(tmp_path, monkeypatch)
+    db.init_schema()
+    with db.global_session() as session:
+        session.add(Workspace(title="孤儿书"))
+        session.commit()
+
+    result = runner.invoke(app, ["works", "overview"])
+
+    assert result.exit_code == 0
+    assert "no workspaces yet" not in result.stdout
+    assert "warning: overview skipped:" in result.stderr

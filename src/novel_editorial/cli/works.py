@@ -55,7 +55,7 @@ def works_overview() -> None:
     db = DB(settings)
     db.init_schema()
     report = build_overview(db)
-    if report.total == 0:
+    if report.total == 0 and report.skipped == 0:
         typer.echo("no workspaces yet")
         return
     for item in report.overviews:
