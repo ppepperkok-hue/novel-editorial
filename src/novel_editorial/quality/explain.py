@@ -64,6 +64,27 @@ def ai_word_suggestion(word: str) -> str:
     return AI_WORD_SUGGESTIONS.get(word, f"删掉「{word}」，换成具体动作或感官细节")
 
 
+def style_consistency_summary(
+    text: str,
+    style_keywords: frozenset[str],
+) -> str | None:
+    """Summarize how many style keywords appear in the text.
+
+    Mirrors check_quality's style_hits semantics: a keyword counts as a hit
+    when it appears anywhere in the text. Returns None when no style keywords
+    are supplied so callers can omit the summary line entirely.
+    """
+    if not style_keywords:
+        return None
+    total = len(style_keywords)
+    hits = sorted(keyword for keyword in style_keywords if keyword in text)
+    misses = sorted(keyword for keyword in style_keywords if keyword not in text)
+    if not misses:
+        return f"style: 命中 {total}/{total}"
+    hit_part = f"（{'、'.join(hits)}）" if hits else ""
+    return f"style: 命中 {len(hits)}/{total}{hit_part}；缺失：{'、'.join(misses)}"
+
+
 def explain_quality(
     text: str,
     *,

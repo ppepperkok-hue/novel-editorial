@@ -7,7 +7,11 @@ import typer
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.draft import find_draft_anywhere, get_draft_version
 from novel_editorial.core.style import extract_style_keywords, get_style_anchor
-from novel_editorial.quality.explain import explain_quality, render_explanation
+from novel_editorial.quality.explain import (
+    explain_quality,
+    render_explanation,
+    style_consistency_summary,
+)
 from novel_editorial.quality.gate import check_quality
 from novel_editorial.store.db import DB
 
@@ -52,7 +56,13 @@ def quality_explain(draft_id: str = typer.Argument(..., help="Draft id")) -> Non
     db.init_schema()
     draft = find_draft_anywhere(db, draft_id)
     version = get_draft_version(db, draft.workspace_id, draft_id, draft.current_version)
+    anchor = get_style_anchor(db, draft.workspace_id)
+    style_keywords = extract_style_keywords(anchor.description)
     issues = explain_quality(version.content)
     if issues:
         typer.echo(f"{draft.title} (v{version.version})")
     typer.echo(render_explanation(issues))
+    if issues:
+        summary = style_consistency_summary(version.content, style_keywords)
+        if summary is not None:
+            typer.echo(summary)

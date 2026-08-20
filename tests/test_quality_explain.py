@@ -7,7 +7,12 @@ from novel_editorial.cli.app import app
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.style import extract_style_keywords
 from novel_editorial.llm.client import MockLLMClient
-from novel_editorial.quality.explain import CLEAN_MESSAGE, explain_quality, render_explanation
+from novel_editorial.quality.explain import (
+    CLEAN_MESSAGE,
+    explain_quality,
+    render_explanation,
+    style_consistency_summary,
+)
 from novel_editorial.quality.gate import STYLE_MISS_WEIGHT, check_quality
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import Draft
@@ -104,6 +109,28 @@ def test_explain_clean_text_reports_no_issues() -> None:
     assert render_explanation(issues) == CLEAN_MESSAGE
 
 
+def test_style_consistency_summary_all_hits() -> None:
+    keywords = frozenset({"克制", "留白", "利落"})
+    summary = style_consistency_summary("他的笔触克制，留白很多，行文利落。", keywords)
+    assert summary == "style: 命中 3/3"
+
+
+def test_style_consistency_summary_partial_misses_lists_hits_and_misses() -> None:
+    keywords = frozenset({"克制", "留白", "利落"})
+    summary = style_consistency_summary("他的笔触克制，留白很多。", keywords)
+    assert summary == "style: 命中 2/3（克制、留白）；缺失：利落"
+
+
+def test_style_consistency_summary_no_hits_omits_hit_brackets() -> None:
+    keywords = frozenset({"克制", "留白", "利落"})
+    summary = style_consistency_summary(CLEAN_TEXT, keywords)
+    assert summary == "style: 命中 0/3；缺失：克制、利落、留白"
+
+
+def test_style_consistency_summary_empty_keywords_returns_none() -> None:
+    assert style_consistency_summary(CLEAN_TEXT, frozenset()) is None
+
+
 def _create_workspace(tmp_path: Path, monkeypatch) -> str:
     monkeypatch.setenv("NOVEL_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("NOVEL_CONFIG", str(tmp_path / "config.toml"))
@@ -183,6 +210,37 @@ def test_quality_explain_command_clean_text(tmp_path: Path, monkeypatch) -> None
     result = runner.invoke(app, ["quality", "explain", draft_id])
     assert result.exit_code == 0, result.output
     assert CLEAN_MESSAGE in result.output
+
+
+def test_quality_explain_with_style_anchor_appends_summary(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    styled = runner.invoke(
+        app,
+        ["style", "set", workspace_id, "--description", "克制、留白、利落"],
+    )
+    assert styled.exit_code == 0, styled.output
+    draft_id = _generate(tmp_path, monkeypatch, workspace_id, AI_TEXT, "第一章")
+
+    result = runner.invoke(app, ["quality", "explain", draft_id])
+    assert result.exit_code == 0, result.output
+    assert "句 1" in result.output
+    assert "AI 词命中" in result.output
+    assert "修饰词密度" in result.output
+    assert "句式重复" in result.output
+    assert "style: 命中 0/3；缺失：克制、利落、留白" in result.output
+
+
+def test_quality_explain_without_style_anchor_omits_summary(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    draft_id = _generate(tmp_path, monkeypatch, workspace_id, AI_TEXT, "第一章")
+
+    result = runner.invoke(app, ["quality", "explain", draft_id])
+    assert result.exit_code == 0, result.output
+    assert "style:" not in result.output
 
 
 def test_quality_explain_unknown_draft_exits_1(tmp_path: Path, monkeypatch) -> None:
