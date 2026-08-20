@@ -582,6 +582,119 @@ uv run novel-editorial behavior timeline <作品ID>
 - `inspect <作品ID> <关键词>`：跨层检索（作品档案、风格锚点、对话、意见、版本、伙伴笔记、决策、伏笔线索），结果带来源引用；无命中输出 `no matches`。
 - `decision pending <作品ID>`：列出质量门通过、等待拍板的草稿；草稿生成 / 修订通过质量门时，命令末尾会提示 `awaiting decision`。
 
+### 跨作品聚合（N10）
+
+老板不用逐部点开作品——一条 `works overview` 就能看完全部编辑部：每部作品的进度、待拍板数与最近动静排成一列，多部作品的管理一眼到底。聚合是纯只读的，看它不构成任何创作前置。
+
+#### 命令与输出格式
+
+- `works overview`：跨作品聚合摘要，每行 `[<状态标签>] <标题>（<体裁>）：待拍板 <N> · 进度 <X> · 最近 <ISO时间戳>`。
+  - 状态标签三态：`创作中` / `已完成` / `搁置`，与 `works status` 口径一致。
+  - 体裁为空时省略括号（`乙书` 后直接接 `：`）；有体裁才显示 `（<体裁>）`。
+  - 待拍板 `<N>`：该作品质量门通过、等待作者拍板的草稿数，与 `decision pending` 口径一致（草稿状态为 `draft`）。
+  - 进度 `<X>`：有结构时 `已完成章数/总章数 章`（如 `2/5 章`），没有任何结构节点时显示 `-`。
+  - 最近 `<ISO时间戳>`：作品最近一次活动的 UTC 时间，取各作品 events 最新时间，无事件时用创建时间。
+- 排序：最近活动倒序 → 创建时间倒序 → 作品 id 升序（前两者相同时按 id 稳定兜底）。
+- 空态与降级：没有任何作品时输出 `no workspaces yet`（退出码 `0`）；注册表里有作品但全部读取失败（如孤儿注册项）时，stdout 不再输出空态文案，改为逐条在 stderr 告警；单部作品读取失败只跳过该作品并告警 `warning: overview skipped: <作品ID>: <原因>`，其余作品照常输出，命令不失败。
+
+#### 红线
+
+- 纯只读聚合：只读各作品公开元数据（标题 / 体裁 / 状态 / 待拍板数 / 结构进度 / 最近活动），不读写任何私有笔记、不触发检索保鲜等副作用。
+- 不构成创作前置：overview 只是看板，任何创作命令都不依赖它，看它也不改变任何作品状态。
+
+#### 示例（mock 下实跑）
+
+下面示例全部可在未配置 key（mock LLM）时复现。先把数据目录指到临时目录（初始化写法见「判断权与分歧」）。建三部作品：丙书先建并搁置，乙书只建不写（无体裁、无结构），甲书最后建并造出结构、草稿与进度，让三部作品各有不同的状态与最近活动时间：
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-n10\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-n10\config.toml"
+Remove-Item Env:NOVEL_LLM_API_KEY, Env:NOVEL_LLM_BASE_URL, Env:NOVEL_LLM_MODEL -ErrorAction SilentlyContinue
+```
+
+```bash
+uv run novel-editorial works create 丙书 --genre 悬疑
+# created workspace <作品ID-3>: 丙书
+
+uv run novel-editorial works create 乙书
+# created workspace <作品ID-2>: 乙书
+
+uv run novel-editorial works create 甲书 --genre 网文
+# created workspace <作品ID-1>: 甲书
+```
+
+把丙书标为搁置（`works status` 也会追加事件、刷新最近活动）：
+
+```bash
+uv run novel-editorial works status <作品ID-3> 搁置
+# status updated: <作品ID-3> shelved
+```
+
+给甲书建 5 章结构，前两章标为已完成：
+
+```bash
+uv run novel-editorial structure add <作品ID-1> chapter 第一章
+# created <章ID-1> chapter 第一章
+
+uv run novel-editorial structure add <作品ID-1> chapter 第二章
+# created <章ID-2> chapter 第二章
+
+uv run novel-editorial structure add <作品ID-1> chapter 第三章
+# created <章ID-3> chapter 第三章
+
+uv run novel-editorial structure add <作品ID-1> chapter 第四章
+# created <章ID-4> chapter 第四章
+
+uv run novel-editorial structure add <作品ID-1> chapter 第五章
+# created <章ID-5> chapter 第五章
+
+uv run novel-editorial structure status <作品ID-1> <章ID-1> completed
+# status updated: <章ID-1> completed
+
+uv run novel-editorial structure status <作品ID-1> <章ID-2> completed
+# status updated: <章ID-2> completed
+```
+
+生成两条草稿（mock 下质量门通过、进入待拍板），最后把甲书标为已完成：
+
+```bash
+uv run novel-editorial draft generate <作品ID-1> --title 第一章
+# draft <草稿ID-1> 第一章 now at v1
+# awaiting decision: <草稿ID-1>
+# 写手: 《第一章》初稿写完了，我按节奏收尾，先交给你过目。
+# 责编: 《第一章》过了质量门，我试读了开头「（模拟回复）」，节奏在线，建议作者拍板。
+
+uv run novel-editorial draft generate <作品ID-1> --title 第二章
+# draft <草稿ID-2> 第二章 now at v1
+# awaiting decision: <草稿ID-2>
+# 写手: 《第二章》初稿写完了，我按节奏收尾，先交给你过目。
+# 责编: 《第二章》过了质量门，我试读了开头「（模拟回复）」，节奏在线，建议作者拍板。
+
+uv run novel-editorial works status <作品ID-1> 已完成
+# status updated: <作品ID-1> completed
+```
+
+一条命令看全部编辑部；时间戳保留真实值、随运行变化，其余为 mock 下的真实输出：
+
+```bash
+uv run novel-editorial works overview
+```
+
+```text
+[已完成] 甲书（网文）：待拍板 2 · 进度 2/5 章 · 最近 2026-08-20T04:52:11+00:00
+[搁置] 丙书（悬疑）：待拍板 0 · 进度 - · 最近 2026-08-20T04:51:45+00:00
+[创作中] 乙书：待拍板 0 · 进度 - · 最近 2026-08-20T04:51:37+00:00
+```
+
+排序按最近活动倒序：甲书最后动过（草稿与状态事件最新）排第一，丙书次之（搁置操作），乙书只有创建时间、最早。待拍板只数质量门通过、等待拍板的草稿：甲书两条 `awaiting decision` 就是 `2`；进度 `2/5 章` 对应前两章已完成；乙书无体裁所以括号省略、无结构所以进度为 `-`。零作品空态（换一个干净的数据目录，退出码 `0`）：
+
+```bash
+uv run novel-editorial works overview
+# no workspaces yet
+```
+
+（`<作品ID-*>`、`<章ID-*>`、`<草稿ID-*>` 换成前面输出的真实 ID，每次运行不同；stderr 日志已省略。）
+
 ## 作品结构与创作进度（N13）
 
 作品可以组织成可选的层级结构（卷 / 章 / 篇目），大纲作为可选的创作计划按版本演进，创作进度（创作中 / 已完成 / 搁置）可跟踪。三者全部可选：不建任何结构、不写大纲、不设进度，既有创作命令照常跑，不构成任何关卡。
