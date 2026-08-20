@@ -542,3 +542,226 @@ def test_set_quality_threshold_write_is_visible_to_load_settings(
 
     settings = load_settings({"NOVEL_CONFIG": str(config_path)})
     assert settings.quality_threshold == 20
+
+
+def test_set_quality_threshold_ignores_multiline_string_content(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "[defaults]\n"
+        "desc = \"\"\"\n"
+        "quality_threshold = 5\n"
+        "[foo]\n"
+        "\"\"\"\n"
+        "proactive_enabled = true\n",
+        encoding="utf-8",
+    )
+
+    set_quality_threshold(config_path, 15)
+
+    content = config_path.read_text(encoding="utf-8")
+    assert content == (
+        "[defaults]\n"
+        "quality_threshold = 15\n"
+        "desc = \"\"\"\n"
+        "quality_threshold = 5\n"
+        "[foo]\n"
+        "\"\"\"\n"
+        "proactive_enabled = true\n"
+    )
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.quality_threshold == 15
+
+
+def test_set_quality_threshold_updates_real_key_around_multiline_string(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "[defaults]\n"
+        "quality_threshold = 8\n"
+        "desc = \"\"\"\n"
+        "quality_threshold = 5\n"
+        "[foo]\n"
+        "\"\"\"\n",
+        encoding="utf-8",
+    )
+
+    set_quality_threshold(config_path, 15)
+
+    content = config_path.read_text(encoding="utf-8")
+    assert content == (
+        "[defaults]\n"
+        "quality_threshold = 15\n"
+        "desc = \"\"\"\n"
+        "quality_threshold = 5\n"
+        "[foo]\n"
+        "\"\"\"\n"
+    )
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.quality_threshold == 15
+
+
+def test_set_quality_threshold_ignores_defaults_header_inside_multiline_string(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        'desc = """\n'
+        "[defaults]\n"
+        "quality_threshold = 5\n"
+        '"""\n'
+        "[other]\n"
+        'name = "x"\n',
+        encoding="utf-8",
+    )
+
+    set_quality_threshold(config_path, 9)
+
+    content = config_path.read_text(encoding="utf-8")
+    assert '"""\n[defaults]\nquality_threshold = 5\n"""' in content
+    assert content.endswith("[defaults]\nquality_threshold = 9\n")
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.quality_threshold == 9
+
+
+def test_set_quality_threshold_ignores_single_quote_multiline_string(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "[defaults]\n"
+        "desc = '''\n"
+        "quality_threshold = 5\n"
+        "'''\n"
+        "proactive_enabled = true\n",
+        encoding="utf-8",
+    )
+
+    set_quality_threshold(config_path, 15)
+
+    content = config_path.read_text(encoding="utf-8")
+    assert content == (
+        "[defaults]\n"
+        "quality_threshold = 15\n"
+        "desc = '''\n"
+        "quality_threshold = 5\n"
+        "'''\n"
+        "proactive_enabled = true\n"
+    )
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.quality_threshold == 15
+
+
+def test_set_quality_threshold_does_not_truncate_section_at_lookalike_header(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "[defaults]\n"
+        "desc = \"\"\"\n"
+        "[foo]\n"
+        "\"\"\"\n"
+        "quality_threshold = 8\n",
+        encoding="utf-8",
+    )
+
+    set_quality_threshold(config_path, 15)
+
+    content = config_path.read_text(encoding="utf-8")
+    assert content == (
+        "[defaults]\n"
+        "desc = \"\"\"\n"
+        "[foo]\n"
+        "\"\"\"\n"
+        "quality_threshold = 15\n"
+    )
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.quality_threshold == 15
+
+
+def test_set_quality_threshold_same_value_keeps_file_byte_identical(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "[defaults]\nquality_threshold   =   8  # keep\n",
+        encoding="utf-8",
+    )
+    before = config_path.read_bytes()
+
+    set_quality_threshold(config_path, 8)
+
+    assert config_path.read_bytes() == before
+
+
+def test_set_quality_threshold_preserves_comment_without_space_before_hash(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "[defaults]\nquality_threshold = 8#keep\n",
+        encoding="utf-8",
+    )
+
+    set_quality_threshold(config_path, 15)
+
+    content = config_path.read_text(encoding="utf-8")
+    assert content == "[defaults]\nquality_threshold = 15#keep\n"
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.quality_threshold == 15
+
+
+def test_set_quality_threshold_same_value_keeps_no_space_comment(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "[defaults]\nquality_threshold = 8#keep\n",
+        encoding="utf-8",
+    )
+    before = config_path.read_bytes()
+
+    set_quality_threshold(config_path, 8)
+
+    assert config_path.read_bytes() == before
+
+
+def test_set_quality_threshold_replaces_multiline_value_span(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "[defaults]\n"
+        "quality_threshold = [\n"
+        "  1, # one\n"
+        "  2,\n"
+        "]\n",
+        encoding="utf-8",
+    )
+
+    set_quality_threshold(config_path, 15)
+
+    content = config_path.read_text(encoding="utf-8")
+    assert content == "[defaults]\nquality_threshold = 15\n"
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.quality_threshold == 15
+
+
+def test_set_quality_threshold_replaces_multiline_string_value(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "[defaults]\n"
+        "quality_threshold = \"\"\"\n"
+        "8\n"
+        "\"\"\"  # keep\n",
+        encoding="utf-8",
+    )
+
+    set_quality_threshold(config_path, 15)
+
+    content = config_path.read_text(encoding="utf-8")
+    assert content == "[defaults]\nquality_threshold = 15  # keep\n"
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.quality_threshold == 15
