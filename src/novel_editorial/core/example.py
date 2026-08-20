@@ -11,6 +11,10 @@ memory writes follow the existing retrieval-freshness semantics and call the
 embedding API (real calls with a key, degraded stderr warnings without one).
 Every run creates a brand-new workspace; sample text lives in module constants
 (mirroring ``DEFAULT_BAND``) and no resource files are added.
+
+The example quality gate uses the fixed internal threshold
+:data:`EXAMPLE_QUALITY_THRESHOLD` so the pending-draft demo stays stable
+under any user configuration; callers may still override it explicitly.
 """
 
 from __future__ import annotations
@@ -29,7 +33,6 @@ from novel_editorial.core.chat import (
     list_messages,
     record_message,
 )
-from novel_editorial.core.config import load_settings
 from novel_editorial.core.draft import list_drafts
 from novel_editorial.core.memory import add_memory_note, list_memory_notes
 from novel_editorial.core.outline import create_outline, list_outline_versions
@@ -60,6 +63,7 @@ from novel_editorial.store.models import (
 
 EXAMPLE_TITLE = "示例·雨夜车站"
 EXAMPLE_GENRE = "悬疑"
+EXAMPLE_QUALITY_THRESHOLD = 8
 EXAMPLE_DESCRIPTION = (
     "雨夜，末班车驶入旧车站。侦探沈夜回乡，发现十年前失踪的列车重新到站。"
 )
@@ -162,9 +166,11 @@ def seed_example_workspace(
     LLM or embedding API is called; an explicit ``api`` embedding backend
     triggers the existing upsert-embedding calls from setting and memory
     writes. ``quality_threshold`` defaults to
-    ``load_settings().quality_threshold``; the draft status and the
-    quality-gate events follow :func:`generate_draft` semantics (the two gate
-    events are only recorded when the gate passes).
+    ``EXAMPLE_QUALITY_THRESHOLD`` so the demo stays draft + pending decision
+    under any user configuration; pass an explicit value to override (the
+    draft status and the quality-gate events still follow
+    :func:`generate_draft` semantics: the two gate events are only recorded
+    when the gate passes).
     """
     workspace = create_workspace(
         db,
@@ -273,7 +279,7 @@ def seed_example_workspace(
     threshold = (
         quality_threshold
         if quality_threshold is not None
-        else load_settings().quality_threshold
+        else EXAMPLE_QUALITY_THRESHOLD
     )
     quality_report = check_quality(
         DRAFT_CONTENT,

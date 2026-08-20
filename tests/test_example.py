@@ -192,14 +192,11 @@ def test_seed_quality_failure_path_marks_draft_failed(
     assert EventType.DECISION_REQUESTED.value not in event_types
 
 
-def test_seed_quality_threshold_loaded_from_settings(
+def test_seed_explicit_quality_threshold_overrides(
     tmp_path: Path, monkeypatch
 ) -> None:
-    monkeypatch.setenv("NOVEL_QUALITY_THRESHOLD", "0")
     db = _db(tmp_path, monkeypatch)
-    assert load_settings().quality_threshold == 0
-
-    result = seed_example_workspace(db)
+    result = seed_example_workspace(db, quality_threshold=0)
 
     drafts = list_drafts(db, result.workspace_id)
     assert len(drafts) == 1
@@ -211,6 +208,34 @@ def test_seed_quality_threshold_loaded_from_settings(
     assert EventType.DRAFT_CREATED.value in event_types
     assert EventType.QUALITY_GATE_PASSED.value not in event_types
     assert EventType.DECISION_REQUESTED.value not in event_types
+
+
+def test_seed_default_ignores_quality_threshold_env(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("NOVEL_QUALITY_THRESHOLD", "0")
+    db = _db(tmp_path, monkeypatch)
+    assert load_settings().quality_threshold == 0
+
+    result = seed_example_workspace(db)
+
+    drafts = list_drafts(db, result.workspace_id)
+    assert len(drafts) == 1
+    assert drafts[0].status == "draft"
+
+    event_types = {
+        event.type for event in list_events(db, result.workspace_id, limit=1000)
+    }
+    assert EventType.DRAFT_CREATED.value in event_types
+    assert EventType.QUALITY_GATE_PASSED.value in event_types
+    assert EventType.DECISION_REQUESTED.value in event_types
+
+    report = build_overview(db)
+    rows = [
+        item for item in report.overviews if item.workspace_id == result.workspace_id
+    ]
+    assert len(rows) == 1
+    assert rows[0].pending_count == 1
 
 
 def test_repeated_seed_creates_new_workspace_and_keeps_old(
