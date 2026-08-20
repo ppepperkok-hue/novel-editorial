@@ -1833,6 +1833,40 @@ uv run novel-editorial memory search <作品ID> 雨夜归乡的钟声 --semantic
 
 （`<作品ID>` 换成上一步输出的 ID，每次运行不同；`local` 后端是确定性算法，相似度分数每次运行一致，换 `api` 后端后会不同。）
 
+## 示例编辑部（N11）
+
+`example` 一条命令生成预置的「活的」示例编辑部《示例·雨夜车站》，不配 key 也能跑（mock 语义，不发网络请求）。它和 `demo` 的区别：`demo` 是从零跑一遍「建作品 → 对话 → 生成草稿 → 质量门 → 拍板」的动态闭环，跑完即止；`example` 预置了完整内容——班子、风格锚点、设定库、大纲、结构、对话、待拍板草稿、伏笔、记忆、行为与事件流，创建后可以直接继续讨论、返工与拍板。
+
+```bash
+uv run novel-editorial example
+# created example workspace <作品ID>: 示例·雨夜车站
+# Explore: works overview / events list <作品ID> / decision pending <作品ID>
+```
+
+（`<作品ID>` 每次运行不同；stderr 日志已省略，其余为 mock 下的真实输出。）
+
+预置内容一览：
+
+- 风格锚点：平实克制短句，禁忌词「璀璨、宛如」；
+- 设定库：人物沈夜、时间线旧车站、世界观钟楼 3 条；
+- 大纲 v1 与结构「一卷三章」（第一章 completed，其余 writing，进度 1/3 章）；
+- 对话 3 条（作者开场 + 总编回应 + 责编主动确认主角动机与核心冲突）；
+- 草稿《第一章 雨夜》v1，正文为预置文本，状态 draft 待拍板（内部固定质量阈值，任何用户阈值配置下默认可拍板）；
+- 伏笔 2 条、写手记忆笔记 2 条、行为时间线 2 条，事件流含 `draft.created` / `quality_gate.passed` / `decision.requested`。
+
+30 分钟体验剧本：
+
+1. 生成后 `works overview` 看全局；`events list <作品ID>`、`inspect <作品ID> 沈夜`、`decision pending <作品ID>` 穿透看状态；
+2. `talk send <作品ID> 我们继续讨论：第一章的雨夜氛围再压一压` 接着讨论；
+3. `draft revise <草稿ID> --reason 按讨论返工` 返工（修订必须在拍板之前，`accepted` 后不能再改）；
+4. `decision accept <草稿ID>` 拍板。
+
+重复生成与清理：
+
+- 每次执行 `example` 都会新建一个示例 workspace（ID 不同），不覆盖旧示例、不抛错；
+- 清理 = 删除对应数据目录 `NOVEL_DATA_DIR/works/<作品ID>`，程序不提供破坏性删除命令；
+- 只读/隔离红线：`example` 只新建独立 workspace，不修改既有作品、不修改配置；示例不是任何创作流程的前置，`init` / `demo` 与既有命令行为不变。
+
 ## 退出码
 
 | 退出码 | 含义 |
@@ -1863,6 +1897,10 @@ uv run novel-editorial memory search <作品ID> 雨夜归乡的钟声 --semantic
 ### demo 和真实写作有什么区别？
 
 `demo` 是单命令、确定性的端到端演示：自动创建《演示之书》，走「对话 → 生成草稿 → 质量门 → 拍板」，mock 下回复固定，且不设置风格锚点。真实写作是 README 快速开始里的逐条命令，由你自己按节奏推进、给意见、拍板。
+
+### example 和 demo 有什么区别？
+
+`demo` 是从零跑一遍动态闭环，跑完即止；`example` 预置《示例·雨夜车站》的完整编辑部内容，可以直接继续操作（讨论 / 返工 / 拍板）。两者都不配 key 就能跑。详细说明与 30 分钟剧本见「示例编辑部（N11）」。
 
 ### 多部作品会串吗？
 

@@ -171,6 +171,27 @@ draft accepted. Run `novel-editorial log <workspace_id>` to review the flow.
 
 `demo` 用《演示之书》自动完成「建作品 → 对话 → 生成草稿 → 质量门 → 拍板」，配置了真实 key 就用真实模型，否则用 mock。
 
+**另一条路：`example` 预置编辑部（30 分钟剧本）**
+
+不想从空作品一步步搭，也可以直接要一个预置好的编辑部：
+
+```bash
+uv run novel-editorial example
+created example workspace <作品ID>: 示例·雨夜车站
+Explore: works overview / events list <作品ID> / decision pending <作品ID>
+```
+
+不配 key 就能跑（mock 语义，不发网络请求）。它和 `demo` 的区别在于：`demo` 是从零跑一遍动态闭环，跑完即止；`example` 预置了「活的」编辑部《示例·雨夜车站》——班子、风格锚点、设定库、大纲、结构、对话、待拍板草稿、伏笔、记忆、行为与事件流一应俱全，可以直接接着往下操作。
+
+30 分钟体验剧本：
+
+1. `works overview` 看全局；`events list <作品ID>` / `inspect <作品ID> 沈夜` / `decision pending <作品ID>` 穿透看状态；
+2. `talk send <作品ID> 我们继续讨论：第一章的雨夜氛围再压一压` 接着聊；
+3. `draft revise <草稿ID> --reason 按讨论返工` 返工（示例草稿在拍板前可改）；
+4. `decision accept <草稿ID>` 拍板。
+
+`example` 每次执行都新建一个示例作品（ID 不同），不覆盖旧数据，也不动既有作品与配置；清理 = 删除对应数据目录 `NOVEL_DATA_DIR/works/<作品ID>`，程序不提供破坏性删除命令。
+
 ## 命令速查
 
 - `works`：`create`（创建作品）/ `list` / `show`
@@ -185,7 +206,7 @@ draft accepted. Run `novel-editorial log <workspace_id>` to review the flow.
 - `plot`：`plant`（埋线索）/ `list` / `recover`（回收线索）
 - `events`：`list`（事件回放）/ `watch`（增量观察新事件）
 - `inspect`：`<作品ID> <关键词>`（老板跨层检索，结果带来源）
-- 其他：`init` / `health` / `version` / `demo` / `log`
+- 其他：`init` / `health` / `version` / `demo` / `example` / `log`
 
 完整选项看 `uv run novel-editorial <命令> --help`。
 
