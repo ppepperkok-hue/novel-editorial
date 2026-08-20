@@ -218,6 +218,24 @@ def test_number_conflict_chinese_two_matches_arabic_two(tmp_path: Path, monkeypa
     assert _number_conflicts(report) == []
 
 
+def test_number_conflict_deduplicates_same_value_different_writings(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    add_setting(db, workspace_id, kind="timeline", name="车站", content="末班车每晚十一点进站")
+
+    report = check_consistency(db, workspace_id, "车站十二点发车，12点收车。")
+
+    conflicts = _number_conflicts(report)
+    assert len(conflicts) == 1
+    issue = conflicts[0]
+    assert issue.severity == "conflict"
+    assert issue.setting_name == "车站"
+    assert issue.sentence == 1
+    assert issue.detail == "正文「十二点」不在设定值中（设定含：十一点）（句 1）"
+
+
 def test_thread_hit_suppresses_issue_and_miss_reports(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     db = _db()

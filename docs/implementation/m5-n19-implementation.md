@@ -34,7 +34,7 @@
   - `ConsistencyReport`：issues（list）、settings_checked（int）、threads_checked（int）、character_mentions（dict[str, int]，设定人物名 → 正文出现次数）；
   - `check_consistency(db, workspace_id, text) -> ConsistencyReport`（text 空白 → NovelError(USAGE_ERROR)）：
     1. 人物核查：对 kind=character 的设定（当前版本），统计 entry.name 在正文中的出现次数；出现 0 次 → issue（character_missing，severity=info，detail 注明「设定人物未在正文出现」）；
-    2. 数字冲突：对 timeline/world/character 设定条目，从其 content 提取「数字 + 单位」对（阿拉伯数字、中文数字、单位词：点/时/分/年/月/日/岁/号 等）；对正文逐句提取同类「数字 + 单位」对；若某句同时包含该条目主题词（entry.name，以及 content 中「：」前的主题词，如有）且存在同单位但数字不同的对 → issue（number_conflict，severity=conflict，detail 含设定值 vs 正文值与句号）；
+    2. 数字冲突：对 timeline/world/character 设定条目，从其 content 提取「数字 + 单位」对（阿拉伯数字、中文数字，归一为逻辑值；单位词：点/时/分/年/月/日/岁/号 等），按单位汇总为设定值集合；对正文逐句提取同类「数字 + 单位」对；若某句含该条目主题词（entry.name，以及 content 中「：」前的主题词，如有）且该单位下存在正文值不在设定值集合中 → issue（number_conflict，severity=conflict，detail 示例：正文「十三点」不在设定值中（设定含：十一点、十二点）（句 2））；同一句同一单位同一逻辑值（中文/阿拉伯写法不同）只报一次，detail 保留该值首次出现的写法；
     3. 伏笔核查：对开放状态（planted/pending）的 PlotThread，从其 content 提取关键词（实现二选一并写明：content 的 2–4 字 ngram 集合 或 去除标点后的词元；建议 ngram 更稳），正文命中任一关键词 → 提及；零命中 → issue（thread_missing，severity=info）；
     4. 排序：conflict 优先，其余按设定/伏笔原始顺序；空设定+空伏笔 → 空 issues（CLI 输出空态）。
 - tests（tests/test_consistency.py）：人物出现/缺失、数字冲突（同单位不同值、同值不报、不同单位不报、无主题词不报）、伏笔命中/未提及、空设定空伏笔、空白正文 usage error、确定性（两次一致）、既有 892 测试不回归。
@@ -63,7 +63,7 @@ pytest + ruff + pyright + 宪法校验。
   - 读草稿最新版本正文 + 作品设定库与开放伏笔 → 输出报告；
   - 输出格式（示例）：
     - `settings checked: N / threads checked: M`；
-    - 每问题一行：`[冲突] 旧车站：设定「十一点」vs 正文「十二点」（句 3）` / `[未提及] 沈夜：设定人物未在正文出现` / `[未提及] 伏笔·黑伞人：关键词未出现`；
+    - 每问题一行：`[冲突] 旧车站：正文「十二点」不在设定值中（设定含：十一点）（句 3）` / `[未提及] 沈夜：设定人物未在正文出现` / `[未提及] 伏笔·黑伞人：关键词未出现`；
     - 人物出现统计（有命中时）：`[人物] 沈夜：出现 3 次`；
     - 干净：`no consistency issues found`；
   - 退出码：0（含有问题，报告性命令不失败）；草稿不存在 / 空白正文 → 既有错误映射（1 / 2）；

@@ -15,7 +15,9 @@ Checks
   that is absent from the setting's value set for that unit. Arabic and Chinese
   numerals (including 两) are normalized to integers; supported units are
   点/时/分/年/月/日/岁/号. Values already present in the setting, different
-  units, and sentences without the topic word are never reported.
+  units, and sentences without the topic word are never reported. Each
+  (sentence, unit, value) is reported at most once regardless of numeral
+  spelling; the detail keeps the raw form that appeared first.
 - ``thread_missing``: an open (``planted`` / ``pending``) plot thread whose
   keywords never appear in the text.
 
@@ -174,9 +176,13 @@ def _number_conflicts(entries: list[SettingEntry], sentences: list[str]) -> list
                     continue
                 setting_value_set = {pair.value for pair in setting_values}
                 setting_value_list = "、".join(pair.raw for pair in setting_values)
+                reported_values: set[int] = set()
                 for text_pair in sentence_values:
                     if text_pair.value in setting_value_set:
                         continue
+                    if text_pair.value in reported_values:
+                        continue
+                    reported_values.add(text_pair.value)
                     issues.append(
                         ConsistencyIssue(
                             kind="number_conflict",
