@@ -116,4 +116,4 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 
 ## 状态
 
-- 立项（2026-08-20）：实施文档就绪，用户授权低价窗口内自主推进，拆包 C1。
+- 收口（2026-08-21）：C1（d0ab642 + a1da381 + 053aa81）、C2（431d6fb）、C3（usage.md）全部完成并独立审查收敛；全量 924 测试、smoke_m3、stress_m3 全绿；审查链归档 docs/reviews/20260820-M5N19C1-initial.md / 20260820-M5N19C1-fix.md / 20260820-M5N19C1-fix2.md / 20260820-M5N19C2-initial.md / 20260820-M5N19C3.md。N19 正式收口。

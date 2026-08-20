@@ -192,6 +192,65 @@ uv run novel-editorial quality calibrate "$env:TEMP\novel-calibrate\corpus" --ap
 
 `--apply` 之后 `quality check` 即按新阈值判定（阈值优先级不变）。
 
+## 一致性自动核查（N19）
+
+`consistency check <草稿ID>` 把草稿最新版本正文与作品的设定库、开放伏笔做规则化对照，输出只读报告。核查只报告、不代笔：不自动改写正文、不自动退稿、不改变草稿状态、不落事件，相同输入重复执行结果一致。
+
+### 检测口径
+
+- 人物出现：对 `人物` 设定（当前版本），统计设定人物名在正文的出现次数；出现 0 次输出 `[未提及] <人物>：设定人物未在正文出现`，有命中时先输出 `[人物] <名>：出现 N 次`。
+- 数字冲突：对 `时间线` / `世界观` / `人物` 设定，从其内容提取「数字 + 单位」对（点/时/分/年/月/日/岁/号 等），按单位汇总为设定值集合；正文逐句提取同类「数字 + 单位」对，若某句同时含该设定的主题词（设定名，以及内容「：」前的主题词）且出现设定值集合之外的值，输出 `[冲突] <设定>：正文「X」不在设定值中（设定含：…）（句 N）`。中文与阿拉伯数字归一（支持「两」），同句同值不同写法只报一次，保留首次出现的写法。
+- 伏笔提及：对开放状态（`planted` / `pending`）的伏笔，取其内容去标点空白后的 2–4 字片段为关键词，正文命中任一关键词即视为提及；全部未命中输出 `[未提及] 伏笔·<伏笔内容>：伏笔关键词未出现`（内容超长时截断）。
+
+### 输出与退出码
+
+- 第一行固定统计：`settings checked: N / threads checked: M`；N 为参与核查的 `人物` / `时间线` / `世界观` 设定数，M 为开放伏笔数。
+- 问题行按 `[冲突]` → `[未提及]` 排序输出；没有问题输出 `no consistency issues found`。
+- 退出码：有 / 没有问题都返回 `0`（报告性命令，不因发现问题而失败）；草稿不存在返回 `1`；正文空白返回 `2`。
+- 空态：没有设定、没有伏笔也正常输出统计行与空态，不报错。
+
+### 红线
+
+只报告不代笔：核查不写任何数据，不自动改写正文、不自动退稿、不改草稿状态、不落事件、不改配置；结果只供作者与审稿判断。
+
+### 示例（mock 下实跑）
+
+下面示例全部可在未配置 key（mock LLM）时复现。先把数据目录指到临时目录（初始化写法见「判断权与分歧」），再建一部作品：
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-consistency\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-consistency\config.toml"
+Remove-Item Env:NOVEL_LLM_API_KEY, Env:NOVEL_LLM_BASE_URL, Env:NOVEL_LLM_MODEL -ErrorAction SilentlyContinue
+```
+
+```bash
+uv run novel-editorial works create 一致性之书 --genre 悬疑
+# created workspace <作品ID>: 一致性之书
+
+uv run novel-editorial setting add <作品ID> --kind 人物 --name 沈夜 --content "雨夜归乡的侦探，十年前离开旧车站。" --source 作者
+# added <设定ID-1> [人物] 沈夜 v1
+
+uv run novel-editorial setting add <作品ID> --kind 时间线 --name 旧车站 --content "末班车每晚十一点进站。" --source 作者
+# added <设定ID-2> [时间线] 旧车站 v1
+
+uv run novel-editorial plot plant <作品ID> --kind foreshadow --content "黑伞人始终背对站台，伞面缝着旧车站的站徽。"
+# planted <线索ID> [伏笔] 黑伞人始终背对站台，伞面缝着旧车站的站徽。
+# 审稿: 线索「黑伞人始终背对站台，伞面缝着旧车站的站徽。」埋下了。我记进时间线，回头逐章对照，别让它断在半路。
+
+uv run novel-editorial draft generate <作品ID> --title 第一章
+# draft <草稿ID> 第一章 now at v1
+# awaiting decision: <草稿ID>
+# 写手: 《第一章》初稿写完了，我按节奏收尾，先交给你过目。
+# 责编: 《第一章》过了质量门，我试读了开头「（模拟回复）」，节奏在线，建议作者拍板。
+
+uv run novel-editorial consistency check <草稿ID>
+# settings checked: 2 / threads checked: 1
+# [未提及] 沈夜：设定人物未在正文出现
+# [未提及] 伏笔·黑伞人始终背对站台，伞面缝着旧车站的站…：伏笔关键词未出现
+```
+
+（`<作品ID>`、`<设定ID-*>`、`<线索ID>` 与 `<草稿ID>` 换成前面输出的真实值，每次运行不同；stderr 日志已省略，其余为 mock 下的真实输出。）
+
 ## 主动行为（伙伴主动发言）
 
 伙伴不只是被 @ 才说话：五种情境会触发主动发言，每条主动消息都带来源标记，作者随时能从命令行看出「这条是伙伴主动发的」。
