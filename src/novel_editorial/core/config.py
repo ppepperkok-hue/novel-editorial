@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -191,3 +192,102 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         embedding_top_k=embedding_top_k,
         defaults=defaults,
     )
+
+
+_DEFAULTS_HEADER_RE = re.compile(
+    r"^\s*\[\s*(?P<key>defaults|[\"']defaults[\"'])\s*\]\s*(?:#.*)?$"
+)
+_SECTION_HEADER_RE = re.compile(r"^\s*\[{1,2}[^\[\]]+\]{1,2}\s*(?:#.*)?$")
+_QUALITY_THRESHOLD_RE = re.compile(
+    r"^(?P<indent>\s*)"
+    r"(?P<key>quality_threshold|[\"']quality_threshold[\"'])"
+    r"\s*=\s*(?P<value>.*?)(?P<comment>\s+#.*)?$"
+)
+
+
+def _line_eol(line: str) -> str:
+    """Return the line ending of a single line (empty for the last line)."""
+    if line.endswith("\r\n"):
+        return "\r\n"
+    if line.endswith("\n"):
+        return "\n"
+    return ""
+
+
+def _detect_eol(lines: list[str]) -> str:
+    """Return the first line ending found in the file, defaulting to LF."""
+    for line in lines:
+        eol = _line_eol(line)
+        if eol:
+            return eol
+    return "\n"
+
+
+def set_quality_threshold(config_path: Path, value: int) -> None:
+    """Write quality_threshold under [defaults], preserving all other content.
+
+    Creates the file when missing, appends a [defaults] section when absent,
+    inserts the key into an existing section when missing, and otherwise
+    replaces only the value of the key in place (keeping inline comments and
+    every other key/section untouched). The existing file is validated with
+    tomllib before any write; invalid TOML raises NovelError(CONFIG_ERROR)
+    with the path in the message and context. Repeated calls with the same
+    value leave the file unchanged (idempotent).
+    """
+    path = Path(config_path)
+    rendered = f"quality_threshold = {value}"
+    if not path.exists():
+        path.write_text(f"[defaults]\n{rendered}\n", encoding="utf-8")
+        return
+
+    raw = path.read_text(encoding="utf-8")
+    try:
+        tomllib.loads(raw)
+    except tomllib.TOMLDecodeError as exc:
+        raise NovelError(
+            ErrorCode.CONFIG_ERROR,
+            f"invalid config file: {path}: {exc}",
+            context={"path": str(path)},
+        ) from exc
+
+    if not raw:
+        path.write_text(f"[defaults]\n{rendered}\n", encoding="utf-8")
+        return
+
+    lines = raw.splitlines(keepends=True)
+    eol = _detect_eol(lines)
+
+    header_index = next(
+        (index for index, line in enumerate(lines) if _DEFAULTS_HEADER_RE.match(line)),
+        None,
+    )
+    if header_index is None:
+        suffix = f"[defaults]{eol}{rendered}{eol}"
+        new_text = raw + suffix if raw.endswith("\n") else raw + eol + suffix
+        path.write_text(new_text, encoding="utf-8")
+        return
+
+    section_end = len(lines)
+    for index in range(header_index + 1, len(lines)):
+        if _SECTION_HEADER_RE.match(lines[index]):
+            section_end = index
+            break
+
+    for index in range(header_index + 1, section_end):
+        match = _QUALITY_THRESHOLD_RE.match(lines[index])
+        if match is None:
+            continue
+        comment = match.group("comment") or ""
+        lines[index] = (
+            f"{match.group('indent')}{match.group('key')} = {value}"
+            f"{comment}{_line_eol(lines[index])}"
+        )
+        path.write_text("".join(lines), encoding="utf-8")
+        return
+
+    if _line_eol(lines[header_index]):
+        lines.insert(header_index + 1, f"{rendered}{eol}")
+    else:
+        lines[header_index] = lines[header_index] + eol
+        lines.insert(header_index + 1, f"{rendered}{eol}")
+    path.write_text("".join(lines), encoding="utf-8")

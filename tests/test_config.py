@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from novel_editorial.core.config import load_settings
+from novel_editorial.core.config import load_settings, set_quality_threshold
 from novel_editorial.core.errors import ErrorCode, NovelError
 
 
@@ -411,3 +411,134 @@ def test_embedding_dim_bounds_are_inclusive(tmp_path: Path) -> None:
     )
     assert settings.embedding_dim == 4096
     assert settings.embedding_top_k == 50
+
+
+def test_set_quality_threshold_creates_missing_file(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+
+    set_quality_threshold(config_path, 12)
+
+    assert config_path.read_text(encoding="utf-8") == (
+        "[defaults]\nquality_threshold = 12\n"
+    )
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.quality_threshold == 12
+
+
+def test_set_quality_threshold_replaces_value_keeping_comments_and_other_keys(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "# top comment\n"
+        "[defaults]\n"
+        "quality_threshold = 8  # keep me\n"
+        "proactive_enabled = false\n"
+        "[logging]\n"
+        'level = "DEBUG"  # log note\n',
+        encoding="utf-8",
+    )
+
+    set_quality_threshold(config_path, 15)
+
+    content = config_path.read_text(encoding="utf-8")
+    assert "quality_threshold = 15  # keep me" in content
+    assert "proactive_enabled = false" in content
+    assert "# top comment" in content
+    assert '[logging]\nlevel = "DEBUG"  # log note' in content
+    assert content.count("quality_threshold") == 1
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.quality_threshold == 15
+
+
+def test_set_quality_threshold_appends_defaults_section_when_missing(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text('[logging]\nlevel = "INFO"\n', encoding="utf-8")
+
+    set_quality_threshold(config_path, 9)
+
+    content = config_path.read_text(encoding="utf-8")
+    assert content.endswith("[defaults]\nquality_threshold = 9\n")
+    assert 'level = "INFO"' in content
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.quality_threshold == 9
+
+
+def test_set_quality_threshold_inserts_key_into_existing_defaults(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "# c\n[defaults]\nproactive_enabled = true\n",
+        encoding="utf-8",
+    )
+
+    set_quality_threshold(config_path, 11)
+
+    content = config_path.read_text(encoding="utf-8")
+    assert "quality_threshold = 11" in content
+    assert "proactive_enabled = true" in content
+    assert content.startswith("# c\n[defaults]\n")
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.quality_threshold == 11
+
+
+def test_set_quality_threshold_rejects_invalid_toml(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("[defaults\n", encoding="utf-8")
+
+    with pytest.raises(NovelError) as info:
+        set_quality_threshold(config_path, 10)
+
+    assert info.value.code is ErrorCode.CONFIG_ERROR
+    assert str(config_path) in info.value.message
+    assert config_path.read_text(encoding="utf-8") == "[defaults\n"
+
+
+def test_set_quality_threshold_is_idempotent(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    set_quality_threshold(config_path, 13)
+    first = config_path.read_text(encoding="utf-8")
+
+    set_quality_threshold(config_path, 13)
+
+    assert config_path.read_text(encoding="utf-8") == first
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.quality_threshold == 13
+
+
+def test_set_quality_threshold_is_idempotent_on_existing_file(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "[defaults]\n"
+        "quality_threshold = 8  # keep\n"
+        "proactive_enabled = false\n"
+        "[other]\n"
+        'name = "x"\n',
+        encoding="utf-8",
+    )
+    set_quality_threshold(config_path, 18)
+    first = config_path.read_text(encoding="utf-8")
+
+    set_quality_threshold(config_path, 18)
+
+    assert config_path.read_text(encoding="utf-8") == first
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.quality_threshold == 18
+
+
+def test_set_quality_threshold_write_is_visible_to_load_settings(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "[defaults]\nquality_threshold = 8\n",
+        encoding="utf-8",
+    )
+
+    set_quality_threshold(config_path, 20)
+
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.quality_threshold == 20
