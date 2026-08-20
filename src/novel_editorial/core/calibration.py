@@ -22,7 +22,7 @@ def is_valid_corpus_file(path: Path) -> bool:
 
 
 def read_sample(path: Path) -> str:
-    """Read a corpus file as UTF-8 text.
+    """Read a corpus file as UTF-8 text, stripping a UTF-8 BOM if present.
 
     Raises NovelError(USAGE_ERROR) with the file path in the message and context
     when the file cannot be read or decoded. USAGE_ERROR is the closest existing
@@ -30,7 +30,7 @@ def read_sample(path: Path) -> str:
     problem rather than a NOT_FOUND or INTERNAL failure.
     """
     try:
-        return path.read_text(encoding="utf-8")
+        return path.read_text(encoding="utf-8-sig")
     except OSError as exc:
         raise NovelError(
             ErrorCode.USAGE_ERROR,

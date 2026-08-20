@@ -52,6 +52,13 @@ def test_read_sample_returns_utf8_text(tmp_path: Path) -> None:
     assert read_sample(path) == CLEAN_TEXT
 
 
+def test_read_sample_strips_utf8_bom(tmp_path: Path) -> None:
+    path = tmp_path / "bom.txt"
+    path.write_bytes(b"\xef\xbb\xbf" + CLEAN_TEXT.encode("utf-8"))
+
+    assert read_sample(path) == CLEAN_TEXT
+
+
 def test_read_sample_unreadable_file_raises_novel_error_with_path(
     tmp_path: Path,
 ) -> None:
@@ -155,6 +162,34 @@ def test_scan_corpus_skips_hidden_empty_and_ignores_non_corpus(
     assert report.scores == [0.0]
     assert report.suggested_threshold == 1
     assert report.skipped == 3
+    assert report.errors == []
+
+
+def test_scan_corpus_bom_file_matches_plain_file(tmp_path: Path) -> None:
+    bom_path = tmp_path / "bom.txt"
+    bom_path.write_bytes(b"\xef\xbb\xbf" + AI_TEXT.encode("utf-8"))
+    plain_path = _write(tmp_path, "plain.txt", AI_TEXT)
+
+    report = scan_corpus(tmp_path)
+
+    bom_sample = next(sample for sample in report.samples if sample.path == bom_path)
+    plain_sample = next(
+        sample for sample in report.samples if sample.path == plain_path
+    )
+    assert bom_sample.char_count == plain_sample.char_count == 36
+    assert bom_sample.score == plain_sample.score == 22.0
+
+
+def test_scan_corpus_skips_bom_only_file(tmp_path: Path) -> None:
+    bom_only = tmp_path / "bom-only.txt"
+    bom_only.write_bytes(b"\xef\xbb\xbf")
+    _write(tmp_path, "notes.md", CLEAN_TEXT)
+
+    report = scan_corpus(tmp_path)
+
+    assert [sample.path for sample in report.samples] == [tmp_path / "notes.md"]
+    assert bom_only not in [sample.path for sample in report.samples]
+    assert report.skipped == 1
     assert report.errors == []
 
 
