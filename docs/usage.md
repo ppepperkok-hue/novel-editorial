@@ -133,7 +133,28 @@ uv run novel-editorial quality check <草稿ID>
 uv run novel-editorial quality explain <草稿ID>
 ```
 
-`check` 输出通过与否、得分与各维度命中；`explain` 逐句定位并给出改写建议（无问题时输出「未发现明显 AI 味」）。
+`check` 输出通过与否、得分与各维度命中；`explain` 逐句定位并给出改写建议（无问题时输出「未发现明显 AI 味」）。有风格锚点时，`explain` 在逐句定位（或「未发现明显 AI 味」）之后追加风格一致性摘要：`style: 命中 X/N（命中词）；缺失：缺失词`，全部命中为 `style: 命中 N/N`；未设置风格锚点则不输出该行。
+
+mock 下（临时 `NOVEL_DATA_DIR` / `NOVEL_CONFIG`，无 API key 时回复固定为「（模拟回复）」）的完整示例：
+
+```bash
+uv run novel-editorial works create 解释之书 --genre 都市
+# created workspace <作品ID>: 解释之书
+
+uv run novel-editorial style set <作品ID> --description "克制、留白、利落"
+# style anchor updated: <作品ID>
+# 审稿: 风格锚点定了：「克制、留白、利落」。我盯着设定看了一遍，开头那句跟「克制、留白、利落」会不会打架？
+
+uv run novel-editorial draft generate <作品ID> --title 第一章
+# draft <草稿ID> 第一章 now at v1
+# awaiting decision: <草稿ID>
+# 写手: 《第一章》初稿写完了，我按节奏收尾，先交给你过目。
+# 责编: 《第一章》过了质量门，我试读了开头「（模拟回复）」，节奏在线，建议作者拍板。
+
+uv run novel-editorial quality explain <草稿ID>
+# 未发现明显 AI 味
+# style: 命中 0/3；缺失：克制、利落、留白
+```
 
 - 调整阈值：`NOVEL_QUALITY_THRESHOLD=6`（更严）或在 `config.toml` 里写 `quality_threshold = 6`。阈值非整数会报配置错误（退出码 1）。
 

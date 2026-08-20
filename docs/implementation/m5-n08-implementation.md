@@ -91,4 +91,4 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 
 ## 状态
 
-- 立项（2026-08-20）：现状盘点完成（P1），用户授权低价窗口内自主推进，拆包 P2。
+- 收口（2026-08-20）：P2（ecb2eb6）、P2 审查修复（3fabb6d）、P3（usage.md 文档）全部完成并收敛；全量 830 测试、smoke_m3、stress_m3 全绿；审查链归档 docs/reviews/20260820-M5N08P2-initial.md / 20260820-M5N08P2-fix.md / 20260820-M5N08P3.md。N8 正式收口。
