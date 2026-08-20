@@ -15,7 +15,7 @@ from novel_editorial.core.plot import list_threads, plant_thread, recover_thread
 from novel_editorial.core.setting import add_setting, list_settings
 from novel_editorial.store.db import DB
 from novel_editorial.store.events import list_events
-from novel_editorial.store.models import PlotThread
+from novel_editorial.store.models import Draft, DraftVersion, PlotThread
 
 runner = CliRunner()
 
@@ -30,6 +30,17 @@ def _create_workspace(tmp_path: Path, monkeypatch, *, title: str = "一致性之
 
 def _db() -> DB:
     return DB(load_settings())
+
+
+def _write_draft(db: DB, workspace_id: str, content: str) -> str:
+    """Insert a draft with a single version directly (no LLM involved)."""
+    with db.workspace_session(workspace_id) as session:
+        draft = Draft(workspace_id=workspace_id, title="第一章", current_version=1)
+        session.add(draft)
+        session.flush()
+        session.add(DraftVersion(draft_id=draft.id, version=1, content=content))
+        session.commit()
+        return draft.id
 
 
 def _number_conflicts(report) -> list:
@@ -413,3 +424,70 @@ def test_check_is_read_only(tmp_path: Path, monkeypatch) -> None:
         thread.id for thread in threads_before
     ]
     assert len(list_events(db, workspace_id)) == len(events_before)
+
+
+def test_cli_check_reports_conflicts_mentions_and_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    add_setting(db, workspace_id, kind="character", name="沈夜", content="雨夜归乡的侦探")
+    add_setting(db, workspace_id, kind="timeline", name="旧车站", content="钟停在十一点")
+    plant_thread(db, workspace_id, kind="foreshadow", content="黑伞人")
+    draft_id = _write_draft(
+        db,
+        workspace_id,
+        "沈夜回到旧车站，站台上的钟指向十二点。候车室空无一人。",
+    )
+
+    result = runner.invoke(app, ["consistency", "check", draft_id])
+
+    assert result.exit_code == 0, result.output
+    assert "settings checked: 2 / threads checked: 1" in result.output
+    assert "[人物] 沈夜：出现 1 次" in result.output
+    assert (
+        "[冲突] 旧车站：正文「十二点」不在设定值中（设定含：十一点）（句 1）"
+        in result.output
+    )
+    assert "[未提及] 伏笔·黑伞人：伏笔关键词未出现" in result.output
+    assert "[未提及] 沈夜" not in result.output
+
+
+def test_cli_check_clean_text_prints_no_issues(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    add_setting(db, workspace_id, kind="character", name="沈夜", content="雨夜归乡的侦探")
+    add_setting(db, workspace_id, kind="timeline", name="旧车站", content="钟停在十一点")
+    plant_thread(db, workspace_id, kind="foreshadow", content="黑伞人")
+    draft_id = _write_draft(
+        db,
+        workspace_id,
+        "沈夜回到旧车站，站台上的钟指向十一点。黑伞人立在月台尽头。",
+    )
+
+    result = runner.invoke(app, ["consistency", "check", draft_id])
+
+    assert result.exit_code == 0, result.output
+    assert "settings checked: 2 / threads checked: 1" in result.output
+    assert "[人物] 沈夜：出现 1 次" in result.output
+    assert "no consistency issues found" in result.output
+
+
+def test_cli_check_missing_draft_exits_not_found(tmp_path: Path, monkeypatch) -> None:
+    _create_workspace(tmp_path, monkeypatch)
+
+    result = runner.invoke(app, ["consistency", "check", "no-such-draft"])
+
+    assert result.exit_code == 1
+    assert "draft not found" in result.output
+
+
+def test_cli_check_blank_content_exits_usage_error(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    draft_id = _write_draft(db, workspace_id, "   ")
+
+    result = runner.invoke(app, ["consistency", "check", draft_id])
+
+    assert result.exit_code == 2
+    assert "正文为空" in result.output

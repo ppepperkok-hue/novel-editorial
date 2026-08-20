@@ -42,6 +42,9 @@ _GROUP_LOADERS: dict[str, Callable[[], typer.Typer]] = {
     "review": lambda: _load_group("novel_editorial.cli.review", "review_app"),
     "decision": lambda: _load_group("novel_editorial.cli.decision", "decision_app"),
     "quality": lambda: _load_group("novel_editorial.cli.quality", "quality_app"),
+    "consistency": lambda: _load_group(
+        "novel_editorial.cli.consistency", "consistency_app"
+    ),
     "plot": lambda: _load_group("novel_editorial.cli.plot", "plot_app"),
     "setting": lambda: _load_group("novel_editorial.cli.setting", "setting_app"),
     "structure": lambda: _load_group("novel_editorial.cli.structure", "structure_app"),
