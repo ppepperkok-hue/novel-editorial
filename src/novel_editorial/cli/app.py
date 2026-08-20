@@ -171,6 +171,23 @@ def demo() -> None:
         )
 
 
+@app.command("example")
+def example() -> None:
+    """Create the example editorial office with a sample work."""
+    from novel_editorial.core.example import seed_example_workspace
+    from novel_editorial.store.db import DB
+
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    result = seed_example_workspace(db)
+    typer.echo(f"created example workspace {result.workspace_id}: {result.title}")
+    typer.echo(
+        f"Explore: works overview / events list {result.workspace_id} / "
+        f"decision pending {result.workspace_id}"
+    )
+
+
 @app.command("log")
 def log_workspace(workspace_id: str = typer.Argument(..., help="Workspace id")) -> None:
     """Show the full workflow log for a workspace."""

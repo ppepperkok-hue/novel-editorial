@@ -12,7 +12,7 @@ from novel_editorial.cli.app import app
 
 runner = CliRunner()
 
-TOP_LEVEL_COMMANDS = ("init", "health", "version", "demo", "log", "inspect")
+TOP_LEVEL_COMMANDS = ("init", "health", "version", "demo", "example", "log", "inspect")
 
 SUBCOMMANDS = {
     "works": ("create", "list", "overview", "show", "status"),

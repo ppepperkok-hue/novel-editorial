@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -304,3 +305,90 @@ def test_seed_does_not_touch_existing_workspace(
             .first()
             is None
         )
+
+
+def test_cli_example_end_to_end(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("NOVEL_LLM_API_KEY", raising=False)
+    monkeypatch.delenv("NOVEL_LLM_MODEL", raising=False)
+    monkeypatch.delenv("NOVEL_LLM_BASE_URL", raising=False)
+    monkeypatch.delenv("NOVEL_EMBEDDING_BACKEND", raising=False)
+    _db(tmp_path, monkeypatch)
+
+    created = runner.invoke(app, ["example"])
+    assert created.exit_code == 0, created.output
+    match = re.search(
+        r"created example workspace (\w+): 示例·雨夜车站",
+        created.output,
+    )
+    assert match is not None, created.output
+    workspace_id = match.group(1)
+    explore = (
+        f"Explore: works overview / events list {workspace_id} / "
+        f"decision pending {workspace_id}"
+    )
+    assert explore in created.output
+
+    overview = runner.invoke(app, ["works", "overview"])
+    assert overview.exit_code == 0, overview.output
+    assert "示例·雨夜车站" in overview.output
+    assert "待拍板 1" in overview.output
+    assert "进度 1/3 章" in overview.output
+
+    events = runner.invoke(app, ["events", "list", workspace_id])
+    assert events.exit_code == 0, events.output
+    assert "no events yet" not in events.output
+    assert "decision.requested" in events.output
+
+    inspect = runner.invoke(app, ["inspect", workspace_id, "沈夜"])
+    assert inspect.exit_code == 0, inspect.output
+    assert "no matches" not in inspect.output
+    assert "沈夜" in inspect.output
+
+    settings = runner.invoke(app, ["setting", "list", workspace_id])
+    assert settings.exit_code == 0, settings.output
+    assert "no settings yet" not in settings.output
+    assert "沈夜" in settings.output
+
+    notes = runner.invoke(app, ["memory", "notes", workspace_id])
+    assert notes.exit_code == 0, notes.output
+    assert "no memory notes yet" not in notes.output
+
+    pending = runner.invoke(app, ["decision", "pending", workspace_id])
+    assert pending.exit_code == 0, pending.output
+    assert "no pending decisions" not in pending.output
+    assert "第一章 雨夜" in pending.output
+
+    talk = runner.invoke(app, ["talk", "list", workspace_id])
+    assert talk.exit_code == 0, talk.output
+    assert "作者" in talk.output
+    assert "agent" in talk.output
+
+    timeline = runner.invoke(app, ["behavior", "timeline", workspace_id])
+    assert timeline.exit_code == 0, timeline.output
+    assert "no behavior traces yet" not in timeline.output
+
+
+def test_cli_example_repeat_creates_new_workspace_and_keeps_old(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db = _db(tmp_path, monkeypatch)
+
+    first = runner.invoke(app, ["example"])
+    assert first.exit_code == 0, first.output
+    first_match = re.search(r"created example workspace (\w+):", first.output)
+    assert first_match is not None, first.output
+    first_id = first_match.group(1)
+    first_events = len(list_events(db, first_id, limit=1000))
+
+    second = runner.invoke(app, ["example"])
+    assert second.exit_code == 0, second.output
+    second_match = re.search(r"created example workspace (\w+):", second.output)
+    assert second_match is not None, second.output
+    second_id = second_match.group(1)
+    assert first_id != second_id
+
+    assert len(list_events(db, first_id, limit=1000)) == first_events
+    pending = runner.invoke(app, ["decision", "pending", first_id])
+    assert pending.exit_code == 0, pending.output
+    assert "no pending decisions" not in pending.output
+    assert "第一章 雨夜" in pending.output
