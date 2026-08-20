@@ -32,6 +32,7 @@ from novel_editorial.core.structure import list_structure
 from novel_editorial.core.style import get_style_anchor
 from novel_editorial.core.workspace import create_workspace
 from novel_editorial.events import EventType
+from novel_editorial.quality.gate import QualityReport
 from novel_editorial.store.db import DB
 from novel_editorial.store.events import list_events
 from novel_editorial.store.models import (
@@ -158,13 +159,58 @@ def test_seed_runs_without_llm_env(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("NOVEL_LLM_API_KEY", raising=False)
     monkeypatch.delenv("NOVEL_LLM_MODEL", raising=False)
     monkeypatch.delenv("NOVEL_LLM_BASE_URL", raising=False)
+    monkeypatch.delenv("NOVEL_EMBEDDING_BACKEND", raising=False)
     assert os.environ.get("NOVEL_LLM_API_KEY") is None
 
     db = _db(tmp_path, monkeypatch)
+    assert load_settings().embedding_backend == "local"
     result = seed_example_workspace(db)
 
     assert result.workspace_id
     assert len(list_events(db, result.workspace_id, limit=1000)) >= 3
+
+
+def test_seed_quality_failure_path_marks_draft_failed(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def _fail_quality(*args, **kwargs) -> QualityReport:
+        return QualityReport(passed=False, score=100.0, details={})
+
+    monkeypatch.setattr("novel_editorial.core.example.check_quality", _fail_quality)
+    db = _db(tmp_path, monkeypatch)
+    result = seed_example_workspace(db)
+
+    drafts = list_drafts(db, result.workspace_id)
+    assert len(drafts) == 1
+    assert drafts[0].status == "quality_failed"
+
+    event_types = {
+        event.type for event in list_events(db, result.workspace_id, limit=1000)
+    }
+    assert EventType.DRAFT_CREATED.value in event_types
+    assert EventType.QUALITY_GATE_PASSED.value not in event_types
+    assert EventType.DECISION_REQUESTED.value not in event_types
+
+
+def test_seed_quality_threshold_loaded_from_settings(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("NOVEL_QUALITY_THRESHOLD", "0")
+    db = _db(tmp_path, monkeypatch)
+    assert load_settings().quality_threshold == 0
+
+    result = seed_example_workspace(db)
+
+    drafts = list_drafts(db, result.workspace_id)
+    assert len(drafts) == 1
+    assert drafts[0].status == "quality_failed"
+
+    event_types = {
+        event.type for event in list_events(db, result.workspace_id, limit=1000)
+    }
+    assert EventType.DRAFT_CREATED.value in event_types
+    assert EventType.QUALITY_GATE_PASSED.value not in event_types
+    assert EventType.DECISION_REQUESTED.value not in event_types
 
 
 def test_repeated_seed_creates_new_workspace_and_keeps_old(

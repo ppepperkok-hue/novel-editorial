@@ -3,9 +3,13 @@
 One call to :func:`seed_example_workspace` builds a deterministic, fully
 populated sample workspace -- style anchor, settings, outline, structure,
 conversation, a pending draft, plot threads, memory notes, behavior traces and
-the matching event stream -- without ever touching the LLM (no key required)
-and without mutating any existing workspace or configuration. Every run
-creates a brand-new workspace; sample text lives in module constants
+the matching event stream -- without mutating any existing workspace or
+configuration. Under the default configuration
+(``NOVEL_EMBEDDING_BACKEND=local``) no LLM or embedding API is ever called;
+when the user explicitly configures the ``api`` embedding backend, setting and
+memory writes follow the existing retrieval-freshness semantics and call the
+embedding API (real calls with a key, degraded stderr warnings without one).
+Every run creates a brand-new workspace; sample text lives in module constants
 (mirroring ``DEFAULT_BAND``) and no resource files are added.
 """
 
@@ -25,6 +29,7 @@ from novel_editorial.core.chat import (
     list_messages,
     record_message,
 )
+from novel_editorial.core.config import load_settings
 from novel_editorial.core.draft import list_drafts
 from novel_editorial.core.memory import add_memory_note, list_memory_notes
 from novel_editorial.core.outline import create_outline, list_outline_versions
@@ -126,9 +131,6 @@ DRAFT_CONTENT = (
     "检票口没有人。闸机还开着，像在等他。"
 )
 
-QUALITY_THRESHOLD = 8
-
-
 @dataclass(frozen=True)
 class ExampleResult:
     """One seeded example workspace and its preloaded layer counts."""
@@ -147,12 +149,22 @@ class ExampleResult:
     events: int
 
 
-def seed_example_workspace(db: DB) -> ExampleResult:
+def seed_example_workspace(
+    db: DB,
+    *,
+    quality_threshold: int | None = None,
+) -> ExampleResult:
     """Create the 《示例·雨夜车站》 workspace with every editorial layer.
 
-    The function is deterministic (fixed text, no LLM calls), idempotent at
-    the workspace level (each run creates a new workspace id) and never
-    touches existing workspaces or configuration.
+    The function is deterministic (fixed text) and idempotent at the workspace
+    level (each run creates a new workspace id) and never touches existing
+    workspaces or configuration. Under the default local embedding backend no
+    LLM or embedding API is called; an explicit ``api`` embedding backend
+    triggers the existing upsert-embedding calls from setting and memory
+    writes. ``quality_threshold`` defaults to
+    ``load_settings().quality_threshold``; the draft status and the
+    quality-gate events follow :func:`generate_draft` semantics (the two gate
+    events are only recorded when the gate passes).
     """
     workspace = create_workspace(
         db,
@@ -258,12 +270,24 @@ def seed_example_workspace(db: DB) -> ExampleResult:
         source="写作笔记",
     )
 
+    threshold = (
+        quality_threshold
+        if quality_threshold is not None
+        else load_settings().quality_threshold
+    )
+    quality_report = check_quality(
+        DRAFT_CONTENT,
+        threshold=threshold,
+        style_keywords=extract_style_keywords(STYLE_DESCRIPTION),
+    )
+    draft_status = "draft" if quality_report.passed else "quality_failed"
+
     with db.workspace_session(workspace_id) as session:
         draft = Draft(
             workspace_id=workspace_id,
             title=DRAFT_TITLE,
             writer_id=writer.id,
-            status="draft",
+            status=draft_status,
             current_version=1,
         )
         session.add(draft)
@@ -279,11 +303,6 @@ def seed_example_workspace(db: DB) -> ExampleResult:
         session.commit()
         draft_id = draft.id
 
-    quality_report = check_quality(
-        DRAFT_CONTENT,
-        threshold=QUALITY_THRESHOLD,
-        style_keywords=extract_style_keywords(STYLE_DESCRIPTION),
-    )
     record_event(
         db,
         workspace_id,
@@ -291,24 +310,25 @@ def seed_example_workspace(db: DB) -> ExampleResult:
         actor=writer.name,
         payload={"draft_id": draft_id, "title": DRAFT_TITLE},
     )
-    record_event(
-        db,
-        workspace_id,
-        type=EventType.QUALITY_GATE_PASSED,
-        actor="system",
-        payload={
-            "draft_id": draft_id,
-            "version": 1,
-            "score": quality_report.score,
-        },
-    )
-    record_event(
-        db,
-        workspace_id,
-        type=EventType.DECISION_REQUESTED,
-        actor="system",
-        payload={"draft_id": draft_id, "version": 1},
-    )
+    if quality_report.passed:
+        record_event(
+            db,
+            workspace_id,
+            type=EventType.QUALITY_GATE_PASSED,
+            actor="system",
+            payload={
+                "draft_id": draft_id,
+                "version": 1,
+                "score": quality_report.score,
+            },
+        )
+        record_event(
+            db,
+            workspace_id,
+            type=EventType.DECISION_REQUESTED,
+            actor="system",
+            payload={"draft_id": draft_id, "version": 1},
+        )
 
     return ExampleResult(
         workspace_id=workspace_id,
