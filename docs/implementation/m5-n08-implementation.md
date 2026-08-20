@@ -37,9 +37,8 @@
 ### 做什么
 
 - `quality/explain.py`：
-  - `explain_quality` 新增关键字参数 `style_keywords: frozenset[str] = frozenset()`，不改变既有三类逐句定位逻辑与返回类型；
-  - 新增（或扩展）报告级摘要函数：给定文本与风格关键词，返回「命中 / 缺失」清单（口径与 check_quality 的 style_hits 一致：关键词是否出现在文本中）；
-  - `render_explanation`（或新增渲染函数）在逐句问题之后输出风格摘要行，格式示例：
+  - 新增报告级摘要函数（如 `style_consistency_summary`）：给定文本与风格关键词，返回「命中 / 缺失」清单（口径与 check_quality 的 style_hits 一致：关键词是否出现在文本中）；`explain_quality` / `render_explanation` 的既有签名、返回类型与逐句定位逻辑保持不变；
+  - 新增渲染逻辑在逐句问题之后输出风格摘要行，格式示例：
     `style: 命中 1/3（利落）；缺失：克制、留白`（全命中时 `style: 命中 3/3`；零关键词不输出）。
 - `cli/quality.py`：`quality explain` 像 `quality check` 一样读取风格锚点并传入 style_keywords，输出末尾带风格摘要。
 - tests：`tests/test_quality_explain.py` 追加——有锚点命中/缺失的摘要输出、全命中、零锚点不输出、CLI 端到端带锚点（含缺失清单）、既有三类定位测试不受影响。
