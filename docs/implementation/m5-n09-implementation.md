@@ -56,10 +56,11 @@ pytest + ruff + pyright + 宪法校验。
 ### 做什么
 
 - `cli/quality.py` 新增 `quality calibrate <语料路径> [--apply]`：
-  - 默认输出：样本数、每样本一行（路径、字数、AI 词/修饰词/句式重复命中、score）、分布摘要（min / median / p90 / p95 / max）、建议阈值行 `suggested threshold: <N>`；空语料业务错误退出码 1；
+- 默认输出：样本数、每样本一行（路径、字数、AI 词/修饰词/句式重复命中、score）、分布摘要（min / median / p90 / p95 / max）、建议阈值行 `suggested threshold: <N>`；
+  - 退出码口径与既有错误码映射一致：路径不存在 → NOT_FOUND → 退出码 1；空语料 / 无有效样本 → USAGE_ERROR → 退出码 2；
   - `--apply`：先打印 `apply: quality_threshold = <N>`，再幂等写入 config.toml（`[defaults]` 段下 `quality_threshold = <N>`；文件不存在则创建，存在则保留注释与其他键只替换/新增该键）；写入后打印确认行；
   - 无 `--apply` 时绝不写文件。
-- tests：端到端「语料目录 → 输出统计与建议 → --apply 写入 config.toml → 重复 --apply 幂等 → load_settings 读出新阈值」；不 --apply 不写文件；空语料退出码 1；registry 补 quality calibrate。
+- tests：端到端「语料目录 → 输出统计与建议 → --apply 写入 config.toml → 重复 --apply 幂等 → load_settings 读出新阈值」；不 --apply 不写文件；空语料退出码 2、路径不存在退出码 1；registry 补 quality calibrate。
 
 ### 做到什么程度
 
