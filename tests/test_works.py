@@ -1,4 +1,5 @@
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -7,7 +8,13 @@ from typer.testing import CliRunner
 from novel_editorial.cli.app import app
 from novel_editorial.core.config import load_settings
 from novel_editorial.store.db import DB, global_db_path
-from novel_editorial.store.models import Agent
+from novel_editorial.store.models import (
+    Agent,
+    Draft,
+    Event,
+    Workspace,
+    WorkspaceStructureNode,
+)
 
 runner = CliRunner()
 
@@ -159,3 +166,146 @@ def test_works_show_status_line_and_structure_tree(
     structure_index = lines.index("结构：")
     assert lines[structure_index + 1] == f"[卷] 第一卷（{volume_id}）"
     assert lines[structure_index + 2] == f"  [章] 第一章（{chapter_id}）"
+
+
+def _overview_db(tmp_path: Path, monkeypatch) -> DB:
+    monkeypatch.setenv("NOVEL_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("NOVEL_CONFIG", str(tmp_path / "config.toml"))
+    return DB(load_settings())
+
+
+def _overview_create(
+    tmp_path: Path, monkeypatch, title: str, *, genre: str = ""
+) -> str:
+    args = ["works", "create", title]
+    if genre:
+        args += ["--genre", genre]
+    result = runner.invoke(app, args)
+    assert result.exit_code == 0, result.output
+    return _created_workspace_id(result.output)
+
+
+def _overview_add_draft(db: DB, workspace_id: str, *, status: str = "draft") -> None:
+    with db.workspace_session(workspace_id) as session:
+        session.add(Draft(workspace_id=workspace_id, title="草稿", status=status))
+        session.commit()
+
+
+def _overview_add_event(
+    db: DB, workspace_id: str, when: datetime, *, event_type: str = "system"
+) -> None:
+    with db.workspace_session(workspace_id) as session:
+        session.add(
+            Event(
+                workspace_id=workspace_id,
+                type=event_type,
+                time=when,
+                actor="system",
+            )
+        )
+        session.commit()
+
+
+def _overview_add_structure(
+    db: DB, workspace_id: str, *, chapters: int, completed: int
+) -> None:
+    with db.workspace_session(workspace_id) as session:
+        for index in range(chapters):
+            session.add(
+                WorkspaceStructureNode(
+                    workspace_id=workspace_id,
+                    kind="chapter",
+                    title=f"第{index + 1}章",
+                    sort_order=index + 1,
+                    status="completed" if index < completed else "writing",
+                )
+            )
+        session.commit()
+
+
+def test_works_overview_two_workspaces_ordered_and_formatted(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db = _overview_db(tmp_path, monkeypatch)
+    first = _overview_create(tmp_path, monkeypatch, "甲书", genre="网文")
+    second = _overview_create(tmp_path, monkeypatch, "乙书")
+
+    with db.global_session() as session:
+        workspace = session.get(Workspace, first)
+        assert workspace is not None
+        workspace.status = "completed"
+        session.commit()
+    _overview_add_structure(db, first, chapters=5, completed=2)
+    _overview_add_draft(db, first, status="draft")
+    _overview_add_draft(db, first, status="draft")
+    _overview_add_draft(db, first, status="accepted")
+    _overview_add_event(db, first, datetime(2026, 8, 20, 12, 0, tzinfo=UTC))
+    _overview_add_event(db, second, datetime(2026, 8, 19, 8, 0, tzinfo=UTC))
+
+    result = runner.invoke(app, ["works", "overview"])
+
+    assert result.exit_code == 0, result.output
+    assert result.output.splitlines() == [
+        "[已完成] 甲书（网文）：待拍板 2 · 进度 2/5 章 · 最近 2026-08-20T12:00:00+00:00",
+        "[创作中] 乙书：待拍板 0 · 进度 - · 最近 2026-08-19T08:00:00+00:00",
+    ]
+
+
+def test_works_overview_empty_state(tmp_path: Path, monkeypatch) -> None:
+    _overview_db(tmp_path, monkeypatch)
+
+    result = runner.invoke(app, ["works", "overview"])
+
+    assert result.exit_code == 0
+    assert result.output.strip() == "no workspaces yet"
+
+
+def test_works_overview_skips_failing_workspace_with_warning(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db = _overview_db(tmp_path, monkeypatch)
+    good = _overview_create(tmp_path, monkeypatch, "好书")
+    bad = _overview_create(tmp_path, monkeypatch, "坏书")
+    _overview_add_draft(db, good, status="draft")
+
+    real_session = DB.workspace_session
+
+    def flaky_session(self: DB, workspace_id: str):
+        if workspace_id == bad:
+            raise RuntimeError("simulated failure")
+        return real_session(self, workspace_id)
+
+    monkeypatch.setattr(DB, "workspace_session", flaky_session)
+    result = runner.invoke(app, ["works", "overview"])
+
+    assert result.exit_code == 0
+    assert "no workspaces yet" not in result.output
+    assert "[创作中] 好书：待拍板 1 · 进度 - · 最近 " in result.output
+    assert f"warning: overview skipped: {bad}: simulated failure" in result.output
+
+
+def test_works_overview_chinese_status_labels_for_all_states(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db = _overview_db(tmp_path, monkeypatch)
+    completed = _overview_create(tmp_path, monkeypatch, "完书")
+    writing = _overview_create(tmp_path, monkeypatch, "写书")
+    shelved = _overview_create(tmp_path, monkeypatch, "搁书")
+    with db.global_session() as session:
+        for workspace_id, status in (
+            (completed, "completed"),
+            (writing, "writing"),
+            (shelved, "shelved"),
+        ):
+            workspace = session.get(Workspace, workspace_id)
+            assert workspace is not None
+            workspace.status = status
+        session.commit()
+
+    result = runner.invoke(app, ["works", "overview"])
+
+    assert result.exit_code == 0, result.output
+    lines = result.output.splitlines()
+    assert any(line.startswith("[已完成] 完书") for line in lines)
+    assert any(line.startswith("[创作中] 写书") for line in lines)
+    assert any(line.startswith("[搁置] 搁书") for line in lines)

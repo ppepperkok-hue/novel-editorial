@@ -11,6 +11,7 @@ from novel_editorial.cli.structure import (
 )
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.overview import build_overview
 from novel_editorial.core.structure import set_workspace_status
 from novel_editorial.core.workspace import create_workspace
 from novel_editorial.store.db import DB
@@ -45,6 +46,26 @@ def works_list() -> None:
         typer.echo(f"{workspace.id}  {workspace.title}  {workspace.genre}")
     if not workspaces:
         typer.echo("no workspaces yet")
+
+
+@works_app.command("overview")
+def works_overview() -> None:
+    """Show one aggregated glance across all workspaces."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    report = build_overview(db)
+    if report.total == 0:
+        typer.echo("no workspaces yet")
+        return
+    for item in report.overviews:
+        genre_part = f"（{item.genre}）" if item.genre else ""
+        status_label = STATUS_LABELS.get(item.status, item.status)
+        timestamp = item.last_activity.isoformat(timespec="seconds")
+        typer.echo(
+            f"[{status_label}] {item.title}{genre_part}：待拍板 {item.pending_count}"
+            f" · 进度 {item.structure} · 最近 {timestamp}"
+        )
 
 
 @works_app.command("show")

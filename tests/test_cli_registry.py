@@ -15,7 +15,7 @@ runner = CliRunner()
 TOP_LEVEL_COMMANDS = ("init", "health", "version", "demo", "log", "inspect")
 
 SUBCOMMANDS = {
-    "works": ("create", "list", "show"),
+    "works": ("create", "list", "overview", "show", "status"),
     "agents": ("add", "list", "show", "edit"),
     "behavior": ("timeline", "show"),
     "talk": ("send", "list", "delegate", "discuss"),
