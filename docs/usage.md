@@ -157,6 +157,40 @@ uv run novel-editorial quality explain <草稿ID>
 ```
 
 - 调整阈值：`NOVEL_QUALITY_THRESHOLD=6`（更严）或在 `config.toml` 里写 `quality_threshold = 6`。阈值非整数会报配置错误（退出码 1）。
+- 语料校准：`quality calibrate <语料路径> [--apply]` 用你自己的真实文本给阈值一个依据。语料是目录（递归扫描）或单个文件，只认非隐藏的 `.txt` / `.md`；每个文件是一个样本，空文件、隐藏文件与无法读取的文件跳过。
+  - 输出：`samples: N`、每样本一行（路径、字数、AI 词 / 修饰词 / 句式重复命中、score）、分布摘要（min / median / p90 / p95 / max）与 `suggested threshold: N`；有跳过时输出 `skipped: N`，读取失败另向 stderr 输出 `warning: ...`。建议口径是 p90 分位（nearest-rank）向上取整、最低 1。
+  - `--apply`：先打印 `apply: quality_threshold = N`，再写入 `config.toml` 的 `[defaults] quality_threshold`；保留注释与其他键，文件不存在则创建，重复执行结果一致（幂等）。不加 `--apply` 绝不写文件。想回退就手动删掉该键，恢复内置默认。
+  - 退出码：路径不存在为业务错误（退出码 1）；空语料或无有效样本为用法错误（退出码 2）。
+  - 只读红线：校准只读语料文本，内容不落库、不写入 `data/` 与事件，命令不产生业务留痕。
+  - 阈值优先级不变：`NOVEL_QUALITY_THRESHOLD` > `config.toml` > 内置默认 `8`（见上文「NOVEL_* 环境变量」）。
+
+mock 下实跑示例（临时 `NOVEL_DATA_DIR` / `NOVEL_CONFIG`；语料目录含一份干净文本、一份 AI 味文本与一个隐藏文件；`<corpus>` 为语料目录实际路径，每次运行不同，其余为真实输出）：
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-calibrate\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-calibrate\config.toml"
+```
+
+```bash
+uv run novel-editorial quality calibrate "$env:TEMP\novel-calibrate\corpus"
+# samples: 2
+# <corpus>\ai.txt: 字数 36 · AI 词 2 · 修饰词 2 · 句式重复 1 · score 22.0
+# <corpus>\clean.txt: 字数 17 · AI 词 0 · 修饰词 0 · 句式重复 0 · score 0.0
+# distribution: min 0.0 median 11.0 p90 22.0 p95 22.0 max 22.0
+# suggested threshold: 22
+# skipped: 1
+```
+
+```bash
+uv run novel-editorial quality calibrate "$env:TEMP\novel-calibrate\corpus" --apply
+# samples: 2
+# ...（每样本行与分布同上）
+# suggested threshold: 22
+# apply: quality_threshold = 22
+# config updated: <config 路径>
+```
+
+`--apply` 之后 `quality check` 即按新阈值判定（阈值优先级不变）。
 
 ## 主动行为（伙伴主动发言）
 
