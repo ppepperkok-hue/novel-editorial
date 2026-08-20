@@ -62,7 +62,6 @@ def quality_explain(draft_id: str = typer.Argument(..., help="Draft id")) -> Non
     if issues:
         typer.echo(f"{draft.title} (v{version.version})")
     typer.echo(render_explanation(issues))
-    if issues:
-        summary = style_consistency_summary(version.content, style_keywords)
-        if summary is not None:
-            typer.echo(summary)
+    summary = style_consistency_summary(version.content, style_keywords)
+    if summary is not None:
+        typer.echo(summary)

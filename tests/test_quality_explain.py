@@ -210,6 +210,25 @@ def test_quality_explain_command_clean_text(tmp_path: Path, monkeypatch) -> None
     result = runner.invoke(app, ["quality", "explain", draft_id])
     assert result.exit_code == 0, result.output
     assert CLEAN_MESSAGE in result.output
+    assert "style:" not in result.output
+
+
+def test_quality_explain_clean_text_with_style_anchor_appends_summary(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    styled = runner.invoke(
+        app,
+        ["style", "set", workspace_id, "--description", "克制、留白、利落"],
+    )
+    assert styled.exit_code == 0, styled.output
+    draft_id = _generate(tmp_path, monkeypatch, workspace_id, CLEAN_TEXT, "第一章")
+
+    result = runner.invoke(app, ["quality", "explain", draft_id])
+    assert result.exit_code == 0, result.output
+    assert CLEAN_MESSAGE in result.output
+    assert "style: 命中 0/3；缺失：克制、利落、留白" in result.output
+    assert result.output.index(CLEAN_MESSAGE) < result.output.index("style:")
 
 
 def test_quality_explain_with_style_anchor_appends_summary(
