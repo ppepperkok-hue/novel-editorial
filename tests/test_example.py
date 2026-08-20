@@ -371,6 +371,11 @@ def test_cli_example_end_to_end(tmp_path: Path, monkeypatch) -> None:
 def test_cli_example_repeat_creates_new_workspace_and_keeps_old(
     tmp_path: Path, monkeypatch
 ) -> None:
+    monkeypatch.delenv("NOVEL_LLM_API_KEY", raising=False)
+    monkeypatch.delenv("NOVEL_LLM_MODEL", raising=False)
+    monkeypatch.delenv("NOVEL_LLM_BASE_URL", raising=False)
+    monkeypatch.delenv("NOVEL_EMBEDDING_BACKEND", raising=False)
+
     db = _db(tmp_path, monkeypatch)
 
     first = runner.invoke(app, ["example"])
