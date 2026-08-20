@@ -113,4 +113,4 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 
 ## 状态
 
-- 立项（2026-08-20）：实施文档就绪，用户授权低价窗口内自主推进，拆包 O1。
+- 收口（2026-08-20）：O1（fb02c77）、O2（cedc0b6）、O2 审查修复（b3708d3）、O3（d395218）全部完成并独立审查收敛；全量 823 测试、smoke_m3、stress_m3 全绿；审查链归档 docs/reviews/20260820-M5N10O2-initial.md / 20260820-M5N10O2-fix.md / 20260820-M5N10O3.md。N10 正式收口。
