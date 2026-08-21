@@ -9,6 +9,7 @@ from novel_editorial.cli.structure import (
     render_structure_lines,
     status_from_label,
 )
+from novel_editorial.core.archive import export_workspace_archive, import_workspace_archive
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.overview import build_overview
@@ -113,3 +114,26 @@ def works_status(
         db, workspace_id, status_from_label(status)
     )
     typer.echo(f"status updated: {workspace.id} {workspace.status}")
+
+
+@works_app.command("export")
+def works_export(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+    target: str = typer.Argument(..., help="Target archive path or directory"),
+) -> None:
+    """Export one workspace to a verifiable ZIP archive."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    path = export_workspace_archive(db, workspace_id, target)
+    typer.echo(f"exported: {path}")
+
+
+@works_app.command("import")
+def works_import(archive_path: str = typer.Argument(..., help="Archive path")) -> None:
+    """Import one workspace archive as a brand-new workspace."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    workspace = import_workspace_archive(db, archive_path)
+    typer.echo(f"imported workspace {workspace.id}: {workspace.title}")

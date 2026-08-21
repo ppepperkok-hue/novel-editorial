@@ -33,6 +33,7 @@ ARCHIVE_VERSION = 1
 
 _REQUIRED_WORKSPACE_KEYS = ("id", "title", "genre", "description", "status", "created_at")
 _CHUNK_SIZE = 1024 * 1024
+_SQLITE_HEADER_MAGIC = b"SQLite format 3\x00"
 
 
 def _sha256(path: Path) -> str:
@@ -42,6 +43,27 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: fh.read(_CHUNK_SIZE), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _is_sqlite_database(path: Path) -> bool:
+    """True when ``path`` is a real SQLite database (header magic or probe)."""
+    try:
+        with path.open("rb") as fh:
+            if fh.read(len(_SQLITE_HEADER_MAGIC)) == _SQLITE_HEADER_MAGIC:
+                return True
+    except OSError:
+        return False
+    try:
+        conn = sqlite3.connect(path)
+        try:
+            conn.execute("PRAGMA schema_version").fetchone()
+        finally:
+            # sqlite3 connection context managers only manage transactions,
+            # not close; close explicitly so no handle outlives the probe.
+            conn.close()
+    except sqlite3.DatabaseError:
+        return False
+    return True
 
 
 def _resolve_export_target(target: Path, workspace_id: str) -> Path:
@@ -222,12 +244,12 @@ def _rewrite_workspace_id(path: Path, old_id: str, new_id: str) -> None:
             )
         ]
         for table in tables:
+            quoted = table.replace('"', '""')
             columns = {
-                row[1] for row in conn.execute(f"PRAGMA table_info({table})")
+                row[1] for row in conn.execute(f'PRAGMA table_info("{quoted}")')
             }
             if "workspace_id" not in columns:
                 continue
-            quoted = table.replace('"', '""')
             conn.execute(
                 f'UPDATE "{quoted}" SET workspace_id = ? WHERE workspace_id = ?',
                 (new_id, old_id),
@@ -271,6 +293,11 @@ def import_workspace_archive(db: DB, archive_path: str | Path) -> Workspace:
         expected = manifest["files"]["data.db"]
         if _sha256(data_db) != expected:
             raise NovelError(ErrorCode.USAGE_ERROR, "invalid archive: data.db sha256 mismatch")
+        if not _is_sqlite_database(data_db):
+            raise NovelError(
+                ErrorCode.USAGE_ERROR,
+                "invalid archive: data.db is not a SQLite database",
+            )
         workspace_info = manifest["workspace"]
 
         new_id = uuid.uuid4().hex

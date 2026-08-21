@@ -550,3 +550,96 @@ def test_import_failure_after_registration_rolls_back(
     assert _workspace_count(db) == 1
     works = db.settings.data_dir / "works"
     assert {path.name for path in works.iterdir()} == {workspace_id}
+
+
+def test_import_rewrites_quoted_table_names(tmp_path: Path, monkeypatch) -> None:
+    """A table name with embedded quotes must not leak a raw sqlite3 error."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    archive = export_workspace_archive(db, workspace_id, tmp_path / "base.zip")
+
+    with zipfile.ZipFile(archive) as zf:
+        manifest = json.loads(zf.read("manifest.json"))
+        data_db = zf.read("data.db")
+    hacked = tmp_path / "hacked.db"
+    hacked.write_bytes(data_db)
+    conn = sqlite3.connect(hacked)
+    try:
+        conn.execute(
+            'CREATE TABLE "weird""name" (id TEXT PRIMARY KEY, workspace_id TEXT)'
+        )
+        conn.execute(
+            'INSERT INTO "weird""name" (id, workspace_id) VALUES (?, ?)',
+            ("row-1", workspace_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    manifest["files"]["data.db"] = hashlib.sha256(hacked.read_bytes()).hexdigest()
+    quoted_archive = tmp_path / "quoted.zip"
+    with zipfile.ZipFile(quoted_archive, "w") as zf:
+        zf.write(hacked, arcname="data.db")
+        zf.writestr(
+            "manifest.json",
+            json.dumps(manifest, ensure_ascii=False),
+        )
+
+    imported = import_workspace_archive(db, quoted_archive)
+
+    assert imported.id != workspace_id
+    with sqlite3.connect(workspace_db_path(db.settings, imported.id)) as conn:
+        rows = conn.execute('SELECT workspace_id FROM "weird""name"').fetchall()
+    assert rows == [(imported.id,)]
+
+
+def test_import_non_sqlite_data_db_rejected_cleanly(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Garbage data.db with a self-consistent manifest is a clean USAGE_ERROR."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    garbage = b"not a sqlite database, but the manifest sha256 matches"
+    manifest = {
+        "format": ARCHIVE_FORMAT,
+        "version": ARCHIVE_VERSION,
+        "exported_at": "2026-08-21T00:00:00+00:00",
+        "workspace": {
+            "id": workspace_id,
+            "title": "源",
+            "genre": "",
+            "description": "",
+            "status": "writing",
+            "created_at": "2026-08-21T00:00:00+00:00",
+        },
+        "files": {"data.db": hashlib.sha256(garbage).hexdigest()},
+    }
+    archive = tmp_path / "non-sqlite.zip"
+    _write_zip(
+        archive,
+        {
+            "manifest.json": json.dumps(manifest).encode("utf-8"),
+            "data.db": garbage,
+        },
+    )
+
+    tmp_root = tmp_path / "import-tmp"
+    tmp_root.mkdir()
+    counter = 0
+
+    def fake_mkdtemp(*args, **kwargs) -> str:
+        nonlocal counter
+        counter += 1
+        path = tmp_root / f"extract-{counter}"
+        path.mkdir()
+        return str(path)
+
+    monkeypatch.setattr("novel_editorial.core.archive.tempfile.mkdtemp", fake_mkdtemp)
+
+    with pytest.raises(NovelError) as exc_info:
+        import_workspace_archive(db, archive)
+
+    assert exc_info.value.code is ErrorCode.USAGE_ERROR
+    assert "not a SQLite database" in exc_info.value.message
+    assert set(list_workspace_ids(db.settings)) == {workspace_id}
+    assert _workspace_count(db) == 1
+    assert list(tmp_root.iterdir()) == []
