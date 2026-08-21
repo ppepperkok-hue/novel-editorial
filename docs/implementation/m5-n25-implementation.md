@@ -66,6 +66,9 @@ pytest + ruff + pyright + 宪法校验。
 
 ### 做什么
 
+- 修复 S1 独立审查两个 P3（允许触碰 core/archive.py 与 tests/test_archive.py）：
+  - `_rewrite_workspace_id` 的 `PRAGMA table_info` 表名做标识符转义（与 UPDATE 一致），恶意表名不再抛原始 `sqlite3.OperationalError`；
+  - 导入在复制/迁移前先预检 data.db 是真实 SQLite（文件头 magic 或 `PRAGMA schema_version`），非 SQLite → `USAGE_ERROR`（"invalid archive: data.db is not a SQLite database"），不冒原始 DatabaseError。
 - `cli/works.py` 新增：
   - `works export <作品ID> <目标路径>`：输出导出成功信息（`exported: <绝对/相对路径>`）；作品不存在 1；目标非法 2；
   - `works import <归档路径>`：输出 `imported workspace <新id>: <title>`；归档路径不存在 1；校验失败 2。
