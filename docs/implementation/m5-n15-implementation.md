@@ -113,4 +113,4 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 
 ## 状态
 
-- 立项（2026-08-22）：实施文档就绪，用户授权低价窗口内自主推进，拆包 S1。
+- 收口（2026-08-22）：S1（5d2df1a）、S2（f0f1e79，含 S1 审查 P2 事件惯例修复）、S3（60d4f58，含 S2 审查两个 P3 修复）全部完成并独立审查收敛；全量 1100 测试、smoke_m3、stress_m3 全绿；审查链归档 docs/reviews/20260822-M5N15S1-initial.md / 20260822-M5N15S2-initial.md / 20260822-M5N15S3.md。N15 正式收口。

@@ -1,8 +1,8 @@
 # 项目进度总结（Progress Summary）
 
 - 最后更新：2026-08-21
-- 当前基线：全量 1074 测试绿；ruff / pyright / 宪法校验 / smoke_m3 / stress_m3 全绿
-- 远端：本地 HEAD 与 origin/main 一致（N25 收口归档已推送），工作区干净
+- 当前基线：全量 1100 测试绿；ruff / pyright / 宪法校验 / smoke_m3 / stress_m3 全绿
+- 远端：本地 HEAD 与 origin/main 一致（N15 收口归档已推送），工作区干净
 
 > 完整版（N1–N26、U1–U27 逐项）见 [docs/progress-report.md](progress-report.md)；后补项目集中清单见 [docs/project-plan/07-parked-backlog.md](project-plan/07-parked-backlog.md)。
 
@@ -27,6 +27,7 @@
 | M6-N5 | 作品设定库（G1–G3） | 完成 |
 | M6-N6 | 知识管家（H1–H3） | 完成 |
 | M6-N7 | 语义记忆检索（I1–I3） | 完成 |
+| 扩展 | N15 灵感素材库（S1–S3） | 完成 |
 | M7-N8 | AI 味定位与改写建议（P1–P3） | 完成 |
 | M7-N9 | 质量门语料校准（Q1–Q3） | 完成 |
 | M8-N10 | 跨作品聚合视图（O1–O3） | 完成 |
@@ -58,6 +59,7 @@
 - 分层编辑部：总编 / 责编 / 写手 / 审稿各司其职，作者随时穿透查看与拍板。
 - 自然行为：主动发起协作（N1）；拒绝 / 重申 / 推翻留痕，作者推翻后确定性拒绝失效（N2）；行为沉淀为印象 / 关系 / 观点时间线（N3）。
 - 协作网络：伙伴间对话式互委与回应，拒绝遵循立场历史、跨通道统一（N16）。
+- 灵感素材库：`inspiration add/list/show/remove` 随手存、按需取，开放标签、事件留痕、沉淀不是前置。
 - 可见性：`talk list` 的主动 / 分歧 / 互委标记，`events list` 事件流，`behavior timeline` / `behavior show` 时间线与当前状态，`agents show` 印象关系摘要。
 - HTTP API：`api serve` 起本机服务，works / overview / events / style / structure 只读路由与 CLI 同源，为 N12 面板铺路。
 - 导入导出：`works export` / `works import` 打包可校验 ZIP，换设备、迁移、备份不丢作品与编辑部设置。
@@ -74,7 +76,6 @@
 | 单元 | 优先级 | 依赖 | 说明 |
 | --- | --- | --- | --- |
 | N12 图形面板三扇窗 | P2 | N10 已满足 | 用户明确后置 |
-| N15 灵感素材库 | P2 | N5 已满足 | 灵感、素材、意象随手存 |
 | N23 试读反馈回流 | P2 | N9 已满足 | 外部批注与评分进入校准 |
 | N26 预设编辑部模板 | P2 | N11 未立项 | 按题材一键生成班子 |
 
