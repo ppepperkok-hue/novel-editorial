@@ -54,7 +54,7 @@
     - `skipped: int`；
     - `threshold: int`（= 50）；
     - `drifted: list[DriftChapter]`（仅 drifted=True 的章节）；
-    - `verdict: str`（`"no chapters"` / `"need at least 2 chapters"` / `"style stable"` / `"drift detected in N chapters"`，N 用英文数字）。
+    - `verdict: str`（`"no chapters"` / `"need at least 2 chapters"` / `"style stable"` / `"drift detected in 1 chapter"`（N=1 单数）或 `"drift detected in N chapters"`（N≥2 复数），N 用英文数字）。
   - **只读**：不落事件、不写库、不触发 proactive；作品不存在抛 NovelError(NOT_FOUND)。
 - tests（`tests/test_style_drift.py`）：结构与时间两种排序、未挂章节忽略、各维度数值、漂移分公式与阈值边界（49/50）、无风格关键词时维度剔除重归一、禁忌词拆分与计数、空正文章节跳过、零章/单章/全空 n/a、确定性、只读断言（events 数不变）、作品不存在 NOT_FOUND。
 
@@ -79,6 +79,8 @@ pytest + ruff + pyright + 宪法校验。
 ### 做什么
 
 - `cli/style.py` 新增 `style drift <workspace_id>`：
+  - 对齐 S1 verdict 单复数：`drift detected in 1 chapter`（N=1）与 `drift detected in N chapters`（N≥2），并同步修正 tests/test_style_drift.py 中 verdict 断言（允许触碰 core/style_drift.py 的 verdict 生成与 tests/test_style_drift.py）；
+  - `skipped > 0` 时输出 `skipped chapters: N` 行（放在逐章行之前），提示存在未分析的章节；
   - 输出格式（字段名与单位固定）：
     ```text
     chapters: 3
