@@ -7,6 +7,8 @@ Chapters are collected from the structure tree when chapter nodes carry a
 draft id, otherwise from all drafts ordered by ``created_at``, ``id``. Each
 chapter is profiled with :func:`compute_style_profile` and scored against the
 first analyzable chapter (the baseline), whose deviations are all zero.
+Structure chapter nodes whose draft id no longer resolves are skipped and
+counted in ``skipped`` instead of aborting the whole report.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from dataclasses import dataclass, field
 
 from novel_editorial.core.chat import get_workspace_or_raise
 from novel_editorial.core.draft import get_draft, get_draft_version, list_drafts
+from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.structure import KIND_CHAPTER, list_structure
 from novel_editorial.core.style import extract_style_keywords
 from novel_editorial.core.style_learn import StyleProfile, compute_style_profile
@@ -69,18 +72,20 @@ class _CollectedChapter:
 def compute_style_drift(db: DB, workspace_id: str) -> DriftReport:
     """Compute a read-only style drift report for one workspace.
 
-    Chapters with ``total_chars == 0`` are skipped and counted in
-    ``skipped``. Verdicts are fixed: ``"no chapters"``, ``"need at least 2
-    chapters"``, ``"drift detected in N chapters"`` (N in English digits) or
-    ``"style stable"``. A missing workspace raises ``NovelError(NOT_FOUND)``.
+    Chapters with ``total_chars == 0`` and structure chapter nodes with a
+    dangling draft id are skipped and counted in ``skipped``. Verdicts are
+    fixed: ``"no chapters"``, ``"need at least 2 chapters"``, ``"drift
+    detected in 1 chapter"`` (N == 1), ``"drift detected in N chapters"``
+    (N >= 2, English digits) or ``"style stable"``. A missing workspace raises
+    ``NovelError(NOT_FOUND)``.
     """
     get_workspace_or_raise(db, workspace_id)
-    collected = _ordered_chapters(db, workspace_id)
+    collected, skipped = _ordered_chapters(db, workspace_id)
     if not collected:
         return DriftReport(
             chapters=[],
             baseline_title="",
-            skipped=0,
+            skipped=skipped,
             drifted=[],
             verdict="no chapters",
         )
@@ -90,7 +95,6 @@ def compute_style_drift(db: DB, workspace_id: str) -> DriftReport:
     forbidden_words = _split_forbidden_words(forbidden_raw)
 
     analyzed: list[tuple[_CollectedChapter, StyleProfile]] = []
-    skipped = 0
     for chapter in collected:
         profile = compute_style_profile([chapter.content])
         if profile.total_chars == 0:
@@ -148,7 +152,9 @@ def compute_style_drift(db: DB, workspace_id: str) -> DriftReport:
     if len(analyzed) < 2:
         verdict = "need at least 2 chapters"
     elif drifted:
-        verdict = f"drift detected in {len(drifted)} chapters"
+        count = len(drifted)
+        word = "chapter" if count == 1 else "chapters"
+        verdict = f"drift detected in {count} {word}"
     else:
         verdict = "style stable"
 
@@ -161,8 +167,15 @@ def compute_style_drift(db: DB, workspace_id: str) -> DriftReport:
     )
 
 
-def _ordered_chapters(db: DB, workspace_id: str) -> list[_CollectedChapter]:
-    """Collect chapters in reading order (structure first, then drafts)."""
+def _ordered_chapters(
+    db: DB, workspace_id: str
+) -> tuple[list[_CollectedChapter], int]:
+    """Collect chapters in reading order (structure first, then drafts).
+
+    Returns ``(chapters, skipped)``. Structure chapter nodes whose draft id no
+    longer resolves to a draft (or current version) are skipped and counted in
+    ``skipped`` rather than aborting the report.
+    """
     nodes = list_structure(db, workspace_id)
     attached: list[tuple[str, str]] = []
     for node in nodes:
@@ -175,13 +188,22 @@ def _ordered_chapters(db: DB, workspace_id: str) -> list[_CollectedChapter]:
 
     if attached:
         chapters: list[_CollectedChapter] = []
+        skipped = 0
         for title, draft_id in attached:
-            draft = get_draft(db, workspace_id, draft_id)
-            version = get_draft_version(db, workspace_id, draft.id, draft.current_version)
+            try:
+                draft = get_draft(db, workspace_id, draft_id)
+                version = get_draft_version(
+                    db, workspace_id, draft.id, draft.current_version
+                )
+            except NovelError as exc:
+                if exc.code is not ErrorCode.NOT_FOUND:
+                    raise
+                skipped += 1
+                continue
             chapters.append(
                 _CollectedChapter(title=title, draft_id=draft.id, content=version.content)
             )
-        return chapters
+        return chapters, skipped
 
     drafts = sorted(list_drafts(db, workspace_id), key=lambda draft: (draft.created_at, draft.id))
     chapters = []
@@ -189,7 +211,7 @@ def _ordered_chapters(db: DB, workspace_id: str) -> list[_CollectedChapter]:
         version = get_draft_version(db, workspace_id, draft.id, draft.current_version)
         title = draft.title.strip() or UNTITLED_CHAPTER
         chapters.append(_CollectedChapter(title=title, draft_id=draft.id, content=version.content))
-    return chapters
+    return chapters, 0
 
 
 def _read_style_anchor(db: DB, workspace_id: str) -> tuple[str, str]:
@@ -203,6 +225,15 @@ def _read_style_anchor(db: DB, workspace_id: str) -> tuple[str, str]:
         if anchor is None:
             return "", ""
         return anchor.description, anchor.forbidden_words
+
+
+def read_forbidden_words(db: DB, workspace_id: str) -> list[str]:
+    """Read a workspace's forbidden words in split order (read-only).
+
+    A missing style anchor yields an empty list and is never created.
+    """
+    _, forbidden_raw = _read_style_anchor(db, workspace_id)
+    return _split_forbidden_words(forbidden_raw)
 
 
 def _split_forbidden_words(text: str) -> list[str]:

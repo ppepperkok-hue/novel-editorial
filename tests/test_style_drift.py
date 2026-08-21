@@ -142,6 +142,56 @@ def test_structure_order_is_parent_first_and_unattached_drafts_ignored(
     assert all(chapter.title != "游离草稿" for chapter in report.chapters)
 
 
+def test_dangling_structure_draft_is_skipped(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    first = _write_draft(
+        db, workspace_id, title="第一章 雨夜", content="雨夜归乡。", draft_id="d1"
+    )
+    second = _write_draft(
+        db, workspace_id, title="第二章 线索", content="线索浮现。", draft_id="d2"
+    )
+    volume = create_node(db, workspace_id, kind=KIND_VOLUME, title="第一卷")
+    create_node(
+        db,
+        workspace_id,
+        kind=KIND_CHAPTER,
+        title="悬空章",
+        parent_id=volume.id,
+        draft_id="ghost-draft",
+        sort_order=0,
+    )
+    create_node(
+        db,
+        workspace_id,
+        kind=KIND_CHAPTER,
+        title="第一章 雨夜",
+        parent_id=volume.id,
+        draft_id=first,
+        sort_order=1,
+    )
+    create_node(
+        db,
+        workspace_id,
+        kind=KIND_CHAPTER,
+        title="第二章 线索",
+        parent_id=volume.id,
+        draft_id=second,
+        sort_order=2,
+    )
+
+    report = compute_style_drift(db, workspace_id)
+
+    assert [chapter.title for chapter in report.chapters] == [
+        "第一章 雨夜",
+        "第二章 线索",
+    ]
+    assert report.skipped == 1
+    assert report.baseline_title == "第一章 雨夜"
+    assert report.drifted == []
+    assert report.verdict == "style stable"
+
+
 def test_fallback_orders_drafts_by_created_at_then_id(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -236,7 +286,7 @@ def test_boundary_50_is_drifted(tmp_path: Path, monkeypatch) -> None:
     assert second.drift_score == 50
     assert second.drifted is True
     assert report.drifted == [second]
-    assert report.verdict == "drift detected in 1 chapters"
+    assert report.verdict == "drift detected in 1 chapter"
 
 
 def test_no_style_keywords_excludes_dimension_and_renormalizes(
@@ -258,7 +308,7 @@ def test_no_style_keywords_excludes_dimension_and_renormalizes(
     # Four dimensions average 0.5 -> 50; the fifth style dimension would make it 49.
     assert report.chapters[1].drift_score == 50
     assert report.chapters[1].drifted is True
-    assert report.verdict == "drift detected in 1 chapters"
+    assert report.verdict == "drift detected in 1 chapter"
     with db.workspace_session(workspace_id) as session:
         assert session.query(StyleAnchor).filter_by(workspace_id=workspace_id).first() is None
 

@@ -8,6 +8,10 @@ from novel_editorial.core import proactive
 from novel_editorial.core.chat import get_workspace_or_raise
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.style import get_style_anchor, set_style_anchor
+from novel_editorial.core.style_drift import (
+    compute_style_drift,
+    read_forbidden_words,
+)
 from novel_editorial.core.style_learn import (
     build_suggested_description,
     collect_corpus_texts,
@@ -95,3 +99,53 @@ def style_learn(
             forbidden_words=anchor.forbidden_words,
         )
         typer.echo(f"style anchor updated: {workspace_id}")
+
+
+@style_app.command("drift")
+def style_drift(workspace_id: str = typer.Argument(..., help="Workspace id")) -> None:
+    """Show cross-chapter style drift for one workspace (read-only)."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    get_workspace_or_raise(db, workspace_id)
+    report = compute_style_drift(db, workspace_id)
+
+    if not report.chapters and report.skipped == 0:
+        typer.echo("no chapters")
+        return
+    if len(report.chapters) < 2:
+        typer.echo(f"chapters: {len(report.chapters)}")
+        typer.echo("drift: n/a (need at least 2 chapters)")
+        return
+
+    forbidden_words = read_forbidden_words(db, workspace_id)
+    typer.echo(f"chapters: {len(report.chapters)}")
+    if report.baseline_title:
+        typer.echo(f"baseline: {report.baseline_title}")
+    if report.skipped > 0:
+        typer.echo(f"skipped chapters: {report.skipped}")
+    for chapter in report.chapters:
+        parts = [
+            f"len {chapter.avg_sentence_len:.1f}",
+            f"short {chapter.short_sentence_ratio * 100:.1f}%",
+            f"mod {chapter.modifier_per_1000:.1f}",
+            f"ai {chapter.ai_words_per_1000:.1f}",
+        ]
+        if chapter.style_hits is not None:
+            parts.append(f"style {chapter.style_hits}/{chapter.style_total}")
+        typer.echo(
+            f"{chapter.index} {chapter.title}: {' / '.join(parts)} → drift {chapter.drift_score}"
+        )
+    trend = " / ".join(str(chapter.drift_score) for chapter in report.chapters)
+    typer.echo(f"drift trend: {trend}")
+    if report.drifted:
+        drifted = "、".join(
+            f"{chapter.title}（{chapter.drift_score}）" for chapter in report.drifted
+        )
+        typer.echo(f"drifted chapters: {drifted}")
+    for chapter in report.chapters:
+        if chapter.forbidden_hits <= 0:
+            continue
+        words = "、".join(forbidden_words)
+        typer.echo(f"forbidden hits: {chapter.title}: {chapter.forbidden_hits}（{words}）")
+    typer.echo(f"verdict: {report.verdict}")

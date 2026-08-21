@@ -80,6 +80,7 @@ pytest + ruff + pyright + 宪法校验。
 
 - `cli/style.py` 新增 `style drift <workspace_id>`：
   - 对齐 S1 verdict 单复数：`drift detected in 1 chapter`（N=1）与 `drift detected in N chapters`（N≥2），并同步修正 tests/test_style_drift.py 中 verdict 断言（允许触碰 core/style_drift.py 的 verdict 生成与 tests/test_style_drift.py）；
+  - 结构挂章的 draft_id 悬空（草稿不存在）时跳过该章并计入 `skipped`，不让单个坏节点炸掉整份报告（S1 独立审查 P3 意见；允许触碰 core/style_drift.py 的 `_ordered_chapters` 与 tests/test_style_drift.py）；
   - `skipped > 0` 时输出 `skipped chapters: N` 行（放在逐章行之前），提示存在未分析的章节；
   - 输出格式（字段名与单位固定）：
     ```text
