@@ -2,7 +2,7 @@
 
 ## 总览
 
-- **大阶段**：M7 质量深化扩展线（backlog 见 docs/project-plan/06-new-capability-backlog.md；N8/N9/N19 已收口，N20 为下一 P1 候选）。
+- **大阶段**：M7 质量深化扩展线（backlog 见 docs/project-plan/06-new-capability-backlog.md；N8/N9/N19/N20 已收口，N21 为下一 P1 候选）。
 - **N20 一句话**：给几段自己喜欢的文本，风格锚点从语料里长出来——风格描述不再靠抽象词。
 - **现状**：
   - 风格锚点（F14）：description（如「平实克制短句」）+ forbidden_words，`style set / style show` 已有；
@@ -64,7 +64,7 @@ pytest + ruff + pyright + 宪法校验。
 - `cli/style.py` 新增 `style learn <作品ID> <语料路径> [--apply]`：
   - 输出：`samples: N`、`avg sentence length: X 字`、`short sentence ratio: Y%`、`modifier per 1000 chars: Z`、AI 味词命中非空时 `ai words in corpus: A、B`（stderr 或 stdout 提示均可，选 stdout 更可断言）、`suggested description: <描述>`；
   - `--apply`：先打印 `apply: description = <描述>` → set_style_anchor(description=建议描述, forbidden_words=现有值不变) → 打印 `style anchor updated: <作品ID>`；无 `--apply` 绝不写；
-  - 退出码：空语料 / 路径不存在 → 既有映射（1 / 2）；作品不存在 1。
+  - 退出码：路径不存在 → NOT_FOUND → 退出码 1；空语料 / 无有效样本 → USAGE_ERROR → 退出码 2（与既有错误码映射一致）；作品不存在 1。
 - tests：端到端「短句低修饰语料 → 画像与建议 → --apply 写入 → style show 显示 → 重复 --apply 幂等 → 不 --apply 不写 → 空语料 2」；registry 的 style 组补 learn。
 
 ### 做到什么程度
@@ -113,4 +113,4 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 
 ## 状态
 
-- 立项（2026-08-21）：实施文档就绪，用户授权低价窗口内自主推进，拆包 S1。
+- 收口（2026-08-21）：S1–S3 全链完成；六份审查/复核报告归档 docs/reviews/20260821-M5N20*；966 测试全绿，smoke_m3 / stress_m3 通过。

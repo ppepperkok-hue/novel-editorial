@@ -192,6 +192,70 @@ uv run novel-editorial quality calibrate "$env:TEMP\novel-calibrate\corpus" --ap
 
 `--apply` 之后 `quality check` 即按新阈值判定（阈值优先级不变）。
 
+## 文风参考学习（N20）
+
+`style learn <作品ID> <语料路径> [--apply]` 从你喜欢的参考文本里算出风格画像，再给出一句可直接落地的建议描述。语料是目录（递归扫描）或单个文件，只认非隐藏的 `.txt` / `.md`；每个文件是一个样本，隐藏文件、空文件与只有纯标点 / 分隔符的文件跳过（复用 N9 校准的语料语义）。
+
+画像口径（确定性计算，相同语料重复运行输出一致）：
+
+- `samples: N`：有效样本数；
+- `avg sentence length: X 字`：平均句长，去空白字数 / 句数；
+- `short sentence ratio: Y%`：短句占比，≤ 15 字句子占全部句子的比例；
+- `modifier per 1000 chars: Z`：修饰词密度，修饰词命中数 / 千字；
+- `ai words in corpus: A、B`：AI 味词提示，命中才输出（顿号连接）。
+
+建议描述按三条规则各取一段，用逗号拼装（如 `短句，节奏快，修饰克制`）：
+
+- 句长：平均句长 ≤ 12 →「短句」；12–18 →「句子不长」；> 18 →「长句较多」；
+- 节奏：短句占比 ≥ 0.5 →「节奏快」；0.3–0.5 →「长短句相间」；< 0.3 →「句子舒展」；
+- 修饰：修饰密度 ≤ 5 / 千字 →「修饰克制」；> 5 →「修饰偏多」。
+
+`--apply` 才会写入：先打印 `apply: description = <建议描述>`，只更新风格锚点的 `description`（`forbidden_words` 原样保留），再打印 `style anchor updated: <作品ID>`；不加 `--apply` 绝不写任何数据。建议只是起点不是判决：作者随时可以用 `style set` 覆盖。
+
+退出码：作品不存在与语料路径不存在为业务错误（退出码 1）；空语料 / 无有效样本为用法错误（退出码 2）。
+
+红线：语料只读不落库——参考文本不写入 `data/`、不落事件、不触发创作留痕；AI 味词命中只是提示，不自动进入 `forbidden_words`。
+
+mock 下实跑示例（临时 `NOVEL_DATA_DIR` / `NOVEL_CONFIG`；语料目录含两份短句低修饰文本；`<corpus>` 为语料目录实际路径，每次运行不同，其余为真实输出）：
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-style-learn\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-style-learn\config.toml"
+```
+
+```bash
+uv run novel-editorial works create 风格学习之书 --genre 悬疑
+# created workspace <作品ID>: 风格学习之书
+```
+
+把两份参考文本放进 `<corpus>`（`a.txt` 与 `b.md`，内容分别为「他推门进来。她站着没动。月光洒落。」与「风停了。雨也停了。」）：
+
+```bash
+uv run novel-editorial style learn <作品ID> "<corpus>"
+# samples: 2
+# avg sentence length: 4.2 字
+# short sentence ratio: 100.0%
+# modifier per 1000 chars: 0.0
+# suggested description: 短句，节奏快，修饰克制
+```
+
+```bash
+uv run novel-editorial style learn <作品ID> "<corpus>" --apply
+# samples: 2
+# avg sentence length: 4.2 字
+# short sentence ratio: 100.0%
+# modifier per 1000 chars: 0.0
+# suggested description: 短句，节奏快，修饰克制
+# apply: description = 短句，节奏快，修饰克制
+# style anchor updated: <作品ID>
+
+uv run novel-editorial style show <作品ID>
+# description: 短句，节奏快，修饰克制
+# forbidden: (empty)
+```
+
+（`<作品ID>` 与 `<corpus>` 换成前面输出的真实值，每次运行不同；stderr 日志已省略，其余为 mock 下的真实输出。）
+
 ## 一致性自动核查（N19）
 
 `consistency check <草稿ID>` 把草稿最新版本正文与作品的设定库、开放伏笔做规则化对照，输出只读报告。核查只报告、不代笔：不自动改写正文、不自动退稿、不改变草稿状态、不落事件，相同输入重复执行结果一致。
