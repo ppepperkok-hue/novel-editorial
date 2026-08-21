@@ -69,6 +69,7 @@ pytest + ruff + pyright + 宪法校验。
   - `GET /works/{workspace_id}/style` → 风格锚点（description / forbidden_words，复用 `core.style.get_style_anchor`）；
   - `GET /works/{workspace_id}/structure` → 结构节点数组（id / kind / title / parent_id / sort_order / status / draft_id，复用 `core.structure.list_structure`）。
   - **确定性排序**（S1 独立审查 P3 意见）：`GET /works` 按 `created_at, id` 升序；`show_workspace` 的 band 按 `created_at, id` 升序——同一时钟刻度内创建多条记录时顺序也稳定。
+  - **style 路由只读口径**（S2 实现自查 + S3 复核项）：`GET /works/{id}/style` 不得调用会落库的 `get_style_anchor`；改为只读查询——锚缺失时返回 `{"description": "", "forbidden_words": ""}` 且不新建任何行（与 style_drift 的只读口径一致）。
 - `tests/test_api.py` 追加：各路由端到端 + 只读断言（events 数不变、不新增任何行）+ 作品不存在 404。
 
 ### 做到什么程度
