@@ -50,6 +50,9 @@ _GROUP_LOADERS: dict[str, Callable[[], typer.Typer]] = {
     "setting": lambda: _load_group("novel_editorial.cli.setting", "setting_app"),
     "structure": lambda: _load_group("novel_editorial.cli.structure", "structure_app"),
     "outline": lambda: _load_group("novel_editorial.cli.outline", "outline_app"),
+    "inspiration": lambda: _load_group(
+        "novel_editorial.cli.inspiration", "inspiration_app"
+    ),
     "events": lambda: _load_group("novel_editorial.cli.events", "events_app"),
 }
 

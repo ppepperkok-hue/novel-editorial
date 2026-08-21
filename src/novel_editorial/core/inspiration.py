@@ -29,8 +29,9 @@ def _record_event_safe(
             type=EventType.SYSTEM,
             actor="system",
             payload={
+                "kind": kind,
                 "inspiration_id": inspiration.id,
-                "kind": inspiration.kind,
+                "inspiration_kind": inspiration.kind,
             },
         )
     except Exception as exc:  # noqa: BLE001 - event recording is best-effort

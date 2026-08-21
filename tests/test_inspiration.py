@@ -291,8 +291,9 @@ def test_inspiration_event_flow_created_removed_and_read_only(
     assert len(events) == 1
     assert events[0].type == "system"
     assert json.loads(events[0].payload) == {
+        "kind": "inspiration_created",
         "inspiration_id": added.id,
-        "kind": "意象",
+        "inspiration_kind": "意象",
     }
 
     list_inspirations(db, workspace_id)
@@ -305,12 +306,14 @@ def test_inspiration_event_flow_created_removed_and_read_only(
     events = list_events(db, workspace_id)
     assert len(events) == 2
     assert json.loads(events[0].payload) == {
+        "kind": "inspiration_removed",
         "inspiration_id": added.id,
-        "kind": "意象",
+        "inspiration_kind": "意象",
     }
     assert json.loads(events[1].payload) == {
+        "kind": "inspiration_created",
         "inspiration_id": added.id,
-        "kind": "意象",
+        "inspiration_kind": "意象",
     }
 
 
