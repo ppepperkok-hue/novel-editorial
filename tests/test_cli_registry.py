@@ -19,7 +19,7 @@ SUBCOMMANDS = {
     "agents": ("add", "list", "show", "edit"),
     "behavior": ("timeline", "show"),
     "talk": ("send", "list", "delegate", "discuss"),
-    "style": ("set", "show"),
+    "style": ("set", "show", "learn"),
     "memory": (
         "pack",
         "view",
