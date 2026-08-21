@@ -2268,6 +2268,166 @@ curl http://127.0.0.1:8765/works/<作品ID>/events
 
 （`<作品ID>` 与 `<时间戳>` 换成实际输出，每次运行不同；stderr 日志已省略。PowerShell 用户可用 `Invoke-RestMethod` 等价调用。）
 
+## 导入导出与备份（N25）
+
+`works export <作品ID> <目标路径>` 把一部作品连同编辑部设置（班子、风格锚点、设定库、结构、草稿与版本、消息、事件流）打包成一个可校验的 ZIP；`works import <归档路径>` 把它恢复成一部全新作品。换设备、迁移、备份都走这两条命令。
+
+### 导出
+
+- 目标语义：目标已存在目录 → 在目录内生成 `novel-export-<作品ID>-<YYYYmmdd-HHMMSS>.zip`；目标不存在但父目录存在 → 当作文件路径直接写；父目录不存在 → 用法错误。
+- 目标文件已存在 → 拒绝覆盖（USAGE_ERROR，退出码 2），旧文件原样保留，由作者自行处理。
+- 成功输出 `exported: <路径>`。
+- 只读红线：导出不落事件、不改任何数据；源库用 SQLite backup API 取一致快照，导出期间即使源库有并发写入，得到的也是完整副本。
+- 原子落盘：先写同目录临时文件，全部成功后才改名到位；失败不留半成品。
+
+### 导入
+
+- 永远生成新 workspace id（uuid4 hex），绝不覆盖既有作品、绝不改写既有数据库文件；作者在 `works list` 能看到新作品。
+- 成功输出 `imported workspace <新ID>: <标题>`。
+- 流程：解包到临时目录 → 校验 → 复制 data.db 到新 id 目录 → 迁移到 schema head → 注册全局行 → 落一条 SYSTEM `workspace_imported` 事件（payload 含 source_id）；任一步失败清理临时目录与半成品。
+
+### ZIP 结构与校验
+
+ZIP 固定两个成员：`manifest.json` 与 `data.db`。manifest 内容示例（`<sha256>` 每次导出不同）：
+
+```json
+{
+  "format": "novel-editorial-workspace",
+  "version": 1,
+  "exported_at": "<时间戳>",
+  "workspace": {
+    "id": "<作品ID>",
+    "title": "归档之书",
+    "genre": "悬疑",
+    "description": "换设备也不丢",
+    "status": "writing",
+    "created_at": "<时间戳>"
+  },
+  "files": {
+    "data.db": "<sha256>"
+  }
+}
+```
+
+导入时逐项校验：manifest 存在且 `format` / `version` 正确；`data.db` 存在且 sha256 与 manifest 一致；`data.db` 是真实 SQLite（文件头 magic 命中后还会真实读 schema，只有 magic 前缀的垃圾文件不算）。任一不符拒绝导入（USAGE_ERROR，退出码 2），且不冒原始 sqlite3 异常。
+
+### 退出码
+
+- `works export` 作品不存在、`works import` 归档路径不存在 → 退出码 1（业务错误）。
+- 目标非法（文件已存在、父目录缺失）或校验失败（坏 ZIP、缺 manifest、版本不支持、sha256 不符、data.db 非 SQLite）→ 退出码 2（用法错误）。
+
+### mock 实跑示例
+
+mock 下（临时 `NOVEL_DATA_DIR` / `NOVEL_CONFIG`，无 API key）完整跑一遍「建作品 → 造数据 → export → 清空数据目录 → import → 验证」：
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-n25\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-n25\config.toml"
+Remove-Item Env:NOVEL_LLM_API_KEY, Env:NOVEL_LLM_BASE_URL, Env:NOVEL_LLM_MODEL -ErrorAction SilentlyContinue
+```
+
+```bash
+uv run novel-editorial works create 归档之书 --genre 悬疑 --description 换设备也不丢
+# created workspace <作品ID>: 归档之书
+
+uv run novel-editorial style set <作品ID> --description "冷峻、克制" --forbidden "宛如、仿佛"
+# style anchor updated: <作品ID>
+# 审稿: 风格锚点定了：「冷峻、克制」。我盯着设定看了一遍，开头那句跟「冷峻、克制」会不会打架？
+
+uv run novel-editorial setting add <作品ID> --kind 人物 --name 沈夜 --content 雨夜归乡的侦探
+# added <设定ID> [人物] 沈夜 v1
+
+uv run novel-editorial structure add <作品ID> 卷 第一卷
+# created <节点ID> volume 第一卷
+
+uv run novel-editorial structure add <作品ID> 章 第一章 --parent <节点ID>
+# created <节点ID> chapter 第一章
+
+uv run novel-editorial draft generate <作品ID> --title 第一章
+# draft <草稿ID> 第一章 now at v1
+# awaiting decision: <草稿ID>
+# 写手: 《第一章》初稿写完了，我按节奏收尾，先交给你过目。
+# 责编: 《第一章》过了质量门，我试读了开头「（模拟回复）」，节奏在线，建议作者拍板。
+
+uv run novel-editorial works export <作品ID> "$env:TEMP\novel-n25\bundle.zip"
+# exported: <目标路径>
+```
+
+ZIP 内容只有 `data.db` 与 `manifest.json` 两个成员。清空数据目录模拟换环境：
+
+```powershell
+Remove-Item -Recurse -Force "$env:TEMP\novel-n25\data"
+```
+
+```bash
+uv run novel-editorial works list
+# no workspaces yet
+
+uv run novel-editorial works import "$env:TEMP\novel-n25\bundle.zip"
+# imported workspace <新作品ID>: 归档之书
+
+uv run novel-editorial works list
+# <新作品ID>  归档之书  悬疑
+
+uv run novel-editorial works show <新作品ID>
+# id: <新作品ID>
+# title: 归档之书
+# 状态: 创作中
+# genre: 悬疑
+# description: 换设备也不丢
+# band:
+#   editor_in_chief: 总编
+#   editor: 责编
+#   writer: 写手
+#   reviewer: 审稿
+# 结构：
+# [卷] 第一卷（<节点ID>）
+#   [章] 第一章（<节点ID>）
+
+uv run novel-editorial style show <新作品ID>
+# description: 冷峻、克制
+# forbidden: 宛如、仿佛
+
+uv run novel-editorial events list <新作品ID>
+# <时间戳> [system] system {"kind": "workspace_imported", "source_id": "<源作品ID>"}
+# <时间戳> [agent.message] 责编 {"initiator": "agent", "kind": "proactive_review", "trigger": "draft_gate_passed...
+# ...（其余事件沿用导出内容）
+
+uv run novel-editorial log <新作品ID>
+# 作品：《归档之书》（悬疑）
+#
+# == 对话 ==
+# [agent] 审稿: 风格锚点定了：「冷峻、克制」。我盯着设定看了一遍，开头那句跟「冷峻、克制」会不会打架？
+# [agent] 写手: 《第一章》初稿写完了，我按节奏收尾，先交给你过目。
+# [agent] 责编: 《第一章》过了质量门，我试读了开头「（模拟回复）」，节奏在线，建议作者拍板。
+#
+# == 草稿 ==
+# 第一章 (draft, v1)
+#   v1 [initial]: （模拟回复）
+```
+
+失败路径（退出码验证，Error 行与退出码均为真实输出）：
+
+```bash
+uv run novel-editorial works export <作品ID> <已存在文件>
+# Error: export target exists: <路径>（退出码 2）
+
+uv run novel-editorial works export 不存在的作品 <目标路径>
+# Error: workspace not found: 不存在的作品（退出码 1）
+
+uv run novel-editorial works import <不存在的归档>
+# Error: archive not found: <路径>（退出码 1）
+
+uv run novel-editorial works import <坏归档>
+# Error: invalid archive: File is not a zip file（退出码 2）
+
+# 文件头是 "SQLite format 3\0"、其余是垃圾的 data.db（manifest sha256 已自洽）：
+uv run novel-editorial works import <伪SQLite归档>
+# Error: invalid archive: data.db is not a SQLite database（退出码 2）
+```
+
+（`<作品ID>`、`<新作品ID>`、`<设定ID>`、`<节点ID>`、`<草稿ID>`、`<时间戳>`、`<路径>` 与 `<sha256>` 换成实际输出，每次运行不同；stderr 日志已省略，其余为 mock 下的真实输出。）
+
 ## 退出码
 
 | 退出码 | 含义 |

@@ -46,17 +46,24 @@ def _sha256(path: Path) -> str:
 
 
 def _is_sqlite_database(path: Path) -> bool:
-    """True when ``path`` is a real SQLite database (header magic or probe)."""
+    """True only when ``path`` is a real SQLite database (schema readable).
+
+    The header magic is a necessary hint for non-empty files but never
+    sufficient on its own: a file with a ``SQLite format 3\\x00`` prefix and
+    garbage pages must still be rejected, so validity is decided by a real
+    schema read (``SELECT count(*) FROM sqlite_master``).
+    """
     try:
         with path.open("rb") as fh:
-            if fh.read(len(_SQLITE_HEADER_MAGIC)) == _SQLITE_HEADER_MAGIC:
-                return True
+            header = fh.read(len(_SQLITE_HEADER_MAGIC))
     except OSError:
+        return False
+    if header != _SQLITE_HEADER_MAGIC and path.stat().st_size > 0:
         return False
     try:
         conn = sqlite3.connect(path)
         try:
-            conn.execute("PRAGMA schema_version").fetchone()
+            conn.execute("SELECT count(*) FROM sqlite_master").fetchone()
         finally:
             # sqlite3 connection context managers only manage transactions,
             # not close; close explicitly so no handle outlives the probe.
