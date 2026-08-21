@@ -23,9 +23,10 @@ SHORT_SENTENCE_LIMIT = 15
 # Whitespace plus common Chinese/ASCII punctuation and separator glyphs:
 # commas, full stops, question/exclamation marks, semicolons/colons, ellipsis,
 # quotes and brackets, dashes, tildes, asterisks, slashes, bars, underscores,
-# hashes and similar typographic separators.
+# hashes, novel-section separator glyphs (※ ◆ ◇ ☆ ★ □ ■ ◎ ・ ‥ ⋯) and the
+# ASCII full stop.
 _PUNCT_ONLY_RE = re.compile(
-    r"[\s，,、。！？；…!?;：:·―—–～~*＊/\\|《》〈〉「」『』“”‘’（）()【】\[\]{}<>_#'\"-]+"
+    r"[\s，,、。！？；…!?;：:·―—–～~*＊/\\|《》〈〉「」『』“”‘’（）()【】\[\]{}<>_#'\"※◆◇☆★□■◎・‥⋯.-]+"
 )
 
 
