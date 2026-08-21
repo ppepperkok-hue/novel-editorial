@@ -57,7 +57,7 @@ pytest + ruff + pyright + 宪法校验。
 ### 做什么
 
 - `cli/inspiration.py`（`cli/app.py` 注册 inspiration 组）：
-  - `inspiration add <作品ID> <内容> [--kind 灵感] [--source ""]` → `added <灵感ID> [<kind>] <内容>`；
+  - `inspiration add <作品ID> --content <内容> [--kind 灵感] [--source ""]` → `added <灵感ID> [<kind>] <内容>`（内容走选项，避免 `-` 开头文本被 Click 误判为选项，与 `setting add` 惯例一致）；
   - `inspiration list <作品ID> [--kind] [--keyword]` → 每行 `<灵感ID> [<kind>] <内容>`；空态 `no inspirations`；
   - `inspiration show <作品ID> <灵感ID>` → `kind:` / `content:` / `source:`（source 空显示 `(empty)`）；
   - `inspiration remove <作品ID> <灵感ID>` → `removed <灵感ID> [<kind>]`；
@@ -84,6 +84,9 @@ pytest（新增用例）+ smoke_m3 + stress_m3 + ruff + pyright + 宪法。
 
 ### 做什么
 
+- 修复 S2 独立审查两个 P3（允许触碰 cli/inspiration.py 与 tests/test_inspiration_cli.py）：
+  - `inspiration add` 的 content 从位置参数改为 `--content` 选项（`- 破折号` 等文本可正常存入）；
+  - `tests/test_inspiration_cli.py` 的 `_create_workspace` 改用正则解析作品 id（与 test_cli_registry 一致），不再依赖 `split()[2]`。
 - usage.md 增「灵感素材库（N15）」小节（放在「作品设定库（N5）」小节附近）：四条命令、kind 开放标签语义、检索口径、只读 / 事件红线、mock 实跑示例。
 - 全量回归 + 独立审查 + 归档 docs/reviews/（20260822-M5N15S1 / S2 / S3 链）。
 
