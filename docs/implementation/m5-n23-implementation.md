@@ -14,7 +14,7 @@
 1. **反馈只读除非 --apply**：`quality feedback` 默认只报告；仅 `--apply` 写 config（复用 `set_quality_threshold`，幂等）。
 2. **不落库不落事件**：批注不写数据库、不落事件、不触发 proactive——反馈是校准输入，不是作品数据。
 3. **口径可复现**：分数复用 `check_quality`；分位数与建议阈值复用 N9 语义（nearest-rank、p90 向上取整、最低 1）；相同输入重复执行输出一致。
-4. **标注是参考不是判决**：建议阈值与一致率只是报告，作者保留最终阈值；坏样本建议阈值以「坏样本 p90」为准，无坏样本时不建议、`--apply` 拒绝。
+4. **标注是参考不是判决**：建议阈值与一致率只是报告，作者保留最终阈值；建议阈值 = 在候选阈值（全部样本分数值集合 ∪ 当前阈值）上最大化标注一致率的阈值，并列时取更高阈值（更保守），无 bad 样本时不建议、`--apply` 拒绝。
 5. **多行文本支持**：标注文件用 JSONL（每行一条 `{"label": "bad"|"good", "text": "..."}`，text 可含换行），格式错误逐条指出（USAGE_ERROR）。
 
 ## 地基影响评估（先评估再动工）
@@ -32,7 +32,7 @@
   - `@dataclass(frozen=True) FeedbackSample`：label（"bad" / "good"）、text、line（源文件行号，便于报错）。
   - `load_feedback_samples(path) -> list[FeedbackSample]`：JSONL 解析；路径不存在 → NOT_FOUND；逐行校验（合法 JSON、label ∈ {bad, good}、text 去空白非空），任一不符 → USAGE_ERROR（消息含行号）；空文件 / 无有效样本 → USAGE_ERROR。
   - `@dataclass(frozen=True) FeedbackReport`：samples / bad_count / good_count / bad_stats（min、median、p90、max）/ good_stats / threshold_used / agreement（当前阈值一致率）/ suggested_threshold（int | None）/ suggested_agreement（float | None）。
-  - `analyze_feedback(samples, threshold) -> FeedbackReport`：逐样本 `check_quality(text).score`；bad 判为 score > threshold；一致率 = 标注与门判定相符比例；bad 样本 p90 向上取整、最低 1 得建议阈值；无 bad 样本时 suggested_threshold / suggested_agreement 为 None；分位口径与 N9 一致（nearest-rank）。
+  - `analyze_feedback(samples, threshold) -> FeedbackReport`：逐样本 `check_quality(text).score`；bad 判为 score > threshold；一致率 = 标注与门判定相符比例；**建议阈值 = 候选阈值（全部样本分数值集合 ∪ 当前阈值）上一致率最高的阈值，并列时取更高阈值（更保守）**；无 bad 样本时 suggested_threshold / suggested_agreement 为 None；分位口径与 N9 一致（nearest-rank）。
 - tests（`tests/test_feedback.py`）：JSONL 解析（含多行文本、空行跳过？定义：空行跳过，行首尾空白容忍）/ 坏标签 / 坏 JSON / 空文本 / 路径不存在 / 空文件；分析（bad/good 分位、一致率、建议阈值、无 bad 样本 None、阈值边界）、确定性、只读（不写库不落事件）。
 
 ### 做到什么程度
