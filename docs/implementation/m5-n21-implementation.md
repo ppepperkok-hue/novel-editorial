@@ -149,4 +149,4 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 
 ## 状态
 
-- 推进中（2026-08-21）：S1（1f34921）、S2（7d8e4db）已提交并推送远端；S1/S2 独立审查报告归档 docs/reviews/20260821-M5N21S1-initial.md / 20260821-M5N21S2-initial.md；S2 审查 P3（n/a 分支 skipped 提示）列入 S3 修复包；S3 待 18:00 低价窗口执行。
+- 收口（2026-08-21）：S1（1f34921）、S2（7d8e4db）、S3（10e4bbb，含 S2 审查 P3 修复）全部完成并独立审查收敛；全量 993 测试、smoke_m3、stress_m3 全绿；审查链归档 docs/reviews/20260821-M5N21S1-initial.md / 20260821-M5N21S2-initial.md / 20260821-M5N21S3.md。N21 正式收口。
