@@ -135,10 +135,12 @@ def analyze_feedback(samples: list[FeedbackSample], threshold: int) -> FeedbackR
 
     A sample is gate-bad when score > threshold; agreement is the fraction of
     samples whose annotation matches the gate verdict. When bad samples exist,
-    suggested_threshold = max(1, ceil(p90 of bad scores)) using calibration's
-    nearest-rank p90, and suggested_agreement is the agreement at that
-    threshold; without bad samples both are None. Empty input yields a report
-    with empty stats, 0.0 agreement and no suggestion.
+    the suggested threshold maximizes agreement over the candidate set of all
+    sample scores plus the current threshold; ties are broken toward the higher
+    threshold (more conservative). suggested_agreement is the agreement at that
+    threshold; without bad samples both are None, because there is no evidence
+    for raising the gate. Empty input yields a report with empty stats, 0.0
+    agreement and no suggestion.
     """
     scored = [(sample, check_quality(sample.text).score) for sample in samples]
     if not scored:
@@ -160,7 +162,7 @@ def analyze_feedback(samples: list[FeedbackSample], threshold: int) -> FeedbackR
     good_stats = _stats(good_scores)
     total = len(scored)
 
-    def agreement_at(gate_threshold: int) -> float:
+    def agreement_at(gate_threshold: int | float) -> float:
         return (
             sum(
                 1
@@ -174,7 +176,12 @@ def analyze_feedback(samples: list[FeedbackSample], threshold: int) -> FeedbackR
     suggested_threshold: int | None = None
     suggested_agreement: float | None = None
     if bad_scores:
-        suggested_threshold = max(1, math.ceil(bad_stats[2]))
+        candidates = sorted({score for _, score in scored} | {float(threshold)})
+        best = max(
+            candidates,
+            key=lambda candidate: (agreement_at(candidate), candidate),
+        )
+        suggested_threshold = int(best)
         suggested_agreement = agreement_at(suggested_threshold)
 
     return FeedbackReport(

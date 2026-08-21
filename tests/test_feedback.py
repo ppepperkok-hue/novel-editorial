@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -24,11 +25,49 @@ AI_SINGLE_TEXT = "她不禁莞尔。"
 REPEATED_ENDINGS_TEXT = "他走进院子。她走进院子。大家走进院子。"
 AI_TWO_TEXT = "她不禁莞尔，仿佛在笑。"
 AI_TEXT = "他静静地站着，缓缓转身，月光宛如薄纱，悄然洒落。她走进院子。他走进院子。"
+SCORE_10_TEXTS = [
+    "她不禁莞尔。她不禁莞尔。",
+    "他仿佛笑了。他仿佛笑了。",
+    "她悄然离开。她悄然离开。",
+    "月光宛如纱。月光宛如纱。",
+    "她瞬间回头。她瞬间回头。",
+    "他深邃凝望。他深邃凝望。",
+]
+SCORE_14_TEXT = "她不禁莞尔。她不禁莞尔。她不禁莞尔。"
+SCORE_9_TEXT = "她不禁莞尔，静静站着。"
 
 
 def _write_feedback(tmp_path: Path, name: str, content: str) -> Path:
     path = tmp_path / name
     path.write_text(content, encoding="utf-8")
+    return path
+
+
+def _invoke(tmp_path: Path, monkeypatch, *args: str):
+    monkeypatch.setenv("NOVEL_CONFIG", str(tmp_path / "config.toml"))
+    return runner.invoke(app, list(args))
+
+
+def _write_cli_feedback(tmp_path: Path) -> Path:
+    """Write a 12-line JSONL that reproduces the documented CLI example shape:
+
+    threshold 8 agrees 10/12, the best agreement is 11/12 shared by t=6 and
+    t=9, and the tie-break picks the higher suggested threshold 9.
+    """
+    lines = [
+        {"label": "bad", "text": REPEATED_ENDINGS_TEXT},
+        *({"label": "bad", "text": text} for text in SCORE_10_TEXTS),
+        {"label": "bad", "text": SCORE_14_TEXT},
+        {"label": "good", "text": CLEAN_TEXT},
+        {"label": "good", "text": MODIFIER_TEXT},
+        {"label": "good", "text": AI_SINGLE_TEXT},
+        {"label": "good", "text": SCORE_9_TEXT},
+    ]
+    path = tmp_path / "feedback.jsonl"
+    path.write_text(
+        "".join(json.dumps(line, ensure_ascii=False) + "\n" for line in lines),
+        encoding="utf-8",
+    )
     return path
 
 
@@ -193,8 +232,8 @@ def test_analyze_feedback_reports_stats_agreement_and_suggestion() -> None:
     assert report.good_stats == (0.0, 3.0, 6.0, 6.0)
     assert report.threshold_used == 8
     assert report.agreement == pytest.approx(5 / 6)
-    assert report.suggested_threshold == 22
-    assert report.suggested_agreement == pytest.approx(3 / 6)
+    assert report.suggested_threshold == 6
+    assert report.suggested_agreement == pytest.approx(1.0)
 
 
 def test_analyze_feedback_uses_gate_boundary_score_above_threshold_is_bad() -> None:
@@ -209,7 +248,8 @@ def test_analyze_feedback_uses_gate_boundary_score_above_threshold_is_bad() -> N
     assert report.threshold_used == 8
     assert report.agreement == pytest.approx(2 / 3)
     assert report.bad_stats == (8.0, 10.0, 12.0, 12.0)
-    assert report.suggested_threshold == 12
+    assert report.suggested_threshold == 0
+    assert report.suggested_agreement == pytest.approx(1.0)
 
 
 def test_analyze_feedback_no_bad_samples_yields_none_suggestion() -> None:
@@ -243,7 +283,8 @@ def test_analyze_feedback_no_good_samples_yields_empty_good_stats() -> None:
     assert report.bad_stats == (0.0, 3.0, 6.0, 6.0)
     assert report.good_stats == ()
     assert report.agreement == pytest.approx(0.0)
-    assert report.suggested_threshold == 6
+    assert report.suggested_threshold == 0
+    assert report.suggested_agreement == pytest.approx(0.5)
 
 
 def test_analyze_feedback_nearest_rank_p90_below_max() -> None:
@@ -257,10 +298,11 @@ def test_analyze_feedback_nearest_rank_p90_below_max() -> None:
 
     assert report.bad_count == 11
     assert report.bad_stats == (6.0, 6.0, 6.0, 22.0)
-    assert report.suggested_threshold == 6
+    assert report.suggested_threshold == 8
+    assert report.suggested_agreement == pytest.approx(1 / 11)
 
 
-def test_analyze_feedback_suggested_threshold_floors_at_one() -> None:
+def test_analyze_feedback_flat_agreement_breaks_tie_to_higher_threshold() -> None:
     samples = [
         FeedbackSample(label="bad", text=CLEAN_TEXT, line=line)
         for line in range(1, 4)
@@ -269,7 +311,7 @@ def test_analyze_feedback_suggested_threshold_floors_at_one() -> None:
     report = analyze_feedback(samples, threshold=8)
 
     assert report.bad_stats == (0.0, 0.0, 0.0, 0.0)
-    assert report.suggested_threshold == 1
+    assert report.suggested_threshold == 8
     assert report.suggested_agreement == pytest.approx(0.0)
 
 
@@ -304,7 +346,50 @@ def test_analyze_feedback_scores_match_check_quality(tmp_path: Path) -> None:
     assert check_quality(CLEAN_TEXT).score == 0.0
     assert report.bad_count == 1
     assert report.good_count == 1
-    assert report.suggested_threshold == 22
+    assert report.suggested_threshold == 8
+    assert report.suggested_agreement == pytest.approx(1.0)
+
+
+def test_analyze_feedback_tie_breaks_to_higher_suggested_threshold() -> None:
+    samples = [
+        FeedbackSample(label="bad", text=AI_TEXT, line=1),
+        FeedbackSample(label="good", text=CLEAN_TEXT, line=2),
+        FeedbackSample(label="good", text=MODIFIER_TEXT, line=3),
+        FeedbackSample(label="good", text=AI_SINGLE_TEXT, line=4),
+    ]
+
+    report = analyze_feedback(samples, threshold=8)
+
+    # t=6 and t=8 both reach 4/4 agreement; the higher (more conservative)
+    # threshold wins even though the maximum sample score is 22.
+    assert report.suggested_threshold == 8
+    assert report.suggested_agreement == pytest.approx(1.0)
+
+
+def test_analyze_feedback_suggestion_blocks_most_bad_samples() -> None:
+    samples = [
+        FeedbackSample(label="bad", text=AI_TWO_TEXT, line=1),
+        FeedbackSample(label="bad", text=AI_TEXT, line=2),
+        FeedbackSample(label="good", text=CLEAN_TEXT, line=3),
+        FeedbackSample(label="good", text=MODIFIER_TEXT, line=4),
+        FeedbackSample(label="good", text=AI_SINGLE_TEXT, line=5),
+    ]
+
+    report = analyze_feedback(samples, threshold=8)
+
+    assert report.suggested_threshold == 8
+    blocked_bad = sum(
+        check_quality(sample.text).score > report.suggested_threshold
+        for sample in samples
+        if sample.label == "bad"
+    )
+    passed_good = sum(
+        check_quality(sample.text).score <= report.suggested_threshold
+        for sample in samples
+        if sample.label == "good"
+    )
+    assert blocked_bad == 2  # 多数 bad 被拦住
+    assert passed_good == 3  # good 全部放行
 
 
 def test_load_and_analyze_are_deterministic(tmp_path: Path) -> None:
@@ -354,3 +439,133 @@ def test_load_and_analyze_are_read_only(tmp_path: Path, monkeypatch) -> None:
         events_after = session.query(Event).count()
     assert events_after == events_before
     assert list_workspace_ids(settings) == [workspace_id]
+
+
+def test_quality_feedback_registered_and_documented() -> None:
+    result = runner.invoke(app, ["quality", "feedback", "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "feedback" in result.output
+    assert "--apply" in result.output
+
+
+def test_quality_feedback_reports_fields_and_suggestion(
+    tmp_path: Path, monkeypatch
+) -> None:
+    assert check_quality(REPEATED_ENDINGS_TEXT).score == 8.0
+    assert check_quality(SCORE_10_TEXTS[0]).score == 10.0
+    assert check_quality(SCORE_14_TEXT).score == 14.0
+    assert check_quality(SCORE_9_TEXT).score == 9.0
+    path = _write_cli_feedback(tmp_path)
+
+    result = _invoke(tmp_path, monkeypatch, "quality", "feedback", str(path))
+
+    assert result.exit_code == 0, result.output
+    assert "samples: 12" in result.output
+    assert "bad: 8 / good: 4" in result.output
+    assert "bad scores: min 8 median 10 p90 14 max 14" in result.output
+    assert "good scores: min 0 median 4.5 p90 9 max 9" in result.output
+    assert "agreement at threshold 8: 83.3% (10/12)" in result.output
+    assert "suggested threshold: 9" in result.output
+    assert "agreement at suggested: 91.7% (11/12)" in result.output
+
+
+def test_quality_feedback_apply_writes_config(tmp_path: Path, monkeypatch) -> None:
+    config_path = tmp_path / "config.toml"
+    path = _write_cli_feedback(tmp_path)
+
+    result = _invoke(
+        tmp_path, monkeypatch, "quality", "feedback", str(path), "--apply"
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "apply: quality_threshold = 9" in result.output
+    assert f"config updated: {config_path}" in result.output
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.quality_threshold == 9
+
+
+def test_quality_feedback_apply_is_idempotent(tmp_path: Path, monkeypatch) -> None:
+    config_path = tmp_path / "config.toml"
+    path = _write_cli_feedback(tmp_path)
+
+    first = _invoke(
+        tmp_path, monkeypatch, "quality", "feedback", str(path), "--apply"
+    )
+    assert first.exit_code == 0, first.output
+    content_after_first = config_path.read_text(encoding="utf-8")
+
+    second = _invoke(
+        tmp_path, monkeypatch, "quality", "feedback", str(path), "--apply"
+    )
+
+    assert second.exit_code == 0, second.output
+    assert config_path.read_text(encoding="utf-8") == content_after_first
+
+
+def test_quality_feedback_without_apply_never_writes_config(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config_path = tmp_path / "config.toml"
+    path = _write_cli_feedback(tmp_path)
+
+    result = _invoke(tmp_path, monkeypatch, "quality", "feedback", str(path))
+
+    assert result.exit_code == 0, result.output
+    assert not config_path.exists()
+
+
+def test_quality_feedback_no_bad_samples_reports_na(
+    tmp_path: Path, monkeypatch
+) -> None:
+    path = _write_feedback(
+        tmp_path,
+        "good-only.jsonl",
+        f'{{"label": "good", "text": "{CLEAN_TEXT}"}}\n'
+        f'{{"label": "good", "text": "{MODIFIER_TEXT}"}}\n',
+    )
+
+    result = _invoke(tmp_path, monkeypatch, "quality", "feedback", str(path))
+
+    assert result.exit_code == 0, result.output
+    assert "bad: 0 / good: 2" in result.output
+    assert "bad scores: n/a" in result.output
+    assert "suggested threshold: n/a (no bad samples)" in result.output
+    assert "agreement at suggested" not in result.output
+
+
+def test_quality_feedback_apply_without_bad_exits_2(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config_path = tmp_path / "config.toml"
+    path = _write_feedback(
+        tmp_path,
+        "good-only.jsonl",
+        f'{{"label": "good", "text": "{CLEAN_TEXT}"}}\n',
+    )
+
+    result = _invoke(
+        tmp_path, monkeypatch, "quality", "feedback", str(path), "--apply"
+    )
+
+    assert result.exit_code == 2
+    assert "no bad samples" in result.output
+    assert not config_path.exists()
+
+
+def test_quality_feedback_missing_path_exits_1(tmp_path: Path, monkeypatch) -> None:
+    result = _invoke(
+        tmp_path, monkeypatch, "quality", "feedback", str(tmp_path / "nope.jsonl")
+    )
+
+    assert result.exit_code == 1
+    assert "not found" in result.output
+
+
+def test_quality_feedback_bad_jsonl_exits_2(tmp_path: Path, monkeypatch) -> None:
+    path = _write_feedback(tmp_path, "bad.jsonl", '{"label": "good", "text": 42}\n')
+
+    result = _invoke(tmp_path, monkeypatch, "quality", "feedback", str(path))
+
+    assert result.exit_code == 2
+    assert "line 1" in result.output
