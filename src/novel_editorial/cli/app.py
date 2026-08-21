@@ -32,6 +32,7 @@ def _load_group(module_name: str, attribute: str) -> typer.Typer:
 
 
 _GROUP_LOADERS: dict[str, Callable[[], typer.Typer]] = {
+    "api": lambda: _load_group("novel_editorial.cli.api", "api_app"),
     "works": lambda: _load_group("novel_editorial.cli.works", "works_app"),
     "agents": lambda: _load_group("novel_editorial.cli.agents", "agents_app"),
     "behavior": lambda: _load_group("novel_editorial.cli.behavior", "behavior_app"),

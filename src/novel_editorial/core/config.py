@@ -73,6 +73,8 @@ class Settings:
     embedding_model: str = ""
     embedding_dim: int = 256
     embedding_top_k: int = 5
+    api_host: str = "127.0.0.1"
+    api_port: int = 8765
     defaults: dict = field(default_factory=dict)
 
 
@@ -173,6 +175,17 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         min_value=1,
         max_value=50,
     )
+    api_host = str(env.get("NOVEL_API_HOST", defaults.get("api_host", "127.0.0.1")))
+    api_port = _load_int_setting(
+        env,
+        defaults,
+        env_key="NOVEL_API_PORT",
+        toml_key="api_port",
+        fallback=8765,
+        label="api port",
+        min_value=1,
+        max_value=65535,
+    )
     return Settings(
         data_dir=data_dir,
         config_path=config_path,
@@ -190,6 +203,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         embedding_model=embedding_model,
         embedding_dim=embedding_dim,
         embedding_top_k=embedding_top_k,
+        api_host=api_host,
+        api_port=api_port,
         defaults=defaults,
     )
 

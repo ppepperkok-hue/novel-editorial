@@ -9,6 +9,8 @@ dependencies = [
   "sqlalchemy>=2.0",
   "alembic>=1.13",
   "openai>=3.0.0",
+  "fastapi>=0.141.1",
+  "uvicorn>=0.52.4",
 ]
 
 [project.scripts]
@@ -22,6 +24,7 @@ dev = [
   "pyright>=1.1.370",
   "pytest-cov>=7.1.0",
   "pytest-xdist>=3.6",
+  "httpx>=0.28.1",
 ]
 
 [build-system]

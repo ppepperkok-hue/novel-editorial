@@ -414,6 +414,96 @@ def test_embedding_dim_bounds_are_inclusive(tmp_path: Path) -> None:
     assert settings.embedding_top_k == 50
 
 
+def test_api_config_defaults() -> None:
+    settings = load_settings({})
+    assert settings.api_host == "127.0.0.1"
+    assert settings.api_port == 8765
+
+
+def test_api_config_env_overrides(tmp_path: Path) -> None:
+    settings = load_settings(
+        {
+            "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+            "NOVEL_API_HOST": "0.0.0.0",
+            "NOVEL_API_PORT": "9000",
+        }
+    )
+    assert settings.api_host == "0.0.0.0"
+    assert settings.api_port == 9000
+
+
+def test_api_config_toml_overrides(tmp_path: Path) -> None:
+    (tmp_path / "config.toml").write_text(
+        "[defaults]\n"
+        'api_host = "0.0.0.0"\n'
+        "api_port = 9001\n",
+        encoding="utf-8",
+    )
+    settings = load_settings({"NOVEL_CONFIG": str(tmp_path / "config.toml")})
+    assert settings.api_host == "0.0.0.0"
+    assert settings.api_port == 9001
+
+
+def test_api_config_env_beats_toml(tmp_path: Path) -> None:
+    (tmp_path / "config.toml").write_text(
+        "[defaults]\n"
+        'api_host = "0.0.0.0"\n'
+        "api_port = 9001\n",
+        encoding="utf-8",
+    )
+    settings = load_settings(
+        {
+            "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+            "NOVEL_API_HOST": "127.0.0.1",
+            "NOVEL_API_PORT": "8766",
+        }
+    )
+    assert settings.api_host == "127.0.0.1"
+    assert settings.api_port == 8766
+
+
+@pytest.mark.parametrize("port", ["high", "0", "-1", "65536"])
+def test_invalid_api_port_env_reports_config_error(
+    tmp_path: Path, port: str
+) -> None:
+    with pytest.raises(NovelError) as info:
+        load_settings(
+            {
+                "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+                "NOVEL_API_PORT": port,
+            }
+        )
+    assert info.value.code is ErrorCode.CONFIG_ERROR
+
+
+def test_invalid_api_port_toml_reports_config_error(tmp_path: Path) -> None:
+    (tmp_path / "config.toml").write_text(
+        "[defaults]\napi_port = 0\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(NovelError) as info:
+        load_settings({"NOVEL_CONFIG": str(tmp_path / "config.toml")})
+    assert info.value.code is ErrorCode.CONFIG_ERROR
+
+
+def test_api_port_bounds_are_inclusive(tmp_path: Path) -> None:
+    settings = load_settings(
+        {
+            "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+            "NOVEL_API_PORT": "1",
+        }
+    )
+    assert settings.api_port == 1
+
+    settings = load_settings(
+        {
+            "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+            "NOVEL_API_PORT": "65535",
+        }
+    )
+    assert settings.api_port == 65535
+
+
 def test_set_quality_threshold_creates_missing_file(tmp_path: Path) -> None:
     config_path = tmp_path / "config.toml"
 
