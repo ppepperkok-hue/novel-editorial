@@ -231,6 +231,59 @@ def test_style_drift_cli_all_blank_chapters_are_n_a(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert result.output.splitlines() == [
         "chapters: 0",
+        "skipped chapters: 2",
+        "drift: n/a (need at least 2 chapters)",
+    ]
+
+
+def test_style_drift_cli_skipped_shown_before_n_a_with_one_valid_chapter(
+    tmp_path: Path,
+) -> None:
+    workspace_id = _create_workspace(tmp_path)
+    db = _db()
+    first = _write_draft(
+        db, workspace_id, title="第一章 雨夜", content="雨夜归乡。", draft_id="d1"
+    )
+    _attach_chapters(
+        db,
+        workspace_id,
+        titles=["第一章 雨夜", "悬空章"],
+        draft_ids=[first, "ghost-draft"],
+        sort_orders=[0, 1],
+    )
+
+    result = runner.invoke(app, ["style", "drift", workspace_id])
+
+    assert result.exit_code == 0, result.output
+    assert result.output.splitlines() == [
+        "chapters: 1",
+        "skipped chapters: 1",
+        "drift: n/a (need at least 2 chapters)",
+    ]
+
+
+def test_style_drift_cli_skipped_shown_in_n_a_when_nothing_analyzable(
+    tmp_path: Path,
+) -> None:
+    workspace_id = _create_workspace(tmp_path)
+    db = _db()
+    blank = _write_draft(
+        db, workspace_id, title="空章", content="   ", draft_id="d1"
+    )
+    _attach_chapters(
+        db,
+        workspace_id,
+        titles=["悬空章", "空章"],
+        draft_ids=["ghost-draft", blank],
+        sort_orders=[0, 1],
+    )
+
+    result = runner.invoke(app, ["style", "drift", workspace_id])
+
+    assert result.exit_code == 0, result.output
+    assert result.output.splitlines() == [
+        "chapters: 0",
+        "skipped chapters: 2",
         "drift: n/a (need at least 2 chapters)",
     ]
 

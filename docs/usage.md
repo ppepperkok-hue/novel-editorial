@@ -256,6 +256,139 @@ uv run novel-editorial style show <作品ID>
 
 （`<作品ID>` 与 `<corpus>` 换成前面输出的真实值，每次运行不同；stderr 日志已省略，其余为 mock 下的真实输出。）
 
+## 文风漂移检测（N21）
+
+`style drift <作品ID>` 把全书章节按阅读顺序逐章画像，以第一个可分析章节为基线，算出每章相对基线的漂移分与全书趋势，一眼看出后半本有没有悄悄变味。命令是纯只读报告：不改草稿、不落事件、不触发伙伴发言，不调 LLM；同一库同一时刻重复运行输出一致。
+
+### 章节序列与基线
+
+- 排序：结构树里有挂章（`kind == chapter` 且 `draft_id` 非空）时，按结构顺序取这些节点（同级按 `sort_order` / `created_at` / `id` 稳定排序），未挂章的草稿忽略；没有结构挂章时，全部草稿按创建时间、ID 升序排列（标题为空显示为「未命名章节」）。
+- 跳过：空正文（无可分析句子）的章节，以及结构节点引用的草稿不存在（悬空挂章）的章节，计入 `skipped`，不参与计算。
+- 基线：第一个可分析章节；基线章各维度偏差恒为 0，漂移分恒为 0。
+
+### 五个维度与漂移分
+
+每章相对基线（b）计算五个维度的偏差，x 为该章指标：
+
+- `len`（平均句长）：`min(1, |x−b| / max(b, 6.0))`
+- `short`（短句占比）：`|x−b|`
+- `mod`（修饰词每千字密度）：`min(1, |x−b| / max(b, 1.0))`
+- `ai`（AI 味词每千字命中数）：`min(1, |x−b| / max(b, 0.5))`
+- `style`（风格关键词命中率）：`|x−b|`，仅风格锚点有关键词时参与
+
+漂移分 = `round(100 × 可用维度偏差均值)`（四舍五入），`≥ 50` 判定该章漂移；基线章恒不判漂移。无风格关键词时 style 维度剔除、其余维度重新归一，不改变公式结构。
+
+### 输出字段
+
+```text
+chapters: 3
+baseline: 第一章 雨夜
+skipped chapters: 1
+1 第一章 雨夜: len 10.0 / short 100.0% / mod 0.0 / ai 0.0 / style 0/3 → drift 0
+2 第二章 线索: len 12.0 / short 80.0% / mod 0.0 / ai 0.0 / style 1/3 → drift 15
+3 第三章 转折: len 26.0 / short 0.0% / mod 3.8 / ai 3.8 / style 0/3 → drift 80
+drift trend: 0 / 15 / 80
+drifted chapters: 第三章 转折（80）
+forbidden hits: 第二章 线索: 2（窒息、微光）
+forbidden hits: 第三章 转折: 3（窒息、微光）
+verdict: drift detected in 1 chapter
+```
+
+- `chapters`：参与计算的章节数（不含 skipped）。
+- `baseline`：基线章标题。
+- `skipped chapters`：`skipped > 0` 时才输出，位于 `chapters` 之后、逐章行（或 n/a 行）之前。
+- 逐章行：`序号 标题: len 平均句长 / short 短句占比 / mod 修饰密度 / ai AI 词密度 [/ style 命中数/总数] → drift 漂移分`；无风格关键词时省略 `style x/y`。
+- `drift trend`：全部章节漂移分，按阅读顺序以 `/` 分隔。
+- `drifted chapters`：有漂移章时才输出，`标题（漂移分）`，顿号连接。
+- `forbidden hits`：有禁忌词命中时才输出，按章列出命中数与全部禁忌词；禁忌词单独报告，**不计入漂移分**。
+- `verdict`：`style stable` / `drift detected in 1 chapter`（N=1）/ `drift detected in N chapters`（N≥2）。
+
+### 空态与退出码
+
+- 无草稿：输出 `no chapters`，退出码 0。
+- 可分析章不足 2 章：输出 `chapters: N`，`skipped > 0` 时追加 `skipped chapters: N`，再输出 `drift: n/a (need at least 2 chapters)`；退出码 0。
+- 作品不存在：业务错误，退出码 1。
+
+### 示例（mock 下实跑）
+
+下面示例全部可在未配置 key（mock LLM）时复现。先把数据目录指到临时目录，再建一部作品、用 `style set` 定锚点与禁忌词：
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-style-drift\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-style-drift\config.toml"
+```
+
+```bash
+uv run novel-editorial works create 风格漂移之书 --genre 悬疑
+# created workspace <作品ID>: 风格漂移之书
+
+uv run novel-editorial style set <作品ID> --description "冷峻，克制，简洁" --forbidden "窒息,微光"
+# style anchor updated: <作品ID>
+# 审稿: 风格锚点定了：「冷峻，克制，简洁」。我盯着设定看了一遍，开头那句跟「冷峻，克制，简洁」会不会打架？
+```
+
+三章草稿与结构挂章用脚本直插（复用测试直插写法；`<作品ID>` 换成上面输出的真实值）：
+
+```python
+from novel_editorial.core.config import load_settings
+from novel_editorial.core.structure import KIND_CHAPTER, KIND_VOLUME, create_node
+from novel_editorial.store.db import DB
+from novel_editorial.store.models import Draft, DraftVersion
+
+workspace_id = "<作品ID>"
+texts = {
+    "第一章 雨夜": "一二三四五六七八九十。" * 20,
+    "第二章 线索": (
+        "一二三四五六七八九十。" * 16
+        + "窒息丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉。"
+        + "甲乙丙丁戊己庚辛壬癸微光寅卯辰巳午未申酉。"
+        + "克制丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉。"
+        + "甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午未申酉。"
+    ),
+    "第三章 转折": (
+        "一二三四五六七八九十甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳。" * 16
+        + "窒息窒息五六七八九十甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳。"
+        + "一二三四五六七八九十甲乙丙丁戊己庚辛壬癸微光寅卯辰巳。"
+        + "静静缓缓五六七八九十甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳。"
+        + "宛如不禁五六七八九十甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳。"
+    ),
+}
+db = DB(load_settings())
+with db.workspace_session(workspace_id) as session:
+    draft_ids = {}
+    for key, content in texts.items():
+        draft = Draft(workspace_id=workspace_id, title=key, current_version=1)
+        session.add(draft)
+        session.flush()
+        session.add(DraftVersion(draft_id=draft.id, version=1, content=content))
+        draft_ids[key] = draft.id
+    session.commit()
+volume = create_node(db, workspace_id, kind=KIND_VOLUME, title="第一卷")
+for order, title in enumerate(texts):
+    create_node(
+        db, workspace_id, kind=KIND_CHAPTER, title=title,
+        parent_id=volume.id, draft_id=draft_ids[title], sort_order=order,
+    )
+```
+
+跑报告：
+
+```bash
+uv run novel-editorial style drift <作品ID>
+# chapters: 3
+# baseline: 第一章 雨夜
+# 1 第一章 雨夜: len 10.0 / short 100.0% / mod 0.0 / ai 0.0 / style 0/3 → drift 0
+# 2 第二章 线索: len 12.0 / short 80.0% / mod 0.0 / ai 0.0 / style 1/3 → drift 15
+# 3 第三章 转折: len 26.0 / short 0.0% / mod 3.8 / ai 3.8 / style 0/3 → drift 80
+# drift trend: 0 / 15 / 80
+# drifted chapters: 第三章 转折（80）
+# forbidden hits: 第二章 线索: 2（窒息、微光）
+# forbidden hits: 第三章 转折: 3（窒息、微光）
+# verdict: drift detected in 1 chapter
+```
+
+（`<作品ID>` 换成前面输出的真实值，每次运行不同；stderr 日志已省略，其余为 mock 下的真实输出。）
+
 ## 一致性自动核查（N19）
 
 `consistency check <草稿ID>` 把草稿最新版本正文与作品的设定库、开放伏笔做规则化对照，输出只读报告。核查只报告、不代笔：不自动改写正文、不自动退稿、不改变草稿状态、不落事件，相同输入重复执行结果一致。

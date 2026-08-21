@@ -115,6 +115,8 @@ def style_drift(workspace_id: str = typer.Argument(..., help="Workspace id")) ->
         return
     if len(report.chapters) < 2:
         typer.echo(f"chapters: {len(report.chapters)}")
+        if report.skipped > 0:
+            typer.echo(f"skipped chapters: {report.skipped}")
         typer.echo("drift: n/a (need at least 2 chapters)")
         return
 
