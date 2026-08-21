@@ -68,6 +68,7 @@ pytest + ruff + pyright + 宪法校验。
   - `GET /works/{workspace_id}/events` → 事件数组（复用 `store.events.list_events`）；
   - `GET /works/{workspace_id}/style` → 风格锚点（description / forbidden_words，复用 `core.style.get_style_anchor`）；
   - `GET /works/{workspace_id}/structure` → 结构节点数组（id / kind / title / parent_id / sort_order / status / draft_id，复用 `core.structure.list_structure`）。
+  - **确定性排序**（S1 独立审查 P3 意见）：`GET /works` 按 `created_at, id` 升序；`show_workspace` 的 band 按 `created_at, id` 升序——同一时钟刻度内创建多条记录时顺序也稳定。
 - `tests/test_api.py` 追加：各路由端到端 + 只读断言（events 数不变、不新增任何行）+ 作品不存在 404。
 
 ### 做到什么程度
