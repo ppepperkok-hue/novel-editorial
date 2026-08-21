@@ -122,6 +122,7 @@ pytest（新增用例）+ smoke_m3 + stress_m3 + ruff + pyright + 宪法。
 
 ### 做什么
 
+- 修复 S2 审查 P3：`style drift` 的 n/a 早退分支（可分析章 < 2）在 `report.skipped > 0` 时同样输出 `skipped chapters: N` 行（允许触碰 cli/style.py 与 tests/test_style_drift_cli.py），保证未分析章节永远可见。
 - usage.md 补 `style drift` 小节：命令、章节排序规则、基线口径、五个维度偏差公式、阈值 50、禁忌词单独报告、空态；示例 mock 实跑。
 - 全量回归 + 独立审查 + 归档 docs/reviews/（20260821-M5N21S1 / S2 / S3 链）。
 
@@ -148,4 +149,4 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 
 ## 状态
 
-- 立项（2026-08-21）：实施文档就绪，用户授权低价窗口内自主推进，拆包 S1。
+- 推进中（2026-08-21）：S1（1f34921）、S2（7d8e4db）已提交并推送远端；S1/S2 独立审查报告归档 docs/reviews/20260821-M5N21S1-initial.md / 20260821-M5N21S2-initial.md；S2 审查 P3（n/a 分支 skipped 提示）列入 S3 修复包；S3 待 18:00 低价窗口执行。
