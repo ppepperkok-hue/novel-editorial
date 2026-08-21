@@ -94,6 +94,7 @@ pytest（新增用例）+ smoke_m3 + stress_m3 + ruff + pyright + 宪法。
 
 ### 做什么
 
+- 修复 S2 独立审查 P2（允许触碰 core/archive.py 与 tests/test_archive.py）：`_is_sqlite_database` 命中文件头 magic 后不再提前返回 True，必须再真实读 schema（如 `SELECT count(*) FROM sqlite_master`）成功才算有效 SQLite；魔数前缀垃圾库 → `USAGE_ERROR`（"invalid archive: data.db is not a SQLite database"），不冒原始 DatabaseError；补对应测试（含无残留断言）。
 - usage.md 增「导入导出与备份（N25）」小节：`works export` / `works import` 用法、ZIP 结构与 manifest 校验语义、导入生成新 ID 不覆盖、导出只读、mock 实跑示例。
 - 全量回归 + 独立审查 + 归档 docs/reviews/（20260821-M5N25S1 / S2 / S3 链）。
 
