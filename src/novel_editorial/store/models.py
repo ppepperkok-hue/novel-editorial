@@ -239,6 +239,24 @@ class SettingVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class Inspiration(Base):
+    """One lightweight inspiration/material snippet in a workspace (N15)."""
+
+    __tablename__ = "inspirations"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(String(32), index=True)
+    kind: Mapped[str] = mapped_column(
+        String(20), default="灵感", server_default="灵感"
+    )
+    content: Mapped[str] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(Text, default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+
+
 class Review(Base):
     """A review comment on a draft from the author or an agent."""
 

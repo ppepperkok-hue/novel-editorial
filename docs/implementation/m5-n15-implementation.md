@@ -30,10 +30,10 @@
 
 - Alembic 迁移（`migrations/versions/*_add_inspirations.py`）：建 `inspirations` 表 + workspace_id 索引；`store/models.py` 加 `Inspiration` 模型（字段如上）。
 - `core/inspiration.py`：
-  - `add_inspiration(db, workspace_id, *, content, kind="灵感", source="") -> Inspiration`：content / kind 去空白后非空，否则 NovelError(USAGE_ERROR)；复用 `get_workspace_or_raise`；落 SYSTEM 事件 `inspiration_created`（payload：inspiration_id、kind）；返回行；
+  - `add_inspiration(db, workspace_id, *, content, kind="灵感", source="") -> Inspiration`：content / kind 去空白后非空，否则 NovelError(USAGE_ERROR)；复用 `get_workspace_or_raise`；落 SYSTEM 事件 `inspiration_created`（payload：`{"kind": "inspiration_created", "inspiration_id": ..., "inspiration_kind": ...}`，沿用全库 SYSTEM 事件「payload.kind 即事件子类型」惯例）；返回行；
   - `list_inspirations(db, workspace_id, *, kind=None, keyword=None) -> list[Inspiration]`：kind 精确过滤；keyword 对 content / source 不区分大小写子串匹配；排序 `updated_at desc, id asc`；
   - `get_inspiration(db, workspace_id, inspiration_id) -> Inspiration`：不存在 NovelError(NOT_FOUND)；
-  - `remove_inspiration(db, workspace_id, inspiration_id) -> Inspiration`：先 get 后删；落 SYSTEM 事件 `inspiration_removed`（payload：inspiration_id、kind）；返回被删行。
+  - `remove_inspiration(db, workspace_id, inspiration_id) -> Inspiration`：先 get 后删；落 SYSTEM 事件 `inspiration_removed`（payload：`{"kind": "inspiration_removed", "inspiration_id": ..., "inspiration_kind": ...}`）；返回被删行。
 - tests（`tests/test_inspiration.py`）：add / list 过滤与排序 / keyword 命中（含大小写） / show / remove / 事件流（created/removed 可见、list/show 不新增事件）/ 空态 / 空内容 USAGE_ERROR / 作品与灵感不存在 NOT_FOUND。
 
 ### 做到什么程度
