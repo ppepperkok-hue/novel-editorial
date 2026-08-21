@@ -19,7 +19,7 @@ inspiration_app = typer.Typer(help="Manage lightweight inspiration material")
 @inspiration_app.command("add")
 def inspiration_add(
     workspace_id: str = typer.Argument(..., help="Workspace id"),
-    content: str = typer.Argument(..., help="Inspiration content"),
+    content: str = typer.Option(..., "--content", help="Inspiration content"),
     kind: str = typer.Option(
         "灵感", "--kind", help="Open kind label (default: 灵感)"
     ),

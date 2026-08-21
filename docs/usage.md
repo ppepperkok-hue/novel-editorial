@@ -1893,6 +1893,123 @@ uv run novel-editorial setting impact <作品ID> <不存在的设定ID>
 
 （`<作品ID>`、`<设定ID-*>`、`<草稿ID>` 与 `<线索ID>` 换成前面输出的真实 ID，每次运行不同；时间戳与 stderr 日志已省略；其余为 mock 下的真实输出。）
 
+## 灵感素材库（N15）
+
+灵感、素材、意象、片段随手存进作品库，创作时按需取用——灵感不丢、写作不干。灵感库是轻量随手记：一条灵感就是一行内容加一个开放标签（kind）与可选来源（source），没有版本、没有流程关卡，也不会自动灌进谁的记忆包（沉淀不是前置，见红线）。
+
+### 命令
+
+- `inspiration add <作品ID> --content <内容> [--kind <标签>] [--source <来源>]`：新增一条灵感，成功输出 `added <灵感ID> [灵感] <内容>`。`--content` 是必填选项，内容非空；kind 默认「灵感」，source 默认空。
+- `inspiration list <作品ID> [--kind <标签>] [--keyword <关键词>]`：列出灵感，每行 `<灵感ID> [<标签>] <内容>`；没有灵感时输出 `no inspirations`。
+- `inspiration show <作品ID> <灵感ID>`：显示 `kind:` / `content:` / `source:` 三行；source 为空显示 `(empty)`。
+- `inspiration remove <作品ID> <灵感ID>`：删除一条灵感，成功输出 `removed <灵感ID> [<标签>]`。
+
+### kind 与检索口径
+
+- kind 是开放标签不是封闭枚举：意象、场景、对白、钩子、设定草稿……作者自由命名，CLI 不做校验，也不按体裁特化。
+- `--kind` 精确匹配；`--keyword` 对 content / source 做不区分大小写的子串匹配（如 `--keyword DAWN` 能命中 `from the DAWN notebook`）。
+- 排序：`updated_at desc, id asc`（最新优先，同一时刻按 id 兜底），相同输入重复执行输出一致。
+- 内容以 `-` 开头（如 `- 破折号开头`）时直接放在 `--content` 后传值即可，不会被误判为选项。
+
+### 事件与只读红线
+
+- `add` / `remove` 各落一条 SYSTEM 事件（payload.kind 为 `inspiration_created` / `inspiration_removed`，payload 含 `inspiration_id` 与 `inspiration_kind`），`events list` 可见。
+- `list` / `show` 纯只读：不落事件、不触发 proactive。
+- 空内容报用法错误（退出码 2）；作品 / 灵感不存在报业务错误（退出码 1）。
+- 沉淀不是前置：灵感库完全可选，不阻塞任何创作命令；灵感不自动灌入写手记忆包，作者显式取用。
+
+### 示例（mock 下实跑）
+
+下面示例全部可在未配置 key（mock LLM）时复现。先把数据目录指到临时目录（初始化写法见「判断权与分歧」），再建一部作品：
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-n15\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-n15\config.toml"
+Remove-Item Env:NOVEL_LLM_API_KEY, Env:NOVEL_LLM_BASE_URL, Env:NOVEL_LLM_MODEL -ErrorAction SilentlyContinue
+```
+
+```bash
+uv run novel-editorial works create 灵感之书 --genre 悬疑
+# created workspace <作品ID>: 灵感之书
+```
+
+随手存三条灵感：一条以 `-` 开头的内容走 `--content`，一条带开放标签，一条带来源：
+
+```bash
+uv run novel-editorial inspiration add <作品ID> --content "- 破折号开头的场景：雨夜，站台，她没回头。"
+# added <灵感ID-1> [灵感] - 破折号开头的场景：雨夜，站台，她没回头。
+
+uv run novel-editorial inspiration add <作品ID> --content 码头雾气与旧钟 --kind 意象
+# added <灵感ID-2> [意象] 码头雾气与旧钟
+
+uv run novel-editorial inspiration add <作品ID> --content 茶馆争吵 --kind 场景 --source "from the DAWN notebook"
+# added <灵感ID-3> [场景] 茶馆争吵
+```
+
+`inspiration list` 全部列出，最新优先；`--kind` 精确过滤、`--keyword` 大小写不敏感子串命中（`DAWN` 命中 source）：
+
+```bash
+uv run novel-editorial inspiration list <作品ID>
+# <灵感ID-3> [场景] 茶馆争吵
+# <灵感ID-2> [意象] 码头雾气与旧钟
+# <灵感ID-1> [灵感] - 破折号开头的场景：雨夜，站台，她没回头。
+
+uv run novel-editorial inspiration list <作品ID> --kind 意象
+# <灵感ID-2> [意象] 码头雾气与旧钟
+
+uv run novel-editorial inspiration list <作品ID> --keyword DAWN
+# <灵感ID-3> [场景] 茶馆争吵
+
+uv run novel-editorial inspiration list <作品ID> --keyword 不存在的词
+# no inspirations
+```
+
+`inspiration show` 显示原文与来源，source 为空显示 `(empty)`：
+
+```bash
+uv run novel-editorial inspiration show <作品ID> <灵感ID-2>
+# kind: 意象
+# content: 码头雾气与旧钟
+# source: (empty)
+
+uv run novel-editorial inspiration show <作品ID> <灵感ID-3>
+# kind: 场景
+# content: 茶馆争吵
+# source: from the DAWN notebook
+```
+
+删除一条后 `list` 里消失，事件流里 created / removed 都留痕：
+
+```bash
+uv run novel-editorial inspiration remove <作品ID> <灵感ID-2>
+# removed <灵感ID-2> [意象]
+
+uv run novel-editorial inspiration list <作品ID>
+# <灵感ID-3> [场景] 茶馆争吵
+# <灵感ID-1> [灵感] - 破折号开头的场景：雨夜，站台，她没回头。
+
+uv run novel-editorial events list <作品ID>
+# <时间戳> [system] system {"kind": "inspiration_removed", "inspiration_id": "<灵感ID-2>"...
+# <时间戳> [system] system {"kind": "inspiration_created", "inspiration_id": "<灵感ID-3>"...
+# <时间戳> [system] system {"kind": "inspiration_created", "inspiration_id": "<灵感ID-2>"...
+# <时间戳> [system] system {"kind": "inspiration_created", "inspiration_id": "<灵感ID-1>"...
+```
+
+失败路径（退出码验证，Error 行与退出码均为真实输出）：
+
+```bash
+uv run novel-editorial inspiration add <作品ID> --content ""
+# Error: inspiration content must not be empty（退出码 2）
+
+uv run novel-editorial inspiration add <不存在的作品ID> --content 无主灵感
+# Error: workspace not found: <不存在的作品ID>（退出码 1）
+
+uv run novel-editorial inspiration show <作品ID> <不存在的灵感ID>
+# Error: inspiration not found: <不存在的灵感ID>（退出码 1）
+```
+
+（`<作品ID>` 与 `<灵感ID-*>` 换成前面输出的真实 ID，每次运行不同；`events list` 对超长 payload 截断显示（`...`），完整事件仍含 `inspiration_id` 与 `inspiration_kind`；时间戳与 stderr 日志已省略，其余为 mock 下的真实输出。）
+
 ## 知识管家（N6）
 
 设定沉淀进库之后不能只躺在库里：写手动笔和编辑审稿时应该自动看到当前版本，改过的地方要在事件流里有迹可循，陈旧条目与同名矛盾候选要被指出来由作者判断。N6 就是把这条分发闭环补上——`memory pack` 与编辑视图自动带「设定：」段，修订在 `events list` 留痕，`setting check` 负责只读报告。

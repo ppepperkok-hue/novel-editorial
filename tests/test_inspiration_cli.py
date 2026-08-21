@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -23,7 +24,9 @@ def _isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def _create_workspace(title: str = "灵感CLI书") -> str:
     result = runner.invoke(app, ["works", "create", title])
     assert result.exit_code == 0, result.output
-    return result.output.split()[2].rstrip(":")
+    workspace_match = re.search(r"created workspace (\w+):", result.output)
+    assert workspace_match is not None
+    return workspace_match.group(1)
 
 
 @pytest.mark.parametrize(
@@ -48,7 +51,8 @@ def test_inspiration_end_to_end(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace()
 
     first = runner.invoke(
-        app, ["inspiration", "add", workspace_id, "码头雾气与旧钟", "--kind", "意象"]
+        app,
+        ["inspiration", "add", workspace_id, "--content", "码头雾气与旧钟", "--kind", "意象"],
     )
     assert first.exit_code == 0, first.output
     first_id = first.output.split()[1]
@@ -60,6 +64,7 @@ def test_inspiration_end_to_end(tmp_path: Path, monkeypatch) -> None:
             "inspiration",
             "add",
             workspace_id,
+            "--content",
             "茶馆争吵",
             "--kind",
             "场景",
@@ -72,7 +77,8 @@ def test_inspiration_end_to_end(tmp_path: Path, monkeypatch) -> None:
     assert second.output.strip() == f"added {second_id} [场景] 茶馆争吵"
 
     third = runner.invoke(
-        app, ["inspiration", "add", workspace_id, "雨夜巷口的猫", "--kind", "意象"]
+        app,
+        ["inspiration", "add", workspace_id, "--content", "雨夜巷口的猫", "--kind", "意象"],
     )
     assert third.exit_code == 0, third.output
     third_id = third.output.split()[1]
@@ -152,7 +158,7 @@ def test_inspiration_exit_codes(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace()
 
     missing_workspace = runner.invoke(
-        app, ["inspiration", "add", "f" * 32, "无主灵感"]
+        app, ["inspiration", "add", "f" * 32, "--content", "无主灵感"]
     )
     assert missing_workspace.exit_code == 1
     assert "workspace not found" in missing_workspace.output
@@ -169,6 +175,24 @@ def test_inspiration_exit_codes(tmp_path: Path, monkeypatch) -> None:
     assert missing_remove.exit_code == 1
     assert "inspiration not found" in missing_remove.output
 
-    empty_content = runner.invoke(app, ["inspiration", "add", workspace_id, ""])
+    empty_content = runner.invoke(
+        app, ["inspiration", "add", workspace_id, "--content", ""]
+    )
     assert empty_content.exit_code == 2
     assert "must not be empty" in empty_content.output
+
+
+def test_inspiration_add_dash_content(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace()
+    content = "- 破折号开头"
+
+    added = runner.invoke(
+        app, ["inspiration", "add", workspace_id, "--content", content]
+    )
+    assert added.exit_code == 0, added.output
+    added_id = added.output.split()[1]
+    assert added.output.strip() == f"added {added_id} [灵感] {content}"
+
+    listed = runner.invoke(app, ["inspiration", "list", workspace_id])
+    assert listed.exit_code == 0, listed.output
+    assert listed.output.splitlines() == [f"{added_id} [灵感] {content}"]
