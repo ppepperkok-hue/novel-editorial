@@ -36,7 +36,7 @@ SUBCOMMANDS = {
     "draft": ("generate", "revise", "list", "show", "diff"),
     "review": ("add", "list"),
     "decision": ("list", "pending", "accept", "reject", "note"),
-    "quality": ("check", "explain", "calibrate"),
+    "quality": ("check", "explain", "calibrate", "feedback"),
     "consistency": ("check",),
     "plot": ("plant", "list", "recover"),
     "setting": ("add", "list", "show", "revise", "history", "check", "impact"),

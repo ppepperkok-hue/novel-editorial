@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
@@ -51,8 +52,8 @@ def _invoke(tmp_path: Path, monkeypatch, *args: str):
 def _write_cli_feedback(tmp_path: Path) -> Path:
     """Write a 12-line JSONL that reproduces the documented CLI example shape:
 
-    threshold 8 agrees 10/12, the best agreement is 11/12 shared by t=6 and
-    t=9, and the tie-break picks the higher suggested threshold 9.
+    threshold 8 agrees 10/12, the best agreement is 11/12 shared by t=6,
+    t=7 and t=9, and the tie-break picks the higher suggested threshold 9.
     """
     lines = [
         {"label": "bad", "text": REPEATED_ENDINGS_TEXT},
@@ -69,6 +70,14 @@ def _write_cli_feedback(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return path
+
+
+def _patch_scores(monkeypatch, scores: dict[str, float]) -> None:
+    """Replace check_quality with a deterministic per-text score map."""
+    monkeypatch.setattr(
+        "novel_editorial.core.feedback.check_quality",
+        lambda text, **kwargs: SimpleNamespace(score=scores[text]),
+    )
 
 
 def test_load_feedback_samples_parses_good_and_bad(tmp_path: Path) -> None:
@@ -232,7 +241,7 @@ def test_analyze_feedback_reports_stats_agreement_and_suggestion() -> None:
     assert report.good_stats == (0.0, 3.0, 6.0, 6.0)
     assert report.threshold_used == 8
     assert report.agreement == pytest.approx(5 / 6)
-    assert report.suggested_threshold == 6
+    assert report.suggested_threshold == 7
     assert report.suggested_agreement == pytest.approx(1.0)
 
 
@@ -248,7 +257,7 @@ def test_analyze_feedback_uses_gate_boundary_score_above_threshold_is_bad() -> N
     assert report.threshold_used == 8
     assert report.agreement == pytest.approx(2 / 3)
     assert report.bad_stats == (8.0, 10.0, 12.0, 12.0)
-    assert report.suggested_threshold == 0
+    assert report.suggested_threshold == 7
     assert report.suggested_agreement == pytest.approx(1.0)
 
 
@@ -283,7 +292,7 @@ def test_analyze_feedback_no_good_samples_yields_empty_good_stats() -> None:
     assert report.bad_stats == (0.0, 3.0, 6.0, 6.0)
     assert report.good_stats == ()
     assert report.agreement == pytest.approx(0.0)
-    assert report.suggested_threshold == 0
+    assert report.suggested_threshold == 5
     assert report.suggested_agreement == pytest.approx(0.5)
 
 
@@ -298,7 +307,7 @@ def test_analyze_feedback_nearest_rank_p90_below_max() -> None:
 
     assert report.bad_count == 11
     assert report.bad_stats == (6.0, 6.0, 6.0, 22.0)
-    assert report.suggested_threshold == 8
+    assert report.suggested_threshold == 21
     assert report.suggested_agreement == pytest.approx(1 / 11)
 
 
@@ -346,7 +355,53 @@ def test_analyze_feedback_scores_match_check_quality(tmp_path: Path) -> None:
     assert check_quality(CLEAN_TEXT).score == 0.0
     assert report.bad_count == 1
     assert report.good_count == 1
-    assert report.suggested_threshold == 8
+    assert report.suggested_threshold == 21
+    assert report.suggested_agreement == pytest.approx(1.0)
+
+
+def test_analyze_feedback_decimal_scores_use_integer_grid(monkeypatch) -> None:
+    """P2: fractional sample scores are never truncated into int(best).
+
+    bad=9.5 / good=9.2 at threshold 8 spans the integer grid {8, 9, 10}; every
+    candidate agrees on 1/2, so the tie-break picks the highest (10). The old
+    implementation instead picked fractional candidate 9.2 and reported
+    int(best) = 9 with a recomputed agreement that did not match the best.
+    """
+    bad = FeedbackSample(label="bad", text="bad text", line=1)
+    good = FeedbackSample(label="good", text="good text", line=2)
+    _patch_scores(monkeypatch, {"bad text": 9.5, "good text": 9.2})
+
+    report = analyze_feedback([bad, good], threshold=8)
+
+    assert report.suggested_threshold == 10
+    assert report.suggested_agreement == pytest.approx(0.5)
+    recomputed = (
+        sum(
+            1
+            for sample, score in ((bad, 9.5), (good, 9.2))
+            if (sample.label == "bad") == (score > report.suggested_threshold)
+        )
+        / 2
+    )
+    assert report.suggested_agreement == pytest.approx(recomputed)
+
+
+def test_analyze_feedback_decimal_scores_can_reach_full_agreement(
+    monkeypatch,
+) -> None:
+    """P2: decimal scores can land on a mid-grid integer with full agreement.
+
+    bad=9.5 / good=8.8 at threshold 8: the integer grid {8, 9, 10} maximizes
+    agreement at t=9 (bad 9.5 > 9, good 8.8 <= 9), so the suggestion is 9 with
+    agreement 1.0 — no fractional candidate and no truncated report.
+    """
+    bad = FeedbackSample(label="bad", text="bad text", line=1)
+    good = FeedbackSample(label="good", text="good text", line=2)
+    _patch_scores(monkeypatch, {"bad text": 9.5, "good text": 8.8})
+
+    report = analyze_feedback([bad, good], threshold=8)
+
+    assert report.suggested_threshold == 9
     assert report.suggested_agreement == pytest.approx(1.0)
 
 
@@ -360,9 +415,9 @@ def test_analyze_feedback_tie_breaks_to_higher_suggested_threshold() -> None:
 
     report = analyze_feedback(samples, threshold=8)
 
-    # t=6 and t=8 both reach 4/4 agreement; the higher (more conservative)
-    # threshold wins even though the maximum sample score is 22.
-    assert report.suggested_threshold == 8
+    # Every integer t in 6..21 reaches 4/4 agreement; the highest (most
+    # conservative) threshold wins even though the maximum sample score is 22.
+    assert report.suggested_threshold == 21
     assert report.suggested_agreement == pytest.approx(1.0)
 
 
@@ -377,7 +432,7 @@ def test_analyze_feedback_suggestion_blocks_most_bad_samples() -> None:
 
     report = analyze_feedback(samples, threshold=8)
 
-    assert report.suggested_threshold == 8
+    assert report.suggested_threshold == 11
     blocked_bad = sum(
         check_quality(sample.text).score > report.suggested_threshold
         for sample in samples

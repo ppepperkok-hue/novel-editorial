@@ -135,12 +135,14 @@ def analyze_feedback(samples: list[FeedbackSample], threshold: int) -> FeedbackR
 
     A sample is gate-bad when score > threshold; agreement is the fraction of
     samples whose annotation matches the gate verdict. When bad samples exist,
-    the suggested threshold maximizes agreement over the candidate set of all
-    sample scores plus the current threshold; ties are broken toward the higher
-    threshold (more conservative). suggested_agreement is the agreement at that
-    threshold; without bad samples both are None, because there is no evidence
-    for raising the gate. Empty input yields a report with empty stats, 0.0
-    agreement and no suggestion.
+    the suggested threshold maximizes agreement over the integer grid spanning
+    the observed score range (floor(min_score) .. ceil(max_score)) plus the
+    current threshold; ties are broken toward the higher threshold (more
+    conservative). suggested_agreement is the agreement at exactly that integer
+    threshold, so the report is never truncated from a fractional candidate;
+    without bad samples both are None, because there is no evidence for raising
+    the gate. Empty input yields a report with empty stats, 0.0 agreement and
+    no suggestion.
     """
     scored = [(sample, check_quality(sample.text).score) for sample in samples]
     if not scored:
@@ -176,12 +178,15 @@ def analyze_feedback(samples: list[FeedbackSample], threshold: int) -> FeedbackR
     suggested_threshold: int | None = None
     suggested_agreement: float | None = None
     if bad_scores:
-        candidates = sorted({score for _, score in scored} | {float(threshold)})
+        min_score = min(score for _, score in scored)
+        max_score = max(score for _, score in scored)
+        candidates = set(range(math.floor(min_score), math.ceil(max_score) + 1))
+        candidates.add(threshold)
         best = max(
             candidates,
             key=lambda candidate: (agreement_at(candidate), candidate),
         )
-        suggested_threshold = int(best)
+        suggested_threshold = best
         suggested_agreement = agreement_at(suggested_threshold)
 
     return FeedbackReport(

@@ -263,6 +263,122 @@ uv run novel-editorial quality calibrate "$env:TEMP\novel-calibrate\corpus" --ap
 
 `--apply` 之后 `quality check` 即按新阈值判定（阈值优先级不变）。
 
+试读反馈回流（N23）：`quality feedback <标注文件> [--apply]` 把试读者的「好 / 坏」标注送进质量校准，让「无 AI 味」不再只靠内置词表。
+
+- 标注文件格式：JSONL，每行一个 JSON 对象 `{"label": "bad"|"good", "text": "..."}`；`text` 可含转义换行（`\n`），空行跳过、行首尾空白容忍。
+- 输出字段：`samples: N`、`bad: N / good: N`、两侧得分分布（`bad scores` / `good scores`，各为 `min median p90 max`，nearest-rank 口径与 `calibrate` 一致）、`agreement at threshold <当前阈值>: P% (分子/分母)`、`suggested threshold: N` 与 `agreement at suggested: P% (分子/分母)`。无 bad 样本时 `bad scores` 与建议输出为 `n/a`（`suggested threshold: n/a (no bad samples)`），且不输出 `agreement at suggested`。
+- 建议阈值口径：候选集 = 分数跨度内的整数网格（`floor(min_score)` 到 `ceil(max_score)`）∪ 当前阈值；取标注一致率最高的整数阈值，并列时取更高（更保守）。一致率 = 标注与门判定相符的比例（bad 判为 `score > threshold`），`agreement at suggested` 与该整数阈值严格对应，不会从小数候选截断。
+- `--apply`：先打印 `apply: quality_threshold = N`，再写入 `config.toml` 的 `[defaults] quality_threshold`（复用校准的写入逻辑）；文件不存在则创建，重复执行结果一致（幂等，config 逐字节不变）。不加 `--apply` 绝不写文件。
+- 退出码：标注文件不存在为业务错误（退出码 1）；坏 JSONL（坏 JSON / 非对象 / label 非 `bad`|`good` / text 非非空字符串 / 空文件或无有效样本）为用法错误（退出码 2）；无 bad 样本加 `--apply` 为用法错误（退出码 2）。
+- 只读红线：反馈只读标注文件，批注不落库、不落事件、不触发伙伴发言；`--apply` 只写 config。
+
+mock 下实跑示例（临时 `NOVEL_DATA_DIR` / `NOVEL_CONFIG`；本命令不调 LLM、不需要作品，输出为真实抓取；`<config 路径>` 换成实际临时路径，其余为真实输出）。先写 12 行标注（8 bad + 4 good）与两个失败路径文件：
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-feedback\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-feedback\config.toml"
+Remove-Item Env:NOVEL_LLM_API_KEY, Env:NOVEL_LLM_BASE_URL, Env:NOVEL_LLM_MODEL -ErrorAction SilentlyContinue
+
+@'
+{"label": "bad", "text": "他走进院子。她走进院子。大家走进院子。"}
+{"label": "bad", "text": "她不禁莞尔。她不禁莞尔。"}
+{"label": "bad", "text": "她不禁莞尔。她不禁莞尔。"}
+{"label": "bad", "text": "她不禁莞尔。她不禁莞尔。"}
+{"label": "bad", "text": "她不禁莞尔。她不禁莞尔。"}
+{"label": "bad", "text": "她不禁莞尔。她不禁莞尔。"}
+{"label": "bad", "text": "她不禁莞尔。她不禁莞尔。"}
+{"label": "bad", "text": "她不禁莞尔。她不禁莞尔。她不禁莞尔。"}
+{"label": "good", "text": "他推开门，走进院子，把伞靠在墙边。"}
+{"label": "good", "text": "他静静地看着窗外。"}
+{"label": "good", "text": "她不禁莞尔。"}
+{"label": "good", "text": "她不禁莞尔，静静站着。"}
+'@ | Set-Content -LiteralPath "$env:TEMP\novel-feedback\feedback.jsonl" -Encoding UTF8
+
+@'
+{"label": "good", "text": 42}
+'@ | Set-Content -LiteralPath "$env:TEMP\novel-feedback\bad.jsonl" -Encoding UTF8
+
+@'
+{"label": "good", "text": "他推开门，走进院子，把伞靠在墙边。"}
+{"label": "good", "text": "他静静地看着窗外。"}
+'@ | Set-Content -LiteralPath "$env:TEMP\novel-feedback\good-only.jsonl" -Encoding UTF8
+```
+
+```bash
+uv run novel-editorial quality feedback "$env:TEMP\novel-feedback\feedback.jsonl"
+# samples: 12
+# bad: 8 / good: 4
+# bad scores: min 8 median 10 p90 14 max 14
+# good scores: min 0 median 4.5 p90 9 max 9
+# agreement at threshold 8: 83.3% (10/12)
+# suggested threshold: 9
+# agreement at suggested: 91.7% (11/12)
+```
+
+12 行里坏样本集中在 8–14 分、好样本 0–9 分，当前阈值 8 只一致 10/12；整数网格 `0..14`（∪ 当前阈值 8）上 `t=6/7/9` 并列 11/12，取更高 → 建议 9。`--apply` 写入并幂等：
+
+```bash
+uv run novel-editorial quality feedback "$env:TEMP\novel-feedback\feedback.jsonl" --apply
+# samples: 12
+# bad: 8 / good: 4
+# bad scores: min 8 median 10 p90 14 max 14
+# good scores: min 0 median 4.5 p90 9 max 9
+# agreement at threshold 8: 83.3% (10/12)
+# suggested threshold: 9
+# agreement at suggested: 91.7% (11/12)
+# apply: quality_threshold = 9
+# config updated: <config 路径>
+
+cat "$env:TEMP\novel-feedback\config.toml"
+# [defaults]
+# quality_threshold = 9
+
+uv run novel-editorial quality feedback "$env:TEMP\novel-feedback\feedback.jsonl" --apply
+# samples: 12
+# bad: 8 / good: 4
+# bad scores: min 8 median 10 p90 14 max 14
+# good scores: min 0 median 4.5 p90 9 max 9
+# agreement at threshold 9: 91.7% (11/12)
+# suggested threshold: 9
+# agreement at suggested: 91.7% (11/12)
+# apply: quality_threshold = 9
+# config updated: <config 路径>
+# （第二次 --apply 后 config.toml 与第一次逐字节一致）
+```
+
+失败路径：
+
+```bash
+uv run novel-editorial quality feedback "$env:TEMP\novel-feedback\nope.jsonl"
+# Error: feedback file not found: $env:TEMP\novel-feedback\nope.jsonl
+# 退出码 1
+
+uv run novel-editorial quality feedback "$env:TEMP\novel-feedback\bad.jsonl"
+# Error: feedback file line 1: text must be a non-empty string: $env:TEMP\novel-feedback\bad.jsonl
+# 退出码 2
+
+uv run novel-editorial quality feedback "$env:TEMP\novel-feedback\good-only.jsonl"
+# samples: 2
+# bad: 0 / good: 2
+# bad scores: n/a
+# good scores: min 0 median 1.5 p90 3 max 3
+# agreement at threshold 8: 100.0% (2/2)
+# suggested threshold: n/a (no bad samples)
+# 退出码 0，不写 config
+
+uv run novel-editorial quality feedback "$env:TEMP\novel-feedback\good-only.jsonl" --apply
+# samples: 2
+# bad: 0 / good: 2
+# bad scores: n/a
+# good scores: min 0 median 1.5 p90 3 max 3
+# agreement at threshold 8: 100.0% (2/2)
+# suggested threshold: n/a (no bad samples)
+# Error: cannot apply a suggested threshold without bad samples
+# 退出码 2，config 未被写入
+```
+
+`--apply` 之后 `quality check` 即按新阈值判定（阈值优先级不变）。
+
 ## 文风参考学习（N20）
 
 `style learn <作品ID> <语料路径> [--apply]` 从你喜欢的参考文本里算出风格画像，再给出一句可直接落地的建议描述。语料是目录（递归扫描）或单个文件，只认非隐藏的 `.txt` / `.md`；每个文件是一个样本，隐藏文件、空文件与只有纯标点 / 分隔符的文件跳过（复用 N9 校准的语料语义）。
