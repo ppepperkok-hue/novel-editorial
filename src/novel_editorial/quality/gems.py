@@ -22,6 +22,8 @@ SIGNAL_SENSORY = "sensory"
 
 # Dialogue signal: any of the CJK/curly quote characters.
 DIALOGUE_QUOTE_CHARS = frozenset("「」『』“”‘’")
+_OPEN_QUOTE_CHARS = frozenset("「『“‘")
+_CLOSE_QUOTE_CHARS = frozenset("」』”’")
 
 # Sensory signal: single-character hints of concrete physical detail
 # (24 chars). These are hints, not verdicts.
@@ -65,10 +67,44 @@ def find_good_sentences(text: str) -> list[GoodSentence]:
     A sentence is a candidate when it carries at least one concrete-detail
     signal; every matched signal is listed (deduplicated, fixed order).
     Empty or signal-free text returns an empty list.
+
+    split_sentences cuts at terminal punctuation inside quotes, so an
+    unfinished quote fragment (e.g. "「别开灯" followed by "」他说") is merged
+    back into a single GoodSentence: index keeps the first fragment, snippet
+    concatenates both, and signals are merged. A following fragment only merges
+    when it starts with a close quote and contains no open quote; otherwise
+    each fragment keeps its original behavior.
     """
     gems: list[GoodSentence] = []
+    pending: GoodSentence | None = None
+
+    def flush() -> None:
+        nonlocal pending
+        if pending is not None:
+            gems.append(pending)
+            pending = None
+
     for index, sentence in enumerate(split_sentences(text), start=1):
         signals = _sentence_signals(sentence)
+        starts_with_close = bool(sentence) and sentence[0] in _CLOSE_QUOTE_CHARS
+        contains_open = any(char in _OPEN_QUOTE_CHARS for char in sentence)
+        if pending is not None and starts_with_close and not contains_open:
+            merged_snippet = pending.snippet + sentence
+            pending = GoodSentence(
+                index=pending.index,
+                snippet=merged_snippet,
+                signals=_sentence_signals(merged_snippet),
+            )
+            continue
+        flush()
+        if starts_with_close:
+            if signals:
+                gems.append(GoodSentence(index=index, snippet=sentence, signals=signals))
+            continue
         if signals:
-            gems.append(GoodSentence(index=index, snippet=sentence, signals=signals))
+            if contains_open:
+                pending = GoodSentence(index=index, snippet=sentence, signals=signals)
+            else:
+                gems.append(GoodSentence(index=index, snippet=sentence, signals=signals))
+    flush()
     return gems

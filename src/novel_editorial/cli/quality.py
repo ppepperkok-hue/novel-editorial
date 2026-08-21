@@ -14,9 +14,38 @@ from novel_editorial.quality.explain import (
     style_consistency_summary,
 )
 from novel_editorial.quality.gate import check_quality
+from novel_editorial.quality.gems import (
+    SIGNAL_DIALOGUE,
+    SIGNAL_NUMBER_DETAIL,
+    SIGNAL_SENSORY,
+    GoodSentence,
+    find_good_sentences,
+)
 from novel_editorial.store.db import DB
 
 quality_app = typer.Typer(help="Quality gate")
+
+_SIGNAL_LABELS = {
+    SIGNAL_DIALOGUE: "对话引语",
+    SIGNAL_NUMBER_DETAIL: "数字细节",
+    SIGNAL_SENSORY: "感官细节",
+}
+_SIGNAL_ORDER = (SIGNAL_DIALOGUE, SIGNAL_NUMBER_DETAIL, SIGNAL_SENSORY)
+
+
+def render_good_sentences(gems: list[GoodSentence]) -> str | None:
+    """Render the good-sentences block, or None when there are no gems."""
+    if not gems:
+        return None
+    indexes = "、".join(str(gem.index) for gem in gems)
+    labels = [
+        _SIGNAL_LABELS[signal]
+        for signal in _SIGNAL_ORDER
+        if any(signal in gem.signals for gem in gems)
+    ]
+    lines = [f"good sentences: 句 {indexes}（{'、'.join(labels)}，建议保留）"]
+    lines.extend(f"  {gem.index}: {gem.snippet}" for gem in gems)
+    return "\n".join(lines)
 
 
 @quality_app.command("check")
@@ -66,6 +95,9 @@ def quality_explain(draft_id: str = typer.Argument(..., help="Draft id")) -> Non
     summary = style_consistency_summary(version.content, style_keywords)
     if summary is not None:
         typer.echo(summary)
+    good_block = render_good_sentences(find_good_sentences(version.content))
+    if good_block is not None:
+        typer.echo(good_block)
 
 
 @quality_app.command("calibrate")

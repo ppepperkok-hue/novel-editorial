@@ -135,3 +135,62 @@ def test_good_sentence_is_frozen_dataclass() -> None:
     gem = GoodSentence(index=1, snippet="句", signals=[SIGNAL_SENSORY])
     with pytest.raises(dataclasses.FrozenInstanceError):
         gem.index = 2  # pyright: ignore[reportAttributeAccessIssue]
+
+
+def test_quote_fragments_merge_curly_quotes() -> None:
+    gems = find_good_sentences("「别开灯。」他说。")
+    assert gems == [
+        GoodSentence(
+            index=1,
+            snippet="「别开灯」他说",
+            signals=[SIGNAL_DIALOGUE, SIGNAL_SENSORY],
+        )
+    ]
+
+
+def test_quote_fragments_merge_after_speech_verb() -> None:
+    gems = find_good_sentences("她说：“别开灯。”然后走了。")
+    assert gems == [
+        GoodSentence(
+            index=1,
+            snippet="她说：“别开灯”然后走了",
+            signals=[SIGNAL_DIALOGUE, SIGNAL_SENSORY],
+        )
+    ]
+
+
+def test_quote_fragments_do_not_merge_when_next_has_open_quote() -> None:
+    text = "“别开灯。”他喊“快走。”她又说。"
+    gems = find_good_sentences(text)
+    assert [gem.snippet for gem in gems] == ["“别开灯", "”他喊“快走", "”她又说"]
+
+
+def test_quote_fragments_do_not_merge_when_next_lacks_close_start() -> None:
+    text = "“灯亮着。水开了。”"
+    gems = find_good_sentences(text)
+    assert [gem.snippet for gem in gems] == ["“灯亮着", "水开了", "”"]
+
+
+def test_quote_fragments_merge_keeps_original_indexes() -> None:
+    text = "她推门进来。“别开灯。”他说。"
+    gems = find_good_sentences(text)
+    assert [(gem.index, gem.snippet) for gem in gems] == [
+        (1, "她推门进来"),
+        (2, "“别开灯”他说"),
+    ]
+
+
+def test_quote_fragments_merge_combines_signals_deduplicated() -> None:
+    text = "“别开灯。”他在三点说。"
+    gems = find_good_sentences(text)
+    assert gems == [
+        GoodSentence(
+            index=1,
+            snippet="“别开灯”他在三点说",
+            signals=[
+                SIGNAL_DIALOGUE,
+                SIGNAL_NUMBER_DETAIL,
+                SIGNAL_SENSORY,
+            ],
+        )
+    ]

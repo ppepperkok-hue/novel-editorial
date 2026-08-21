@@ -22,6 +22,12 @@ runner = CliRunner()
 REPEATED_ENDINGS_TEXT = "他走进院子。她走进院子。大家走进院子。"
 CLEAN_TEXT = "他推开门，走进院子，把伞靠在墙边。"
 AI_TEXT = "他静静地站着，缓缓转身，月光宛如薄纱，悄然洒落。她走进院子。他走进院子。"
+MIXED_TEXT = (
+    "他静静地站着，仿佛在想着什么。"
+    "她把钥匙放进铁盒，锈声在雨里很轻。"
+    "“别开灯。”他说。"
+)
+NO_SIGNAL_TEXT = "他坐在桌前，打开电脑，开始写报告。老师说作业明天交，大家记得带课本。"
 
 
 def test_sentence_repetition_detected_only_for_repeated_endings() -> None:
@@ -268,3 +274,70 @@ def test_quality_explain_unknown_draft_exits_1(tmp_path: Path, monkeypatch) -> N
     result = runner.invoke(app, ["quality", "explain", "nope"])
     assert result.exit_code == 1
     assert "draft not found" in result.output
+
+
+def test_quality_explain_mixed_text_shows_issues_and_good_sentences(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    draft_id = _generate(tmp_path, monkeypatch, workspace_id, MIXED_TEXT, "第一章")
+
+    result = runner.invoke(app, ["quality", "explain", draft_id])
+    assert result.exit_code == 0, result.output
+    assert "句 1" in result.output
+    assert "仿佛" in result.output
+    assert "good sentences: 句 2、3（对话引语、感官细节，建议保留）" in result.output
+    assert "  2: 她把钥匙放进铁盒，锈声在雨里很轻" in result.output
+    assert "  3: “别开灯”他说" in result.output
+    assert result.output.index("句 1") < result.output.index("good sentences:")
+
+
+def test_quality_explain_clean_detail_text_only_shows_good_sentences(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    draft_id = _generate(tmp_path, monkeypatch, workspace_id, CLEAN_TEXT, "第一章")
+
+    result = runner.invoke(app, ["quality", "explain", draft_id])
+    assert result.exit_code == 0, result.output
+    assert CLEAN_MESSAGE in result.output
+    assert "句 1: " not in result.output
+    assert "good sentences: 句 1（感官细节，建议保留）" in result.output
+
+
+def test_quality_explain_no_signal_text_omits_good_sentences(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    draft_id = _generate(tmp_path, monkeypatch, workspace_id, NO_SIGNAL_TEXT, "第一章")
+
+    result = runner.invoke(app, ["quality", "explain", draft_id])
+    assert result.exit_code == 0, result.output
+    assert CLEAN_MESSAGE in result.output
+    assert "good sentences" not in result.output
+
+
+def test_quality_explain_quote_with_terminal_punctuation_shows_merged_gem(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    draft_id = _generate(
+        tmp_path, monkeypatch, workspace_id, "她说：“别开灯。”然后走了。", "第一章"
+    )
+
+    result = runner.invoke(app, ["quality", "explain", draft_id])
+    assert result.exit_code == 0, result.output
+    assert "good sentences: 句 1（对话引语、感官细节，建议保留）" in result.output
+    assert "  1: 她说：“别开灯”然后走了" in result.output
+
+
+def test_quality_explain_short_text_omits_good_sentences_without_error(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    draft_id = _generate(tmp_path, monkeypatch, workspace_id, "好。", "第一章")
+
+    result = runner.invoke(app, ["quality", "explain", draft_id])
+    assert result.exit_code == 0, result.output
+    assert CLEAN_MESSAGE in result.output
+    assert "good sentences" not in result.output
