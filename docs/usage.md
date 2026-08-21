@@ -2194,6 +2194,80 @@ uv run novel-editorial example
 - 清理 = 删除对应数据目录 `NOVEL_DATA_DIR/works/<作品ID>`，程序不提供破坏性删除命令；
 - 只读/隔离红线：`example` 只新建独立 workspace，不修改既有作品、不修改配置；示例不是任何创作流程的前置，`init` / `demo` 与既有命令行为不变。
 
+## HTTP API（N24）
+
+HTTP API 与 CLI 同源：所有路由只复用 `core` / `store` 的既有能力，不复制业务逻辑；同一数据同一时刻 API 与 CLI 结果一致。默认绑定本机回环地址 `127.0.0.1:8765`，无鉴权，只适合本地个人工具，**不要**直接暴露到公网。
+
+### 启动
+
+```bash
+uv run novel-editorial api serve [--host HOST] [--port PORT]
+```
+
+`--host` / `--port` 缺省时按配置取值，优先级与其余配置一致：环境变量 > `config.toml [defaults]` 同名键 > 内置默认值。端口范围 1–65535，非法值报配置错误；服务与 CLI 读同一份数据（`NOVEL_DATA_DIR` 等配置照常生效）。
+
+| 配置 | 作用 | 默认值 |
+| --- | --- | --- |
+| `NOVEL_API_HOST` / `defaults.api_host` | 绑定地址 | `127.0.0.1` |
+| `NOVEL_API_PORT` / `defaults.api_port` | 绑定端口 | `8765` |
+
+### 路由表
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/health` | 健康检查，返回 `{"status": "ok"}` |
+| GET | `/works` | 作品数组（id / title / genre / description / status / created_at），按创建时间与 ID 升序 |
+| POST | `/works` | 建作品（body：`title` 必填，`genre` / `description` 可选），成功 201 + 作品对象 |
+| GET | `/works/{id}` | 作品详情 + band（agents 数组） |
+| GET | `/overview` | 跨作品聚合（`overviews` / `total` / `skipped`） |
+| GET | `/works/{id}/events` | 事件数组（新到旧） |
+| GET | `/works/{id}/style` | 风格锚点（`description` / `forbidden_words`；未设置时返回空串，不新建行） |
+| GET | `/works/{id}/structure` | 结构节点数组（id / kind / title / parent_id / sort_order / status / draft_id） |
+
+### 错误映射
+
+响应体统一为 `{"detail": ...}`：
+
+| 情况 | HTTP 状态 |
+| --- | --- |
+| 作品不存在（`NOT_FOUND`） | 404 |
+| 请求体非法（`USAGE_ERROR` 或 Pydantic 校验失败） | 422 |
+| 其余 `NovelError` 或未捕获异常 | 500 |
+
+### 只读红线与安全说明
+
+- 本阶段写操作只有 `POST /works`（复用 `create_workspace`）；其余路由全部只读：不落事件、不触发 proactive。
+- `GET /works/{id}/style` 只读查询：作品没有风格锚点时返回 `{"description": "", "forbidden_words": ""}`，绝不新建行。
+- 默认只绑定 `127.0.0.1` 且无鉴权；不要用 `--host 0.0.0.0` 或公网端口暴露服务。
+
+### curl 示例（mock 实跑）
+
+不配 key（mock）也能完整跑通。先准备临时数据目录并启动服务（`<端口>` 换成实际端口，另开一个终端操作）：
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-api\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-api\config.toml"
+uv run novel-editorial api serve --port 8765
+```
+
+```bash
+curl http://127.0.0.1:8765/health
+# {"status":"ok"}
+
+curl -X POST http://127.0.0.1:8765/works \
+  -H "Content-Type: application/json" \
+  -d '{"title":"接口之书","genre":"悬疑"}'
+# {"id":"<作品ID>","title":"接口之书","genre":"悬疑","description":"","status":"writing","created_at":"<时间戳>"}
+
+curl http://127.0.0.1:8765/works/<作品ID>
+# {"id":"<作品ID>","title":"接口之书","genre":"悬疑","description":"","status":"writing","created_at":"<时间戳>","band":[...]}
+
+curl http://127.0.0.1:8765/works/<作品ID>/events
+# []
+```
+
+（`<作品ID>` 与 `<时间戳>` 换成实际输出，每次运行不同；stderr 日志已省略。PowerShell 用户可用 `Invoke-RestMethod` 等价调用。）
+
 ## 退出码
 
 | 退出码 | 含义 |

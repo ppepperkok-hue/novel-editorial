@@ -10,13 +10,19 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from novel_editorial.core import overview, structure, style, workspace
+from novel_editorial.core import overview, structure, workspace
 from novel_editorial.core.chat import get_workspace_or_raise
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.store.db import DB
 from novel_editorial.store.events import list_events
-from novel_editorial.store.models import Agent, Event, Workspace, WorkspaceStructureNode
+from novel_editorial.store.models import (
+    Agent,
+    Event,
+    StyleAnchor,
+    Workspace,
+    WorkspaceStructureNode,
+)
 
 _WORKSPACE_FIELDS = (
     "id",
@@ -105,6 +111,22 @@ def _overview_dict(item: overview.WorkspaceOverview) -> dict[str, Any]:
     }
 
 
+def _style_anchor_dict(db: DB, workspace_id: str) -> dict[str, str]:
+    """Read a workspace's style anchor without creating a missing row."""
+    with db.workspace_session(workspace_id) as session:
+        anchor = (
+            session.query(StyleAnchor)
+            .filter_by(workspace_id=workspace_id)
+            .first()
+        )
+        if anchor is None:
+            return {"description": "", "forbidden_words": ""}
+        return {
+            "description": anchor.description,
+            "forbidden_words": anchor.forbidden_words,
+        }
+
+
 def create_app() -> FastAPI:
     """Build the FastAPI application bound to the current configuration."""
     settings = load_settings()
@@ -182,10 +204,9 @@ def create_app() -> FastAPI:
 
     @app.get("/works/{workspace_id}/style")
     def get_workspace_style(workspace_id: str) -> dict[str, str]:
-        """Style anchor for one workspace: description + forbidden words."""
+        """Style anchor for one workspace: description + forbidden words (read-only)."""
         get_workspace_or_raise(db, workspace_id)
-        anchor = style.get_style_anchor(db, workspace_id)
-        return {"description": anchor.description, "forbidden_words": anchor.forbidden_words}
+        return _style_anchor_dict(db, workspace_id)
 
     @app.get("/works/{workspace_id}/structure")
     def get_workspace_structure(workspace_id: str) -> list[dict[str, Any]]:

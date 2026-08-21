@@ -1,3 +1,6 @@
 # Novel Editorial configuration template.
 # Copy to config.toml and adjust; keep secrets in environment variables only.
 [defaults]
+# HTTP API（N24）：NOVEL_API_HOST / NOVEL_API_PORT 可覆盖；默认只绑定本机回环，勿直接暴露公网
+api_host = "127.0.0.1"
+api_port = 8765

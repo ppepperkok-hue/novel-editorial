@@ -6,12 +6,12 @@
 
 - 采用 src 布局：`src/novel_editorial/` 为包根，`tests/` 镜像包结构。
 - 模块小写下划线；类用 PascalCase；常量用 UPPER_SNAKE。
-- 分层目录约定：`cli/`（命令入口）、`core/`（领域模型与服务）、`store/`（数据访问）、`llm/`（LLM 客户端）、`quality/`（质量门）、`events.py`（事件契约）。
+- 分层目录约定：`cli/`（命令入口）、`api/`（HTTP 入口层；依赖方向 `api → core → store/llm/quality`，api 不得 import cli）、`core/`（领域模型与服务）、`store/`（数据访问）、`llm/`（LLM 客户端）、`quality/`（质量门）、`events.py`（事件契约）。
 - 每部作品数据放 `data/works/<workspace_id>/`，全局库放 `data/global.db`；配置放 `config.toml`（用户级可覆盖）。
 
 ## 2. 依赖方向
 
-- `cli → core → store/llm/quality`；`events` 为共享契约层，任何模块可读。
+- `cli / api → core → store/llm/quality`；`events` 为共享契约层，任何模块可读。
 - 禁止反向依赖（core 不得 import cli）；禁止循环依赖。
 - 检查手段：pytest 依赖方向守卫测试 + 人工 review；ruff 负责基本规范。
 

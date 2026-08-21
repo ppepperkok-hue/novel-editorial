@@ -329,6 +329,23 @@ def test_visibility_routes_end_to_end(
     assert nodes[1]["sort_order"] == 1
 
 
+def test_style_route_missing_anchor_is_read_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A workspace without a style anchor gets empty values and no row is created."""
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "无锚之书"}).json()["id"]
+
+    before_counts = _table_counts(db, workspace_id)
+    assert before_counts[1]["style_anchors"] == 0
+
+    response = client.get(f"/works/{workspace_id}/style")
+    assert response.status_code == 200
+    assert response.json() == {"description": "", "forbidden_words": ""}
+
+    assert _table_counts(db, workspace_id) == before_counts
+
+
 @pytest.mark.parametrize(
     "path",
     [
