@@ -156,6 +156,77 @@ uv run novel-editorial quality explain <草稿ID>
 # style: 命中 0/3；缺失：克制、利落、留白
 ```
 
+好句识别与保留（N22）：`quality explain` 在末尾追加好句区块（有风格锚点时在风格一致性摘要之后），把命中「具体细节信号」、建议保留的句子挑出来，避免去 AI 味时整句误伤。AI 味句若含信号同样会被标为好句——问题定位与好句可同时出现：
+
+```text
+good sentences: 句 2、3、4（对话引语、数字细节、感官细节，建议保留）
+  2: 她把钥匙放进铁盒，锈声在雨里很轻
+  3: 三点，她推门进来
+  4: “别开灯”他说
+```
+
+- 摘要行：好句句号（顿号连接）+ 命中的信号中文名（对话引语 / 数字细节 / 感官细节，按句子去重后以顿号连接）+ 建议保留。
+- 逐句行：缩进 2 空格，格式 `句号: 原文`；原文沿用分句口径，句末标点不保留。
+- 三条信号口径（纯规则匹配、确定性计算，不调 LLM）：
+  - 对话引语：句子含「」『』“”‘’ 任一引号字符；
+  - 数字细节：数字（阿拉伯数字或中文数字零一二三四五六七八九十百千两）+ 单位（点时分年月日岁号秒米里斤两钱块元）的组合；
+  - 感官细节：句子含 24 个提示性单字之一（光影声味汗血锈霜雪雨风烟尘灰铁灯钟门窗锁刀火水石）——提示是起点不是判决，作者保留最终判断。
+- 引语内含句末标点时按合并规则显示一条（如 `「别开灯。」他说。` 显示为 `「别开灯」他说`）；以闭引号开头的残句（`」…`、单独一个 `”`）一律不显示。
+- 只报告不代笔：好句识别只输出标记，不改草稿、不落事件、不触发伙伴发言、不进质量门分数；无好句 / 空文本不输出该区块。
+
+mock 下实跑示例（临时 `NOVEL_DATA_DIR` / `NOVEL_CONFIG`；混合文本用 MockLLMClient 直灌；`<作品ID>` 与 `<草稿ID>` 换成前面输出的真实值，每次运行不同；stderr 日志已省略，其余为真实输出）：
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-gems\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-gems\config.toml"
+Remove-Item Env:NOVEL_LLM_API_KEY, Env:NOVEL_LLM_BASE_URL, Env:NOVEL_LLM_MODEL -ErrorAction SilentlyContinue
+```
+
+```bash
+uv run novel-editorial works create 好句之书 --genre 悬疑
+# created workspace <作品ID>: 好句之书
+```
+
+混合文本（AI 味句 + 干净且含具体细节句）用 MockLLMClient 直灌（复用测试直插写法）：
+
+```python
+from unittest.mock import patch
+
+from typer.testing import CliRunner
+
+from novel_editorial.cli.app import app
+from novel_editorial.llm.client import MockLLMClient
+
+runner = CliRunner()
+mixed = (
+    "他静静地站着，仿佛在想着什么，不禁轻轻叹息。"
+    "她把钥匙放进铁盒，锈声在雨里很轻。"
+    "三点，她推门进来。"
+    "“别开灯。”他说。"
+)
+with patch(
+    "novel_editorial.cli.draft.build_client",
+    lambda settings: MockLLMClient(reply=mixed),
+):
+    result = runner.invoke(app, ["draft", "generate", "<作品ID>", "--title", "第一章"])
+print(result.output)
+# draft <草稿ID> 第一章 now at v1
+# 写手: 《第一章》初稿写完了，我按节奏收尾，先交给你过目。
+```
+
+```bash
+uv run novel-editorial quality explain <草稿ID>
+# 第一章 (v1)
+# 句 1: 他静静地站着，仿佛在想着什么，不禁轻轻叹息
+#   - [AI 词命中]「不禁」 → 写具体动作，删掉「不禁」
+#   - [AI 词命中]「仿佛」 → 直接写本体，去掉「仿佛」
+#   - [修饰词密度] → 同一句修饰词太多，保留一个，其余换成具体动作或名词
+# good sentences: 句 2、3、4（对话引语、数字细节、感官细节，建议保留）
+#   2: 她把钥匙放进铁盒，锈声在雨里很轻
+#   3: 三点，她推门进来
+#   4: “别开灯”他说
+```
+
 - 调整阈值：`NOVEL_QUALITY_THRESHOLD=6`（更严）或在 `config.toml` 里写 `quality_threshold = 6`。阈值非整数会报配置错误（退出码 1）。
 - 语料校准：`quality calibrate <语料路径> [--apply]` 用你自己的真实文本给阈值一个依据。语料是目录（递归扫描）或单个文件，只认非隐藏的 `.txt` / `.md`；每个文件是一个样本，空文件、隐藏文件与无法读取的文件跳过。
   - 输出：`samples: N`、每样本一行（路径、字数、AI 词 / 修饰词 / 句式重复命中、score）、分布摘要（min / median / p90 / p95 / max）与 `suggested threshold: N`；有跳过时输出 `skipped: N`，读取失败另向 stderr 输出 `warning: ...`。建议口径是 p90 分位（nearest-rank）向上取整、最低 1。

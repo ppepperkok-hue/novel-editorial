@@ -162,13 +162,33 @@ def test_quote_fragments_merge_after_speech_verb() -> None:
 def test_quote_fragments_do_not_merge_when_next_has_open_quote() -> None:
     text = "“别开灯。”他喊“快走。”她又说。"
     gems = find_good_sentences(text)
-    assert [gem.snippet for gem in gems] == ["“别开灯", "”他喊“快走", "”她又说"]
+    assert [gem.snippet for gem in gems] == ["“别开灯"]
 
 
 def test_quote_fragments_do_not_merge_when_next_lacks_close_start() -> None:
     text = "“灯亮着。水开了。”"
     gems = find_good_sentences(text)
-    assert [gem.snippet for gem in gems] == ["“灯亮着", "水开了", "”"]
+    assert [gem.snippet for gem in gems] == ["“灯亮着", "水开了"]
+
+
+def test_single_close_quote_fragment_is_skipped() -> None:
+    assert find_good_sentences("”") == []
+    assert find_good_sentences("”他又说。") == []
+
+
+def test_output_never_starts_with_close_quote() -> None:
+    texts = [
+        "”",
+        "”他又说。",
+        "“别开灯。”他喊“快走。”她又说。",
+        "“灯亮着。水开了。”",
+        "“别开灯。”他说。",
+        "她说：“别开灯。”然后走了。",
+        "「别开灯。」他说。",
+    ]
+    for text in texts:
+        for gem in find_good_sentences(text):
+            assert not gem.snippet.startswith(("」", "』", "”", "’")), text
 
 
 def test_quote_fragments_merge_keeps_original_indexes() -> None:

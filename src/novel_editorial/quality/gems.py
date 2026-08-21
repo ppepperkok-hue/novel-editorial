@@ -72,8 +72,10 @@ def find_good_sentences(text: str) -> list[GoodSentence]:
     unfinished quote fragment (e.g. "「别开灯" followed by "」他说") is merged
     back into a single GoodSentence: index keeps the first fragment, snippet
     concatenates both, and signals are merged. A following fragment only merges
-    when it starts with a close quote and contains no open quote; otherwise
-    each fragment keeps its original behavior.
+    when it starts with a close quote and contains no open quote. Fragments
+    that start with a close quote and cannot merge are quote residue, not
+    sentences, and are always skipped, so no gem ever starts with a close
+    quote.
     """
     gems: list[GoodSentence] = []
     pending: GoodSentence | None = None
@@ -98,8 +100,6 @@ def find_good_sentences(text: str) -> list[GoodSentence]:
             continue
         flush()
         if starts_with_close:
-            if signals:
-                gems.append(GoodSentence(index=index, snippet=sentence, signals=signals))
             continue
         if signals:
             if contains_open:
