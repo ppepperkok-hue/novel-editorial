@@ -1,8 +1,8 @@
 # 项目进度总结（Progress Summary）
 
 - 最后更新：2026-08-21
-- 当前基线：全量 1047 测试绿；ruff / pyright / 宪法校验 / smoke_m3 / stress_m3 全绿
-- 远端：本地 HEAD 与 origin/main 一致（N24 收口归档已推送），工作区干净
+- 当前基线：全量 1074 测试绿；ruff / pyright / 宪法校验 / smoke_m3 / stress_m3 全绿
+- 远端：本地 HEAD 与 origin/main 一致（N25 收口归档已推送），工作区干净
 
 > 完整版（N1–N26、U1–U27 逐项）见 [docs/progress-report.md](progress-report.md)；后补项目集中清单见 [docs/project-plan/07-parked-backlog.md](project-plan/07-parked-backlog.md)。
 
@@ -40,6 +40,7 @@
 | 扩展 | N21 风格漂移检测（S1–S3） | 完成 |
 | 扩展 | N22 好句识别与保留（S1–S3） | 完成 |
 | 扩展 | N24 API 服务层（S1–S3） | 完成 |
+| 扩展 | N25 导入导出与备份（S1–S3） | 完成 |
 
 ### M5 子阶段明细
 
@@ -59,6 +60,7 @@
 - 协作网络：伙伴间对话式互委与回应，拒绝遵循立场历史、跨通道统一（N16）。
 - 可见性：`talk list` 的主动 / 分歧 / 互委标记，`events list` 事件流，`behavior timeline` / `behavior show` 时间线与当前状态，`agents show` 印象关系摘要。
 - HTTP API：`api serve` 起本机服务，works / overview / events / style / structure 只读路由与 CLI 同源，为 N12 面板铺路。
+- 导入导出：`works export` / `works import` 打包可校验 ZIP，换设备、迁移、备份不丢作品与编辑部设置。
 - 编辑部形态：多方讨论（N4）、设定库与知识管家（N5/N6）、语义检索（N7）、作品结构 / 大纲 / 进度（N13）、多写手并行（N14）、记忆衰减（N17）、设定影响分析（N18）。
 - 无 AI 味：AI 味逐句定位与改写建议（N8）、语料校准阈值建议与 `--apply` 幂等写回（N9）、参考语料风格画像与建议描述（N20）、跨章节风格漂移检测（N21）、好句识别与保留（N22）。
 - 老板视角：`works overview` 跨作品聚合（N10）、事件流 / 穿透查询 / 拍板提醒。
@@ -74,12 +76,12 @@
 | N12 图形面板三扇窗 | P2 | N10 已满足 | 用户明确后置 |
 | N15 灵感素材库 | P2 | N5 已满足 | 灵感、素材、意象随手存 |
 | N23 试读反馈回流 | P2 | N9 已满足 | 外部批注与评分进入校准 |
-| N25 导入导出与备份 | P1 | M3 已满足 | 迁移、备份、换设备 |
 | N26 预设编辑部模板 | P2 | N11 未立项 | 按题材一键生成班子 |
 
 ## 已留档的待办项
 
 - `core/behavior.py` 空 kind 序列守卫（P3，无当前影响）：令空序列等价于不过滤。
 - N24 S3 审查 P3（P3，无当前影响）：api 层 `_style_anchor_dict` 内联锚查询，建议在 core.style 增只读访问器并统一 style_drift 同类读取；随下次触碰 style 读语义时清理。
+- N25 S3 审查 P3（P3，无当前影响）：归档探针接受 0 字节 data.db 为空库；修法为 `st_size == 0` 直接拒绝或要求 sqlite_master 返回行，随下次归档校验改动时清理。
 - 委托首次拒绝的观点沉淀缺口：已在 D2 补齐。
 - ruff format 对个别旧文件的既有格式遗留：验收只要求 `ruff check`，后续可另行清理。
