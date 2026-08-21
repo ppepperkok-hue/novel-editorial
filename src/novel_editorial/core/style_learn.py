@@ -25,10 +25,11 @@ def collect_corpus_texts(path: Path | str) -> list[str]:
 
     ``path`` may be a single non-hidden .txt/.md file or a directory scanned
     recursively. Every valid file contributes one text sample; blank files,
-    hidden files, non-corpus files and files that fail to read are skipped.
-    A missing path raises NovelError(NOT_FOUND). A path with no readable
-    samples raises NovelError(USAGE_ERROR) with the same wording family as the
-    calibration service (N9).
+    sentence-less files (e.g. punctuation-only separators), hidden files,
+    non-corpus files and files that fail to read are skipped. A missing path
+    raises NovelError(NOT_FOUND). A path with no readable samples raises
+    NovelError(USAGE_ERROR) with the same wording family as the calibration
+    service (N9).
     """
     root = Path(path)
     if not root.exists():
@@ -69,7 +70,7 @@ def collect_corpus_texts(path: Path | str) -> list[str]:
             skipped += 1
             errors.append(str(exc))
             continue
-        if not text.split():
+        if not text.split() or not split_sentences(text):
             skipped += 1
             continue
         texts.append(text)
@@ -98,14 +99,16 @@ class StyleProfile:
 def compute_style_profile(texts: list[str]) -> StyleProfile:
     """Compute a deterministic style profile from non-blank corpus texts.
 
-    Blank texts are ignored; an empty input list yields a zero-valued profile.
+    Blank texts are ignored; an empty input list yields a zero-valued profile,
+    as does any input that yields no sentences (e.g. punctuation-only texts).
     Sentence lengths are whitespace-stripped character counts from
     ``quality.gate.split_sentences``. Modifier and AI-word hits follow the
     quality-gate semantics: each word-list entry matching anywhere in the
     merged text counts once.
     """
     samples = [text for text in texts if text.split()]
-    if not samples:
+    sentences = [sentence for text in samples for sentence in split_sentences(text)]
+    if not samples or not sentences:
         return StyleProfile(
             samples=0,
             total_chars=0,
@@ -115,7 +118,6 @@ def compute_style_profile(texts: list[str]) -> StyleProfile:
             ai_word_hits=[],
         )
 
-    sentences = [sentence for text in samples for sentence in split_sentences(text)]
     sentence_lengths = [len("".join(sentence.split())) for sentence in sentences]
     total_chars = sum(sentence_lengths)
     sentence_count = len(sentence_lengths)
