@@ -120,6 +120,30 @@ def test_collect_corpus_texts_only_punctuation_raises_usage_error(
     assert "no readable samples" in exc_info.value.message
 
 
+def test_collect_corpus_texts_skips_common_separators(tmp_path: Path) -> None:
+    _write(tmp_path, "normal.txt", "月光宛如薄纱。")
+    _write(tmp_path, "dash.txt", "――――")
+    _write(tmp_path, "stars.txt", "***")
+    _write(tmp_path, "dots.txt", "……，……。")
+
+    assert collect_corpus_texts(tmp_path) == ["月光宛如薄纱。"]
+
+
+def test_collect_corpus_texts_only_separators_raises_usage_error(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path, "dash.txt", "――――")
+    _write(tmp_path, "stars.txt", "***")
+    _write(tmp_path, "dots.txt", "……，……。")
+    _write(tmp_path, "tilde.txt", "～～～")
+    _write(tmp_path, "enum.txt", "、、、")
+
+    with pytest.raises(NovelError) as exc_info:
+        collect_corpus_texts(tmp_path)
+    assert exc_info.value.code == ErrorCode.USAGE_ERROR
+    assert "no readable samples" in exc_info.value.message
+
+
 def test_compute_style_profile_dimensions() -> None:
     profile = compute_style_profile([DIMENSION_TEXT])
 
@@ -157,6 +181,22 @@ def test_compute_style_profile_empty_texts_returns_zero_profile() -> None:
 
 def test_compute_style_profile_punctuation_only_returns_zero_profile() -> None:
     profile = compute_style_profile(["……\n……"])
+
+    assert profile == StyleProfile(
+        samples=0,
+        total_chars=0,
+        avg_sentence_len=0.0,
+        short_sentence_ratio=0.0,
+        modifier_per_1000=0.0,
+        ai_word_hits=[],
+    )
+
+
+@pytest.mark.parametrize("text", ["――――", "***", "……，……。"])
+def test_compute_style_profile_separator_only_returns_zero_profile(
+    text: str,
+) -> None:
+    profile = compute_style_profile([text])
 
     assert profile == StyleProfile(
         samples=0,
