@@ -119,4 +119,4 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 
 ## 状态
 
-- 立项（2026-08-21）：实施文档就绪；用户已确认框架方向（FastAPI + uvicorn）；拆包 S1。
+- 收口（2026-08-21）：S1（75e06ac）、S2（7893b83，含 S1 审查 P3 排序修复）、S3（0e1b9d5，含 S2 审查 P1 只读修复）全部完成并独立审查收敛；全量 1047 测试、smoke_m3、stress_m3 全绿；审查链归档 docs/reviews/20260821-M5N24S1-initial.md / 20260821-M5N24S2-initial.md / 20260821-M5N24S3.md；S3 审查 P3（style 只读访问器抽到 core）留档工程待办。N24 正式收口。
