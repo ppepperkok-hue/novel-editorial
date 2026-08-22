@@ -3,18 +3,22 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from novel_editorial.core import decision, draft, log, overview, review, structure, views, workspace
 from novel_editorial.core.chat import get_workspace_or_raise
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
-from novel_editorial.store.db import DB, list_workspace_ids
+from novel_editorial.store.db import DB
 from novel_editorial.store.events import list_events
 from novel_editorial.store.models import (
     Agent,
@@ -155,6 +159,14 @@ def _style_anchor_dict(db: DB, workspace_id: str) -> dict[str, str]:
         }
 
 
+def _frontend_dist_dir() -> Path:
+    """Frontend build directory: NOVEL_FRONTEND_DIST override, else repo frontend/dist."""
+    raw = os.environ.get("NOVEL_FRONTEND_DIST")
+    if raw:
+        return Path(raw)
+    return Path(__file__).resolve().parents[3] / "frontend" / "dist"
+
+
 def create_app() -> FastAPI:
     """Build the FastAPI application bound to the current configuration."""
     settings = load_settings()
@@ -225,19 +237,41 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/events")
-    def get_global_events(limit: int = Query(50, ge=1)) -> list[dict[str, Any]]:
+    def get_global_events(limit: int = Query(50, ge=1)) -> dict[str, Any]:
         """Newest-first events merged across every workspace.
 
-        Each workspace stream comes from ``list_events`` in rowid-descending
-        order; the merged stream sorts by event time, which the store keeps
-        strictly increasing per process, so it equals cross-workspace
-        insertion order (rowid itself is per-database and not comparable).
+        The global workspaces registry (workspaces table) is the source of
+        truth, matching ``works list`` and ``GET /overview``; no disk scan is
+        used. Each workspace stream comes from ``list_events`` in
+        rowid-descending order; the merged stream sorts by event time, which
+        the store keeps strictly increasing per process, so it equals
+        cross-workspace insertion order (rowid itself is per-database and not
+        comparable). A workspace whose stream cannot be read is warned about
+        on stderr and counted in ``skipped``; the rest still merge.
         """
         merged: list[Event] = []
-        for workspace_id in list_workspace_ids(db.settings):
-            merged.extend(list_events(db, workspace_id, limit=limit))
+        skipped = 0
+        with db.global_session() as session:
+            workspace_ids = [
+                row.id
+                for row in session.query(Workspace)
+                .order_by(Workspace.created_at, Workspace.id)
+                .all()
+            ]
+        for workspace_id in workspace_ids:
+            try:
+                merged.extend(list_events(db, workspace_id, limit=limit))
+            except Exception as exc:  # noqa: BLE001 - per-workspace isolation
+                print(
+                    f"warning: events skipped: {workspace_id}: {exc}",
+                    file=sys.stderr,
+                )
+                skipped += 1
         merged.sort(key=lambda event: event.time, reverse=True)
-        return [_event_dict(event) for event in merged[:limit]]
+        return {
+            "events": [_event_dict(event) for event in merged[:limit]],
+            "skipped": skipped,
+        }
 
     @app.get("/works/{workspace_id}/pending")
     def get_pending_drafts(workspace_id: str) -> list[dict[str, Any]]:
@@ -262,11 +296,16 @@ def create_app() -> FastAPI:
         return {"id": updated.id, "status": updated.status}
 
     @app.get("/works/{workspace_id}/inspect")
-    def inspect_workspace(workspace_id: str, keyword: str | None = None) -> str:
+    def inspect_workspace(
+        workspace_id: str, keyword: str | None = None
+    ) -> PlainTextResponse:
         """Search every workspace layer; same text the ``inspect`` CLI renders."""
         if keyword is None or not keyword.strip():
             raise NovelError(ErrorCode.USAGE_ERROR, "search keyword must not be empty")
-        return views.search_all_layers(db, workspace_id, keyword)
+        return PlainTextResponse(
+            views.search_all_layers(db, workspace_id, keyword),
+            media_type="text/plain",
+        )
 
     @app.get("/works/{workspace_id}/drafts")
     def get_drafts(workspace_id: str) -> list[dict[str, Any]]:
@@ -321,9 +360,12 @@ def create_app() -> FastAPI:
         ]
 
     @app.get("/works/{workspace_id}/log")
-    def get_workspace_log(workspace_id: str) -> str:
+    def get_workspace_log(workspace_id: str) -> PlainTextResponse:
         """Full workflow log text, same source as the ``log`` CLI command."""
-        return log.build_workspace_log(db, workspace_id)
+        return PlainTextResponse(
+            log.build_workspace_log(db, workspace_id),
+            media_type="text/plain",
+        )
 
     @app.get("/works/{workspace_id}/events")
     def get_workspace_events(workspace_id: str) -> list[dict[str, Any]]:
@@ -342,5 +384,13 @@ def create_app() -> FastAPI:
         """Flat, parent-first structure nodes for one workspace."""
         get_workspace_or_raise(db, workspace_id)
         return [_node_dict(node) for node in structure.list_structure(db, workspace_id)]
+
+    frontend_dist = _frontend_dist_dir()
+    if frontend_dist.is_dir():
+        app.mount(
+            "/",
+            StaticFiles(directory=frontend_dist, html=True),
+            name="frontend",
+        )
 
     return app

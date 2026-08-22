@@ -504,6 +504,89 @@ def test_api_port_bounds_are_inclusive(tmp_path: Path) -> None:
     assert settings.api_port == 65535
 
 
+def test_panel_poll_interval_defaults() -> None:
+    settings = load_settings({})
+    assert settings.panel_poll_interval == 3
+
+
+def test_panel_poll_interval_env_overrides(tmp_path: Path) -> None:
+    settings = load_settings(
+        {
+            "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+            "NOVEL_PANEL_POLL_INTERVAL": "7",
+        }
+    )
+    assert settings.panel_poll_interval == 7
+
+
+def test_panel_poll_interval_toml_overrides(tmp_path: Path) -> None:
+    (tmp_path / "config.toml").write_text(
+        "[defaults]\npanel_poll_interval = 5\n",
+        encoding="utf-8",
+    )
+    settings = load_settings({"NOVEL_CONFIG": str(tmp_path / "config.toml")})
+    assert settings.panel_poll_interval == 5
+
+
+def test_panel_poll_interval_env_beats_toml(tmp_path: Path) -> None:
+    (tmp_path / "config.toml").write_text(
+        "[defaults]\npanel_poll_interval = 5\n",
+        encoding="utf-8",
+    )
+    settings = load_settings(
+        {
+            "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+            "NOVEL_PANEL_POLL_INTERVAL": "9",
+        }
+    )
+    assert settings.panel_poll_interval == 9
+
+
+@pytest.mark.parametrize("value", ["high", "0", "-1", "301"])
+def test_invalid_panel_poll_interval_env_reports_config_error(
+    tmp_path: Path, value: str
+) -> None:
+    with pytest.raises(NovelError) as info:
+        load_settings(
+            {
+                "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+                "NOVEL_PANEL_POLL_INTERVAL": value,
+            }
+        )
+    assert info.value.code is ErrorCode.CONFIG_ERROR
+
+
+@pytest.mark.parametrize("value", [0, -1, 301])
+def test_invalid_panel_poll_interval_toml_reports_config_error(
+    tmp_path: Path, value: int
+) -> None:
+    (tmp_path / "config.toml").write_text(
+        f"[defaults]\npanel_poll_interval = {value}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(NovelError) as info:
+        load_settings({"NOVEL_CONFIG": str(tmp_path / "config.toml")})
+    assert info.value.code is ErrorCode.CONFIG_ERROR
+
+
+def test_panel_poll_interval_bounds_are_inclusive(tmp_path: Path) -> None:
+    settings = load_settings(
+        {
+            "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+            "NOVEL_PANEL_POLL_INTERVAL": "1",
+        }
+    )
+    assert settings.panel_poll_interval == 1
+
+    settings = load_settings(
+        {
+            "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+            "NOVEL_PANEL_POLL_INTERVAL": "300",
+        }
+    )
+    assert settings.panel_poll_interval == 300
+
+
 def test_set_quality_threshold_creates_missing_file(tmp_path: Path) -> None:
     config_path = tmp_path / "config.toml"
 

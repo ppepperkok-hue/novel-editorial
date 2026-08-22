@@ -75,6 +75,7 @@ class Settings:
     embedding_top_k: int = 5
     api_host: str = "127.0.0.1"
     api_port: int = 8765
+    panel_poll_interval: int = 3
     defaults: dict = field(default_factory=dict)
 
 
@@ -186,6 +187,16 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         min_value=1,
         max_value=65535,
     )
+    panel_poll_interval = _load_int_setting(
+        env,
+        defaults,
+        env_key="NOVEL_PANEL_POLL_INTERVAL",
+        toml_key="panel_poll_interval",
+        fallback=3,
+        label="panel poll interval",
+        min_value=1,
+        max_value=300,
+    )
     return Settings(
         data_dir=data_dir,
         config_path=config_path,
@@ -205,6 +216,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         embedding_top_k=embedding_top_k,
         api_host=api_host,
         api_port=api_port,
+        panel_poll_interval=panel_poll_interval,
         defaults=defaults,
     )
 

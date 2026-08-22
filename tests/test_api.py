@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect, text
 
+from novel_editorial.api import app as api_app
 from novel_editorial.api.app import create_app
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.structure import create_node
@@ -24,6 +25,7 @@ def _make_client(
 ) -> tuple[TestClient, DB]:
     monkeypatch.setenv("NOVEL_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("NOVEL_CONFIG", str(tmp_path / "config.toml"))
+    monkeypatch.setenv("NOVEL_FRONTEND_DIST", str(tmp_path / "no-dist"))
     return TestClient(create_app()), DB(load_settings())
 
 
@@ -249,6 +251,7 @@ def test_unhandled_exception_maps_to_500(
 
     monkeypatch.setenv("NOVEL_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("NOVEL_CONFIG", str(tmp_path / "config.toml"))
+    monkeypatch.setenv("NOVEL_FRONTEND_DIST", str(tmp_path / "no-dist"))
     client = TestClient(create_app(), raise_server_exceptions=False)
     monkeypatch.setattr(workspace, "create_workspace", boom)
 
@@ -437,6 +440,38 @@ def test_visibility_routes_are_read_only(
     assert client.get(f"/works/{workspace_id}/events").json() == events_before
 
 
+def test_frontend_dist_is_served_when_present(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text(
+        "<html><body>Novel Editorial 面板</body></html>",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("NOVEL_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("NOVEL_CONFIG", str(tmp_path / "config.toml"))
+    monkeypatch.setenv("NOVEL_FRONTEND_DIST", str(dist))
+
+    client = TestClient(create_app())
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Novel Editorial 面板" in response.text
+
+
+def test_frontend_dist_missing_keeps_api_behavior(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("NOVEL_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("NOVEL_CONFIG", str(tmp_path / "config.toml"))
+    monkeypatch.setenv("NOVEL_FRONTEND_DIST", str(tmp_path / "missing-dist"))
+
+    client = TestClient(create_app())
+    assert client.get("/").status_code == 404
+    assert client.get("/health").status_code == 200
+
+
 def test_global_events_merge_workspaces_newest_first(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -450,7 +485,10 @@ def test_global_events_merge_workspaces_newest_first(
 
     response = client.get("/events")
     assert response.status_code == 200
-    events = response.json()
+    body = response.json()
+    assert set(body) == {"events", "skipped"}
+    assert body["skipped"] == 0
+    events = body["events"]
     assert [event["payload"]["n"] for event in events] == [3, 2, 1]
     assert {event["workspace_id"] for event in events} == {first, second}
     for event in events:
@@ -460,11 +498,64 @@ def test_global_events_merge_workspaces_newest_first(
 
     limited = client.get("/events", params={"limit": 2})
     assert limited.status_code == 200
-    assert [event["payload"]["n"] for event in limited.json()] == [3, 2]
+    limited_body = limited.json()
+    assert limited_body["skipped"] == 0
+    assert [event["payload"]["n"] for event in limited_body["events"]] == [3, 2]
 
     invalid = client.get("/events", params={"limit": 0})
     assert invalid.status_code == 422
     assert "detail" in invalid.json()
+
+
+def test_global_events_uses_registry_not_disk_scan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Events come from the global workspaces registry, not from scanning data/works."""
+    client, db = _make_client(tmp_path, monkeypatch)
+    registered = client.post("/works", json={"title": "注册之书"}).json()["id"]
+    record_event(db, registered, type=EventType.SYSTEM, actor="system", payload={"n": 1})
+
+    orphan = "orphan-workspace"
+    db.create_workspace_db(orphan)
+    record_event(db, orphan, type=EventType.SYSTEM, actor="system", payload={"n": 99})
+
+    response = client.get("/events")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["skipped"] == 0
+    events = body["events"]
+    assert [event["payload"]["n"] for event in events] == [1]
+    assert {event["workspace_id"] for event in events} == {registered}
+
+
+def test_global_events_skips_failed_workspace_and_warns_on_stderr(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    first = client.post("/works", json={"title": "甲书"}).json()["id"]
+    second = client.post("/works", json={"title": "乙书"}).json()["id"]
+    record_event(db, first, type=EventType.SYSTEM, actor="system", payload={"n": 1})
+    record_event(db, second, type=EventType.SYSTEM, actor="system", payload={"n": 2})
+
+    original_list_events = api_app.list_events
+
+    def flaky_list_events(
+        db: DB, workspace_id: str, *, types=None, limit: int = 20
+    ) -> list:
+        if workspace_id == first:
+            raise RuntimeError("simulated workspace failure")
+        return original_list_events(db, workspace_id, types=types, limit=limit)
+
+    monkeypatch.setattr(api_app, "list_events", flaky_list_events)
+
+    response = client.get("/events")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["skipped"] == 1
+    assert [event["payload"]["n"] for event in body["events"]] == [2]
+    warning = capsys.readouterr().err
+    assert f"warning: events skipped: {first}" in warning
+    assert "simulated workspace failure" in warning
 
 
 def test_pending_drafts_end_to_end(
@@ -585,6 +676,7 @@ def test_inspect_and_log_end_to_end(
 
     inspected = client.get(f"/works/{workspace_id}/inspect", params={"keyword": "冷峻"})
     assert inspected.status_code == 200
+    assert inspected.headers["content-type"].startswith("text/plain")
     assert "[风格]" in inspected.text
     assert "冷峻克制" in inspected.text
     assert "[版本]" in inspected.text
@@ -594,12 +686,37 @@ def test_inspect_and_log_end_to_end(
 
     logged = client.get(f"/works/{workspace_id}/log")
     assert logged.status_code == 200
+    assert logged.headers["content-type"].startswith("text/plain")
     assert "作品：《可见性之书》" in logged.text
     assert "== 草稿 ==" in logged.text
     assert "第一章" in logged.text
     assert "冷峻克制的雨夜开场" in logged.text
     assert "== 意见 ==" in logged.text
     assert "冷峻的钩子再亮一点" in logged.text
+
+
+def test_inspect_and_log_return_plain_text_not_json_escaped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PlainTextResponse keeps quotes and newlines verbatim, unlike JSON encoding."""
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = _seed_workspace(client, db)
+    _seed_draft(db, workspace_id, content='含"引号"与\n换行的正文')
+
+    inspected = client.get(
+        f"/works/{workspace_id}/inspect", params={"keyword": "引号"}
+    )
+    assert inspected.status_code == 200
+    assert inspected.headers["content-type"].startswith("text/plain")
+    assert '含"引号"' in inspected.text
+    assert "\\\"" not in inspected.text
+
+    logged = client.get(f"/works/{workspace_id}/log")
+    assert logged.status_code == 200
+    assert logged.headers["content-type"].startswith("text/plain")
+    assert '含"引号"' in logged.text
+    assert "\\\"" not in logged.text
+    assert "\n" in logged.text
 
 
 def test_inspect_missing_or_blank_keyword_is_422(
