@@ -745,11 +745,23 @@ export NOVEL_FREEDOM_SEED=7
 export NOVEL_MOTIVE_LLM_ENABLED=false
 ```
 
-同一多候选情境（如 talk 首轮）下，`freedom_dial=1`、不同 `freedom_seed` 会选出不同伙伴，同 seed 两次结果一致（以下为 mock 下可跑的等价片段，`db` / `workspace_id` 已建好）：
+同一多候选情境下，`freedom_dial=1`、不同 `freedom_seed` 会选出不同伙伴，同 seed 两次结果一致。注意 `talk_first_round` 默认只注册了总编一个候选，单候选永远走确定性分支，所以要演示「换 seed 有变体」，先像下面这样补两个候选（以下为 mock 下可跑的等价片段，`db` / `workspace_id` 已建好）：
 
 ```python
 from novel_editorial.core import proactive
 from novel_editorial.core.config import Settings
+
+for agent, kind, content in (
+    ("责编", proactive.PROACTIVE_KIND_REVIEW, "责编候选"),
+    ("写手", proactive.PROACTIVE_KIND_QUESTION, "写手候选"),
+):
+    proactive.register_proactive_trigger(
+        trigger="talk_first_round",
+        agent=agent,
+        kind=kind,
+        content=content,
+        condition=lambda context: True,
+    )
 
 for seed in (0, 7, 42):
     db.settings = Settings(
