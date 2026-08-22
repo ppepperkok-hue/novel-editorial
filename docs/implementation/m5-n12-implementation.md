@@ -145,6 +145,7 @@ pytest（新增）+ 前端四命令 + ruff + pyright + 宪法。
 
 ### 做什么
 
+- 修复 S4 独立审查 P3（允许触碰 src/novel_editorial/store/db.py、scripts/panel_demo.py 与 tests/）：`DB` 增加公开 `dispose()`（释放全局与全部作品引擎并清空缓存），演示脚本改用之，不再摸私有 `_workspace_engines`。
 - usage.md 增「图形面板（N12）」小节（启动、三扇窗、拍板、配置、Node 仅开发期说明）；README 快速开始补面板。
 - 全量回归：pytest 全量 + smoke_m3 + stress_m3 + 前端四命令 + 演示脚本。
 - 独立审查 + 归档 docs/reviews/（20260822-M5N12S1 … S5 链）；progress 与 07-backlog 收口。
