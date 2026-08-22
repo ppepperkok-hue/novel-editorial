@@ -1,8 +1,8 @@
 # 项目进度总结（Progress Summary）
 
 - 最后更新：2026-08-21
-- 当前基线：全量 1135 测试绿；ruff / pyright / 宪法校验 / smoke_m3 / stress_m3 全绿
-- 远端：本地 HEAD 与 origin/main 一致（N23 收口归档已推送），工作区干净
+- 当前基线：全量 1147 测试绿；ruff / pyright / 宪法校验 / smoke_m3 / stress_m3 全绿
+- 远端：本地 HEAD 与 origin/main 一致（N26 收口归档已推送），工作区干净
 
 > 完整版（N1–N26、U1–U27 逐项）见 [docs/progress-report.md](progress-report.md)；后补项目集中清单见 [docs/project-plan/07-parked-backlog.md](project-plan/07-parked-backlog.md)。
 
@@ -33,6 +33,7 @@
 | 扩展 | N23 试读反馈回流（S1–S3） | 完成 |
 | M8-N10 | 跨作品聚合视图（O1–O3） | 完成 |
 | M8-N11 | 示例编辑部与剧本（R1–R3） | 完成 |
+| 扩展 | N26 预设编辑部模板（S1–S3） | 完成 |
 | 扩展 | N13 作品结构（J1–J3） | 完成 |
 | 扩展 | N14 多写手并行（K1–K3） | 完成 |
 | 扩展 | N17 记忆衰减与归档（F1–F3） | 完成 |
@@ -64,6 +65,7 @@
 - 可见性：`talk list` 的主动 / 分歧 / 互委标记，`events list` 事件流，`behavior timeline` / `behavior show` 时间线与当前状态，`agents show` 印象关系摘要。
 - HTTP API：`api serve` 起本机服务，works / overview / events / style / structure 只读路由与 CLI 同源，为 N12 面板铺路。
 - 导入导出：`works export` / `works import` 打包可校验 ZIP，换设备、迁移、备份不丢作品与编辑部设置。
+- 预设模板：`works templates` / `works create --template` 按题材一键生成班子与风格起点，模板开放、可自由自定义。
 - 编辑部形态：多方讨论（N4）、设定库与知识管家（N5/N6）、语义检索（N7）、作品结构 / 大纲 / 进度（N13）、多写手并行（N14）、记忆衰减（N17）、设定影响分析（N18）。
 - 无 AI 味：AI 味逐句定位与改写建议（N8）、语料校准阈值建议与 `--apply` 幂等写回（N9）、参考语料风格画像与建议描述（N20）、跨章节风格漂移检测（N21）、好句识别与保留（N22）。
 - 试读反馈：`quality feedback` 把「好 / 坏」标注送进校准，建议阈值对齐真人反馈（`--apply` 幂等写回）。
@@ -78,7 +80,6 @@
 | 单元 | 优先级 | 依赖 | 说明 |
 | --- | --- | --- | --- |
 | N12 图形面板三扇窗 | P2 | N10 已满足 | 用户明确后置 |
-| N26 预设编辑部模板 | P2 | N11 未立项 | 按题材一键生成班子 |
 
 ## 已留档的待办项
 
