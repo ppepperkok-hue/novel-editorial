@@ -104,13 +104,14 @@ def list_behavior_timeline(
     """Return behavior rows oldest first (insertion order), optionally filtered.
 
     ``kind`` accepts a single value or a sequence; multiple kinds are matched
-    in one query so the insertion-order limit applies across all of them.
+    in one query so the insertion-order limit applies across all of them. An
+    empty string or an empty sequence is equivalent to no kind filter.
     """
     with db.workspace_session(workspace_id) as session:
         query = session.query(BehaviorTimeline).filter_by(workspace_id=workspace_id)
         if agent_id is not None:
             query = query.filter(BehaviorTimeline.agent_id == agent_id)
-        if kind is not None:
+        if kind:
             kinds = [kind] if isinstance(kind, str) else list(kind)
             query = query.filter(BehaviorTimeline.kind.in_(kinds))
         return query.order_by(_ROWID.asc()).limit(limit).all()

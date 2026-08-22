@@ -16,6 +16,7 @@ from novel_editorial.cli.app import app
 from novel_editorial.core.archive import (
     ARCHIVE_FORMAT,
     ARCHIVE_VERSION,
+    _is_sqlite_database,
     export_workspace_archive,
     import_workspace_archive,
 )
@@ -641,6 +642,89 @@ def test_import_non_sqlite_data_db_rejected_cleanly(
     assert exc_info.value.code is ErrorCode.USAGE_ERROR
     assert "not a SQLite database" in exc_info.value.message
     assert set(list_workspace_ids(db.settings)) == {workspace_id}
+    assert _workspace_count(db) == 1
+    assert list(tmp_root.iterdir()) == []
+
+
+def test_is_sqlite_database_rejects_zero_byte_file(tmp_path: Path) -> None:
+    """A zero-byte file is never a database and the probe must not touch it."""
+    empty = tmp_path / "empty.db"
+    empty.write_bytes(b"")
+
+    assert _is_sqlite_database(empty) is False
+    assert empty.stat().st_size == 0
+
+
+def test_is_sqlite_database_rejects_schema_less_nonempty_file(tmp_path: Path) -> None:
+    """A valid header with an empty sqlite_master is not a real database."""
+    path = tmp_path / "schema-less.db"
+    conn = sqlite3.connect(path)
+    try:
+        conn.execute("CREATE TABLE temp_row (id INTEGER PRIMARY KEY)")
+        conn.execute("DROP TABLE temp_row")
+        conn.commit()
+    finally:
+        conn.close()
+
+    assert path.stat().st_size > 0
+    assert _is_sqlite_database(path) is False
+
+
+def test_import_zero_byte_data_db_rejected_cleanly(tmp_path: Path, monkeypatch) -> None:
+    """A self-consistent manifest pointing at a 0-byte data.db is a clean USAGE_ERROR."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    empty = b""
+    manifest = {
+        "format": ARCHIVE_FORMAT,
+        "version": ARCHIVE_VERSION,
+        "exported_at": "2026-08-21T00:00:00+00:00",
+        "workspace": {
+            "id": workspace_id,
+            "title": "源",
+            "genre": "",
+            "description": "",
+            "status": "writing",
+            "created_at": "2026-08-21T00:00:00+00:00",
+        },
+        "files": {"data.db": hashlib.sha256(empty).hexdigest()},
+    }
+    archive = tmp_path / "zero-byte.zip"
+    _write_zip(
+        archive,
+        {
+            "manifest.json": json.dumps(manifest).encode("utf-8"),
+            "data.db": empty,
+        },
+    )
+
+    tmp_root = tmp_path / "import-tmp"
+    tmp_root.mkdir()
+    counter = 0
+
+    def fake_mkdtemp(*args, **kwargs) -> str:
+        nonlocal counter
+        counter += 1
+        path = tmp_root / f"extract-{counter}"
+        path.mkdir()
+        return str(path)
+
+    monkeypatch.setattr("novel_editorial.core.archive.tempfile.mkdtemp", fake_mkdtemp)
+
+    with pytest.raises(NovelError) as exc_info:
+        import_workspace_archive(db, archive)
+
+    assert exc_info.value.code is ErrorCode.USAGE_ERROR
+    assert "not a SQLite database" in exc_info.value.message
+    assert set(list_workspace_ids(db.settings)) == {workspace_id}
+    assert _workspace_count(db) == 1
+    assert list(tmp_root.iterdir()) == []
+
+    cli_result = runner.invoke(app, ["works", "import", str(archive)])
+    assert cli_result.exit_code == 2
+    assert "not a SQLite database" in cli_result.output
+    works = db.settings.data_dir / "works"
+    assert {path.name for path in works.iterdir()} == {workspace_id}
     assert _workspace_count(db) == 1
     assert list(tmp_root.iterdir()) == []
 

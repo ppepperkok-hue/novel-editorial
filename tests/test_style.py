@@ -8,8 +8,10 @@ from novel_editorial.cli.app import app
 from novel_editorial.core import proactive
 from novel_editorial.core.chat import list_messages
 from novel_editorial.core.config import load_settings
+from novel_editorial.core.style import find_style_anchor, set_style_anchor
 from novel_editorial.store.db import DB
 from novel_editorial.store.events import list_events
+from novel_editorial.store.models import StyleAnchor
 
 runner = CliRunner()
 
@@ -115,3 +117,28 @@ def test_disabled_proactive_suppresses_style_consistency(
 
     db = DB(load_settings())
     assert list_messages(db, workspace_id) == []
+
+
+def test_find_style_anchor_missing_returns_none_without_creating_row(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+
+    anchor = find_style_anchor(db, workspace_id)
+
+    assert anchor is None
+    with db.workspace_session(workspace_id) as session:
+        assert session.query(StyleAnchor).filter_by(workspace_id=workspace_id).first() is None
+
+
+def test_find_style_anchor_returns_detached_existing_row(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    set_style_anchor(db, workspace_id, description="冷峻克制", forbidden_words="宛如、仿佛")
+
+    anchor = find_style_anchor(db, workspace_id)
+
+    assert anchor is not None
+    assert anchor.description == "冷峻克制"
+    assert anchor.forbidden_words == "宛如、仿佛"

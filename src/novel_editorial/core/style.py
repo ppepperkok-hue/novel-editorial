@@ -34,6 +34,21 @@ def extract_style_keywords(description: str) -> frozenset[str]:
     )
 
 
+def find_style_anchor(db: DB, workspace_id: str) -> StyleAnchor | None:
+    """Read one workspace's style anchor without creating a missing row.
+
+    Returns ``None`` when no anchor exists; never writes to the database.
+    """
+    with db.workspace_session(workspace_id) as session:
+        anchor = session.query(StyleAnchor).filter_by(workspace_id=workspace_id).first()
+        if anchor is None:
+            return None
+        # Load attributes while the session is open, then detach safely.
+        _ = (anchor.description, anchor.forbidden_words)
+        session.expunge(anchor)
+        return anchor
+
+
 def get_style_anchor(db: DB, workspace_id: str) -> StyleAnchor:
     with db.workspace_session(workspace_id) as session:
         anchor = session.query(StyleAnchor).filter_by(workspace_id=workspace_id).first()

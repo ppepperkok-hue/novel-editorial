@@ -18,6 +18,7 @@ from novel_editorial.core import decision, draft, log, overview, review, structu
 from novel_editorial.core.chat import get_workspace_or_raise
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.style import find_style_anchor
 from novel_editorial.store.db import DB
 from novel_editorial.store.events import list_events
 from novel_editorial.store.models import (
@@ -25,7 +26,6 @@ from novel_editorial.store.models import (
     Draft,
     DraftVersion,
     Event,
-    StyleAnchor,
     Workspace,
     WorkspaceStructureNode,
 )
@@ -145,18 +145,13 @@ def _overview_dict(item: overview.WorkspaceOverview) -> dict[str, Any]:
 
 def _style_anchor_dict(db: DB, workspace_id: str) -> dict[str, str]:
     """Read a workspace's style anchor without creating a missing row."""
-    with db.workspace_session(workspace_id) as session:
-        anchor = (
-            session.query(StyleAnchor)
-            .filter_by(workspace_id=workspace_id)
-            .first()
-        )
-        if anchor is None:
-            return {"description": "", "forbidden_words": ""}
-        return {
-            "description": anchor.description,
-            "forbidden_words": anchor.forbidden_words,
-        }
+    anchor = find_style_anchor(db, workspace_id)
+    if anchor is None:
+        return {"description": "", "forbidden_words": ""}
+    return {
+        "description": anchor.description,
+        "forbidden_words": anchor.forbidden_words,
+    }
 
 
 def _frontend_dist_dir() -> Path:

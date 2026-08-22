@@ -46,31 +46,34 @@ def _sha256(path: Path) -> str:
 
 
 def _is_sqlite_database(path: Path) -> bool:
-    """True only when ``path`` is a real SQLite database (schema readable).
+    """True only when ``path`` is a real SQLite database with a schema.
 
-    The header magic is a necessary hint for non-empty files but never
-    sufficient on its own: a file with a ``SQLite format 3\\x00`` prefix and
-    garbage pages must still be rejected, so validity is decided by a real
-    schema read (``SELECT count(*) FROM sqlite_master``).
+    A zero-byte file is never a database: probing it would otherwise make
+    sqlite3 initialize an empty file in place. For non-empty files the header
+    magic is a necessary hint but never sufficient on its own, so validity is
+    decided by a real schema read: ``sqlite_master`` must hold at least one
+    row, because a genuine workspace database always carries its schema.
     """
     try:
+        if path.stat().st_size == 0:
+            return False
         with path.open("rb") as fh:
             header = fh.read(len(_SQLITE_HEADER_MAGIC))
     except OSError:
         return False
-    if header != _SQLITE_HEADER_MAGIC and path.stat().st_size > 0:
+    if header != _SQLITE_HEADER_MAGIC:
         return False
     try:
         conn = sqlite3.connect(path)
         try:
-            conn.execute("SELECT count(*) FROM sqlite_master").fetchone()
+            schema_count = conn.execute("SELECT count(*) FROM sqlite_master").fetchone()[0]
         finally:
             # sqlite3 connection context managers only manage transactions,
             # not close; close explicitly so no handle outlives the probe.
             conn.close()
     except sqlite3.DatabaseError:
         return False
-    return True
+    return schema_count > 0
 
 
 def _resolve_export_target(target: Path, workspace_id: str) -> Path:

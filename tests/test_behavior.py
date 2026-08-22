@@ -308,6 +308,48 @@ def test_timeline_insertion_order_not_timestamp_based(tmp_path: Path, monkeypatc
     assert entries[0].created_at == entries[1].created_at == fixed_time.replace(tzinfo=None)
 
 
+@pytest.mark.parametrize("empty_kind", [[], (), ""])
+def test_list_behavior_timeline_empty_kind_means_no_filter(
+    tmp_path: Path, monkeypatch, empty_kind
+) -> None:
+    """An empty kind sequence or empty string is equivalent to no kind filter."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    record_behavior_entry(
+        db,
+        workspace_id,
+        agent_id="写手",
+        kind="viewpoint",
+        target="rule_a",
+        summary="v0",
+    )
+    record_behavior_entry(
+        db,
+        workspace_id,
+        agent_id="写手",
+        kind="viewpoint",
+        target="rule_a",
+        summary="v1",
+    )
+    record_behavior_entry(
+        db,
+        workspace_id,
+        agent_id="责编",
+        kind="impression",
+        target="写手",
+        summary="i0",
+    )
+
+    expected = ["v0", "v1", "i0"]
+    assert [
+        entry.summary for entry in list_behavior_timeline(db, workspace_id, kind=empty_kind)
+    ] == expected
+    assert [
+        entry.summary
+        for entry in list_behavior_timeline(db, workspace_id, kind=empty_kind, limit=2)
+    ] == ["v0", "v1"]
+
+
 def test_list_behavior_timeline_multi_kind_ignores_kind_order_and_keeps_rowid(
     tmp_path: Path, monkeypatch
 ) -> None:

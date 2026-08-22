@@ -20,10 +20,9 @@ from novel_editorial.core.chat import get_workspace_or_raise
 from novel_editorial.core.draft import get_draft, get_draft_version, list_drafts
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.structure import KIND_CHAPTER, list_structure
-from novel_editorial.core.style import extract_style_keywords
+from novel_editorial.core.style import extract_style_keywords, find_style_anchor
 from novel_editorial.core.style_learn import StyleProfile, compute_style_profile
 from novel_editorial.store.db import DB
-from novel_editorial.store.models import StyleAnchor
 
 DRIFT_THRESHOLD = 50
 UNTITLED_CHAPTER = "未命名章节"
@@ -216,15 +215,10 @@ def _ordered_chapters(
 
 def _read_style_anchor(db: DB, workspace_id: str) -> tuple[str, str]:
     """Read description and forbidden words without creating a missing anchor."""
-    with db.workspace_session(workspace_id) as session:
-        anchor = (
-            session.query(StyleAnchor)
-            .filter_by(workspace_id=workspace_id)
-            .first()
-        )
-        if anchor is None:
-            return "", ""
-        return anchor.description, anchor.forbidden_words
+    anchor = find_style_anchor(db, workspace_id)
+    if anchor is None:
+        return "", ""
+    return anchor.description, anchor.forbidden_words
 
 
 def read_forbidden_words(db: DB, workspace_id: str) -> list[str]:

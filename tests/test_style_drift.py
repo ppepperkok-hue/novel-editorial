@@ -13,7 +13,7 @@ from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.structure import KIND_CHAPTER, KIND_VOLUME, create_node
 from novel_editorial.core.style import set_style_anchor
-from novel_editorial.core.style_drift import compute_style_drift
+from novel_editorial.core.style_drift import compute_style_drift, read_forbidden_words
 from novel_editorial.store.db import DB
 from novel_editorial.store.events import list_events
 from novel_editorial.store.models import Draft, DraftVersion, StyleAnchor
@@ -424,6 +424,21 @@ def test_compute_is_read_only(tmp_path: Path, monkeypatch) -> None:
     compute_style_drift(db, workspace_id)
 
     assert len(list_events(db, workspace_id)) == len(events_before)
+
+
+def test_missing_anchor_is_read_only(tmp_path: Path, monkeypatch) -> None:
+    """compute_style_drift and read_forbidden_words never create a missing anchor."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    _write_draft(db, workspace_id, title="第一章", content="雨夜归乡。", draft_id="d1")
+    _write_draft(db, workspace_id, title="第二章", content="线索浮现。", draft_id="d2")
+
+    report = compute_style_drift(db, workspace_id)
+    assert report.verdict == "style stable"
+    assert read_forbidden_words(db, workspace_id) == []
+
+    with db.workspace_session(workspace_id) as session:
+        assert session.query(StyleAnchor).filter_by(workspace_id=workspace_id).first() is None
 
 
 def test_missing_workspace_is_not_found(tmp_path: Path, monkeypatch) -> None:
