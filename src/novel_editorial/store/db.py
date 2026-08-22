@@ -150,9 +150,10 @@ DEFAULT_BAND: list[dict[str, str]] = [
 ]
 
 
-def seed_default_band(db: DB, workspace_id: str) -> None:
+def seed_band(db: DB, workspace_id: str, members: list[dict[str, str]]) -> None:
+    """Insert an editorial band from a list of agent field dicts."""
     with db.workspace_session(workspace_id) as session:
-        for member in DEFAULT_BAND:
+        for member in members:
             session.add(
                 Agent(
                     workspace_id=workspace_id,
@@ -171,3 +172,8 @@ def seed_default_band(db: DB, workspace_id: str) -> None:
                 )
             )
         session.commit()
+
+
+def seed_default_band(db: DB, workspace_id: str) -> None:
+    """Seed the default editorial band (unchanged legacy behavior)."""
+    seed_band(db, workspace_id, DEFAULT_BAND)
