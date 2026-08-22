@@ -15,7 +15,7 @@ runner = CliRunner()
 TOP_LEVEL_COMMANDS = ("init", "health", "version", "demo", "example", "log", "inspect")
 
 SUBCOMMANDS = {
-    "works": ("create", "list", "overview", "show", "status"),
+    "works": ("create", "list", "overview", "show", "status", "templates"),
     "agents": ("add", "list", "show", "edit"),
     "behavior": ("timeline", "show"),
     "talk": ("send", "list", "delegate", "discuss"),
@@ -69,6 +69,12 @@ def _isolated_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def test_every_command_registered_and_documented(args: list[str], label: str) -> None:
     result = runner.invoke(app, [*args, "--help"])
     assert result.exit_code == 0, f"{label}: {result.output}"
+
+
+def test_works_create_help_lists_template_option() -> None:
+    result = runner.invoke(app, ["works", "create", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "--template" in result.output
 
 
 @pytest.mark.smoke

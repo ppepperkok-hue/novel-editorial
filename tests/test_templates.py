@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 
@@ -79,6 +80,7 @@ def test_list_templates_order_stable() -> None:
     second = [template.name for template in list_templates()]
     assert first == ["网文", "同人", "正统"]
     assert second == first
+    assert list_templates() == list(TEMPLATES.values())
 
 
 def test_get_template_unknown_raises_usage_error() -> None:
@@ -87,6 +89,27 @@ def test_get_template_unknown_raises_usage_error() -> None:
     assert exc_info.value.code == ErrorCode.USAGE_ERROR
     for name in ("网文", "同人", "正统"):
         assert name in exc_info.value.message
+
+
+def test_get_template_returns_independent_copy(
+    tmp_path: Path, monkeypatch
+) -> None:
+    pristine = copy.deepcopy(TEMPLATES["同人"])
+
+    polluted = get_template("同人")
+    polluted.band[0]["name"] = "篡改总编"
+    polluted.band[1]["personality"] = "被篡改的责编"
+
+    fresh = get_template("同人")
+    assert fresh.band == pristine.band
+
+    db = _db(tmp_path, monkeypatch)
+    workspace = create_workspace(db, title="洁净之书", template=fresh)
+    by_role = _agents_by_role(db, workspace.id)
+    for member in pristine.band:
+        agent = by_role[member["role"]]
+        for field in _BAND_FIELDS:
+            assert getattr(agent, field) == member[field]
 
 
 def test_create_workspace_with_template_persists_band_and_anchor(

@@ -14,6 +14,7 @@ from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.overview import build_overview
 from novel_editorial.core.structure import set_workspace_status
+from novel_editorial.core.templates import get_template, list_templates
 from novel_editorial.core.workspace import create_workspace
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import Agent, Workspace
@@ -26,13 +27,30 @@ def works_create(
     title: str = typer.Argument(..., help="Work title"),
     genre: str = typer.Option("", "--genre", help="Genre"),
     description: str = typer.Option("", "--description", help="Short description"),
+    template: str | None = typer.Option(
+        None, "--template", help="Preset editorial template (网文/同人/正统)"
+    ),
 ) -> None:
-    """Create a workspace with a default editorial band."""
+    """Create a workspace with a default or preset editorial band."""
     settings = load_settings()
     db = DB(settings)
     db.init_schema()
-    workspace = create_workspace(db, title=title, genre=genre, description=description)
+    band_template = get_template(template) if template else None
+    workspace = create_workspace(
+        db,
+        title=title,
+        genre=genre,
+        description=description,
+        template=band_template,
+    )
     typer.echo(f"created workspace {workspace.id}: {title}")
+
+
+@works_app.command("templates")
+def works_templates() -> None:
+    """List preset editorial band templates in fixed order."""
+    for template in list_templates():
+        typer.echo(f"{template.name}: {template.description}")
 
 
 @works_app.command("list")

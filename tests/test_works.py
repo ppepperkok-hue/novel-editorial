@@ -7,11 +7,13 @@ from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
 from novel_editorial.core.config import load_settings
-from novel_editorial.store.db import DB, global_db_path
+from novel_editorial.core.templates import get_template, list_templates
+from novel_editorial.store.db import DB, DEFAULT_BAND, global_db_path
 from novel_editorial.store.models import (
     Agent,
     Draft,
     Event,
+    StyleAnchor,
     Workspace,
     WorkspaceStructureNode,
 )
@@ -326,3 +328,59 @@ def test_works_overview_orphan_entry_skips_empty_state(
     assert result.exit_code == 0
     assert "no workspaces yet" not in result.stdout
     assert "warning: overview skipped:" in result.stderr
+
+
+def test_works_templates_lists_three_in_fixed_order(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("NOVEL_DATA_DIR", str(tmp_path))
+    result = runner.invoke(app, ["works", "templates"])
+    assert result.exit_code == 0, result.output
+    expected = [
+        f"{template.name}: {template.description}" for template in list_templates()
+    ]
+    assert result.output.splitlines() == expected
+    assert [line.split(":", 1)[0] for line in expected] == ["网文", "同人", "正统"]
+
+
+def test_works_create_with_template_end_to_end(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("NOVEL_DATA_DIR", str(tmp_path))
+    db = DB(load_settings())
+
+    template = get_template("网文")
+    create = runner.invoke(app, ["works", "create", "网文书", "--template", "网文"])
+    assert create.exit_code == 0, create.output
+    workspace_id = _created_workspace_id(create.output)
+
+    shown = runner.invoke(app, ["works", "show", workspace_id])
+    assert shown.exit_code == 0, shown.output
+    for member in template.band:
+        assert f"  {member['role']}: {member['name']}" in shown.output
+
+    style = runner.invoke(app, ["style", "show", workspace_id])
+    assert style.exit_code == 0, style.output
+    assert f"description: {template.style_description}" in style.output
+    assert "forbidden: (empty)" in style.output
+
+    plain = runner.invoke(app, ["works", "create", "默认书"])
+    assert plain.exit_code == 0, plain.output
+    plain_id = _created_workspace_id(plain.output)
+
+    plain_show = runner.invoke(app, ["works", "show", plain_id])
+    assert plain_show.exit_code == 0, plain_show.output
+    for member in DEFAULT_BAND:
+        assert f"  {member['role']}: {member['name']}" in plain_show.output
+    with db.workspace_session(plain_id) as session:
+        agents = session.query(Agent).all()
+        anchor = session.query(StyleAnchor).filter_by(workspace_id=plain_id).first()
+    assert len(agents) == 4
+    assert {agent.role for agent in agents} == {
+        member["role"] for member in DEFAULT_BAND
+    }
+    assert anchor is None
+
+    unknown = runner.invoke(app, ["works", "create", "坏书", "--template", "不存在"])
+    assert unknown.exit_code == 2
+    assert "unknown template" in unknown.output

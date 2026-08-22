@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 
 from novel_editorial.core.errors import ErrorCode, NovelError
@@ -219,13 +220,11 @@ TEMPLATES: dict[str, BandTemplate] = {
     _LITERARY.name: _LITERARY,
 }
 
-_ORDER = ("网文", "同人", "正统")
-
 
 def get_template(name: str) -> BandTemplate:
-    """Return a built-in template by name, raising USAGE_ERROR for unknown names."""
+    """Return a deep copy of a built-in template, raising USAGE_ERROR for unknown names."""
     try:
-        return TEMPLATES[name]
+        return copy.deepcopy(TEMPLATES[name])
     except KeyError:
         available = "、".join(TEMPLATES)
         raise NovelError(
@@ -235,5 +234,5 @@ def get_template(name: str) -> BandTemplate:
 
 
 def list_templates() -> list[BandTemplate]:
-    """Return all built-in templates in the fixed order (网文 / 同人 / 正统)."""
-    return [TEMPLATES[name] for name in _ORDER]
+    """Return all built-in templates in TEMPLATES insertion order (网文 / 同人 / 正统)."""
+    return list(TEMPLATES.values())
