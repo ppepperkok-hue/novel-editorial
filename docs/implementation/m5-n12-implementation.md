@@ -117,6 +117,10 @@ pytest（新增）+ 前端四命令 + ruff + pyright + 宪法。
 
 ### 做什么
 
+- 修复 S3 独立审查三个 P3（允许触碰 frontend/src/** 与 frontend/vite.config.ts、frontend/src/**测试）：
+  - 草稿切换时旧版本残留：仅在 `detail.data.id === selectedId` 时渲染版本列表（或请求开始时清空 data）；
+  - 抽屉切换作品保留旧选中态导致 404：为抽屉加 `key={workspace.workspace_id}`（或 workspace 变化时重置 activeTab / selectedId）；
+  - `npm run dev` 请求打不到后端：vite.config.ts 配 `server.proxy`，将 `/health /config /works /overview /events` 代理到 `http://127.0.0.1:8765`（target 可用 `VITE_API_TARGET` 覆盖，默认同上）。
 - 待拍板项操作：accept / reject 按钮 + note 可选输入 → `POST /works/{id}/decisions` → 刷新清单与事件流；确认交互防误触；操作后 CLI 与面板同时可见新状态。
 - 设计打磨：单 accent token 体系、响应式、可访问性（焦点管理、aria、对比度）、pre-flight 清单逐项过。
 - 端到端演示：`scripts/panel_demo.py`（临时数据目录 → seed → api serve 起服 → HTTP 断言三扇窗与拍板流转 → 停服清理）或等价可复现脚本。
