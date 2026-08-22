@@ -16,7 +16,7 @@ from novel_editorial.core.style import set_style_anchor
 from novel_editorial.events import EventType
 from novel_editorial.store.db import DB
 from novel_editorial.store.events import record_event
-from novel_editorial.store.models import Agent, Event, Workspace
+from novel_editorial.store.models import Agent, Draft, DraftVersion, Event, Review, Workspace
 
 
 def _make_client(
@@ -58,6 +58,58 @@ def _seed_workspace(client: TestClient, db: DB, title: str = "可见性之书") 
         payload={"kind": "manual_seed"},
     )
     return workspace_id
+
+
+def _seed_draft(
+    db: DB,
+    workspace_id: str,
+    *,
+    title: str = "第一章",
+    content: str = "雨夜开场，钩子埋下。",
+    status: str = "draft",
+    version: int = 1,
+) -> str:
+    """Insert one draft with its initial version directly (no LLM involved)."""
+    with db.workspace_session(workspace_id) as session:
+        draft = Draft(
+            workspace_id=workspace_id,
+            title=title,
+            status=status,
+            current_version=version,
+        )
+        session.add(draft)
+        session.flush()
+        session.add(
+            DraftVersion(
+                draft_id=draft.id,
+                version=version,
+                content=content,
+                reason="initial" if version == 1 else "revision",
+            )
+        )
+        session.commit()
+        return draft.id
+
+
+def _seed_review(
+    db: DB,
+    workspace_id: str,
+    draft_id: str,
+    *,
+    actor: str = "责编",
+    content: str = "钩子再亮一点",
+) -> None:
+    with db.workspace_session(workspace_id) as session:
+        session.add(
+            Review(
+                workspace_id=workspace_id,
+                draft_id=draft_id,
+                role="agent",
+                actor=actor,
+                content=content,
+            )
+        )
+        session.commit()
 
 
 def test_health(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -380,6 +432,319 @@ def test_visibility_routes_are_read_only(
     ):
         response = client.get(url)
         assert response.status_code == 200
+
+    assert _table_counts(db, workspace_id) == before_counts
+    assert client.get(f"/works/{workspace_id}/events").json() == events_before
+
+
+def test_global_events_merge_workspaces_newest_first(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    first = client.post("/works", json={"title": "甲书"}).json()["id"]
+    second = client.post("/works", json={"title": "乙书"}).json()["id"]
+
+    record_event(db, first, type=EventType.SYSTEM, actor="system", payload={"n": 1})
+    record_event(db, second, type=EventType.SYSTEM, actor="system", payload={"n": 2})
+    record_event(db, first, type=EventType.SYSTEM, actor="system", payload={"n": 3})
+
+    response = client.get("/events")
+    assert response.status_code == 200
+    events = response.json()
+    assert [event["payload"]["n"] for event in events] == [3, 2, 1]
+    assert {event["workspace_id"] for event in events} == {first, second}
+    for event in events:
+        assert set(event) == {"id", "workspace_id", "type", "time", "actor", "payload"}
+        assert isinstance(event["payload"], dict)
+        assert isinstance(event["time"], str)
+
+    limited = client.get("/events", params={"limit": 2})
+    assert limited.status_code == 200
+    assert [event["payload"]["n"] for event in limited.json()] == [3, 2]
+
+    invalid = client.get("/events", params={"limit": 0})
+    assert invalid.status_code == 422
+    assert "detail" in invalid.json()
+
+
+def test_pending_drafts_end_to_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "待拍板之书"}).json()["id"]
+    pending_id = _seed_draft(db, workspace_id, title="第一章", status="draft")
+    _seed_draft(db, workspace_id, title="已拒", status="rejected")
+    _seed_draft(db, workspace_id, title="已过", status="accepted")
+
+    response = client.get(f"/works/{workspace_id}/pending")
+    assert response.status_code == 200
+    pending = response.json()
+    assert len(pending) == 1
+    item = pending[0]
+    assert set(item) == {"id", "title", "status", "current_version", "updated_at"}
+    assert item["id"] == pending_id
+    assert item["title"] == "第一章"
+    assert item["status"] == "draft"
+    assert item["current_version"] == 1
+    assert isinstance(item["updated_at"], str)
+
+
+def test_drafts_list_and_detail_end_to_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "草稿之书"}).json()["id"]
+    draft_id = _seed_draft(db, workspace_id, title="第一章", content="初版正文")
+    with db.workspace_session(workspace_id) as session:
+        draft_row = session.get(Draft, draft_id)
+        assert draft_row is not None
+        draft_row.current_version = 2
+        session.add(
+            DraftVersion(
+                draft_id=draft_id,
+                version=2,
+                content="修订版正文",
+                reason="revision",
+            )
+        )
+        session.commit()
+
+    listed = client.get(f"/works/{workspace_id}/drafts")
+    assert listed.status_code == 200
+    items = listed.json()
+    assert len(items) == 1
+    assert set(items[0]) == {"id", "title", "status", "current_version", "updated_at"}
+    assert items[0]["id"] == draft_id
+    assert items[0]["title"] == "第一章"
+    assert items[0]["current_version"] == 2
+
+    detail = client.get(f"/works/{workspace_id}/drafts/{draft_id}")
+    assert detail.status_code == 200
+    body = detail.json()
+    assert set(body) == {
+        "id",
+        "title",
+        "status",
+        "current_version",
+        "created_at",
+        "updated_at",
+        "versions",
+    }
+    assert body["title"] == "第一章"
+    assert body["status"] == "draft"
+    assert body["current_version"] == 2
+    versions = body["versions"]
+    assert [version["version"] for version in versions] == [1, 2]
+    for version in versions:
+        assert set(version) == {"version", "reason", "created_at", "content"}
+    assert versions[0]["content"] == "初版正文"
+    assert versions[0]["reason"] == "initial"
+    assert versions[1]["content"] == "修订版正文"
+    assert versions[1]["reason"] == "revision"
+
+    missing = client.get(f"/works/{workspace_id}/drafts/does-not-exist")
+    assert missing.status_code == 404
+    assert missing.json() == {"detail": "draft not found: does-not-exist"}
+
+
+def test_reviews_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "意见之书"}).json()["id"]
+    draft_id = _seed_draft(db, workspace_id)
+    _seed_review(db, workspace_id, draft_id, actor="责编", content="钩子再亮一点")
+    _seed_review(db, workspace_id, draft_id, actor="作者", content="方向没问题")
+
+    response = client.get(f"/works/{workspace_id}/reviews", params={"draft_id": draft_id})
+    assert response.status_code == 200
+    reviews = response.json()
+    assert len(reviews) == 2
+    for item in reviews:
+        assert set(item) == {"id", "role", "actor", "content", "created_at"}
+        assert isinstance(item["created_at"], str)
+    assert [item["actor"] for item in reviews] == ["责编", "作者"]
+    assert [item["content"] for item in reviews] == ["钩子再亮一点", "方向没问题"]
+
+    missing = client.get(f"/works/{workspace_id}/reviews")
+    assert missing.status_code == 422
+    assert missing.json() == {"detail": "draft_id is required"}
+
+    unknown = client.get(
+        f"/works/{workspace_id}/reviews", params={"draft_id": "does-not-exist"}
+    )
+    assert unknown.status_code == 404
+    assert unknown.json() == {"detail": "draft not found: does-not-exist"}
+
+
+def test_inspect_and_log_end_to_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = _seed_workspace(client, db)
+    draft_id = _seed_draft(db, workspace_id, content="冷峻克制的雨夜开场")
+    _seed_review(db, workspace_id, draft_id, content="冷峻的钩子再亮一点")
+
+    inspected = client.get(f"/works/{workspace_id}/inspect", params={"keyword": "冷峻"})
+    assert inspected.status_code == 200
+    assert "[风格]" in inspected.text
+    assert "冷峻克制" in inspected.text
+    assert "[版本]" in inspected.text
+    assert "冷峻克制的雨夜开场" in inspected.text
+    assert "[意见]" in inspected.text
+    assert "冷峻的钩子再亮一点" in inspected.text
+
+    logged = client.get(f"/works/{workspace_id}/log")
+    assert logged.status_code == 200
+    assert "作品：《可见性之书》" in logged.text
+    assert "== 草稿 ==" in logged.text
+    assert "第一章" in logged.text
+    assert "冷峻克制的雨夜开场" in logged.text
+    assert "== 意见 ==" in logged.text
+    assert "冷峻的钩子再亮一点" in logged.text
+
+
+def test_inspect_missing_or_blank_keyword_is_422(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = _seed_workspace(client, db)
+
+    missing = client.get(f"/works/{workspace_id}/inspect")
+    assert missing.status_code == 422
+    assert missing.json() == {"detail": "search keyword must not be empty"}
+
+    blank = client.get(f"/works/{workspace_id}/inspect", params={"keyword": "   "})
+    assert blank.status_code == 422
+    assert blank.json() == {"detail": "search keyword must not be empty"}
+
+
+def test_decisions_end_to_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "拍板之书"}).json()["id"]
+    pending_id = _seed_draft(db, workspace_id, title="第一章")
+    record_event(
+        db,
+        workspace_id,
+        type=EventType.DECISION_REQUESTED,
+        actor="system",
+        payload={"draft_id": pending_id, "version": 1},
+    )
+    events_before = client.get(f"/works/{workspace_id}/events").json()
+    assert any(event["type"] == "decision.requested" for event in events_before)
+
+    accepted = client.post(
+        f"/works/{workspace_id}/decisions",
+        json={"draft_id": pending_id, "action": "accept"},
+    )
+    assert accepted.status_code == 201
+    assert accepted.json() == {"id": pending_id, "status": "accepted"}
+    assert client.get(f"/works/{workspace_id}/pending").json() == []
+    drafts = client.get(f"/works/{workspace_id}/drafts").json()
+    assert [item["status"] for item in drafts] == ["accepted"]
+
+    already = client.post(
+        f"/works/{workspace_id}/decisions",
+        json={"draft_id": pending_id, "action": "accept"},
+    )
+    assert already.status_code == 422
+    assert "already accepted" in already.json()["detail"]
+
+    rejected_id = _seed_draft(db, workspace_id, title="第二章", status="draft")
+    rejected = client.post(
+        f"/works/{workspace_id}/decisions",
+        json={"draft_id": rejected_id, "action": "reject"},
+    )
+    assert rejected.status_code == 201
+    assert rejected.json() == {"id": rejected_id, "status": "rejected"}
+
+    noted_id = _seed_draft(db, workspace_id, title="第三章", status="draft")
+    noted = client.post(
+        f"/works/{workspace_id}/decisions",
+        json={"draft_id": noted_id, "action": "note", "content": "方向没问题"},
+    )
+    assert noted.status_code == 201
+    assert noted.json() == {"id": noted_id, "status": "draft"}
+    pending_now = client.get(f"/works/{workspace_id}/pending").json()
+    assert [item["id"] for item in pending_now] == [noted_id]
+
+    blank_note = client.post(
+        f"/works/{workspace_id}/decisions",
+        json={"draft_id": noted_id, "action": "note"},
+    )
+    assert blank_note.status_code == 422
+    assert "note requires --content" in blank_note.json()["detail"]
+
+    invalid = client.post(
+        f"/works/{workspace_id}/decisions",
+        json={"draft_id": noted_id, "action": "approve"},
+    )
+    assert invalid.status_code == 422
+    assert invalid.json() == {"detail": "unknown decision action: approve"}
+
+    unknown = client.post(
+        f"/works/{workspace_id}/decisions",
+        json={"draft_id": "does-not-exist", "action": "accept"},
+    )
+    assert unknown.status_code == 404
+    assert unknown.json() == {"detail": "draft not found: does-not-exist"}
+
+    missing_workspace = client.post(
+        "/works/does-not-exist/decisions",
+        json={"draft_id": pending_id, "action": "accept"},
+    )
+    assert missing_workspace.status_code == 404
+    assert missing_workspace.json() == {"detail": "workspace not found: does-not-exist"}
+
+    malformed = client.post(
+        f"/works/{workspace_id}/decisions", json={"action": "accept"}
+    )
+    assert malformed.status_code == 422
+    assert "detail" in malformed.json()
+
+    assert client.get(f"/works/{workspace_id}/events").json() == events_before
+
+
+def test_panel_routes_404_for_missing_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    paths = (
+        "/works/missing/pending",
+        "/works/missing/drafts",
+        "/works/missing/drafts/x",
+        "/works/missing/reviews?draft_id=x",
+        "/works/missing/inspect?keyword=k",
+        "/works/missing/log",
+    )
+    for path in paths:
+        response = client.get(path)
+        assert response.status_code == 404, path
+        assert response.json() == {"detail": "workspace not found: missing"}
+
+
+def test_panel_read_routes_do_not_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = _seed_workspace(client, db)
+    draft_id = _seed_draft(db, workspace_id, content="冷峻克制的雨夜开场")
+    _seed_review(db, workspace_id, draft_id, content="冷峻的钩子再亮一点")
+
+    before_counts = _table_counts(db, workspace_id)
+    events_before = client.get(f"/works/{workspace_id}/events").json()
+
+    for url in (
+        "/events",
+        f"/works/{workspace_id}/pending",
+        f"/works/{workspace_id}/drafts",
+        f"/works/{workspace_id}/drafts/{draft_id}",
+        f"/works/{workspace_id}/reviews?draft_id={draft_id}",
+        f"/works/{workspace_id}/inspect?keyword=冷峻",
+        f"/works/{workspace_id}/log",
+    ):
+        response = client.get(url)
+        assert response.status_code == 200, url
 
     assert _table_counts(db, workspace_id) == before_counts
     assert client.get(f"/works/{workspace_id}/events").json() == events_before

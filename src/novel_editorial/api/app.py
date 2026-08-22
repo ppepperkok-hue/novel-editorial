@@ -6,18 +6,20 @@ import json
 from datetime import datetime
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from novel_editorial.core import overview, structure, workspace
+from novel_editorial.core import decision, draft, log, overview, review, structure, views, workspace
 from novel_editorial.core.chat import get_workspace_or_raise
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
-from novel_editorial.store.db import DB
+from novel_editorial.store.db import DB, list_workspace_ids
 from novel_editorial.store.events import list_events
 from novel_editorial.store.models import (
     Agent,
+    Draft,
+    DraftVersion,
     Event,
     StyleAnchor,
     Workspace,
@@ -54,6 +56,12 @@ class CreateWorkspaceBody(BaseModel):
     title: str = Field(min_length=1)
     genre: str = ""
     description: str = ""
+
+
+class DecisionBody(BaseModel):
+    draft_id: str = Field(min_length=1)
+    action: str = Field(min_length=1)
+    content: str = ""
 
 
 def _workspace_dict(workspace: Workspace) -> dict[str, Any]:
@@ -96,6 +104,26 @@ def _node_dict(node: WorkspaceStructureNode) -> dict[str, Any]:
         "draft_id": node.draft_id,
         "created_at": _iso(node.created_at),
     }
+
+
+def _draft_summary(draft_row: Draft) -> dict[str, Any]:
+    return {
+        "id": draft_row.id,
+        "title": draft_row.title,
+        "status": draft_row.status,
+        "current_version": draft_row.current_version,
+        "updated_at": _iso(draft_row.updated_at),
+    }
+
+
+def _list_draft_versions(db: DB, workspace_id: str, draft_id: str) -> list[DraftVersion]:
+    with db.workspace_session(workspace_id) as session:
+        return (
+            session.query(DraftVersion)
+            .filter_by(draft_id=draft_id)
+            .order_by(DraftVersion.version)
+            .all()
+        )
 
 
 def _overview_dict(item: overview.WorkspaceOverview) -> dict[str, Any]:
@@ -195,6 +223,107 @@ def create_app() -> FastAPI:
             "total": report.total,
             "skipped": report.skipped,
         }
+
+    @app.get("/events")
+    def get_global_events(limit: int = Query(50, ge=1)) -> list[dict[str, Any]]:
+        """Newest-first events merged across every workspace.
+
+        Each workspace stream comes from ``list_events`` in rowid-descending
+        order; the merged stream sorts by event time, which the store keeps
+        strictly increasing per process, so it equals cross-workspace
+        insertion order (rowid itself is per-database and not comparable).
+        """
+        merged: list[Event] = []
+        for workspace_id in list_workspace_ids(db.settings):
+            merged.extend(list_events(db, workspace_id, limit=limit))
+        merged.sort(key=lambda event: event.time, reverse=True)
+        return [_event_dict(event) for event in merged[:limit]]
+
+    @app.get("/works/{workspace_id}/pending")
+    def get_pending_drafts(workspace_id: str) -> list[dict[str, Any]]:
+        """Drafts awaiting the author's decision (like ``decision pending``)."""
+        get_workspace_or_raise(db, workspace_id)
+        return [
+            _draft_summary(draft_row)
+            for draft_row in draft.list_pending_drafts(db, workspace_id)
+        ]
+
+    @app.post("/works/{workspace_id}/decisions", status_code=201)
+    def create_decision(workspace_id: str, body: DecisionBody) -> dict[str, str]:
+        """Accept / reject / note one draft: the panel's only write action."""
+        get_workspace_or_raise(db, workspace_id)
+        updated = decision.decide(
+            db,
+            workspace_id,
+            body.draft_id,
+            action=body.action,
+            content=body.content,
+        )
+        return {"id": updated.id, "status": updated.status}
+
+    @app.get("/works/{workspace_id}/inspect")
+    def inspect_workspace(workspace_id: str, keyword: str | None = None) -> str:
+        """Search every workspace layer; same text the ``inspect`` CLI renders."""
+        if keyword is None or not keyword.strip():
+            raise NovelError(ErrorCode.USAGE_ERROR, "search keyword must not be empty")
+        return views.search_all_layers(db, workspace_id, keyword)
+
+    @app.get("/works/{workspace_id}/drafts")
+    def get_drafts(workspace_id: str) -> list[dict[str, Any]]:
+        """Draft list for one workspace (like ``draft list``)."""
+        get_workspace_or_raise(db, workspace_id)
+        return [
+            _draft_summary(draft_row)
+            for draft_row in draft.list_drafts(db, workspace_id)
+        ]
+
+    @app.get("/works/{workspace_id}/drafts/{draft_id}")
+    def get_draft_detail(workspace_id: str, draft_id: str) -> dict[str, Any]:
+        """One draft with its full version history."""
+        get_workspace_or_raise(db, workspace_id)
+        found = draft.get_draft(db, workspace_id, draft_id)
+        return {
+            "id": found.id,
+            "title": found.title,
+            "status": found.status,
+            "current_version": found.current_version,
+            "created_at": _iso(found.created_at),
+            "updated_at": _iso(found.updated_at),
+            "versions": [
+                {
+                    "version": version.version,
+                    "reason": version.reason,
+                    "created_at": _iso(version.created_at),
+                    "content": version.content,
+                }
+                for version in _list_draft_versions(db, workspace_id, draft_id)
+            ],
+        }
+
+    @app.get("/works/{workspace_id}/reviews")
+    def get_reviews(
+        workspace_id: str, draft_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Review comments on one draft (like ``review list``)."""
+        get_workspace_or_raise(db, workspace_id)
+        if not draft_id:
+            raise NovelError(ErrorCode.USAGE_ERROR, "draft_id is required")
+        draft.get_draft(db, workspace_id, draft_id)
+        return [
+            {
+                "id": review_row.id,
+                "role": review_row.role,
+                "actor": review_row.actor,
+                "content": review_row.content,
+                "created_at": _iso(review_row.created_at),
+            }
+            for review_row in review.list_reviews(db, workspace_id, draft_id)
+        ]
+
+    @app.get("/works/{workspace_id}/log")
+    def get_workspace_log(workspace_id: str) -> str:
+        """Full workflow log text, same source as the ``log`` CLI command."""
+        return log.build_workspace_log(db, workspace_id)
 
     @app.get("/works/{workspace_id}/events")
     def get_workspace_events(workspace_id: str) -> list[dict[str, Any]]:
