@@ -220,7 +220,9 @@ function DraftsTab({
           onRetry={detail.reload}
         />
       ) : null}
-      {selected !== undefined && detail.data !== null ? (
+      {selected !== undefined &&
+      detail.data !== null &&
+      detail.data.id === selectedId ? (
         <DraftVersionList detail={detail.data} />
       ) : null}
     </div>

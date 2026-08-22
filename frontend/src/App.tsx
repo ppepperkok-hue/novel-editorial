@@ -11,6 +11,7 @@ import {
   type PendingDraft,
 } from "./api/client";
 import EventItem from "./components/EventItem";
+import PendingDraftItem from "./components/PendingDraftItem";
 import { PanelWindow } from "./components/StateViews";
 import WorkspaceCard from "./components/WorkspaceCard";
 import WorkspaceDrawer from "./components/WorkspaceDrawer";
@@ -76,6 +77,12 @@ export default function App() {
   const reloadPending = useCallback(() => {
     setPendingAttempt((value) => value + 1);
   }, []);
+
+  const handleDecided = useCallback(() => {
+    overview.reload();
+    events.reload();
+    reloadPending();
+  }, [events, overview, reloadPending]);
 
   useEffect(() => {
     const current = overviewRef.current;
@@ -224,22 +231,14 @@ export default function App() {
           <ul className="pending-list">
             {pending?.groups.map((group) =>
               group.drafts.map((draft) => (
-                <li key={`${group.workspaceId}-${draft.id}`}>
-                  <button
-                    type="button"
-                    className="pending-item"
-                    onClick={() => setSelectedWorkspaceId(group.workspaceId)}
-                    data-testid="pending-item"
-                  >
-                    <span className="pending-item-title">{draft.title}</span>
-                    <span className="pending-item-workspace">
-                      {group.workspaceTitle}
-                    </span>
-                    <span className="pending-item-meta">
-                      v{draft.current_version} · {draft.status}
-                    </span>
-                  </button>
-                </li>
+                <PendingDraftItem
+                  key={`${group.workspaceId}-${draft.id}`}
+                  workspaceId={group.workspaceId}
+                  workspaceTitle={group.workspaceTitle}
+                  draft={draft}
+                  onOpenWorkspace={() => setSelectedWorkspaceId(group.workspaceId)}
+                  onDecided={handleDecided}
+                />
               )),
             )}
           </ul>
@@ -250,7 +249,7 @@ export default function App() {
           ) : null}
         </PanelWindow>
       </main>
-      <footer className="status-line" data-testid="status-line">
+      <footer className="status-line" data-testid="status-line" aria-live="polite">
         {configError ? (
           <>
             配置读取失败（GET /config），轮询使用默认{" "}
@@ -265,6 +264,7 @@ export default function App() {
       </footer>
       {selectedWorkspace !== null ? (
         <WorkspaceDrawer
+          key={selectedWorkspace.workspace_id}
           workspace={selectedWorkspace}
           onClose={() => setSelectedWorkspaceId(null)}
         />

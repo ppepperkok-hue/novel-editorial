@@ -240,6 +240,18 @@ describe("api client contract parsing", () => {
     expect(init?.headers).toBeInstanceOf(Headers);
   });
 
+  it("postDecision accepts a 201 response and exposes the resulting status", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ id: "d1", status: "accepted" }, 201),
+    );
+
+    const result = await postDecision("w1", {
+      draft_id: "d1",
+      action: "accept",
+    });
+    expect(result).toEqual({ id: "d1", status: "accepted" });
+  });
+
   it("encodes workspace ids in paths", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse([]));
 
