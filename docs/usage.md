@@ -2427,6 +2427,73 @@ uv run novel-editorial example
 - 清理 = 删除对应数据目录 `NOVEL_DATA_DIR/works/<作品ID>`，程序不提供破坏性删除命令；
 - 只读/隔离红线：`example` 只新建独立 workspace，不修改既有作品、不修改配置；示例不是任何创作流程的前置，`init` / `demo` 与既有命令行为不变。
 
+## 预设编辑部模板（N26）
+
+`works templates` 列出内置模板；`works create <标题> --template <名称>` 按题材一键生成预设班子并预置风格锚点，开箱即写。模板只是起点不是边界：创建后随时用 `agents edit` / `style set` 自由自定义，模板数量不构成能力边界。不带 `--template` 时行为与现状完全一致（默认班子、无风格锚点）。
+
+内置三个模板，固定顺序，每行 `名称: 描述`：
+
+- 网文：面向网文连载——节奏快、钩子密、更新纪律强；风格锚点「节奏快，钩子密，修饰克制」；
+- 同人：面向同人创作——人设贴原作、细节有考据，CP 与关系线敏感；风格锚点「人设贴原作，细节有考据，情感克制」；
+- 正统：面向正统小说——文学性、结构完整、留白克制；风格锚点「句子舒展，修饰克制，结构完整」。
+
+mock 下实跑示例（临时 `NOVEL_DATA_DIR` / `NOVEL_CONFIG`；`<作品ID>` 每次运行不同，其余为真实输出；stderr 日志已省略）：
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-n26\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-n26\config.toml"
+Remove-Item Env:NOVEL_LLM_API_KEY, Env:NOVEL_LLM_BASE_URL, Env:NOVEL_LLM_MODEL -ErrorAction SilentlyContinue
+```
+
+```bash
+uv run novel-editorial works templates
+# 网文: 面向网文连载：节奏快、钩子密、更新纪律强，开箱即写。
+# 同人: 面向同人创作：人设贴原作、细节有考据，CP 与关系线敏感。
+# 正统: 面向正统小说：文学性、结构完整、留白克制，慢工出细活。
+```
+
+按模板创建：班子落位、风格锚点已预置：
+
+```bash
+uv run novel-editorial works create 网文之书 --template 网文
+# created workspace <作品ID>: 网文之书
+
+uv run novel-editorial works show <作品ID>
+# id: <作品ID>
+# title: 网文之书
+# 状态: 创作中
+# genre: 
+# band:
+#   editor_in_chief: 总编
+#   editor: 责编
+#   writer: 写手
+#   reviewer: 审稿
+
+uv run novel-editorial style show <作品ID>
+# description: 节奏快，钩子密，修饰克制
+# forbidden: (empty)
+```
+
+不带 `--template` 与现状一致（默认班子、无风格锚点）：
+
+```bash
+uv run novel-editorial works create 默认之书
+# created workspace <作品ID>: 默认之书
+
+uv run novel-editorial style show <作品ID>
+# description: (empty)
+# forbidden: (empty)
+```
+
+未知模板失败路径（退出码 2）：
+
+```bash
+uv run novel-editorial works create 失败之书 --template 不存在
+# Error: unknown template: 不存在; available: 网文、同人、正统（退出码 2）
+```
+
+模板开放红线：预设模板是起点不是封闭列表。创建后随时自定义——`agents edit <作品ID> <角色> --field <字段> --value <新值>` 改伙伴档案、`style set <作品ID> --description <描述>` 换风格锚点；任何作品（短篇 / 长篇 / 同人 / 网文 / 诗集）都可套用任意模板，模板不改变任何创作流程、不设强制关卡。
+
 ## HTTP API（N24）
 
 HTTP API 与 CLI 同源：所有路由只复用 `core` / `store` 的既有能力，不复制业务逻辑；同一数据同一时刻 API 与 CLI 结果一致。默认绑定本机回环地址 `127.0.0.1:8765`，无鉴权，只适合本地个人工具，**不要**直接暴露到公网。
