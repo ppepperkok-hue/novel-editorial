@@ -28,13 +28,13 @@
 ### 做什么
 
 - `api/app.py` 新增（全部复用 core / store 函数，错误映射与既有一致）：
-  - `GET /events`：跨作品事件流（按 rowid 倒序，`limit` 可配，默认 50）；
+  - `GET /events`：跨作品事件流——以全局 workspaces 注册为源（与 /works /overview 一致），逐作品取事件按时间倒序合并，返回 `{"events": [...], "skipped": N}`；单作品读取失败跳过并计数，不拖垮整条流；
   - `GET /works/{id}/pending`：待拍板草稿列表（复用 `list_pending_drafts` + 版本摘要）；
   - `POST /works/{id}/decisions`：body `{draft_id, action: accept|reject|note, content?}`，复用 `core.decision.decide`；写操作仅此三个动作；
-  - `GET /works/{id}/inspect?keyword=`：复用 `search_all_layers`，结构化 JSON；
+  - `GET /works/{id}/inspect?keyword=`：复用 `search_all_layers`，返回 text/plain 原样文本（与 CLI 同源，面板直接显示）；
   - `GET /works/{id}/drafts` 与 `GET /works/{id}/drafts/{draft_id}`：草稿列表 / 详情（含版本数组）；
   - `GET /works/{id}/reviews?draft_id=`：意见列表；
-  - `GET /works/{id}/log`：结构化创作日志（复用 core.log 数据）。
+  - `GET /works/{id}/log`：复用 `build_workspace_log`，返回 text/plain 原样文本（与 CLI log 同源）。
 - tests（`tests/test_api.py` 扩展）：各端点端到端 + 404 / 422 / 只读断言（除 decisions 外 events 数不变）+ 拍板后状态流转 + 全局事件流排序。
 
 ### 做到什么程度
@@ -57,9 +57,12 @@ pytest + ruff + pyright + 宪法。
 
 ### 做什么
 
+- 修复 S1 独立审查两个 P2（允许触碰 api/app.py 与 tests/test_api.py）：
+  - `inspect` / `log` 改用 `PlainTextResponse(media_type="text/plain")`，杜绝 FastAPI 把文本包成转义 JSON 字符串；
+  - `GET /events` 改为以全局注册为源、逐作品失败隔离（stderr 警告 + skipped 计数），返回 `{"events": [...], "skipped": N}`。
 - `frontend/` 脚手架：package.json（react / react-dom / typescript / vite / @vitejs/plugin-react / vitest / @testing-library/react / jsdom / eslint + typescript-eslint）、tsconfig、vite.config、`src/main.tsx`；
 - scripts：`dev` / `build` / `preview` / `lint` / `typecheck` / `test`；
-- `api/app.py` 静态托管 `frontend/dist`（存在时 `GET /` 返回 index.html）；
+- `api/app.py` 静态托管 `frontend/dist`（存在时 `GET /` 返回 index.html；目录路径可用 `NOVEL_FRONTEND_DIST` 环境变量覆盖，默认仓库 `frontend/dist`，测试隔离用）；
 - `core/config.py`：`panel_poll_interval`（默认 3，1–300，CONFIG_ERROR 校验）+ 测试；
 - 占位首页（三扇窗容器骨架）+ 前端单测（渲染占位页、配置读取）；
 - README / docs 记录前端命令（Node 仅开发期）。
