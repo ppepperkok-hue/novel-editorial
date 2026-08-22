@@ -18,6 +18,7 @@ from novel_editorial.core.draft import (
     revise_draft,
 )
 from novel_editorial.core.memory import archive_memory_notes
+from novel_editorial.core.motives import list_motives
 from novel_editorial.core.outline import create_outline, revise_outline
 from novel_editorial.core.setting import add_setting, revise_setting
 from novel_editorial.core.style import get_style_anchor
@@ -761,6 +762,32 @@ def test_draft_generate_cli_with_writer_and_list_visibility(
     shown_second = runner.invoke(app, ["draft", "show", second_id])
     assert shown_second.exit_code == 0, shown_second.output
     assert "writer: 写手丙" in shown_second.output
+
+
+def test_draft_generate_sediments_motive_to_actual_writer(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    default_writer = get_default_writer(db, workspace_id)
+    second_writer = create_agent(
+        db, workspace_id, name="写手乙", role=AgentRole.WRITER
+    )
+    monkeypatch.setattr(
+        "novel_editorial.cli.draft.build_client",
+        lambda settings: MockLLMClient(reply="正文内容"),
+    )
+
+    result = runner.invoke(
+        app,
+        ["draft", "generate", workspace_id, "--title", "第一章", "--writer", "写手乙"],
+    )
+    assert result.exit_code == 0, result.output
+
+    motives = list_motives(db, workspace_id)
+    assert len(motives) == 1
+    assert motives[0].agent_id == second_writer.id
+    assert motives[0].agent_id != default_writer.id
 
 
 def test_draft_generate_cli_writer_memory_isolation(

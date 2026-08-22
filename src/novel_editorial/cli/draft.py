@@ -102,6 +102,7 @@ def draft_generate(
         "passed": draft.status == "draft",
         "current_version": draft.current_version,
         "reason": version.reason,
+        "agent_id": draft.writer_id,
     }
     _record_proactive(db, workspace_id, proactive.TRIGGER_DRAFT_GENERATED, context)
     if draft.status == "draft":

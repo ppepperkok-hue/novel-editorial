@@ -543,6 +543,34 @@ def test_choice_pipeline_keeps_registered_draft_behaviors(tmp_path: Path) -> Non
     ]
 
 
+def test_single_candidate_fires_when_all_personality_params_zero(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("NOVEL_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("NOVEL_CONFIG", str(tmp_path / "config.toml"))
+    db, workspace_id = _make_db(tmp_path)
+    for field in ("proactivity", "stubbornness", "talkativeness", "patience"):
+        edited = runner.invoke(
+            app,
+            ["agents", "edit", workspace_id, "审稿", "--field", field, "--value", "0"],
+        )
+        assert edited.exit_code == 0, edited.output
+
+    fired = proactive.evaluate_proactive_triggers(
+        db, workspace_id, "style_set", {"description": "平实克制短句"}
+    )
+    assert fired == [
+        proactive.ProactiveCandidate(
+            agent="审稿",
+            kind=proactive.PROACTIVE_KIND_CONSISTENCY,
+            content=(
+                "风格锚点定了：「$description」。"
+                "我盯着设定看了一遍，开头那句跟「$description」会不会打架？"
+            ),
+        )
+    ]
+
+
 def test_draft_generated_sediments_writer_goal_motive_once(tmp_path: Path) -> None:
     db, workspace_id = _make_db(tmp_path)
     writer = _agent_row(db, workspace_id, AgentRole.WRITER)

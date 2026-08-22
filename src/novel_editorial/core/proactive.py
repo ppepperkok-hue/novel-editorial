@@ -215,7 +215,15 @@ def _sediment_motive(
     event_kind = _TRIGGER_MOTIVE_EVENT_KINDS.get(trigger)
     if event_kind is None:
         return
-    derive_motives(db, workspace_id, event_kind, dict(context))
+    # Pass the caller-provided agent_id through (None/absent keeps the rule's
+    # role fallback in derive_motives), so the motive belongs to the partner
+    # who actually caused the event - never guessed from context keys.
+    derive_motives(
+        db,
+        workspace_id,
+        event_kind,
+        {"agent_id": context.get("agent_id")},
+    )
 
 
 def _load_choice_inputs(
@@ -329,7 +337,22 @@ def evaluate_proactive_triggers(
                 agent=spec.agent, kind=spec.kind, content=spec.content
             )
         )
-    if choice_candidates:
+    if len(choice_candidates) == 1:
+        # A single candidate is the deterministic N1 behavior template, not a
+        # choice: it always fires exactly like the legacy path, so the
+        # min_weight silence gate is skipped. The gate only mediates between
+        # multiple contestants; with dial=0 a sole candidate must keep the
+        # old deterministic output even when all four personality params are
+        # 0 (its weight would be 0 and the gate would silently swallow it).
+        single = choice_candidates[0]
+        candidates.append(
+            ProactiveCandidate(
+                agent=single.agent,
+                kind=single.kind,
+                content=single.content,
+            )
+        )
+    elif choice_candidates:
         picked = choice.evaluate_choice(
             trigger,
             choice_candidates,
