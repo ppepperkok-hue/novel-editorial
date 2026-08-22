@@ -4,14 +4,20 @@ from pathlib import Path
 import pytest
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
+from typer.testing import CliRunner
 
+from novel_editorial.cli.app import app
 from novel_editorial.core import proactive
-from novel_editorial.core.config import Settings
+from novel_editorial.core.config import Settings, load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.motives import list_motives
 from novel_editorial.core.workspace import create_workspace
+from novel_editorial.llm.client import MockLLMClient
 from novel_editorial.store.db import DB
 from novel_editorial.store.events import list_events
-from novel_editorial.store.models import Agent, AgentRole, Message
+from novel_editorial.store.models import Agent, AgentRole, Message, MotiveKind
+
+runner = CliRunner()
 
 
 def _make_db(
@@ -19,12 +25,18 @@ def _make_db(
     *,
     proactive_enabled: bool = True,
     proactive_max_per_agent: int = 3,
+    freedom_dial: float = 0.0,
+    freedom_seed: int = 42,
+    motive_llm_enabled: bool = False,
 ) -> tuple[DB, str]:
     settings = Settings(
         data_dir=tmp_path / "data",
         config_path=tmp_path / "config.toml",
         proactive_enabled=proactive_enabled,
         proactive_max_per_agent=proactive_max_per_agent,
+        freedom_dial=freedom_dial,
+        freedom_seed=freedom_seed,
+        motive_llm_enabled=motive_llm_enabled,
     )
     db = DB(settings)
     db.init_schema()
@@ -37,6 +49,13 @@ def _agent_name(db: DB, workspace_id: str, role: str) -> str:
         agent = session.query(Agent).filter_by(workspace_id=workspace_id, role=role).first()
     assert agent is not None
     return agent.name
+
+
+def _agent_row(db: DB, workspace_id: str, role: str) -> Agent:
+    with db.workspace_session(workspace_id) as session:
+        agent = session.query(Agent).filter_by(workspace_id=workspace_id, role=role).first()
+    assert agent is not None
+    return agent
 
 
 def _insert_proactive(
@@ -473,3 +492,273 @@ def test_record_talk_direction_persists_payload_and_event(tmp_path: Path) -> Non
     events = list_events(db, workspace_id)
     assert [event.type for event in events] == ["agent.message"]
     assert json.loads(events[0].payload) == json.loads(message.payload)
+
+
+def test_choice_pipeline_keeps_registered_draft_behaviors(tmp_path: Path) -> None:
+    db, workspace_id = _make_db(tmp_path)
+
+    generated = proactive.evaluate_proactive_triggers(
+        db,
+        workspace_id,
+        "draft_generated",
+        {"title": "第一章", "current_version": 1, "passed": True},
+    )
+    assert generated == [
+        proactive.ProactiveCandidate(
+            agent="写手",
+            kind=proactive.PROACTIVE_KIND_REPORT,
+            content="《$title》初稿写完了，我按节奏收尾，先交给你过目。",
+        )
+    ]
+
+    gated = proactive.evaluate_proactive_triggers(
+        db,
+        workspace_id,
+        "draft_gate_passed",
+        {"title": "第一章", "current_version": 1, "passed": True},
+    )
+    assert gated == [
+        proactive.ProactiveCandidate(
+            agent="责编",
+            kind=proactive.PROACTIVE_KIND_REVIEW,
+            content=(
+                "《$title》过了质量门，我试读了开头「$excerpt」，"
+                "节奏在线，建议作者拍板。"
+            ),
+        )
+    ]
+
+    revised = proactive.evaluate_proactive_triggers(
+        db,
+        workspace_id,
+        "draft_revised",
+        {"passed": True, "rebutted": False},
+    )
+    assert revised == [
+        proactive.ProactiveCandidate(
+            agent="写手",
+            kind=proactive.PROACTIVE_KIND_QUESTION,
+            content="这章我留了个钩子，下章要不要收？",
+        )
+    ]
+
+
+def test_draft_generated_sediments_writer_goal_motive_once(tmp_path: Path) -> None:
+    db, workspace_id = _make_db(tmp_path)
+    writer = _agent_row(db, workspace_id, AgentRole.WRITER)
+    for _ in range(2):
+        fired = proactive.evaluate_proactive_triggers(
+            db,
+            workspace_id,
+            "draft_generated",
+            {"title": "第一章", "current_version": 1, "passed": True},
+        )
+    assert [candidate.agent for candidate in fired] == [writer.name]
+
+    motives = list_motives(db, workspace_id)
+    assert len(motives) == 1
+    motive = motives[0]
+    assert motive.agent_id == writer.id
+    assert motive.kind == MotiveKind.GOAL.value
+    assert motive.content == "新章已交"
+    assert motive.source == "event:draft_generated"
+    assert motive.strength == 100
+
+
+def test_trigger_without_derive_rule_does_not_sediment(tmp_path: Path) -> None:
+    db, workspace_id = _make_db(tmp_path)
+    proactive.evaluate_proactive_triggers(
+        db, workspace_id, "style_set", {"description": "平实克制短句"}
+    )
+    assert list_motives(db, workspace_id) == []
+
+
+def test_disabled_switch_suppresses_choice_and_sediment(tmp_path: Path) -> None:
+    db, workspace_id = _make_db(tmp_path, proactive_enabled=False)
+    fired = proactive.evaluate_proactive_triggers(
+        db, workspace_id, "draft_generated", {"current_version": 1, "passed": True}
+    )
+    assert fired == []
+    assert list_motives(db, workspace_id) == []
+
+
+def test_choice_path_respects_frequency_budget(tmp_path: Path) -> None:
+    db, workspace_id = _make_db(tmp_path, proactive_max_per_agent=1)
+    writer = _agent_name(db, workspace_id, AgentRole.WRITER)
+    _insert_proactive(
+        db,
+        workspace_id,
+        writer,
+        kind=proactive.PROACTIVE_KIND_REPORT,
+        trigger="draft_generated",
+    )
+    assert (
+        proactive.evaluate_proactive_triggers(
+            db,
+            workspace_id,
+            "draft_generated",
+            {"title": "第一章", "current_version": 1, "passed": True},
+        )
+        == []
+    )
+
+
+def test_record_wired_trigger_persists_rendered_message_and_event(
+    tmp_path: Path,
+) -> None:
+    db, workspace_id = _make_db(tmp_path)
+    recorded = proactive.record_proactive_messages(
+        db,
+        workspace_id,
+        "style_set",
+        {"description": "平实克制短句"},
+    )
+    assert len(recorded) == 1
+    message = recorded[0]
+    assert message.actor == "审稿"
+    assert message.content == (
+        "风格锚点定了：「平实克制短句」。"
+        "我盯着设定看了一遍，开头那句跟「平实克制短句」会不会打架？"
+    )
+    assert json.loads(message.payload) == {
+        "initiator": proactive.INITIATOR_AGENT,
+        "kind": proactive.PROACTIVE_KIND_CONSISTENCY,
+        "trigger": "style_set",
+    }
+
+    events = list_events(db, workspace_id)
+    assert [event.type for event in events] == ["agent.message"]
+    assert json.loads(events[0].payload) == json.loads(message.payload)
+
+
+def test_motive_llm_switch_warns_once_per_process(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    monkeypatch.setattr(proactive, "_motive_llm_warning_shown", False)
+    db, workspace_id = _make_db(tmp_path, motive_llm_enabled=True)
+    for _ in range(2):
+        proactive.evaluate_proactive_triggers(
+            db, workspace_id, "style_set", {"description": "平实克制短句"}
+        )
+    captured = capsys.readouterr()
+    assert captured.err.count(proactive.MOTIVE_LLM_WARNING) == 1
+
+
+def test_motive_llm_switch_off_is_silent(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    monkeypatch.setattr(proactive, "_motive_llm_warning_shown", False)
+    db, workspace_id = _make_db(tmp_path, motive_llm_enabled=False)
+    proactive.evaluate_proactive_triggers(
+        db, workspace_id, "style_set", {"description": "平实克制短句"}
+    )
+    captured = capsys.readouterr()
+    assert captured.err == ""
+
+
+def _isolate_trigger_registry(monkeypatch) -> None:
+    """Give one test its own registry copy so wired-trigger extras never leak."""
+    monkeypatch.setattr(
+        proactive,
+        "_PROACTIVE_TRIGGERS",
+        {
+            trigger: list(specs)
+            for trigger, specs in proactive._PROACTIVE_TRIGGERS.items()
+        },
+    )
+
+
+def _register_talk_contestants(db: DB, workspace_id: str) -> None:
+    editor = _agent_name(db, workspace_id, AgentRole.EDITOR)
+    writer = _agent_name(db, workspace_id, AgentRole.WRITER)
+    proactive.register_proactive_trigger(
+        trigger="talk_first_round",
+        agent=editor,
+        kind=proactive.PROACTIVE_KIND_REVIEW,
+        content="责编候选",
+        condition=lambda context: True,
+    )
+    proactive.register_proactive_trigger(
+        trigger="talk_first_round",
+        agent=writer,
+        kind=proactive.PROACTIVE_KIND_QUESTION,
+        content="写手候选",
+        condition=lambda context: True,
+    )
+
+
+@pytest.mark.parametrize("seed", [0, 7, 42])
+def test_dial_zero_picks_highest_weight_candidate(
+    tmp_path: Path, monkeypatch, seed: int
+) -> None:
+    _isolate_trigger_registry(monkeypatch)
+    db, workspace_id = _make_db(tmp_path, freedom_seed=seed)
+    _register_talk_contestants(db, workspace_id)
+
+    fired = proactive.evaluate_proactive_triggers(
+        db,
+        workspace_id,
+        "talk_first_round",
+        {"first_round": True, "has_style_anchor": False},
+    )
+    assert [candidate.agent for candidate in fired] == ["总编"]
+
+
+def test_freedom_seed_reproduces_pick_and_seed_change_varies(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _isolate_trigger_registry(monkeypatch)
+    db_a, workspace_a = _make_db(tmp_path, freedom_dial=1.0, freedom_seed=0)
+    db_b, workspace_b = _make_db(
+        tmp_path / "b", freedom_dial=1.0, freedom_seed=5
+    )
+    _register_talk_contestants(db_a, workspace_a)
+    context = {"first_round": True, "has_style_anchor": False}
+
+    first = proactive.evaluate_proactive_triggers(
+        db_a, workspace_a, "talk_first_round", context
+    )
+    second = proactive.evaluate_proactive_triggers(
+        db_a, workspace_a, "talk_first_round", context
+    )
+    other = proactive.evaluate_proactive_triggers(
+        db_b, workspace_b, "talk_first_round", context
+    )
+    assert first == second
+    assert [candidate.agent for candidate in first] == ["写手"]
+    assert [candidate.agent for candidate in other] == ["责编"]
+
+
+def test_cli_draft_generate_sediments_motive_and_warns_once(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("NOVEL_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("NOVEL_CONFIG", str(tmp_path / "config.toml"))
+    monkeypatch.setenv("NOVEL_MOTIVE_LLM_ENABLED", "true")
+    monkeypatch.setattr(proactive, "_motive_llm_warning_shown", False)
+    monkeypatch.setattr(
+        "novel_editorial.cli.draft.build_client",
+        lambda settings: MockLLMClient(reply="正文内容"),
+    )
+    created = runner.invoke(app, ["works", "create", "主动之书"])
+    assert created.exit_code == 0, created.output
+    workspace_id = created.output.split()[2].rstrip(":")
+
+    generated = runner.invoke(
+        app, ["draft", "generate", workspace_id, "--title", "第一章"]
+    )
+    assert generated.exit_code == 0, generated.output
+    assert "写手: 《第一章》初稿写完了" in generated.output
+    assert "责编: 《第一章》过了质量门，我试读了开头「正文内容」" in generated.output
+    assert generated.output.count(proactive.MOTIVE_LLM_WARNING) == 1
+
+    listed = runner.invoke(app, ["motives", "list", workspace_id])
+    assert listed.exit_code == 0, listed.output
+    assert "[写手]" in listed.output
+    assert "[goal]" in listed.output
+    assert "source=event:draft_generated" in listed.output
+    assert "新章已交" in listed.output
+
+    db = DB(load_settings())
+    motives = list_motives(db, workspace_id)
+    assert len(motives) == 1

@@ -15,13 +15,13 @@ _TRUE_ENABLED_VALUES = frozenset({"1", "true", "yes", "on"})
 _FALSE_ENABLED_VALUES = frozenset({"0", "false", "no", "off"})
 
 
-def _parse_enabled(value: str) -> bool:
+def _parse_enabled(value: str, *, label: str = "enabled") -> bool:
     lowered = value.strip().lower()
     if lowered in _TRUE_ENABLED_VALUES:
         return True
     if lowered in _FALSE_ENABLED_VALUES:
         return False
-    raise NovelError(ErrorCode.CONFIG_ERROR, f"invalid proactive enabled: {value!r}")
+    raise NovelError(ErrorCode.CONFIG_ERROR, f"invalid {label}: {value!r}")
 
 
 def _load_int_setting(
@@ -69,6 +69,9 @@ class Settings:
     memory_archive_threshold: int = 20
     proactive_enabled: bool = True
     proactive_max_per_agent: int = 3
+    freedom_dial: float = 0.0
+    freedom_seed: int = 42
+    motive_llm_enabled: bool = False
     embedding_backend: str = "local"
     embedding_model: str = ""
     embedding_dim: int = 256
@@ -103,7 +106,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         ) from exc
     default_proactive_enabled = defaults.get("proactive_enabled", True)
     enabled_value = env.get("NOVEL_PROACTIVE_ENABLED", str(default_proactive_enabled))
-    proactive_enabled = _parse_enabled(enabled_value)
+    proactive_enabled = _parse_enabled(enabled_value, label="proactive enabled")
     default_proactive_max = defaults.get("proactive_max_per_agent", 3)
     max_value = env.get("NOVEL_PROACTIVE_MAX_PER_AGENT", str(default_proactive_max))
     try:
@@ -118,6 +121,32 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             ErrorCode.CONFIG_ERROR,
             f"invalid proactive max per agent: {max_value!r}",
         )
+    default_freedom_dial = defaults.get("freedom_dial", 0.0)
+    dial_value = env.get("NOVEL_FREEDOM_DIAL", str(default_freedom_dial))
+    try:
+        freedom_dial = float(dial_value)
+    except (TypeError, ValueError) as exc:
+        raise NovelError(
+            ErrorCode.CONFIG_ERROR,
+            f"invalid freedom dial: {dial_value!r}",
+        ) from exc
+    if not 0.0 <= freedom_dial <= 1.0:
+        raise NovelError(
+            ErrorCode.CONFIG_ERROR,
+            f"invalid freedom dial: {dial_value!r}",
+        )
+    default_freedom_seed = defaults.get("freedom_seed", 42)
+    seed_value = env.get("NOVEL_FREEDOM_SEED", str(default_freedom_seed))
+    try:
+        freedom_seed = int(seed_value)
+    except (TypeError, ValueError) as exc:
+        raise NovelError(
+            ErrorCode.CONFIG_ERROR,
+            f"invalid freedom seed: {seed_value!r}",
+        ) from exc
+    default_motive_llm = defaults.get("motive_llm_enabled", False)
+    motive_value = env.get("NOVEL_MOTIVE_LLM_ENABLED", str(default_motive_llm))
+    motive_llm_enabled = _parse_enabled(motive_value, label="motive llm enabled")
     memory_decay_per_day = _load_int_setting(
         env,
         defaults,
@@ -210,6 +239,9 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         memory_archive_threshold=memory_archive_threshold,
         proactive_enabled=proactive_enabled,
         proactive_max_per_agent=proactive_max_per_agent,
+        freedom_dial=freedom_dial,
+        freedom_seed=freedom_seed,
+        motive_llm_enabled=motive_llm_enabled,
         embedding_backend=embedding_backend,
         embedding_model=embedding_model,
         embedding_dim=embedding_dim,

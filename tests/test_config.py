@@ -121,6 +121,165 @@ def test_zero_proactive_max_is_allowed(tmp_path: Path) -> None:
     assert settings.proactive_max_per_agent == 0
 
 
+def test_freedom_config_defaults() -> None:
+    settings = load_settings({})
+    assert settings.freedom_dial == 0.0
+    assert settings.freedom_seed == 42
+    assert settings.motive_llm_enabled is False
+
+
+def test_freedom_config_env_overrides(tmp_path: Path) -> None:
+    settings = load_settings(
+        {
+            "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+            "NOVEL_FREEDOM_DIAL": "0.7",
+            "NOVEL_FREEDOM_SEED": "7",
+            "NOVEL_MOTIVE_LLM_ENABLED": "true",
+        }
+    )
+    assert settings.freedom_dial == 0.7
+    assert settings.freedom_seed == 7
+    assert settings.motive_llm_enabled is True
+
+
+def test_freedom_config_toml_overrides(tmp_path: Path) -> None:
+    (tmp_path / "config.toml").write_text(
+        "[defaults]\n"
+        "freedom_dial = 0.3\n"
+        "freedom_seed = 17\n"
+        "motive_llm_enabled = true\n",
+        encoding="utf-8",
+    )
+    settings = load_settings({"NOVEL_CONFIG": str(tmp_path / "config.toml")})
+    assert settings.freedom_dial == 0.3
+    assert settings.freedom_seed == 17
+    assert settings.motive_llm_enabled is True
+
+
+def test_freedom_config_env_beats_toml(tmp_path: Path) -> None:
+    (tmp_path / "config.toml").write_text(
+        "[defaults]\n"
+        "freedom_dial = 0.3\n"
+        "freedom_seed = 17\n"
+        "motive_llm_enabled = true\n",
+        encoding="utf-8",
+    )
+    settings = load_settings(
+        {
+            "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+            "NOVEL_FREEDOM_DIAL": "0.9",
+            "NOVEL_FREEDOM_SEED": "99",
+            "NOVEL_MOTIVE_LLM_ENABLED": "off",
+        }
+    )
+    assert settings.freedom_dial == 0.9
+    assert settings.freedom_seed == 99
+    assert settings.motive_llm_enabled is False
+
+
+@pytest.mark.parametrize("dial", ["high", "-0.1", "1.5", "nan", "inf", "-inf"])
+def test_invalid_freedom_dial_env_reports_config_error(
+    tmp_path: Path, dial: str
+) -> None:
+    with pytest.raises(NovelError) as info:
+        load_settings(
+            {
+                "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+                "NOVEL_FREEDOM_DIAL": dial,
+            }
+        )
+    assert info.value.code is ErrorCode.CONFIG_ERROR
+
+
+@pytest.mark.parametrize("dial", [-0.1, 1.5])
+def test_invalid_freedom_dial_toml_reports_config_error(
+    tmp_path: Path, dial: float
+) -> None:
+    (tmp_path / "config.toml").write_text(
+        f"[defaults]\nfreedom_dial = {dial}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(NovelError) as info:
+        load_settings({"NOVEL_CONFIG": str(tmp_path / "config.toml")})
+    assert info.value.code is ErrorCode.CONFIG_ERROR
+
+
+def test_freedom_dial_bounds_are_inclusive(tmp_path: Path) -> None:
+    settings = load_settings(
+        {
+            "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+            "NOVEL_FREEDOM_DIAL": "0",
+        }
+    )
+    assert settings.freedom_dial == 0.0
+
+    settings = load_settings(
+        {
+            "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+            "NOVEL_FREEDOM_DIAL": "1",
+        }
+    )
+    assert settings.freedom_dial == 1.0
+
+
+@pytest.mark.parametrize("seed", ["high", "3.5"])
+def test_invalid_freedom_seed_env_reports_config_error(
+    tmp_path: Path, seed: str
+) -> None:
+    with pytest.raises(NovelError) as info:
+        load_settings(
+            {
+                "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+                "NOVEL_FREEDOM_SEED": seed,
+            }
+        )
+    assert info.value.code is ErrorCode.CONFIG_ERROR
+
+
+def test_invalid_freedom_seed_toml_reports_config_error(tmp_path: Path) -> None:
+    (tmp_path / "config.toml").write_text(
+        "[defaults]\nfreedom_seed = 3.5\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(NovelError) as info:
+        load_settings({"NOVEL_CONFIG": str(tmp_path / "config.toml")})
+    assert info.value.code is ErrorCode.CONFIG_ERROR
+
+
+def test_negative_freedom_seed_is_allowed(tmp_path: Path) -> None:
+    settings = load_settings(
+        {
+            "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+            "NOVEL_FREEDOM_SEED": "-5",
+        }
+    )
+    assert settings.freedom_seed == -5
+
+
+@pytest.mark.parametrize("value", ["maybe", "2"])
+def test_invalid_motive_llm_enabled_env_reports_config_error(
+    tmp_path: Path, value: str
+) -> None:
+    with pytest.raises(NovelError) as info:
+        load_settings(
+            {
+                "NOVEL_CONFIG": str(tmp_path / "config.toml"),
+                "NOVEL_MOTIVE_LLM_ENABLED": value,
+            }
+        )
+    assert info.value.code is ErrorCode.CONFIG_ERROR
+
+
+def test_invalid_motive_llm_enabled_toml_reports_config_error(tmp_path: Path) -> None:
+    (tmp_path / "config.toml").write_text(
+        '[defaults]\nmotive_llm_enabled = "maybe"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(NovelError) as info:
+        load_settings({"NOVEL_CONFIG": str(tmp_path / "config.toml")})
+    assert info.value.code is ErrorCode.CONFIG_ERROR
+
+
 def test_memory_config_defaults() -> None:
     settings = load_settings({})
     assert settings.memory_decay_per_day == 5
