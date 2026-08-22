@@ -60,6 +60,9 @@ pytest + ruff + pyright + 宪法校验。
 
 ### 做什么
 
+- 修复 S1 独立审查两个 P3（允许触碰 core/templates.py 与 tests/test_templates.py）：
+  - `list_templates()` 顺序直接从 `TEMPLATES`（字典插入序）推导，删除独立 `_ORDER`，杜绝「新增模板漏更顺序元组导致 KeyError / 列出不全」的漂移风险；
+  - `get_template()` 返回 `copy.deepcopy(template)`，冻结契约真实生效——调用方改动返回对象不再污染共享常量，确定性保证成立。
 - `cli/works.py`：
   - `works create` 新增 `--template <名称>`（缺省 None）：传给 `create_workspace`；未知模板 → USAGE_ERROR（退出码 2）；输出保持 `created workspace <id>: <title>`；
   - 新增 `works templates`：每行 `<名称>: <描述>`，固定顺序。
