@@ -47,6 +47,12 @@ def _effective_strength(
     return max(0, min(100, motive.strength - decay_per_day * days))
 
 
+def _apply_strength_delta(motive: AgentMotive, amount: int, now: datetime) -> None:
+    """Shared strengthen semantics: delta clamped to [0, 100], touch refreshed."""
+    motive.strength = max(0, min(100, motive.strength + amount))
+    motive.last_touched_at = now
+
+
 @dataclass(frozen=True)
 class _MotiveRule:
     """One deterministic event-kind -> motive template (N27 S1)."""
@@ -89,7 +95,10 @@ def derive_motives(
     ``context`` may carry ``agent_id`` to pick the motive owner explicitly;
     otherwise the rule's fallback role is resolved (first partner of that
     role in the workspace). Unknown event kinds raise USAGE_ERROR so callers
-    opt in per event kind instead of silently skipping.
+    opt in per event kind instead of silently skipping. Re-triggering the same
+    event for the same (agent, kind, source) never adds a row: the existing
+    motive is strengthened by ``memory_rehearsal_boost`` (clamped to 100) and
+    its last_touched_at is refreshed, keeping "one motive is one thing".
     """
     context = context if context is not None else {}
     rule = _MOTIVE_RULES.get(event_kind)
@@ -126,12 +135,32 @@ def derive_motives(
             is None
         ):
             raise NovelError(ErrorCode.NOT_FOUND, f"agent not found: {agent_id}")
+        source = f"{_MOTIVE_EVENT_SOURCE_PREFIX}{event_kind}"
+        existing = (
+            session.query(AgentMotive)
+            .filter_by(
+                workspace_id=workspace_id,
+                agent_id=agent_id,
+                kind=rule.kind,
+                source=source,
+            )
+            .order_by(AgentMotive.id)
+            .first()
+        )
+        if existing is not None:
+            _apply_strength_delta(
+                existing,
+                load_settings().memory_rehearsal_boost,
+                datetime.now(UTC),
+            )
+            session.commit()
+            return [existing]
         motive = AgentMotive(
             workspace_id=workspace_id,
             agent_id=agent_id,
             kind=rule.kind,
             content=rule.content,
-            source=f"{_MOTIVE_EVENT_SOURCE_PREFIX}{event_kind}",
+            source=source,
         )
         session.add(motive)
         session.commit()
@@ -153,8 +182,7 @@ def strengthen_motive(
         )
         if motive is None:
             raise NovelError(ErrorCode.NOT_FOUND, f"motive not found: {motive_id}")
-        motive.strength = max(0, min(100, motive.strength + amount))
-        motive.last_touched_at = datetime.now(UTC)
+        _apply_strength_delta(motive, amount, datetime.now(UTC))
         session.commit()
         return motive
 

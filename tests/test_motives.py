@@ -236,6 +236,141 @@ def test_derive_unknown_workspace_is_not_found(
     assert exc.value.code == ErrorCode.NOT_FOUND
 
 
+def test_derive_same_event_twice_merges_into_one_motive(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+
+    first = derive_motives(
+        db, workspace_id, "draft_generated", {"agent_id": writer.id}
+    )[0]
+    second = derive_motives(
+        db, workspace_id, "draft_generated", {"agent_id": writer.id}
+    )[0]
+
+    assert second.id == first.id
+    remaining = list_motives(db, workspace_id)
+    assert len(remaining) == 1
+    assert remaining[0].id == first.id
+    assert remaining[0].content == "新章已交"
+    assert remaining[0].source == "event:draft_generated"
+
+
+def test_derive_repeat_with_fallback_role_merges(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+
+    first = derive_motives(db, workspace_id, "draft_generated")[0]
+    second = derive_motives(db, workspace_id, "draft_generated")[0]
+
+    assert second.id == first.id
+    assert [motive.id for motive in list_motives(db, workspace_id)] == [first.id]
+
+
+def test_derive_repeat_strengthens_and_refreshes_existing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    motive = derive_motives(
+        db, workspace_id, "draft_generated", {"agent_id": writer.id}
+    )[0]
+    with db.workspace_session(workspace_id) as session:
+        stored = session.get(AgentMotive, motive.id)
+        assert stored is not None
+        stored.strength = 60
+        stored.last_touched_at = datetime.now(UTC) - timedelta(days=1)
+        session.commit()
+
+    repeated = derive_motives(
+        db, workspace_id, "draft_generated", {"agent_id": writer.id}
+    )[0]
+
+    assert repeated.id == motive.id
+    boost = load_settings().memory_rehearsal_boost
+    assert repeated.strength == 60 + boost
+    assert repeated.last_touched_at > datetime.now(UTC) - timedelta(seconds=5)
+    assert len(list_motives(db, workspace_id)) == 1
+
+
+def test_derive_repeat_strength_clamps_at_100(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    motive = derive_motives(
+        db, workspace_id, "draft_generated", {"agent_id": writer.id}
+    )[0]
+    with db.workspace_session(workspace_id) as session:
+        stored = session.get(AgentMotive, motive.id)
+        assert stored is not None
+        stored.strength = 95
+        session.commit()
+
+    repeated = derive_motives(
+        db, workspace_id, "draft_generated", {"agent_id": writer.id}
+    )[0]
+
+    assert repeated.strength == 100
+    assert [motive.id for motive in list_motives(db, workspace_id)] == [motive.id]
+
+
+def test_derive_distinct_agent_kind_source_are_distinct_motives(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    editor = _agent(db, workspace_id, AgentRole.EDITOR)
+
+    writer_goal = derive_motives(
+        db, workspace_id, "draft_generated", {"agent_id": writer.id}
+    )[0]
+    editor_goal = derive_motives(
+        db, workspace_id, "draft_generated", {"agent_id": editor.id}
+    )[0]
+    writer_issue = derive_motives(
+        db, workspace_id, "refusal", {"agent_id": writer.id}
+    )[0]
+    reviewer_foreshadow = derive_motives(db, workspace_id, "review_conflict")[0]
+
+    assert len({writer_goal.id, editor_goal.id, writer_issue.id, reviewer_foreshadow.id}) == 4
+    assert len(list_motives(db, workspace_id)) == 4
+
+    again = derive_motives(
+        db, workspace_id, "draft_generated", {"agent_id": writer.id}
+    )[0]
+    assert again.id == writer_goal.id
+    assert len(list_motives(db, workspace_id)) == 4
+
+
+def test_derive_after_clear_creates_fresh_motive_not_resurrected(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    first = derive_motives(
+        db, workspace_id, "draft_generated", {"agent_id": writer.id}
+    )[0]
+
+    assert clear_motive(db, workspace_id, first.id).id == first.id
+    second = derive_motives(
+        db, workspace_id, "draft_generated", {"agent_id": writer.id}
+    )[0]
+
+    assert second.id != first.id
+    remaining = list_motives(db, workspace_id)
+    assert len(remaining) == 1
+    assert remaining[0].id == second.id
+
+
 def test_strengthen_motive_clamps_to_0_100(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     db = _db()
