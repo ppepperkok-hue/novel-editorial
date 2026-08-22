@@ -173,4 +173,4 @@ pytest + 前端四命令 + smoke_m3 + stress_m3 + 宪法 + 演示脚本。
 
 ## 状态
 
-- 立项（2026-08-22）：Phase 0 立项清单与技术栈 ADR 已确认；架构（panel.md + rules.md 补前端规则）就绪；拆包 S1。
+- 收口（2026-08-22）：S1（2dca618）、S2（08fe21f，含 S1 审查两个 P2 修复）、S3（9571d2c）、S4（a2b283d，含 S3 审查三个 P3 修复）、S5（a7eeaa1，含 S4 审查 P3 修复）全部完成并独立审查收敛；全量 1178 测试、smoke_m3、stress_m3、前端四命令、panel_demo PANEL DEMO PASS 全绿；审查链归档 docs/reviews/20260822-M5N12S1-initial.md / S2-initial.md / S3-initial.md / S4-initial.md / S5.md。N12 正式收口，06 新能力清单全部收官。
