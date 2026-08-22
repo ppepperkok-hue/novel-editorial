@@ -19,6 +19,8 @@ from novel_editorial.core.choice import (
     pick_candidate,
 )
 from novel_editorial.core.config import Settings
+from novel_editorial.core.decision import decide
+from novel_editorial.core.delegation import respond_to_delegation
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.workspace import create_workspace
 from novel_editorial.store.db import DB
@@ -27,6 +29,7 @@ from novel_editorial.store.models import (
     AgentMotive,
     AgentRole,
     BehaviorTimeline,
+    Draft,
     MotiveKind,
 )
 
@@ -411,6 +414,19 @@ def test_compute_weights_without_trigger_is_neutral(tmp_path: Path) -> None:
     assert weights == pytest.approx([0.5])
 
 
+def test_compute_weights_without_trigger_motive_strength_is_neutral(
+    tmp_path: Path,
+) -> None:
+    db, workspace_id = _make_db(tmp_path)
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    candidate = ChoiceCandidate(agent=writer.id, kind="proactive_report", content="交稿")
+    strong = _motive(writer.id, MotiveKind.GOAL.value, "新章已交", strength=80)
+
+    weights = compute_weights([candidate], [strong], {writer.id: _params()})
+
+    assert weights == pytest.approx([0.5])
+
+
 def test_compute_weights_output_stays_in_unit_range(tmp_path: Path) -> None:
     db, workspace_id = _make_db(tmp_path)
     writer = _agent(db, workspace_id, AgentRole.WRITER)
@@ -445,6 +461,10 @@ def test_pick_candidate_dial_out_of_range_raises_usage_error() -> None:
 def test_pick_candidate_empty_and_all_zero_return_none() -> None:
     assert pick_candidate([], dial=0.5, seed=1) is None
     assert pick_candidate([0.0, 0.0], dial=0.5, seed=1) is None
+
+
+def test_pick_candidate_dial_zero_all_zero_returns_none() -> None:
+    assert pick_candidate([0.0, 0.0], dial=0.0, seed=1) is None
 
 
 def test_pick_candidate_negative_weight_is_usage_error() -> None:
@@ -636,6 +656,36 @@ def test_load_feedback_counts_counts_only_verdict_sources(
     assert counts[writer.id] == FeedbackCounts(rejected=2, accepted=1)
     assert counts[editor.id] == FeedbackCounts(rejected=1, accepted=0)
     assert reviewer.id not in counts
+
+
+def test_load_feedback_counts_real_decision_reject_counts_once(
+    tmp_path: Path,
+) -> None:
+    db, workspace_id = _make_db(tmp_path)
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    with db.workspace_session(workspace_id) as session:
+        draft = Draft(workspace_id=workspace_id, title="第一章", status="draft")
+        session.add(draft)
+        session.commit()
+        draft_id = draft.id
+
+    decide(db, workspace_id, draft_id, action="reject")
+
+    counts = load_feedback_counts(db, workspace_id)
+    assert counts[writer.id] == FeedbackCounts(rejected=1, accepted=0)
+
+
+def test_load_feedback_counts_real_delegation_accept_counts_once(
+    tmp_path: Path,
+) -> None:
+    db, workspace_id = _make_db(tmp_path)
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    reviewer = _agent(db, workspace_id, AgentRole.REVIEWER)
+
+    respond_to_delegation(db, workspace_id, writer, reviewer, "帮我校一遍逻辑")
+
+    counts = load_feedback_counts(db, workspace_id)
+    assert counts[writer.id] == FeedbackCounts(rejected=0, accepted=1)
 
 
 def test_load_feedback_counts_is_read_only(tmp_path: Path) -> None:

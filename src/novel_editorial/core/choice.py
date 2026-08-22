@@ -126,6 +126,14 @@ DEFAULT_PERSONALITY = PersonalityParams(proactivity=5, stubbornness=5, talkative
 REJECTED_SOURCES = ("decision:reject", "delegation:refused")
 ACCEPTED_SOURCES = ("decision:accept", "delegation:accepted")
 
+#: The behavior_timeline kind that carries one row per verdict. A single
+#: decide() or delegation response writes two rows (relationship plus an
+#: impression or viewpoint) sharing the same source, so counting by source
+#: alone would double-count each verdict. Every verdict path writes exactly
+#: one relationship row, so restricting the count to this kind keeps the
+#: invariant one verdict = one count.
+FEEDBACK_KIND = "relationship"
+
 
 @dataclass(frozen=True)
 class _Topics:
@@ -286,9 +294,11 @@ def _motive_factor(
     motives_by_agent: Mapping[str, Sequence[AgentMotive]],
     topics: _Topics | None,
 ) -> float:
+    if topics is None:
+        return 1.0
     relevant: list[int] = []
     for motive in motives_by_agent.get(agent, ()):
-        if topics is None or _motive_hits_topic(motive, topics):
+        if _motive_hits_topic(motive, topics):
             relevant.append(motive.strength)
     if not relevant:
         return 1.0
@@ -330,8 +340,9 @@ def compute_weights(
     - relevance: role duty + motive hit 1.0, role duty only 0.8, motive hit
       only 0.6; without ``agents``/``trigger`` it is neutral 1.0.
     - motive strength: the strongest matching motive's strength / 100; a
-      partner without a matching motive is neutral 1.0 (N1 single-candidate
-      behaviors keep firing without motives).
+      partner without a matching motive is neutral 1.0, and without a trigger
+      there is nothing to match so the factor is neutral 1.0 too (N1
+      single-candidate behaviors keep firing without motives).
     - personality: the mean of the four 0-10 params, normalized to [0, 1].
       All four params enter the selector weight (09 design); stubbornness and
       patience also gate state thresholds later (N28/N29), not here.
@@ -382,10 +393,10 @@ def pick_candidate(weighted: Sequence[float], dial: float, seed: int) -> int | N
     weights = list(weighted)
     if any(weight < 0.0 for weight in weights):
         raise NovelError(ErrorCode.USAGE_ERROR, "weights must be non-negative")
-    if dial == 0.0:
-        return max(range(len(weights)), key=lambda index: weights[index])
     if sum(weights) <= 0.0:
         return None
+    if dial == 0.0:
+        return max(range(len(weights)), key=lambda index: weights[index])
     count = len(weights)
     effective = [weight * (1.0 - dial) + dial / count for weight in weights]
     rng = Random(seed)
@@ -440,8 +451,11 @@ def load_feedback_counts(db: DB, workspace_id: str) -> dict[str, FeedbackCounts]
 
     Only sources in ``REJECTED_SOURCES`` / ``ACCEPTED_SOURCES`` are counted
     (author decisions and delegation verdicts); opinions such as review:add or
-    refusal:* are not. The query is a pure COUNT over the workspace timeline
-    and never writes.
+    refusal:* are not. Rows are further restricted to ``FEEDBACK_KIND``
+    (relationship): each verdict path writes exactly one relationship row plus
+    a non-relationship companion (impression/viewpoint) with the same source,
+    so counting by source alone would double-count one verdict. The query is a
+    pure COUNT over the workspace timeline and never writes.
     """
     counts: dict[str, FeedbackCounts] = {}
     with db.workspace_session(workspace_id) as session:
@@ -450,6 +464,7 @@ def load_feedback_counts(db: DB, workspace_id: str) -> dict[str, FeedbackCounts]
             .filter(
                 BehaviorTimeline.workspace_id == workspace_id,
                 BehaviorTimeline.source.in_(REJECTED_SOURCES),
+                BehaviorTimeline.kind == FEEDBACK_KIND,
             )
             .group_by(BehaviorTimeline.agent_id)
             .all()
@@ -459,6 +474,7 @@ def load_feedback_counts(db: DB, workspace_id: str) -> dict[str, FeedbackCounts]
             .filter(
                 BehaviorTimeline.workspace_id == workspace_id,
                 BehaviorTimeline.source.in_(ACCEPTED_SOURCES),
+                BehaviorTimeline.kind == FEEDBACK_KIND,
             )
             .group_by(BehaviorTimeline.agent_id)
             .all()
