@@ -20,6 +20,9 @@
 quality_threshold = 8
 proactive_enabled = true
 proactive_max_per_agent = 3
+freedom_dial = 0.0
+freedom_seed = 42
+motive_llm_enabled = false
 embedding_backend = "local"
 embedding_model = ""
 embedding_dim = 256
@@ -29,11 +32,14 @@ embedding_top_k = 5
 - `quality_threshold`：质量门阈值（整数），默认 `8`；草稿得分 ≤ 阈值才算通过。
 - `proactive_enabled`：主动行为总开关（布尔），默认 `true`；`false` 时伙伴的主动发言停发（talk 首轮的责编确认提问除外，见「主动行为」）。
 - `proactive_max_per_agent`：每位伙伴在一部作品里的主动发言上限（整数），默认 `3`；达到上限后不再新增，设 `0` 等于不发（talk 首轮提问除外）。
+- `freedom_dial`：自由程度旋钮（浮点，0–1），默认 `0`；`0` 永远选最高权重候选（保守可预期），`>0` 时低权重但更野的候选也可能被选中，越接近 `1` 越随机（见「自由意志 · 动机与选择（N27）」）。
+- `freedom_seed`：加权随机种子（整数），默认 `42`；同 seed 完全复现，换 seed 才有变体。
+- `motive_llm_enabled`：动机 LLM 提炼开关（布尔），默认 `false`；开启时只输出一次「LLM 提炼未实现（N28）」告警，行为不变（N28 占位）。
 - `embedding_backend`：语义记忆检索的嵌入后端（`local` / `api`），默认 `local`；`api` 需显式配置 `embedding_model`。
 - `embedding_model`：api 后端的嵌入模型名，默认空；api 后端必须显式配置，local 后端忽略。
 - `embedding_dim`：local 后端的向量维度（整数），默认 `256`，范围 32–4096。
 - `embedding_top_k`：单次语义检索返回上限（整数），默认 `5`，范围 1–50。
-- 仓库里的 `config.example.toml` 只写了空的 `[defaults]` 段头，把上面的键补进你自己生成的 `config.toml` 即可。
+- 仓库里的 `config.example.toml` 提供 `[defaults]` 模板，把需要的键补进你自己生成的 `config.toml` 即可。
 - 每次运行命令都会重新读取，改完无需重启任何服务。
 
 ## NOVEL_* 环境变量
@@ -49,6 +55,9 @@ embedding_top_k = 5
 | `NOVEL_QUALITY_THRESHOLD` | 质量门阈值 | `config.toml` 的 `quality_threshold`，再退到 `8` | `6` |
 | `NOVEL_PROACTIVE_ENABLED` | 主动行为总开关 | `config.toml` 的 `proactive_enabled`，再退到 `true` | `false` |
 | `NOVEL_PROACTIVE_MAX_PER_AGENT` | 每位伙伴主动发言上限 | `config.toml` 的 `proactive_max_per_agent`，再退到 `3` | `1` |
+| `NOVEL_FREEDOM_DIAL` | 自由程度旋钮（0–1） | `config.toml` 的 `freedom_dial`，再退到 `0` | `0.5` |
+| `NOVEL_FREEDOM_SEED` | 加权随机种子 | `config.toml` 的 `freedom_seed`，再退到 `42` | `7` |
+| `NOVEL_MOTIVE_LLM_ENABLED` | 动机 LLM 提炼开关（N28 占位） | `config.toml` 的 `motive_llm_enabled`，再退到 `false` | `true` |
 | `NOVEL_EMBEDDING_BACKEND` | 语义检索嵌入后端（`local` / `api`） | `local` | `api` |
 | `NOVEL_EMBEDDING_MODEL` | api 后端的嵌入模型名；api 后端必须显式配置 | 空 | `text-embedding-3-small` |
 | `NOVEL_EMBEDDING_DIM` | local 后端向量维度 | `256` | `512` |
@@ -57,7 +66,7 @@ embedding_top_k = 5
 
 阈值优先级：`NOVEL_QUALITY_THRESHOLD` > `config.toml [defaults].quality_threshold` > 内置默认 `8`。
 
-仓库里的 `.env.example` 模板列了 `NOVEL_LLM_API_KEY`、`NOVEL_LLM_BASE_URL`、`NOVEL_LLM_MODEL`、`NOVEL_DATA_DIR`、`NOVEL_LOG_LEVEL`；本表另外补充的 `NOVEL_CONFIG`、`NOVEL_QUALITY_THRESHOLD`、`NOVEL_PROACTIVE_ENABLED`、`NOVEL_PROACTIVE_MAX_PER_AGENT`、`NOVEL_EMBEDDING_BACKEND`、`NOVEL_EMBEDDING_MODEL`、`NOVEL_EMBEDDING_DIM`、`NOVEL_EMBEDDING_TOP_K` 与 `NOVEL_PANEL_POLL_INTERVAL` 同样受支持。
+仓库里的 `.env.example` 模板列了 `NOVEL_LLM_API_KEY`、`NOVEL_LLM_BASE_URL`、`NOVEL_LLM_MODEL`、`NOVEL_DATA_DIR`、`NOVEL_LOG_LEVEL`、`NOVEL_FREEDOM_DIAL`、`NOVEL_FREEDOM_SEED` 与 `NOVEL_MOTIVE_LLM_ENABLED`；本表另外补充的 `NOVEL_CONFIG`、`NOVEL_QUALITY_THRESHOLD`、`NOVEL_PROACTIVE_ENABLED`、`NOVEL_PROACTIVE_MAX_PER_AGENT`、`NOVEL_EMBEDDING_BACKEND`、`NOVEL_EMBEDDING_MODEL`、`NOVEL_EMBEDDING_DIM`、`NOVEL_EMBEDDING_TOP_K` 与 `NOVEL_PANEL_POLL_INTERVAL` 同样受支持。
 
 Windows PowerShell 示例：
 
@@ -672,6 +681,132 @@ proactive_max_per_agent = 1
 
 - `talk list <作品ID>`：主动消息的行首会从 `[agent]` 变成 `[agent·主动·<kind>]`，例如 `[agent·主动·proactive_report] 写手: 《…》初稿写完了…`；作者消息仍是 `[author]`，普通对话仍是 `[agent]`。分歧消息另有标记：拒绝、反驳、推翻的行首分别是 `[agent·分歧·拒绝]`、`[agent·分歧·反驳]`、`[agent·分歧·推翻]`，不带主动标记；心情变化等其余状态消息不带标记。
 - `events list <作品ID>`：每条 `agent.message` 事件都带 payload。主动消息的 payload 形如 `{"initiator": "agent", "kind": "proactive_direction", "trigger": "talk_first_round"}`，看 `initiator=agent` 与 `kind` 即可辨认；talk 首轮那条 `proactive_question` 没有 `trigger` 字段。
+
+## 自由意志 · 动机与选择（N27）
+
+伙伴不只是按固定条件说话：他们会惦记事情（动机），同一情境可能做出不同选择，被拒的经历会慢慢改变后续倾向。整条链路本地计算、可解释、可复现，默认保守，作者随时可以收紧或放宽。
+
+### 动机（motives）：伙伴心里惦记着什么
+
+业务事件会按确定性规则给伙伴沉淀动机（如写手交稿后产生 `goal`「新章已交」）。动机不是待办：没有截止时间、没有催办，只影响行为倾向；随时间按 N17 口径衰减、也可由作者清空。查看：
+
+```bash
+uv run novel-editorial motives list <作品ID>
+# <动机ID> [写手] [goal] strength=100 source=event:draft_generated touched=<时间戳> 新章已交
+
+uv run novel-editorial motives list <作品ID> --agent 写手
+# 只列写手的动机
+```
+
+每行包含伙伴、类型（`foreshadow` / `conflict` / `goal` / `impression` / `pending_issue`）、强度（0–100）、来源（`source=`）与最后触碰时间；`source` 就是「这条惦记从哪个事件来」的追溯依据。
+
+### 个性参数：四个 0–10 的旋钮
+
+- `proactivity`（主动性）：多爱自己找事；
+- `stubbornness`（坚持度）：被拒之后还坚不坚持；
+- `talkativeness`（表达欲）：话多话少；
+- `patience`（耐心）：被压下几次才发作。
+
+默认值按角色给（总编耐心高、审稿表达欲低、写手主动性中等），`agents show` 可看、`agents edit` 可改：
+
+```bash
+uv run novel-editorial agents show <作品ID>
+# [writer] 写手
+#   当前状态: 平静
+#   主动性: 5
+#   坚持度: 6
+#   表达欲: 5
+#   耐心: 4
+#   ...
+
+uv run novel-editorial agents edit <作品ID> 写手 --field talkativeness --value 7
+# 写手 talkativeness updated
+```
+
+越界或非整数值报用法错误；个性参数是作品内档案数据，全局配置不覆盖。
+
+### 自由程度旋钮与随机种子
+
+- `freedom_dial` / `NOVEL_FREEDOM_DIAL`：随机度 0–1，默认 `0`。`0` 永远选最高权重候选（保守可预期）；大于 `0` 时低权重但更野的候选也可能被选中，越接近 `1` 越随机。
+- `freedom_seed` / `NOVEL_FREEDOM_SEED`：加权随机的种子，默认 `42`。同 seed 每次完全复现，换 seed 才有变体——测试与排障都靠它。
+
+两路覆盖，优先级不变：环境变量 > `config.toml [defaults]` > 内置默认值。
+
+```toml
+[defaults]
+freedom_dial = 0.5
+freedom_seed = 7
+motive_llm_enabled = false
+```
+
+```bash
+export NOVEL_FREEDOM_DIAL=0.5
+export NOVEL_FREEDOM_SEED=7
+export NOVEL_MOTIVE_LLM_ENABLED=false
+```
+
+同一多候选情境（如 talk 首轮）下，`freedom_dial=1`、不同 `freedom_seed` 会选出不同伙伴，同 seed 两次结果一致（以下为 mock 下可跑的等价片段，`db` / `workspace_id` 已建好）：
+
+```python
+from novel_editorial.core import proactive
+from novel_editorial.core.config import Settings
+
+for seed in (0, 7, 42):
+    db.settings = Settings(
+        data_dir=db.settings.data_dir,
+        config_path=db.settings.config_path,
+        freedom_dial=1.0,
+        freedom_seed=seed,
+    )
+    fired = proactive.evaluate_proactive_triggers(
+        db, workspace_id, "talk_first_round",
+        {"first_round": True, "has_style_anchor": False},
+    )
+    print(seed, fired[0].agent)
+```
+
+### 可解释与可复现
+
+- 每条主动消息的 payload 带 `initiator` / `kind` / `trigger`，`events list` 直接可见：`{"initiator": "agent", "kind": "proactive_report", "trigger": "draft_generated"}`；
+- 每条动机带 `source`，`motives list` 可追溯这条惦记从哪个事件来；
+- 加权随机固定 seed 复现、换 seed 有变体；`freedom_dial=0` 回到完全确定。
+
+### 开关
+
+- `proactive_enabled`：主动行为总开关（见「主动行为」），关掉后全静默——不发消息、不落事件、不沉淀动机。
+- `motive_llm_enabled` / `NOVEL_MOTIVE_LLM_ENABLED`：动机 LLM 提炼开关，默认 `false`。N28 之前只是占位：开启时每次进程只向 stderr 输出一次 `LLM motive refinement is not implemented yet (N28)` 告警，行为完全不变，不会被静默吞掉。
+
+### mock 实跑示例（无 key 可复现）
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-n27\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-n27\config.toml"
+Remove-Item Env:NOVEL_LLM_API_KEY, Env:NOVEL_LLM_BASE_URL, Env:NOVEL_LLM_MODEL -ErrorAction SilentlyContinue
+```
+
+```bash
+uv run novel-editorial works create 自由之书 --genre 悬疑
+# created workspace <作品ID>: 自由之书
+
+uv run novel-editorial draft generate <作品ID> --title 第一章
+# draft <草稿ID> 第一章 now at v1
+# awaiting decision: <草稿ID>
+# 写手: 《第一章》初稿写完了，我按节奏收尾，先交给你过目。
+# 责编: 《第一章》过了质量门，我试读了开头「（模拟回复）」，节奏在线，建议作者拍板。
+
+uv run novel-editorial motives list <作品ID>
+# <动机ID> [写手] [goal] strength=100 source=event:draft_generated touched=<时间戳> 新章已交
+
+uv run novel-editorial motives list <作品ID> --agent 写手
+# <动机ID> [写手] [goal] strength=100 source=event:draft_generated touched=<时间戳> 新章已交
+
+uv run novel-editorial events list <作品ID>
+# <时间戳> [agent.message] 责编 {"initiator": "agent", "kind": "proactive_review", "trigger": "draft_gate_passed...
+# <时间戳> [agent.message] 写手 {"initiator": "agent", "kind": "proactive_report", "trigger": "draft_generated"}
+# ...
+```
+
+（`<作品ID>`、`<草稿ID>`、`<动机ID>` 与 `<时间戳>` 换成实际输出，每次运行不同；stderr 日志已省略，其余为 mock 下的真实输出。）
 
 ## 判断权与分歧（拒绝、反驳与推翻）
 

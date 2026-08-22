@@ -4,3 +4,9 @@
 # HTTP API（N24）：NOVEL_API_HOST / NOVEL_API_PORT 可覆盖；默认只绑定本机回环，勿直接暴露公网
 api_host = "127.0.0.1"
 api_port = 8765
+# 自由意志（N27）：随机度 0–1，0 永远选最高权重候选（保守可预期）；NOVEL_FREEDOM_DIAL 可覆盖
+freedom_dial = 0.0
+# 加权随机种子：同 seed 完全复现、换 seed 有变体；NOVEL_FREEDOM_SEED 可覆盖
+freedom_seed = 42
+# 动机 LLM 提炼开关（N28 占位）：true 仅输出一次告警，行为不变；NOVEL_MOTIVE_LLM_ENABLED 可覆盖
+motive_llm_enabled = false
