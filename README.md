@@ -2,7 +2,7 @@
 
 > 分层 AI 文学编辑部：总编、责编、写手、审稿各司其职，作者在关键处拍板，产出「没有 AI 味」的正文。
 
-当前版本 `0.1.0`，纯命令行界面（CLI）。图形面板（三扇窗）是后置项，尚未实现。
+当前版本 `0.1.0`，CLI 与图形面板（三扇窗）双通道：CLI 完整覆盖全部能力，面板做观察、穿透与拍板，同一时刻两者看到同一份数据。
 
 仓库：[ppepperkok-hue/novel-editorial](https://github.com/ppepperkok-hue/novel-editorial)
 
@@ -191,6 +191,24 @@ Explore: works overview / events list <作品ID> / decision pending <作品ID>
 4. `decision accept <草稿ID>` 拍板。
 
 `example` 每次执行都新建一个示例作品（ID 不同），不覆盖旧数据，也不动既有作品与配置；清理 = 删除对应数据目录 `NOVEL_DATA_DIR/works/<作品ID>`，程序不提供破坏性删除命令。
+
+**图形面板（N12）：一条命令打开**
+
+不用切回 CLI 也能看编辑部动静：起服后浏览器打开 `http://127.0.0.1:8765`，三扇窗一屏可达——跨作品概览、事件流（自动轮询）、待拍板与拍板（两段式确认防误触），点作品卡还能穿透检索、草稿与版本、意见、日志、设定、结构与风格。
+
+```bash
+uv run novel-editorial api serve
+```
+
+面板运行期不需要 Node：`api serve` 托管已构建的 `frontend/dist`。Node / npm 只在开发前端时需要：
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+开发期四命令（与 CI 同一套）：`npm run lint`、`npm run typecheck`、`npm test`、`npm run build`。端到端演示脚本 `python scripts/panel_demo.py` 自动起服断言三扇窗与拍板流转，全部通过输出 `PANEL DEMO PASS`。详细说明见 [docs/usage.md](docs/usage.md) 的「图形面板（N12）」。
 
 ## 命令速查
 

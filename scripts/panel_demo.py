@@ -123,9 +123,7 @@ def _seed() -> tuple[str, str]:
     )
     # Release SQLite file handles held by the seeding process; otherwise the
     # final cleanup cannot remove the temporary data directory on Windows.
-    db.global_engine.dispose()
-    for engine in db._workspace_engines.values():
-        engine.dispose()
+    db.dispose()
     return workspace_id, draft_id
 
 

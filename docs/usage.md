@@ -53,10 +53,11 @@ embedding_top_k = 5
 | `NOVEL_EMBEDDING_MODEL` | api 后端的嵌入模型名；api 后端必须显式配置 | 空 | `text-embedding-3-small` |
 | `NOVEL_EMBEDDING_DIM` | local 后端向量维度 | `256` | `512` |
 | `NOVEL_EMBEDDING_TOP_K` | 单次语义检索返回上限 | `5` | `10` |
+| `NOVEL_PANEL_POLL_INTERVAL` | 图形面板事件流轮询间隔（秒，1–300） | `3` | `5` |
 
 阈值优先级：`NOVEL_QUALITY_THRESHOLD` > `config.toml [defaults].quality_threshold` > 内置默认 `8`。
 
-仓库里的 `.env.example` 模板列了 `NOVEL_LLM_API_KEY`、`NOVEL_LLM_BASE_URL`、`NOVEL_LLM_MODEL`、`NOVEL_DATA_DIR`、`NOVEL_LOG_LEVEL`；本表另外补充的 `NOVEL_CONFIG`、`NOVEL_QUALITY_THRESHOLD`、`NOVEL_PROACTIVE_ENABLED`、`NOVEL_PROACTIVE_MAX_PER_AGENT` 与 `NOVEL_EMBEDDING_BACKEND`、`NOVEL_EMBEDDING_MODEL`、`NOVEL_EMBEDDING_DIM`、`NOVEL_EMBEDDING_TOP_K` 同样受支持。
+仓库里的 `.env.example` 模板列了 `NOVEL_LLM_API_KEY`、`NOVEL_LLM_BASE_URL`、`NOVEL_LLM_MODEL`、`NOVEL_DATA_DIR`、`NOVEL_LOG_LEVEL`；本表另外补充的 `NOVEL_CONFIG`、`NOVEL_QUALITY_THRESHOLD`、`NOVEL_PROACTIVE_ENABLED`、`NOVEL_PROACTIVE_MAX_PER_AGENT`、`NOVEL_EMBEDDING_BACKEND`、`NOVEL_EMBEDDING_MODEL`、`NOVEL_EMBEDDING_DIM`、`NOVEL_EMBEDDING_TOP_K` 与 `NOVEL_PANEL_POLL_INTERVAL` 同样受支持。
 
 Windows PowerShell 示例：
 
@@ -2567,6 +2568,117 @@ curl http://127.0.0.1:8765/works/<作品ID>/events
 ```
 
 （`<作品ID>` 与 `<时间戳>` 换成实际输出，每次运行不同；stderr 日志已省略。PowerShell 用户可用 `Invoke-RestMethod` 等价调用。）
+
+## 图形面板（N12）
+
+三扇窗一屏可达：跨作品概览、事件流（轮询）、待拍板与拍板。面板只是「窗户」不是产品本体——它只消费 N24 HTTP API，不复制业务逻辑，同一时刻与 CLI 看到的是同一份数据；写操作只有拍板三动作（accept / reject / note）。
+
+### 启动
+
+```bash
+uv run novel-editorial api serve
+```
+
+默认绑定 `127.0.0.1:8765`，并在 `GET /` 托管 `frontend/dist`（构建产物存在时）。浏览器打开 `http://127.0.0.1:8765` 即见三扇窗：
+
+- 跨作品概览：作品卡（标题 / 状态 / 待拍板数 / 进度 / 最近活动）；
+- 事件流：跨作品最新事件，新到旧，自动轮询；
+- 待拍板与拍板：全部作品的待拍板草稿，accept / reject / note 两段式确认防误触。
+
+点击作品卡打开穿透抽屉：检索（inspect）/ 草稿与版本 / 意见 / 日志 / 设定 / 结构 / 风格，全部与 CLI 同源。
+
+### 配置
+
+| 配置 | 作用 | 默认值 |
+| --- | --- | --- |
+| `NOVEL_PANEL_POLL_INTERVAL` | 事件流轮询间隔（秒，范围 1–300） | `3` |
+| `VITE_API_TARGET` | 开发期 Vite 代理目标（仅 `npm run dev` 时生效） | `http://127.0.0.1:8765` |
+
+`NOVEL_PANEL_POLL_INTERVAL` 由后端读取，面板启动时经 `GET /config` 获取；开发期 `npm run dev` 把 `/health /config /works /overview /events` 代理到 `VITE_API_TARGET`。
+
+### Node 只在开发期
+
+运行面板不需要 Node：`api serve` 直接托管已构建的 `frontend/dist`。Node / npm 只在开发与重新构建前端时需要（`frontend/package.json` 的 `engines` 锁定 `>=20`）。
+
+### 开发期命令
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+四命令与 CI 同一套：
+
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
+
+构建产物写入 `frontend/dist`，之后运行期不再需要 Node。
+
+### 演示脚本
+
+```bash
+python scripts/panel_demo.py
+```
+
+脚本自动在临时数据目录造一部作品与一个待拍板草稿 → 起服 → 逐项断言三扇窗数据源与拍板流转（含 CLI 双通道对照）→ 清理，全部通过时输出 `PANEL DEMO PASS`。
+
+### mock 实跑示例
+
+（临时数据目录 + 无 key；`<作品ID>`、`<草稿ID>`、`<时间戳>` 换成实际输出，每次运行不同；stderr 日志已省略，其余为真实输出）：
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-panel\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-panel\config.toml"
+Remove-Item Env:NOVEL_LLM_API_KEY, Env:NOVEL_LLM_BASE_URL, Env:NOVEL_LLM_MODEL -ErrorAction SilentlyContinue
+uv run novel-editorial api serve
+```
+
+另开一个终端操作；启动后浏览器打开 `http://127.0.0.1:8765` 就能看到面板（`GET /` 返回面板页面）：
+
+```bash
+curl http://127.0.0.1:8765/config
+# {"panel_poll_interval":3}
+
+curl -X POST http://127.0.0.1:8765/works \
+  -H "Content-Type: application/json" \
+  -d '{"title":"面板之书","genre":"悬疑"}'
+# {"id":"<作品ID>","title":"面板之书","genre":"悬疑","description":"","status":"writing","created_at":"<时间戳>"}
+
+uv run novel-editorial draft generate <作品ID> --title 第一章
+# draft <草稿ID> 第一章 now at v1
+# awaiting decision: <草稿ID>
+# 写手: 《第一章》初稿写完了，我按节奏收尾，先交给你过目。
+
+curl http://127.0.0.1:8765/overview
+# {"overviews":[{"workspace_id":"<作品ID>","title":"面板之书","genre":"悬疑","status":"writing","pending_count":1,"structure":"-","last_activity":"<时间戳>","created_at":"<时间戳>"}],"total":1,"skipped":0}
+
+curl http://127.0.0.1:8765/events
+# {"events":[{"id":"<事件ID>","workspace_id":"<作品ID>","type":"agent.message","time":"<时间戳>","actor":"责编","payload":{...}},...],"skipped":0}
+
+curl http://127.0.0.1:8765/works/<作品ID>/pending
+# [{"id":"<草稿ID>","title":"第一章","status":"draft","current_version":1,"updated_at":"<时间戳>"}]
+
+uv run novel-editorial decision pending <作品ID>
+# <草稿ID>  第一章  v1  draft
+
+curl -X POST http://127.0.0.1:8765/works/<作品ID>/decisions \
+  -H "Content-Type: application/json" \
+  -d '{"draft_id":"<草稿ID>","action":"accept"}'
+# {"id":"<草稿ID>","status":"accepted"}
+
+curl http://127.0.0.1:8765/works/<作品ID>/pending
+# []
+
+uv run novel-editorial decision pending <作品ID>
+# no pending decisions
+```
+
+面板与 CLI 读同一份数据：拍板前 `pending` 里有一个草稿，accept 后面板与 CLI 同时看到空态。
 
 ## 导入导出与备份（N25）
 

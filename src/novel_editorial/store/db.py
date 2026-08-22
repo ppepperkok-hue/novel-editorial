@@ -89,6 +89,17 @@ class DB:
             bind=self._workspace_engines[key], expire_on_commit=False
         )()
 
+    def dispose(self) -> None:
+        """Release the global engine and every workspace engine, then clear the cache.
+
+        Idempotent: repeated calls are safe, and disposed engines are recreated
+        lazily by the next ``global_session`` / ``workspace_session`` call.
+        """
+        self.global_engine.dispose()
+        for engine in self._workspace_engines.values():
+            engine.dispose()
+        self._workspace_engines.clear()
+
 
 DEFAULT_BAND: list[dict[str, str]] = [
     {
