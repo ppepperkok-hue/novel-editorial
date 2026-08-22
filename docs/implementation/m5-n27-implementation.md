@@ -167,4 +167,5 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 
 ## 状态
 
-- 立项（2026-08-23）：设计讨论与 Phase 0 立项清单已确认；本实施文档拆分 S1–S5；待拆包派工。
+- S1+S2 完成（2026-08-23）：动机表 / 迁移（c1557045673c、6ebe40261d2545fe）/ 动机服务 / `motives list` CLI / 个性参数四字段，commits d426b4c / ae1661c / 66bfaf3；全量 1228 测试绿；独立审查两轮各 1 条 P2 均已修复复核收敛，归档 docs/reviews/20260823-M5N27S1S2-initial.md / -fix.md。
+- 待办：S3 行为选择器（core/choice.py）按任务包规划下一包派工。
