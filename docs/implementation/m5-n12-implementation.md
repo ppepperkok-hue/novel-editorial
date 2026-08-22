@@ -88,6 +88,7 @@ pytest（新增）+ 前端四命令 + ruff + pyright + 宪法。
 ### 做什么
 
 - `frontend/src/api/client.ts`：fetch 封装 + 契约类型；`hooks/usePolling.ts`（间隔读 NOVEL_PANEL_POLL_INTERVAL 或前端常量默认 3 秒；MVP 前端常量 + 后端配置暴露 /health 或 /config? 决定：前端常量 3 秒，后端配置项留待面板设置；S2 已加 config，前端读 `/health` 不需要；简单起见前端常量 DEFAULT_POLL_INTERVAL_MS=3000，文档记录）。
+- `api/app.py` 新增 `GET /config` → `{"panel_poll_interval": N}`（只读，复用 settings），前端启动时读取并用作轮询间隔（配置驱动落地，不再只靠前端常量）。
 - 三扇窗：
   - 顶部跨作品概览（`GET /overview`）：作品卡（标题 / 状态 / 待拍板数 / 进度 / 最近活动），点击进穿透；
   - 事件流（`GET /events`）：最新在前，自动轮询，事件行可点击跳作品；
