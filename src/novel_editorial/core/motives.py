@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
+
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.store.db import DB
@@ -99,6 +101,10 @@ def derive_motives(
     event for the same (agent, kind, source) never adds a row: the existing
     motive is strengthened by ``memory_rehearsal_boost`` (clamped to 100) and
     its last_touched_at is refreshed, keeping "one motive is one thing".
+    The (workspace_id, agent_id, kind, source) uniqueness is enforced by the
+    database; if a concurrent winner commits the same source between the
+    lookup and the insert, the insert is rejected and this function rolls
+    back, re-reads the committed row and strengthens it instead of raising.
     """
     context = context if context is not None else {}
     rule = _MOTIVE_RULES.get(event_kind)
@@ -163,7 +169,30 @@ def derive_motives(
             source=source,
         )
         session.add(motive)
-        session.commit()
+        try:
+            session.commit()
+        except IntegrityError:
+            session.rollback()
+            existing = (
+                session.query(AgentMotive)
+                .filter_by(
+                    workspace_id=workspace_id,
+                    agent_id=agent_id,
+                    kind=rule.kind,
+                    source=source,
+                )
+                .order_by(AgentMotive.id)
+                .first()
+            )
+            if existing is None:
+                raise
+            _apply_strength_delta(
+                existing,
+                load_settings().memory_rehearsal_boost,
+                datetime.now(UTC),
+            )
+            session.commit()
+            return [existing]
     return [motive]
 
 

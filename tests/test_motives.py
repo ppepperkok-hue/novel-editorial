@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
@@ -30,6 +32,7 @@ from novel_editorial.store.models import (
 
 runner = CliRunner()
 PRE_MOTIVE_HEAD = "9833bf1054ab"
+PRE_MOTIVE_UNIQUE_HEAD = "c1557045673c"
 
 
 def _create_workspace(
@@ -79,6 +82,32 @@ def _column_names(path: Path, table: str) -> set[str]:
     try:
         rows = connection.execute(f'PRAGMA table_info("{table}")').fetchall()
         return {row[1] for row in rows}
+    finally:
+        connection.close()
+
+
+def _unique_source_index_names(path: Path) -> set[str]:
+    """Unique indexes over (workspace_id, agent_id, kind, source) on agent_motives."""
+    connection = sqlite3.connect(path)
+    try:
+        names: set[str] = set()
+        for row in connection.execute('PRAGMA index_list("agent_motives")'):
+            if not row[2]:
+                continue
+            columns = [
+                column[2]
+                for column in connection.execute(
+                    f'PRAGMA index_info("{row[1]}")'
+                )
+            ]
+            if columns[:4] == [
+                "workspace_id",
+                "agent_id",
+                "kind",
+                "source",
+            ]:
+                names.add(row[1])
+        return names
     finally:
         connection.close()
 
@@ -536,6 +565,172 @@ def test_motive_lifecycle_end_to_end(tmp_path: Path, monkeypatch) -> None:
 
     assert clear_motive(db, workspace_id, motive.id).id == motive.id
     assert list_motives(db, workspace_id) == []
+
+
+def test_agent_motives_unique_constraint_blocks_duplicate_source_row(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    path = workspace_db_path(load_settings(), workspace_id)
+    connection = sqlite3.connect(path)
+    try:
+        connection.execute(
+            "INSERT INTO agent_motives "
+            "(id, workspace_id, agent_id, kind, content, strength, source, "
+            "created_at, last_touched_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "a" * 32,
+                workspace_id,
+                writer.id,
+                MotiveKind.GOAL.value,
+                "新章已交",
+                100,
+                "event:draft_generated",
+                "2026-08-23 00:00:00",
+                "2026-08-23 00:00:00",
+            ),
+        )
+        connection.commit()
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "INSERT INTO agent_motives "
+                "(id, workspace_id, agent_id, kind, content, strength, source, "
+                "created_at, last_touched_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    "b" * 32,
+                    workspace_id,
+                    writer.id,
+                    MotiveKind.GOAL.value,
+                    "新章已交",
+                    100,
+                    "event:draft_generated",
+                    "2026-08-23 00:01:00",
+                    "2026-08-23 00:01:00",
+                ),
+            )
+            connection.commit()
+    finally:
+        connection.close()
+
+
+def test_motives_migration_dedupes_existing_duplicate_rows(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    path = workspace_db_path(settings, workspace_id)
+    connection = sqlite3.connect(path)
+    agent_id = connection.execute(
+        "SELECT id FROM agents WHERE role=? ORDER BY created_at, id LIMIT 1",
+        (AgentRole.WRITER,),
+    ).fetchone()[0]
+    connection.close()
+
+    command.downgrade(
+        _alembic_config(f"sqlite:///{path}"), PRE_MOTIVE_UNIQUE_HEAD
+    )
+    connection = sqlite3.connect(path)
+    try:
+        for row_id, created_at, strength in (
+            ("1" * 32, "2026-08-01 00:00:00", 100),
+            ("2" * 32, "2026-08-02 00:00:00", 40),
+        ):
+            connection.execute(
+                "INSERT INTO agent_motives "
+                "(id, workspace_id, agent_id, kind, content, strength, source, "
+                "created_at, last_touched_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    row_id,
+                    workspace_id,
+                    agent_id,
+                    MotiveKind.GOAL.value,
+                    "新章已交",
+                    strength,
+                    "event:draft_generated",
+                    created_at,
+                    created_at,
+                ),
+            )
+        connection.commit()
+    finally:
+        connection.close()
+
+    run_migrations(f"sqlite:///{path}")
+
+    connection = sqlite3.connect(path)
+    try:
+        rows = connection.execute(
+            "SELECT id, workspace_id, agent_id, kind, content, strength, source "
+            "FROM agent_motives"
+        ).fetchall()
+    finally:
+        connection.close()
+    assert len(rows) == 1
+    assert rows[0][0] == "1" * 32
+    assert rows[0][4] == "新章已交"
+    assert rows[0][5] == 100
+    assert rows[0][6] == "event:draft_generated"
+    assert len(_unique_source_index_names(path)) == 1
+
+
+def test_derive_motives_conflict_path_strengthens_existing_row(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    settings = load_settings()
+    rival_id = "c" * 32
+    real_commit = Session.commit
+    armed = {"insert": True}
+
+    def conflicting_commit(self) -> None:
+        if not armed["insert"]:
+            real_commit(self)
+            return
+        armed["insert"] = False
+        path = workspace_db_path(settings, workspace_id)
+        connection = sqlite3.connect(path)
+        try:
+            connection.execute(
+                "INSERT INTO agent_motives "
+                "(id, workspace_id, agent_id, kind, content, strength, source, "
+                "created_at, last_touched_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    rival_id,
+                    workspace_id,
+                    writer.id,
+                    MotiveKind.GOAL.value,
+                    "新章已交",
+                    50,
+                    "event:draft_generated",
+                    "2026-08-23 00:00:00",
+                    "2026-08-23 00:00:00",
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        raise IntegrityError(
+            "INSERT", {}, Exception("UNIQUE constraint failed")
+        )
+
+    monkeypatch.setattr(Session, "commit", conflicting_commit)
+    result = derive_motives(
+        db, workspace_id, "draft_generated", {"agent_id": writer.id}
+    )
+
+    assert len(result) == 1
+    assert result[0].id == rival_id
+    boost = load_settings().memory_rehearsal_boost
+    assert result[0].strength == 50 + boost
+    assert [motive.id for motive in list_motives(db, workspace_id)] == [rival_id]
 
 
 def test_motives_cli_list_end_to_end(tmp_path: Path, monkeypatch) -> None:

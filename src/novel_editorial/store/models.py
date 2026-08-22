@@ -197,9 +197,23 @@ class AgentMotive(Base):
     A motive only biases future behavior. It has no due date, no assignee and
     no claim/accept semantics; it can be left alone, fade (decay lowers
     strength but never deletes) or be cleared explicitly.
+
+    One motive is one thing: the same (workspace_id, agent_id, kind, source)
+    may never be inserted twice, so derive_motives' "one source one line"
+    invariant is enforced by the database instead of only by a racy
+    check-then-insert in the application layer.
     """
 
     __tablename__ = "agent_motives"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "agent_id",
+            "kind",
+            "source",
+            name="uq_agent_motives_workspace_agent_kind_source",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     workspace_id: Mapped[str] = mapped_column(String(32), index=True)
