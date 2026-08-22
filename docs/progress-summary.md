@@ -1,7 +1,7 @@
 # 项目进度总结（Progress Summary）
 
 - 最后更新：2026-08-22
-- 当前基线：全量 1178 测试绿 + 前端四命令全绿；ruff / pyright / 宪法校验 / smoke_m3 / stress_m3 全绿
+- 当前基线：全量 1187 测试绿 + 前端四命令全绿；ruff / pyright / 宪法校验 / smoke_m3 / stress_m3 全绿
 - 远端：本地 HEAD 与 origin/main 一致（N12 收口归档已推送），工作区干净
 
 > 完整版（N1–N26、U1–U27 逐项）见 [docs/progress-report.md](progress-report.md)；后补项目集中清单见 [docs/project-plan/07-parked-backlog.md](project-plan/07-parked-backlog.md)。
@@ -83,8 +83,6 @@
 
 ## 已留档的待办项
 
-- `core/behavior.py` 空 kind 序列守卫（P3，无当前影响）：令空序列等价于不过滤。
-- N24 S3 审查 P3（P3，无当前影响）：api 层 `_style_anchor_dict` 内联锚查询，建议在 core.style 增只读访问器并统一 style_drift 同类读取；随下次触碰 style 读语义时清理。
-- N25 S3 审查 P3（P3，无当前影响）：归档探针接受 0 字节 data.db 为空库；修法为 `st_size == 0` 直接拒绝或要求 sqlite_master 返回行，随下次归档校验改动时清理。
+- 2026-08-22 收口：三项 P3（behavior 空 kind 守卫 / style 只读访问器含 style_drift 统一 / 归档 0 字节探针）已随 commit 3139c81 完成，独立审查通过，归档 docs/reviews/20260822-M9ENG1-initial.md。
 - 委托首次拒绝的观点沉淀缺口：已在 D2 补齐。
 - ruff format 对个别旧文件的既有格式遗留：验收只要求 `ruff check`，后续可另行清理。

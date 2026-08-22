@@ -12,9 +12,10 @@
 
 | 事项 | 级别 | 来源 |
 | --- | --- | --- |
-| `core/behavior.py` 空 kind 序列守卫：令空序列等价于不过滤 | P3，无当前影响 | progress-summary「已留档的待办项」 |
 | ruff format 对个别旧文件的既有格式遗留（验收只要求 ruff check） | P3 | progress-summary「已留档的待办项」 |
 | N10 O1 初始审查报告未单独归档（结论并入 20260820-M5N10O2-initial.md 说明） | 记录 | docs/reviews/20260820-M5N10O2-initial.md |
+
+2026-08-22 收口：`core/behavior.py` 空 kind 守卫 / style 只读访问器（含 style_drift 统一）/ 归档 0 字节 SQLite 探针 三项 P3 已随 commit 3139c81 完成，独立审查通过（docs/reviews/20260822-M9ENG1-initial.md），文档同步后从本表移除。
 
 ## 明确不做边界（引用 06，不展开）
 

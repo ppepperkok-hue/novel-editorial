@@ -1,7 +1,7 @@
 # 完整进度报告（Complete Progress Report）
 
 - 报告日期：2026-08-22
-- 当前基线：全量 1178 测试绿 + 前端 39 用例（lint / typecheck / test / build 四命令）绿；ruff / pyright / 宪法校验 / smoke_m3 / stress_m3 全绿
+- 当前基线：全量 1187 测试绿 + 前端 39 用例（lint / typecheck / test / build 四命令）绿；ruff / pyright / 宪法校验 / smoke_m3 / stress_m3 全绿
 - 远端：本地 HEAD 与 origin/main 一致（N12 收口归档已推送）
 - 完整能力清单：docs/project-plan/06-new-capability-backlog.md；可执行单元：docs/project-plan/05-executable-units.md
 - 后补项目集中清单：docs/project-plan/07-parked-backlog.md
@@ -51,7 +51,7 @@
 | N9 | 质量门语料校准 | P1 | F15 / 语料 | ✅ | Q1–Q3，881 测试 |
 | N10 | 跨作品聚合视图 | P1 | M3 | ✅ | O1–O3，823 测试 |
 | N11 | 示例编辑部与剧本 | P2 | M3 | ✅ | R1–R3，892 测试 |
-| N12 | 图形面板三扇窗 | P2 | N10 | ✅ | S1–S5，全量 1178 测试 + 前端 39 用例 |
+| N12 | 图形面板三扇窗 | P2 | N10 | ✅ | S1–S5，全量 1187 测试 + 前端 39 用例 |
 | N13 | 作品结构管理与创作进度 | P0 候选 | M3 | ✅ | J1–J3 归档 |
 | N14 | 多写手并行班子 | P1 | N13 | ✅ | K1–K3 归档 |
 | N15 | 灵感素材库 | P2 | N5 | ✅ | S1–S3，1100 测试 |
@@ -96,5 +96,5 @@ M5（N1→N2→N3，N4/N16 并线完成）→ M6（N5→N6，N7 独立立项，�
 ## 七、待办与风险
 
 - 截至 2026-08-22：06 新能力清单 N1–N26 全项收官；后补项目集中清单见 07-parked-backlog（已无待立项能力项）。
-- 已知留档：`core/behavior.py` 空 kind 序列守卫（P3，无当前影响）；api 层 style 只读访问器抽取与 style_drift 统一（P3，N24 S3 审查）；归档 0 字节 SQLite 探针（P3，N25 S3 审查）；ruff format 个别旧文件格式遗留。
+- 已知留档：ruff format 个别旧文件格式遗留；三项 P3（behavior 空 kind 守卫 / style 只读访问器含 style_drift 统一 / 归档 0 字节探针）已于 2026-08-22 收口（commit 3139c81，独立审查通过，见 docs/reviews/20260822-M9ENG1-initial.md）。
 - 红线（全清单强制继承）：不设强制关卡、沉淀不是前置、不工单化、只报告不代笔、体裁自适应、模板开放。
