@@ -5,7 +5,11 @@ from __future__ import annotations
 from novel_editorial.core.chat import ROLE_ALIASES, get_agent
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.store.db import DB, DEFAULT_BAND
-from novel_editorial.store.models import Agent, AgentRole
+from novel_editorial.store.models import (
+    PERSONALITY_PARAM_FIELDS,
+    Agent,
+    AgentRole,
+)
 
 EDITABLE_FIELDS: tuple[str, ...] = (
     "personality",
@@ -164,12 +168,29 @@ def update_agent_field(
     field: str,
     value: str,
 ) -> Agent:
-    if field not in EDITABLE_FIELDS:
+    """Update one profile field; personality params are validated as 0-10 ints."""
+    if field in PERSONALITY_PARAM_FIELDS:
+        try:
+            parsed_value = int(value)
+        except (TypeError, ValueError):
+            raise NovelError(
+                ErrorCode.USAGE_ERROR,
+                f"{field} must be an integer between 0 and 10",
+            ) from None
+        if parsed_value < 0 or parsed_value > 10:
+            raise NovelError(
+                ErrorCode.USAGE_ERROR,
+                f"{field} must be between 0 and 10",
+            )
+        stored_value: str | int = parsed_value
+    elif field in EDITABLE_FIELDS:
+        stored_value = value
+    else:
         raise NovelError(ErrorCode.USAGE_ERROR, f"unknown profile field: {field}")
     with db.workspace_session(workspace_id) as session:
         agent = session.query(Agent).filter_by(workspace_id=workspace_id, id=agent_id).first()
         if agent is None:
             raise NovelError(ErrorCode.NOT_FOUND, f"agent not found: {agent_id}")
-        setattr(agent, field, value)
+        setattr(agent, field, stored_value)
         session.commit()
         return agent

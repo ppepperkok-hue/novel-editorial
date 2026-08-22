@@ -13,7 +13,11 @@ from novel_editorial.core.agents import (
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.store.db import DB, DEFAULT_BAND
-from novel_editorial.store.models import Agent, AgentRole
+from novel_editorial.store.models import (
+    ROLE_PERSONALITY_PARAMS,
+    Agent,
+    AgentRole,
+)
 
 runner = CliRunner()
 
@@ -52,6 +56,10 @@ def test_agents_show_lists_full_profiles(tmp_path: Path, monkeypatch) -> None:
         "弱点",
         "人际预设",
         "私心",
+        "主动性",
+        "坚持度",
+        "表达欲",
+        "耐心",
     ):
         assert label in result.output
     assert "作品完整性高于短期热度" in result.output
@@ -64,6 +72,36 @@ def test_agents_show_missing_workspace(tmp_path: Path, monkeypatch) -> None:
     result = runner.invoke(app, ["agents", "show", "nope"])
     assert result.exit_code == 1
     assert "workspace not found" in result.output
+
+
+def test_agents_show_displays_personality_params(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    result = runner.invoke(app, ["agents", "show", workspace_id])
+    assert result.exit_code == 0, result.output
+    assert "耐心: 8" in result.output  # editor_in_chief patience is high
+    assert "表达欲: 3" in result.output  # reviewer talkativeness is low
+    assert "主动性: 5" in result.output  # writer proactivity is mid
+
+
+def test_seeded_band_personality_params_defaults(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    with db.workspace_session(workspace_id) as session:
+        agents = session.query(Agent).filter_by(workspace_id=workspace_id).all()
+    assert len(agents) == 4
+    for agent in agents:
+        params = (
+            agent.proactivity,
+            agent.stubbornness,
+            agent.talkativeness,
+            agent.patience,
+        )
+        assert params == ROLE_PERSONALITY_PARAMS[agent.role]
+        assert all(0 <= value <= 10 for value in params)
 
 
 @pytest.mark.smoke
@@ -142,6 +180,77 @@ def test_agents_edit_invalid_field(tmp_path: Path, monkeypatch) -> None:
     )
     assert result.exit_code == 2
     assert "unknown profile field" in result.output
+
+
+def test_agents_edit_personality_param_updates(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    result = runner.invoke(
+        app,
+        [
+            "agents",
+            "edit",
+            workspace_id,
+            "写手",
+            "--field",
+            "proactivity",
+            "--value",
+            "9",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+    db = DB(load_settings())
+    with db.workspace_session(workspace_id) as session:
+        writer = session.query(Agent).filter_by(workspace_id=workspace_id, role="writer").first()
+        assert writer is not None
+        assert writer.proactivity == 9
+
+    shown = runner.invoke(app, ["agents", "show", workspace_id])
+    assert shown.exit_code == 0
+    assert "主动性: 9" in shown.output
+
+
+@pytest.mark.parametrize("value", ["high", "11", "-1", "1.5"])
+def test_agents_edit_personality_param_invalid(
+    tmp_path: Path, monkeypatch, value: str
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    result = runner.invoke(
+        app,
+        [
+            "agents",
+            "edit",
+            workspace_id,
+            "写手",
+            "--field",
+            "patience",
+            "--value",
+            value,
+        ],
+    )
+    assert result.exit_code == 2
+    assert "must be" in result.output
+
+
+@pytest.mark.parametrize("value", ["0", "10"])
+def test_agents_edit_personality_param_bounds_are_inclusive(
+    tmp_path: Path, monkeypatch, value: str
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    result = runner.invoke(
+        app,
+        [
+            "agents",
+            "edit",
+            workspace_id,
+            "审稿",
+            "--field",
+            "talkativeness",
+            "--value",
+            value,
+        ],
+    )
+    assert result.exit_code == 0, result.output
 
 
 def test_agents_edit_unknown_agent(tmp_path: Path, monkeypatch) -> None:

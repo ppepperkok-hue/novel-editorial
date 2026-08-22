@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from enum import StrEnum
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -83,6 +84,40 @@ class AgentRole:
     REVIEWER = "reviewer"
 
 
+#: Personality-parameter fields (N27-C). Values are integers in 0-10 and feed
+#: the free-will behavior selector later; they live on the profile (per
+#: workspace) and are never overridden by global config.
+PERSONALITY_PARAM_FIELDS: tuple[str, ...] = (
+    "proactivity",
+    "stubbornness",
+    "talkativeness",
+    "patience",
+)
+
+#: Per-role personality-parameter defaults (0-10), justified by the role's
+#: DEFAULT_BAND profile text. The Alembic migration backfills existing rows
+#: with the same numbers, so model and migration must stay in sync.
+#:
+#: editor_in_chief: proactivity 6 (稳抓主线、主动牵头), stubbornness 7
+#:   (主线问题从不含糊), talkativeness 4 (说话留三分余地), patience 8
+#:   (焦虑阈值高，只在主线失控时明显波动).
+#: editor: proactivity 8 (每章跟读、追读体验至上), stubbornness 6
+#:   (与总编意见常不一致但可商量), talkativeness 7 (批评直率、话多),
+#:   patience 3 (对拖稿忍耐度低).
+#: writer: proactivity 5 (手感型创作者，靠指令与反馈推进), stubbornness 6
+#:   (怕退稿但嘴上从不认输), talkativeness 5 (会带入角色情绪表达),
+#:   patience 4 (被退稿会低落但恢复快).
+#: reviewer: proactivity 4 (冷静严谨，只盯逻辑与伏笔), stubbornness 8
+#:   (发现前后矛盾必退稿、从不放过一个洞), talkativeness 3 (话不多但句句
+#:   在点子上), patience 7 (几乎不被情绪影响判断).
+ROLE_PERSONALITY_PARAMS: dict[str, tuple[int, int, int, int]] = {
+    AgentRole.EDITOR_IN_CHIEF: (6, 7, 4, 8),
+    AgentRole.EDITOR: (8, 6, 7, 3),
+    AgentRole.WRITER: (5, 6, 5, 4),
+    AgentRole.REVIEWER: (4, 8, 3, 7),
+}
+
+
 class Agent(Base):
     """One partner in a workspace's editorial band."""
 
@@ -103,6 +138,28 @@ class Agent(Base):
     relationship_presets: Mapped[str] = mapped_column(Text, default="")
     private_motive: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    proactivity: Mapped[int] = mapped_column(Integer, nullable=False)
+    stubbornness: Mapped[int] = mapped_column(Integer, nullable=False)
+    talkativeness: Mapped[int] = mapped_column(Integer, nullable=False)
+    patience: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    def __init__(self, **kwargs: object) -> None:
+        """Apply per-role personality-parameter defaults on construction.
+
+        Every creation path (create_agent, seed_band, tests) goes through this
+        constructor, so role-appropriate values are filled even when the
+        caller does not pass them; an unknown role falls back to a neutral 5.
+        """
+        role = kwargs.get("role")
+        if isinstance(role, str) and role in ROLE_PERSONALITY_PARAMS:
+            defaults = ROLE_PERSONALITY_PARAMS[role]
+        else:
+            defaults = (5, 5, 5, 5)
+        for field, value in zip(
+            PERSONALITY_PARAM_FIELDS, defaults, strict=True
+        ):
+            kwargs.setdefault(field, value)
+        super().__init__(**kwargs)
 
 
 class AgentMemory(Base):
@@ -121,6 +178,39 @@ class AgentMemory(Base):
     )
     archived_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None
+    )
+
+
+class MotiveKind(StrEnum):
+    """Stable motive kinds (N27); the enum value doubles as the stored string."""
+
+    FORESHADOW = "foreshadow"
+    CONFLICT = "conflict"
+    GOAL = "goal"
+    IMPRESSION = "impression"
+    PENDING_ISSUE = "pending_issue"
+
+
+class AgentMotive(Base):
+    """One thing a partner is carrying (N27): not a todo, no deadline, no claim.
+
+    A motive only biases future behavior. It has no due date, no assignee and
+    no claim/accept semantics; it can be left alone, fade (decay lowers
+    strength but never deletes) or be cleared explicitly.
+    """
+
+    __tablename__ = "agent_motives"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(String(32), index=True)
+    agent_id: Mapped[str] = mapped_column(String(32), index=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    content: Mapped[str] = mapped_column(Text)
+    strength: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
+    source: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    last_touched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, nullable=False
     )
 
 

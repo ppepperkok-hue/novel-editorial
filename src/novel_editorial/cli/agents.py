@@ -87,6 +87,10 @@ def agents_show(workspace_id: str = typer.Argument(..., help="Workspace id")) ->
     for agent in agents:
         typer.echo(f"[{agent.role}] {agent.name}")
         typer.echo(f"  当前状态: {agent.mood}")
+        typer.echo(f"  主动性: {agent.proactivity}")
+        typer.echo(f"  坚持度: {agent.stubbornness}")
+        typer.echo(f"  表达欲: {agent.talkativeness}")
+        typer.echo(f"  耐心: {agent.patience}")
         typer.echo(f"  性格: {agent.personality}")
         typer.echo(f"  立场: {agent.stance}")
         typer.echo(f"  价值观: {agent.values}")
