@@ -121,6 +121,25 @@ def test_health(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert response.json() == {"status": "ok"}
 
 
+def test_config_default_poll_interval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    response = client.get("/config")
+    assert response.status_code == 200
+    assert response.json() == {"panel_poll_interval": 3}
+
+
+def test_config_reflects_env_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("NOVEL_PANEL_POLL_INTERVAL", "7")
+    client, _ = _make_client(tmp_path, monkeypatch)
+    response = client.get("/config")
+    assert response.status_code == 200
+    assert response.json() == {"panel_poll_interval": 7}
+
+
 def test_works_list_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client, _ = _make_client(tmp_path, monkeypatch)
     response = client.get("/works")
@@ -852,6 +871,7 @@ def test_panel_read_routes_do_not_write(
     events_before = client.get(f"/works/{workspace_id}/events").json()
 
     for url in (
+        "/config",
         "/events",
         f"/works/{workspace_id}/pending",
         f"/works/{workspace_id}/drafts",

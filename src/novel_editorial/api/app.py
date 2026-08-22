@@ -191,6 +191,11 @@ def create_app() -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/config")
+    def get_config() -> dict[str, int]:
+        """Panel configuration consumed by the frontend (read-only)."""
+        return {"panel_poll_interval": settings.panel_poll_interval}
+
     @app.get("/works")
     def list_works() -> list[dict[str, Any]]:
         with db.global_session() as session:
