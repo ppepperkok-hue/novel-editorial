@@ -170,4 +170,5 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 - S1+S2 完成（2026-08-23）：动机表 / 迁移（c1557045673c、6ebe40261d2545fe）/ 动机服务 / `motives list` CLI / 个性参数四字段，commits d426b4c / ae1661c / 66bfaf3；全量 1228 测试绿；独立审查两轮各 1 条 P2 均已修复复核收敛，归档 docs/reviews/20260823-M5N27S1S2-initial.md / -fix.md。
 - S3 完成（2026-08-23）：core/choice.py 三层管线（粗筛 → 权重 → 加权随机）+ 沉默入口 + 反馈计数，commits 1afba94 / c1a9ee3；全量 1266 测试绿；独立审查 3 条意见已修复复核收敛，归档 docs/reviews/20260823-M5N27S3-initial.md。
 - S4 完成（2026-08-23）：proactive 评估路径接入 choice 管线 + freedom_dial / freedom_seed / motive_llm_enabled 配置 + 动机沉淀，commits c735a08 / d282cdc；全量 1301 测试绿；独立审查 P2+P3 已修复复核收敛，归档 docs/reviews/20260823-M5N27S4-initial.md。
-- 待办：S5 可见性、文档与收口（usage 文档 + 验收五条断言 + 全量回归 + 独立审查归档）。
+- S5 完成（2026-08-23）：usage「自由意志 · 动机与选择」节 + .env.example / config.example.toml 三旋钮 + 验收五条断言（tests/test_free_will_acceptance.py），commits 023f89c / a9720ac；全量 1307 测试、smoke_m3、stress_m3、宪法全绿；独立审查 1 条 P2（文档示例）已修复复核收敛，归档 docs/reviews/20260823-M5N27S5-initial.md。
+- **N27 收口（2026-08-23）**：S1–S5 全部完成，里程碑 M10 自由意志 · 动机与选择达成；N28 反馈闭环与沉默、N29 编辑部自然讨论按 backlog 待用户立项。

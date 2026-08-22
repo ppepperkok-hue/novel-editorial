@@ -1,10 +1,10 @@
 # 项目进度总结（Progress Summary）
 
 - 最后更新：2026-08-22
-- 当前基线：全量 1187 测试绿 + 前端四命令全绿；ruff / pyright / 宪法校验 / smoke_m3 / stress_m3 全绿
+- 当前基线：全量 1307 测试绿 + 前端四命令全绿；ruff / pyright / 宪法校验 / smoke_m3 / stress_m3 全绿
 - 远端：本地 HEAD 与 origin/main 一致（N12 收口归档已推送），工作区干净
 
-> 完整版（N1–N26、U1–U27 逐项）见 [docs/progress-report.md](progress-report.md)；后补项目集中清单见 [docs/project-plan/07-parked-backlog.md](project-plan/07-parked-backlog.md)。
+> 完整版（N1–N27、U1–U27 逐项）见 [docs/progress-report.md](progress-report.md)；后补项目集中清单见 [docs/project-plan/07-parked-backlog.md](project-plan/07-parked-backlog.md)。
 
 ## 项目定位
 
@@ -35,6 +35,7 @@
 | M8-N11 | 示例编辑部与剧本（R1–R3） | 完成 |
 | 扩展 | N26 预设编辑部模板（S1–S3） | 完成 |
 | 扩展 | N12 图形面板（U27，S1–S5） | 完成 |
+| 扩展 | N27 动机与行为选择器（S1–S5） | 完成 |
 | 扩展 | N13 作品结构（J1–J3） | 完成 |
 | 扩展 | N14 多写手并行（K1–K3） | 完成 |
 | 扩展 | N17 记忆衰减与归档（F1–F3） | 完成 |
@@ -79,7 +80,7 @@
 
 ## 待办（按 backlog）
 
-截至 2026-08-22：06 清单 N1–N26 全项收官，无待立项能力项；留档 P3 与工程小待办见 07-parked-backlog。
+截至 2026-08-23：06 清单 N1–N27 全项收官；N28 反馈闭环与沉默、N29 编辑部自然讨论为下一步立项方向（09-free-will-design）；留档 P3 与工程小待办见 07-parked-backlog。
 
 ## 已留档的待办项
 
