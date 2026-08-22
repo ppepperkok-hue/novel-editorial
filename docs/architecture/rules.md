@@ -7,6 +7,7 @@
 - 采用 src 布局：`src/novel_editorial/` 为包根，`tests/` 镜像包结构。
 - 模块小写下划线；类用 PascalCase；常量用 UPPER_SNAKE。
 - 分层目录约定：`cli/`（命令入口）、`api/`（HTTP 入口层；依赖方向 `api → core → store/llm/quality`，api 不得 import cli）、`core/`（领域模型与服务）、`store/`（数据访问）、`llm/`（LLM 客户端）、`quality/`（质量门）、`events.py`（事件契约）。
+- 前端目录约定（N12 面板）：`frontend/` 为唯一前端根（package.json / tsconfig / vite 配置 / src/ 组件）；前端不 import 任何 Python 代码，只按 N24 API 的 OpenAPI 契约请求；构建产物 `frontend/dist` 由 `api` 层静态托管。
 - 每部作品数据放 `data/works/<workspace_id>/`，全局库放 `data/global.db`；配置放 `config.toml`（用户级可覆盖）。
 
 ## 2. 依赖方向
@@ -14,6 +15,7 @@
 - `cli / api → core → store/llm/quality`；`events` 为共享契约层，任何模块可读。
 - 禁止反向依赖（core 不得 import cli）；禁止循环依赖。
 - 检查手段：pytest 依赖方向守卫测试 + 人工 review；ruff 负责基本规范。
+- 前端依赖方向：`frontend → N24 API 契约（HTTP）`；前端不 import Python 包、不直连数据库。
 
 ## 3. 错误处理与日志
 
@@ -42,9 +44,16 @@
   - `uv run ruff check`
   - `uv run pyright`
   - `uv run novel-editorial --version`
+- 前端验证命令（N12 面板，在 `frontend/` 下执行，本地与 CI 同一套）：
+  - `npm run lint`（ESLint + typescript-eslint）
+  - `npm run typecheck`（`tsc --noEmit`）
+  - `npm test`（Vitest + React Testing Library）
+  - `npm run build`（Vite 产物到 `dist/`）
+- 前端包管理：npm + `package-lock.json`（提交入库）；Node 版本锁定于 `frontend/package.json` 的 `engines`。
 
 ## 7. 代码风格与提交
 
 - 代码格式：ruff format（行宽 100）。
 - 提交信息：Conventional Commits，英文（`feat:` / `fix:` / `docs:` / `test:` / `chore:`）。
 - 提交前必须通过全部验证命令；文档变更与代码同提交。
+- 前端组件沉淀：面板新增可复用组件写入 `frontend/src/components/` 并文档化（props、状态、三态），不复制粘贴改命名。
