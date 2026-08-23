@@ -156,4 +156,5 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 
 ## 状态
 
-- 立项（2026-08-23）：Phase 0 清单已确认；本实施文档拆分 S1–S5；待拆包派工。
+- S1 完成（2026-08-23）：silence / conflict 行为 kind + drift 四列迁移 + core/evolution.py（有效参数 / 漂移写入 / 懒惰回弹），commits 8686113 / 3fdcb8a；全量 1331 测试绿；独立审查 P1+P3 已修复复核收敛，归档 docs/reviews/20260823-M5N28S1-initial.md。
+- 待办：S2 反馈闭环（真实路径回写动机 + 作者放下 / 言语反馈 + 漂移写入）。
