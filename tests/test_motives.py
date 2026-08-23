@@ -523,6 +523,88 @@ def test_derive_llm_not_called_for_existing_motive(
     assert len(list_motives(db, workspace_id)) == 1
 
 
+def test_derive_llm_refinement_runs_outside_any_workspace_session(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The LLM call must not run inside a workspace transaction (P2 fix).
+
+    The old implementation refined the content while the write session was
+    open, so SQLite could hold a lock for the whole network call and a
+    concurrent write to the same workspace would hit "database is locked".
+    The fake client records how many workspace sessions are open during
+    ``complete`` (must be zero) and inserts a decision row from its own
+    connection (must succeed); after ``derive_motives`` returns, both the
+    refined motive and the concurrent decision row must exist.
+    """
+    db, workspace_id, _ = _make_llm_workspace(tmp_path, enabled=True)
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    path = workspace_db_path(db.settings, workspace_id)
+    depth = {"open": 0, "during_complete": -1}
+    insert: dict[str, object] = {"ok": None}
+    real_enter = Session.__enter__
+    real_exit = Session.__exit__
+
+    def _enter(session: Session) -> Session:
+        depth["open"] += 1
+        return real_enter(session)
+
+    def _exit(session: Session, *args: object) -> None:
+        try:
+            real_exit(session, *args)
+        finally:
+            depth["open"] -= 1
+
+    monkeypatch.setattr(Session, "__enter__", _enter)
+    monkeypatch.setattr(Session, "__exit__", _exit)
+
+    class _ConcurrentWriterClient(MockLLMClient):
+        def complete(self, messages: list[LLMMessage]) -> LLMResult:
+            depth["during_complete"] = depth["open"]
+            connection = sqlite3.connect(path, timeout=0.0)
+            try:
+                connection.execute(
+                    "INSERT INTO decisions "
+                    "(id, workspace_id, draft_id, action, actor, content, "
+                    "created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        "d" * 32,
+                        workspace_id,
+                        "a" * 32,
+                        "accept",
+                        "作者",
+                        "并发决策",
+                        "2026-08-23 00:00:00",
+                    ),
+                )
+                connection.commit()
+                insert["ok"] = True
+            except sqlite3.OperationalError as exc:
+                insert["ok"] = str(exc)
+            finally:
+                connection.close()
+            return LLMResult(content="LLM 提炼文案")
+
+    motive = derive_motives(
+        db,
+        workspace_id,
+        "draft_generated",
+        {"agent_id": writer.id},
+        client=_ConcurrentWriterClient(),
+    )[0]
+
+    assert depth["during_complete"] == 0
+    assert insert["ok"] is True
+    assert motive.content == "LLM 提炼文案"
+    connection = sqlite3.connect(path)
+    try:
+        rows = connection.execute(
+            "SELECT id FROM decisions WHERE workspace_id=?", (workspace_id,)
+        ).fetchall()
+    finally:
+        connection.close()
+    assert len(rows) == 1
+
+
 def test_derive_distinct_agent_kind_source_are_distinct_motives(
     tmp_path: Path, monkeypatch
 ) -> None:

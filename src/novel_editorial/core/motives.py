@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
@@ -139,6 +140,42 @@ def _refine_motive_content(
     return content
 
 
+def _strengthen_motive_row(
+    session: Session,
+    workspace_id: str,
+    agent_id: str,
+    kind: MotiveKind,
+    source: str,
+) -> AgentMotive | None:
+    """Strengthen the committed motive row matching the unique key, if any.
+
+    Shared by the re-trigger path and the IntegrityError fallback: the row
+    may have been committed by a concurrent winner between two sessions, or
+    the unique insert may have lost the race; either way the winner is
+    strengthened instead of duplicated (S1/S2 one-source-one-line semantics).
+    """
+    existing = (
+        session.query(AgentMotive)
+        .filter_by(
+            workspace_id=workspace_id,
+            agent_id=agent_id,
+            kind=kind,
+            source=source,
+        )
+        .order_by(AgentMotive.id)
+        .first()
+    )
+    if existing is None:
+        return None
+    _apply_strength_delta(
+        existing,
+        load_settings().memory_rehearsal_boost,
+        datetime.now(UTC),
+    )
+    session.commit()
+    return existing
+
+
 @dataclass(frozen=True)
 class _MotiveRule:
     """One deterministic event-kind -> motive template (N27 S1)."""
@@ -198,7 +235,11 @@ def derive_motives(
     and partner context); a failed or empty reply falls back to the template
     with a stderr warning. Switch off, no client, or a re-triggered existing
     motive (which only strengthens) keep the deterministic template - the
-    zero-token path.
+    zero-token path. The refinement is deliberately run outside any workspace
+    transaction (P2): a short read session resolves the partner and checks
+    whether the motive already exists, the session is closed before
+    ``client.complete`` runs, and a fresh write session then re-checks and
+    inserts, so no SQLite lock is held during the network call.
     """
     context = context if context is not None else {}
     rule = _MOTIVE_RULES.get(event_kind)
@@ -227,6 +268,9 @@ def derive_motives(
                 f"no {rule.role} in workspace: {workspace_id}",
             )
         agent_id = fallback.id
+    # Short read session: resolve the partner and check whether the motive
+    # already exists, then close the session BEFORE any network call so no
+    # SQLite lock is held while client.complete runs (P2).
     with db.workspace_session(workspace_id) as session:
         agent = (
             session.query(Agent)
@@ -247,15 +291,24 @@ def derive_motives(
             .order_by(AgentMotive.id)
             .first()
         )
-        if existing is not None:
-            _apply_strength_delta(
-                existing,
-                load_settings().memory_rehearsal_boost,
-                datetime.now(UTC),
+    if existing is not None:
+        # A fresh short session strengthens the existing row; if a concurrent
+        # clear removed it in between, fall through and create a new one.
+        with db.workspace_session(workspace_id) as session:
+            strengthened = _strengthen_motive_row(
+                session, workspace_id, agent_id, rule.kind, source
             )
-            session.commit()
-            return [existing]
-        content = _refine_motive_content(db, event_kind, rule, agent, client)
+        if strengthened is not None:
+            return [strengthened]
+    content = _refine_motive_content(db, event_kind, rule, agent, client)
+    with db.workspace_session(workspace_id) as session:
+        # Re-check inside the write session: a concurrent winner may have
+        # committed the same source since the read session closed.
+        strengthened = _strengthen_motive_row(
+            session, workspace_id, agent_id, rule.kind, source
+        )
+        if strengthened is not None:
+            return [strengthened]
         motive = AgentMotive(
             workspace_id=workspace_id,
             agent_id=agent_id,
@@ -268,26 +321,12 @@ def derive_motives(
             session.commit()
         except IntegrityError:
             session.rollback()
-            existing = (
-                session.query(AgentMotive)
-                .filter_by(
-                    workspace_id=workspace_id,
-                    agent_id=agent_id,
-                    kind=rule.kind,
-                    source=source,
-                )
-                .order_by(AgentMotive.id)
-                .first()
+            strengthened = _strengthen_motive_row(
+                session, workspace_id, agent_id, rule.kind, source
             )
-            if existing is None:
+            if strengthened is None:
                 raise
-            _apply_strength_delta(
-                existing,
-                load_settings().memory_rehearsal_boost,
-                datetime.now(UTC),
-            )
-            session.commit()
-            return [existing]
+            return [strengthened]
     return [motive]
 
 

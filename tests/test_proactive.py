@@ -736,6 +736,75 @@ def test_motive_llm_disabled_never_constructs_client(
     assert motives[0].content == "新章已交"
 
 
+def test_motive_llm_build_client_failure_degrades_to_template(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """A build_client failure must not bubble out of _sediment_motive (P3 fix).
+
+    The old implementation let the construction exception escape, so the
+    whole proactive evaluation was skipped and even the deterministic
+    template motive never landed. The motive must still sediment with the
+    template and the proactive message must still record; only a stderr
+    warning is emitted.
+    """
+    db, workspace_id = _make_db(tmp_path, motive_llm_enabled=True)
+    writer = _agent_name(db, workspace_id, AgentRole.WRITER)
+
+    def _boom(settings) -> MockLLMClient:
+        raise RuntimeError("client construction failed")
+
+    monkeypatch.setattr(proactive, "build_client", _boom)
+
+    recorded = proactive.record_proactive_messages(
+        db,
+        workspace_id,
+        "draft_generated",
+        {"title": "第一章", "current_version": 1, "passed": True},
+    )
+
+    assert len(recorded) == 1
+    assert recorded[0].actor == writer
+    assert recorded[0].content == "《第一章》初稿写完了，我按节奏收尾，先交给你过目。"
+    motives = list_motives(db, workspace_id)
+    assert len(motives) == 1
+    assert motives[0].content == "新章已交"
+    assert motives[0].source == "event:draft_generated"
+    err = capsys.readouterr().err
+    assert "warning: motive LLM client build failed, falling back to template" in err
+
+
+def test_cli_draft_generate_sediments_template_motive_when_client_build_fails(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """CLI smoke for the P3 degradation: message and template motive still land."""
+    monkeypatch.setenv("NOVEL_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("NOVEL_CONFIG", str(tmp_path / "config.toml"))
+    monkeypatch.setenv("NOVEL_MOTIVE_LLM_ENABLED", "true")
+    monkeypatch.setattr(
+        "novel_editorial.cli.draft.build_client",
+        lambda settings: MockLLMClient(reply="正文内容"),
+    )
+
+    def _boom(settings) -> MockLLMClient:
+        raise RuntimeError("client construction failed")
+
+    monkeypatch.setattr("novel_editorial.core.proactive.build_client", _boom)
+    created = runner.invoke(app, ["works", "create", "主动之书"])
+    assert created.exit_code == 0, created.output
+    workspace_id = created.output.split()[2].rstrip(":")
+
+    generated = runner.invoke(
+        app, ["draft", "generate", workspace_id, "--title", "第一章"]
+    )
+    assert generated.exit_code == 0, generated.output
+    assert "写手: 《第一章》初稿写完了" in generated.output
+    assert "warning: proactive messages skipped" not in generated.output
+
+    listed = runner.invoke(app, ["motives", "list", workspace_id])
+    assert listed.exit_code == 0, listed.output
+    assert "新章已交" in listed.output
+
+
 def _isolate_trigger_registry(monkeypatch) -> None:
     """Give one test its own registry copy so wired-trigger extras never leak."""
     monkeypatch.setattr(

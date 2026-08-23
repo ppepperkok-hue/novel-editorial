@@ -20,8 +20,10 @@ entry in core/choice.py keep the legacy deterministic path (condition +
 budget), so custom registrations and old call sites behave exactly as before.
 The motive_llm_enabled switch (N28-F) refines the sedimented motive's content
 through the LLM: when on, _sediment_motive builds a client from the same
-settings and hands it to derive_motives; when off (or on a failed refinement)
-the deterministic template stays, so the zero-token path is unchanged.
+settings and hands it to derive_motives; when off, on a failed refinement, or
+when the client cannot be built, the deterministic template stays, so the
+zero-token path is unchanged and a construction failure never bubbles up past
+evaluate/record (P3).
 
 S3 (N28-D) adds the silence trace: after a multi-candidate wired evaluation,
 each relevant partner who stayed quiet with a tendency over the significance
@@ -219,12 +221,27 @@ def _sediment_motive(
     With ``motive_llm_enabled`` on, a client built from the same settings is
     handed to ``derive_motives`` so the new motive's content is refined by the
     LLM (core -> llm is a legal dependency direction); switch off keeps the
-    zero-token deterministic template and never constructs a client.
+    zero-token deterministic template and never constructs a client. A failed
+    client construction degrades the same way with a stderr warning, so the
+    motive still sediments and the proactive evaluation never skips (P3).
     """
     event_kind = _TRIGGER_MOTIVE_EVENT_KINDS.get(trigger)
     if event_kind is None:
         return
-    client = build_client(db.settings) if db.settings.motive_llm_enabled else None
+    client = None
+    if db.settings.motive_llm_enabled:
+        try:
+            client = build_client(db.settings)
+        except Exception as exc:
+            # A failed client construction degrades to the deterministic
+            # template: the motive still sediments and the proactive message
+            # still fires (P3 red line: no bubble-up past evaluate/record).
+            print(
+                "warning: motive LLM client build failed, "
+                f"falling back to template: {exc}",
+                file=sys.stderr,
+            )
+            client = None
     # Pass the caller-provided agent_id through (None/absent keeps the rule's
     # role fallback in derive_motives), so the motive belongs to the partner
     # who actually caused the event - never guessed from context keys.
