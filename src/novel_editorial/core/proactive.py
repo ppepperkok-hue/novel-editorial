@@ -40,6 +40,7 @@ from novel_editorial.core import choice
 from novel_editorial.core.agents import list_agents
 from novel_editorial.core.chat import _record_message_in_session
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.evolution import effective_param
 from novel_editorial.core.motives import derive_motives, list_motives
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import AgentMotive, Message
@@ -248,10 +249,10 @@ def _load_choice_inputs(
     roles = {agent.name: agent.role for agent in agents}
     params = {
         agent.name: choice.PersonalityParams(
-            proactivity=agent.proactivity,
-            stubbornness=agent.stubbornness,
-            talkativeness=agent.talkativeness,
-            patience=agent.patience,
+            proactivity=effective_param(agent, "proactivity"),
+            stubbornness=effective_param(agent, "stubbornness"),
+            talkativeness=effective_param(agent, "talkativeness"),
+            patience=effective_param(agent, "patience"),
         )
         for agent in agents
     }

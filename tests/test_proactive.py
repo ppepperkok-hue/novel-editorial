@@ -10,6 +10,7 @@ from novel_editorial.cli.app import app
 from novel_editorial.core import proactive
 from novel_editorial.core.config import Settings, load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.evolution import apply_param_drift, effective_param
 from novel_editorial.core.motives import list_motives
 from novel_editorial.core.workspace import create_workspace
 from novel_editorial.llm.client import MockLLMClient
@@ -541,6 +542,37 @@ def test_choice_pipeline_keeps_registered_draft_behaviors(tmp_path: Path) -> Non
             content="这章我留了个钩子，下章要不要收？",
         )
     ]
+
+
+def test_load_choice_inputs_uses_effective_drift_params(tmp_path: Path) -> None:
+    db, workspace_id = _make_db(tmp_path)
+    chief = _agent_row(db, workspace_id, AgentRole.EDITOR_IN_CHIEF)
+    apply_param_drift(db, workspace_id, chief.id, "patience", -5, event="pressed")
+
+    _roles, params, _motives, _feedback = proactive._load_choice_inputs(
+        db, workspace_id
+    )
+    fresh = _agent_row(db, workspace_id, AgentRole.EDITOR_IN_CHIEF)
+    assert params[chief.name].patience == effective_param(fresh, "patience") == 3
+    assert params[chief.name].proactivity == effective_param(fresh, "proactivity") == 6
+
+
+def test_drift_changes_choice_pick_via_effective_params(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _isolate_trigger_registry(monkeypatch)
+    db, workspace_id = _make_db(tmp_path, freedom_dial=0.0)
+    _register_talk_contestants(db, workspace_id)
+    chief = _agent_row(db, workspace_id, AgentRole.EDITOR_IN_CHIEF)
+    apply_param_drift(db, workspace_id, chief.id, "proactivity", -10, event="rejected")
+
+    fired = proactive.evaluate_proactive_triggers(
+        db,
+        workspace_id,
+        "talk_first_round",
+        {"first_round": True, "has_style_anchor": False},
+    )
+    assert [candidate.agent for candidate in fired] == ["责编"]
 
 
 def test_single_candidate_fires_when_all_personality_params_zero(

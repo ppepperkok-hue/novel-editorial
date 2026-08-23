@@ -14,6 +14,7 @@ from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.store.db import DB, DEFAULT_BAND
 from novel_editorial.store.models import (
+    DRIFT_PARAM_FIELDS,
     ROLE_PERSONALITY_PARAMS,
     Agent,
     AgentRole,
@@ -102,6 +103,19 @@ def test_seeded_band_personality_params_defaults(
         )
         assert params == ROLE_PERSONALITY_PARAMS[agent.role]
         assert all(0 <= value <= 10 for value in params)
+
+
+def test_seeded_band_drift_columns_default_zero(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    with db.workspace_session(workspace_id) as session:
+        agents = session.query(Agent).filter_by(workspace_id=workspace_id).all()
+    assert len(agents) == 4
+    for agent in agents:
+        for field in DRIFT_PARAM_FIELDS:
+            assert getattr(agent, field) == 0
 
 
 @pytest.mark.smoke

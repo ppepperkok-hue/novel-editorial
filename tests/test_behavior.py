@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
 from novel_editorial.core.behavior import (
+    BEHAVIOR_KINDS,
     current_behavior_state,
     list_behavior_timeline,
     record_behavior_entry,
@@ -171,6 +172,64 @@ def test_record_rejects_unknown_kind_as_usage_error(tmp_path: Path, monkeypatch)
         record_behavior_entry(db, workspace_id, agent_id="写手", kind="mood", target="rule_a")
     assert excinfo.value.code == ErrorCode.USAGE_ERROR
     assert list_behavior_timeline(db, workspace_id) == []
+
+
+def test_behavior_kinds_include_silence_and_conflict() -> None:
+    assert set(BEHAVIOR_KINDS) == {
+        "impression",
+        "relationship",
+        "viewpoint",
+        "silence",
+        "conflict",
+    }
+
+
+def test_record_list_and_state_for_silence_and_conflict(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    silence = record_behavior_entry(
+        db,
+        workspace_id,
+        agent_id="审稿",
+        kind="silence",
+        target="规则矛盾",
+        summary="评估过但没说出口",
+        before_value="倾向 0.62",
+        after_value="倾向 0.50",
+        source="trigger",
+    )
+    conflict = record_behavior_entry(
+        db,
+        workspace_id,
+        agent_id="审稿",
+        kind="conflict",
+        target="伏笔A",
+        summary="分歧未决",
+        source="discussion:open",
+    )
+
+    entries = list_behavior_timeline(db, workspace_id)
+    assert [entry.id for entry in entries] == [silence.id, conflict.id]
+    assert [
+        entry.id
+        for entry in list_behavior_timeline(db, workspace_id, kind="silence")
+    ] == [silence.id]
+    assert [
+        entry.id
+        for entry in list_behavior_timeline(
+            db, workspace_id, kind=("silence", "conflict")
+        )
+    ] == [silence.id, conflict.id]
+
+    state = current_behavior_state(db, workspace_id)
+    assert set(state) == {
+        ("审稿", "silence", "规则矛盾"),
+        ("审稿", "conflict", "伏笔A"),
+    }
+    assert state[("审稿", "silence", "规则矛盾")].id == silence.id
+    assert state[("审稿", "conflict", "伏笔A")].id == conflict.id
 
 
 @pytest.mark.parametrize(

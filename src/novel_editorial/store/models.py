@@ -94,6 +94,20 @@ PERSONALITY_PARAM_FIELDS: tuple[str, ...] = (
     "patience",
 )
 
+#: Drift columns mirroring the four personality parameters (N28-C S1).
+#: Values are integers in -10..10; the effective parameter is
+#: clamp(baseline + drift, 0, 10), computed by core/evolution.py. The Alembic
+#: migration backfills existing rows with 0, so model and migration must stay
+#: in sync. Drift is deliberately not part of PERSONALITY_PARAM_FIELDS: the
+#: baseline stays the 0-10 profile value edited through `agents edit`, while
+#: drift is the behavior feedback layer that slowly settles back toward 0.
+DRIFT_PARAM_FIELDS: tuple[str, ...] = (
+    "drift_proactivity",
+    "drift_stubbornness",
+    "drift_talkativeness",
+    "drift_patience",
+)
+
 #: Per-role personality-parameter defaults (0-10), justified by the role's
 #: DEFAULT_BAND profile text. The Alembic migration backfills existing rows
 #: with the same numbers, so model and migration must stay in sync.
@@ -142,6 +156,10 @@ class Agent(Base):
     stubbornness: Mapped[int] = mapped_column(Integer, nullable=False)
     talkativeness: Mapped[int] = mapped_column(Integer, nullable=False)
     patience: Mapped[int] = mapped_column(Integer, nullable=False)
+    drift_proactivity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    drift_stubbornness: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    drift_talkativeness: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    drift_patience: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     def __init__(self, **kwargs: object) -> None:
         """Apply per-role personality-parameter defaults on construction.
@@ -159,6 +177,8 @@ class Agent(Base):
             PERSONALITY_PARAM_FIELDS, defaults, strict=True
         ):
             kwargs.setdefault(field, value)
+        for field in DRIFT_PARAM_FIELDS:
+            kwargs.setdefault(field, 0)
         super().__init__(**kwargs)
 
 

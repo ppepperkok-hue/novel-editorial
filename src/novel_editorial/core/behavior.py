@@ -11,7 +11,13 @@ from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import BehaviorTimeline
 
-BEHAVIOR_KINDS = ("impression", "relationship", "viewpoint")
+BEHAVIOR_KINDS = (
+    "impression",
+    "relationship",
+    "viewpoint",
+    "silence",
+    "conflict",
+)
 
 # SQLite assigns every row an implicit rowid. Rows are only appended, never
 # deleted, so rowid order equals insertion order even when created_at collides
@@ -127,7 +133,8 @@ def current_behavior_state(
     """Return the latest record per (agent_id, kind, target) group.
 
     Event-sourcing semantics: the current impression / relationship / viewpoint
-    for a group is its newest row, while the full history stays in the timeline.
+    / silence / conflict for a group is its newest row, while the full history
+    stays in the timeline.
     """
     with db.workspace_session(workspace_id) as session:
         query = session.query(BehaviorTimeline).filter_by(workspace_id=workspace_id)
