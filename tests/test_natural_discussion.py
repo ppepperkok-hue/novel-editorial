@@ -1010,6 +1010,117 @@ def test_summon_natural_discussion_conflict_topic_recalls_other_participant(
     assert result["discussion_id"] != previous_id
 
 
+def test_summon_natural_discussion_editor_in_chief_candidate_skipped(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """池底总编候选：总编主持讨论、不作分歧一方，召集跳过且无自我总结."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    editor = _agent(db, workspace_id, AgentRole.EDITOR_IN_CHIEF)
+    with db.workspace_session(workspace_id) as session:
+        row = session.query(Agent).filter_by(id=editor.id).first()
+        assert row is not None
+        row.patience = 0
+        session.commit()
+    _insert_entry(
+        db,
+        workspace_id,
+        agent_id=editor.id,
+        kind="viewpoint",
+        target="主线基调",
+        source="override:主线基调",
+        summary="作者推翻后调整",
+    )
+    assert patience_pool(db, workspace_id, editor.id)["pool"] == 0
+
+    result = summon_natural_discussion(db, workspace_id, editor)
+
+    assert result is None
+    assert "editor-in-chief" in capsys.readouterr().err
+    assert list_messages(db, workspace_id) == []
+    assert list_events(db, workspace_id) == []
+
+
+def test_summon_natural_discussion_counterpart_never_editor_in_chief(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """对方点将排除总编：议题沉淀只指向总编时回退默认配对（审稿↔写手）."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    reviewer = _bottom_reviewer_by_overrides(db, workspace_id)
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    editor = _agent(db, workspace_id, AgentRole.EDITOR_IN_CHIEF)
+    topic = "reviewer_consistency"
+    # 前一轮讨论中总编作为参与方在议题命名空间留过 viewpoint 沉淀。
+    _insert_entry(
+        db,
+        workspace_id,
+        agent_id=editor.id,
+        kind="viewpoint",
+        target=topic,
+        source="discussion:previous",
+        summary="表达了立场",
+        after_value="表达了立场",
+    )
+
+    result = summon_natural_discussion(db, workspace_id, reviewer)
+
+    assert result is not None
+    assert result["topic"] == topic
+    assert result["agent_id"] == reviewer.id
+    # 总编不作分歧一方：回退默认配对点将写手，总编只负责通气总结。
+    assert result["counterpart"] == writer.name
+    messages = _messages_in_order(db, workspace_id)
+    contributions = [
+        m
+        for m in messages
+        if json.loads(m.payload).get("kind") == "discussion_contribution"
+    ]
+    assert [m.actor for m in contributions] == [reviewer.name, writer.name]
+    summaries = [
+        m
+        for m in messages
+        if json.loads(m.payload).get("kind") == "discussion_summary"
+    ]
+    assert len(summaries) == 1
+    assert summaries[0].actor == editor.name
+
+
+def test_summon_natural_discussion_no_topic_contract_visible_but_not_summoned(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """no-topic 契约：候选列表保留可见性，召集侧跳过并告警、不写任何记录."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    with db.workspace_session(workspace_id) as session:
+        row = session.query(Agent).filter_by(id=writer.id).first()
+        assert row is not None
+        row.patience = 0
+        session.commit()
+    assert patience_pool(db, workspace_id, writer.id)["pool"] == 0
+
+    # 可见性：无议题池底伙伴仍被候选列表列出，topic=None。
+    candidates = summon_candidates(db, workspace_id)
+    writer_entries = [
+        candidate for candidate in candidates if candidate["agent_id"] == writer.id
+    ]
+    assert len(writer_entries) == 1
+    assert writer_entries[0]["topic"] is None
+
+    # 召集侧：无议题无法开 N4 轮次，跳过并告警，不写消息与事件。
+    result = summon_natural_discussion(db, workspace_id, writer)
+
+    assert result is None
+    assert "no pending topic" in capsys.readouterr().err
+    assert list_messages(db, workspace_id) == []
+    assert list_events(db, workspace_id) == []
+
+
 def test_summon_natural_discussion_cli_smoke(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1044,3 +1155,38 @@ def test_summon_natural_discussion_cli_smoke(
     # 输出真实摘要：自然召集的总结走 N4 确定性模板。
     assert SUMMARY_LEAD.format(topic="reviewer_consistency") in summoned["summary"]
     assert _draft_version_content(db, workspace_id, draft.id) == "正文原样"
+
+
+def test_summon_natural_discussion_cli_smoke_editor_in_chief_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CLI 冒烟：池底总编召集被跳过，不产生任何讨论记录或召集事件."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    editor = _agent(db, workspace_id, AgentRole.EDITOR_IN_CHIEF)
+    with db.workspace_session(workspace_id) as session:
+        row = session.query(Agent).filter_by(id=editor.id).first()
+        assert row is not None
+        row.patience = 0
+        session.commit()
+    _insert_entry(
+        db,
+        workspace_id,
+        agent_id=editor.id,
+        kind="viewpoint",
+        target="主线基调",
+        source="override:主线基调",
+        summary="作者推翻后调整",
+    )
+    assert patience_pool(db, workspace_id, editor.id)["pool"] == 0
+
+    summoned = summon_natural_discussion(db, workspace_id, editor)
+
+    assert summoned is None
+    listed = runner.invoke(app, ["talk", "list", workspace_id])
+    assert listed.exit_code == 0, listed.output
+    assert "[author·讨论·开场]" not in listed.output
+    assert "[agent·讨论·总结]" not in listed.output
+    events_listed = runner.invoke(app, ["events", "list", workspace_id])
+    assert events_listed.exit_code == 0, events_listed.output
+    assert '"kind": "natural_discussion"' not in events_listed.output

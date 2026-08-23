@@ -267,7 +267,11 @@ def summon_candidates(
     check uses and the same key S3 writes kind=cooldown with after a real
     summon, so both anti-storm entries consult one namespace. A partner with
     no pending topic at all (no issue rows and no reject decision log) stays
-    a candidate and S2 falls back to the default pairing. The
+    a candidate for visibility only (topic=None) but is never summoned: the
+    N4 shape opens around a 议题 and open_discussion rejects a blank topic,
+    so S2 skips that partner with a stderr warning. Listing keeps the state
+    observable and the S3 wiring loud instead of silent (no-topic 契约:
+    可见但不可召集). The
     proactive_enabled switch gates the whole module: when off, no candidates
     (fully silent, no natural summon). Order is deterministic: candidates are
     sorted by partner name (unique per workspace), so the result is
@@ -351,7 +355,10 @@ def _resolve_counterpart(
     (source=override:<rule>) live in the rule namespace and name no band
     partner - the pressure came from the author (talk.py override path), not
     from another partner - so that branch finds nothing and falls back to the
-    deterministic default pairing.
+    deterministic default pairing. The editor-in-chief is never recalled as
+    the other side: N4 splits 分歧双方 and 主编通气总结, so the editor chairs
+    the round instead of joining one side - sediment naming only the editor
+    falls back to the default pairing (M5-N29-S2-FIX, 总编不自我总结).
     """
     with db.workspace_session(workspace_id) as session:
         row = (
@@ -363,6 +370,7 @@ def _resolve_counterpart(
                 BehaviorTimeline.target == topic,
                 BehaviorTimeline.agent_id != candidate.id,
                 Agent.role != candidate.role,
+                Agent.role != AgentRole.EDITOR_IN_CHIEF,
             )
             .order_by(literal_column("behavior_timeline.rowid").desc())
             .first()
@@ -412,13 +420,29 @@ def summon_natural_discussion(
     back. No summon happens unless the partner is actually a candidate: the
     proactive_enabled switch gates the module (关掉全静默), the pool must be
     bottom, and a cooling topic is skipped. A partner with no pending topic at
-    all is not summoned either - the N4 shape opens around a 议题 and
-    open_discussion rejects a blank topic, so there is nothing to open a round
-    on (nothing is written in that case).
+    all stays visible in summon_candidates (topic=None) but is not summoned
+    here - the N4 shape opens around a 议题 and open_discussion rejects a
+    blank topic, so the summon side skips with a warning instead of staying
+    silent (S3 接线不静默). The editor-in-chief never joins as one of the two
+    sides: N4 splits 分歧双方 and 主编通气总结, so a pool-bottom editor
+    candidate is skipped with a warning - the editor chairs the round and
+    must not summarize their own stance (M5-N29-S2-FIX).
     """
     if not db.settings.proactive_enabled:
         return None
     try:
+        if agent.role == AgentRole.EDITOR_IN_CHIEF:
+            # N4 形状: 点将分歧双方 + 主编通气总结. The editor-in-chief
+            # chairs the round and summarizes neutrally; letting the editor
+            # join one side would make the editor summarize their own stance
+            # (M5-N29-S2-FIX), so a pool-bottom editor candidate is skipped
+            # with a visible warning.
+            print(
+                "warning: natural discussion summon skipped: "
+                "editor-in-chief chairs the round and never joins a side",
+                file=sys.stderr,
+            )
+            return None
         topic = _pending_topic(db, workspace_id, agent.id)
         pool = patience_pool(db, workspace_id, agent.id)["pool"]
         if pool != POOL_MIN:
