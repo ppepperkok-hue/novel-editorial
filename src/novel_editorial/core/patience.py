@@ -15,10 +15,14 @@ query time - no new table. Three states consume patience, each weighted:
 - conflict: kind=conflict rows whose (agent, target) group is not closed by
   its newest discussion:resolved neutralization record (unresolved discussion
   divergence). Weight 1 - an unresolved disagreement keeps draining patience,
-  but slower than a direct override. Neutralization rows are appended when
-  the author concludes the round; they keep the append-only timeline
-  replayable while stopping the pool from being consumed by a resolved
-  disagreement.
+  but slower than a direct override.
+
+All three states follow the same append-only group semantics: a (agent,
+target) group is open while its newest row is not a source=discussion:resolved
+neutralization record, and closed groups stop consuming while the full history
+stays replayable. N28 closes conflict groups when the author concludes the
+round; N29-S3 reuses the same neutralization (``clear_pool_pressure``) to
+clear the summoned partner's pool (清零进冷却、未解决重新攒).
 
 Pool value = clamp(effective patience - consumption, 0, 10), where effective
 patience comes from core.evolution.effective_param (baseline + drift).
@@ -39,6 +43,7 @@ from typing import TypedDict
 from sqlalchemy import and_, literal_column, or_
 
 from novel_editorial.core.agents import list_agents, resolve_agent
+from novel_editorial.core.behavior import record_behavior_entry_safe
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.evolution import effective_param
 from novel_editorial.store.db import DB
@@ -105,36 +110,53 @@ def _clamp(value: int, low: int, high: int) -> int:
     return max(low, min(high, value))
 
 
+def _open_targets(rows: list[BehaviorTimeline]) -> set[str]:
+    """Targets whose newest row is not a neutralization record.
+
+    Group semantics shared by every pool state (N28 conflict + N29-S3 clear):
+    rows are append-only, so a (agent, target) group is open while its newest
+    row is not source=discussion:resolved. A newer neutralization closes the
+    whole group without deleting history; a newer pressure row reopens it, so
+    re-accumulated pressure starts counting again (未解决重新攒).
+    """
+    latest: dict[str, str] = {}
+    for row in rows:
+        latest[row.target] = row.source
+    return {target for target, source in latest.items() if source != RESOLVED_SOURCE}
+
+
 def count_patience_states(
     db: DB, workspace_id: str, agent_id: str
 ) -> PatienceStateCounts:
     """Count the three patience-consuming states for one partner (read-only).
 
-    Conflict follows append-only group semantics: every kind=conflict row is
-    read, and a group (agent, target) is open only while its newest record is
-    not a neutralization record (source=discussion:resolved). A concluded
-    divergence therefore stops consuming patience without deleting history.
+    Every state follows the same append-only group semantics: all rows of the
+    state's kind are read, and a (agent, target) group is open only while its
+    newest record is not a neutralization record (source=discussion:resolved).
+    A concluded divergence - or a naturally summoned topic (N29-S3) -
+    therefore stops consuming patience without deleting history, and a newer
+    pressure row reopens the group.
     """
     with db.workspace_session(workspace_id) as session:
-        rejected = (
+        relationship_rows = (
             session.query(BehaviorTimeline)
             .filter(
                 BehaviorTimeline.workspace_id == workspace_id,
                 BehaviorTimeline.agent_id == agent_id,
                 BehaviorTimeline.kind == "relationship",
-                BehaviorTimeline.source.in_(REJECT_SOURCES),
             )
-            .count()
+            .order_by(_ROWID.asc())
+            .all()
         )
-        overridden = (
+        viewpoint_rows = (
             session.query(BehaviorTimeline)
             .filter(
                 BehaviorTimeline.workspace_id == workspace_id,
                 BehaviorTimeline.agent_id == agent_id,
                 BehaviorTimeline.kind == "viewpoint",
-                BehaviorTimeline.source.like(f"{OVERRIDE_SOURCE_PREFIX}%"),
             )
-            .count()
+            .order_by(_ROWID.asc())
+            .all()
         )
         conflict_rows = (
             session.query(BehaviorTimeline)
@@ -146,14 +168,21 @@ def count_patience_states(
             .order_by(_ROWID.asc())
             .all()
         )
-        latest_source: dict[str, str] = {}
-        for row in conflict_rows:
-            latest_source[row.target] = row.source
-        conflict = sum(
-            1
-            for row in conflict_rows
-            if latest_source[row.target] != RESOLVED_SOURCE
-        )
+    open_relationships = _open_targets(relationship_rows)
+    open_viewpoints = _open_targets(viewpoint_rows)
+    open_conflicts = _open_targets(conflict_rows)
+    rejected = sum(
+        1
+        for row in relationship_rows
+        if row.target in open_relationships and row.source in REJECT_SOURCES
+    )
+    overridden = sum(
+        1
+        for row in viewpoint_rows
+        if row.target in open_viewpoints
+        and row.source.startswith(OVERRIDE_SOURCE_PREFIX)
+    )
+    conflict = sum(1 for row in conflict_rows if row.target in open_conflicts)
     return {"rejected": rejected, "overridden": overridden, "conflict": conflict}
 
 
@@ -171,26 +200,151 @@ def _state_entries(
             workspace_id=workspace_id, agent_id=agent_id
         )
         if state == "rejected":
-            query = query.filter(
-                BehaviorTimeline.kind == "relationship",
-                BehaviorTimeline.source.in_(REJECT_SOURCES),
+            rows = (
+                query.filter(BehaviorTimeline.kind == "relationship")
+                .order_by(_ROWID.asc())
+                .all()
             )
+            open_targets = _open_targets(rows)
+            return [
+                row
+                for row in rows
+                if row.target in open_targets and row.source in REJECT_SOURCES
+            ]
         elif state == "overridden":
-            query = query.filter(
-                BehaviorTimeline.kind == "viewpoint",
-                BehaviorTimeline.source.like(f"{OVERRIDE_SOURCE_PREFIX}%"),
+            rows = (
+                query.filter(BehaviorTimeline.kind == "viewpoint")
+                .order_by(_ROWID.asc())
+                .all()
             )
+            open_targets = _open_targets(rows)
+            return [
+                row
+                for row in rows
+                if row.target in open_targets
+                and row.source.startswith(OVERRIDE_SOURCE_PREFIX)
+            ]
         else:
             rows = (
                 query.filter(BehaviorTimeline.kind == CONFLICT_KIND)
                 .order_by(_ROWID.asc())
                 .all()
             )
-            latest_source: dict[str, str] = {}
-            for row in rows:
-                latest_source[row.target] = row.source
-            return [row for row in rows if latest_source[row.target] != RESOLVED_SOURCE]
-        return query.order_by(_ROWID.asc()).all()
+            open_targets = _open_targets(rows)
+            return [row for row in rows if row.target in open_targets]
+
+
+def clear_pool_pressure(
+    db: DB,
+    workspace_id: str,
+    *,
+    agent_id: str,
+    topic: str,
+) -> bool:
+    """Close the summoned partner's pool-consuming groups (N29-S3 池清零).
+
+    After a natural discussion summon succeeds, the partner's accumulated
+    pressure must clear so the pool can re-accumulate (09 design: 清零进冷却、
+    未解决重新攒). Append-only like every N28 reset: each open group is closed
+    by one source=discussion:resolved neutralization row in the same (kind,
+    target) namespace, and counting treats a group as open only while its
+    newest row is not a neutralization.
+
+    - conflict rows on the topic: the exact N28 RESOLVED_SOURCE reuse;
+    - override viewpoint rows on the topic (topic == rule id namespace): one
+      neutralization closes the rule group, so an override-drained partner's
+      pool restores to the effective patience;
+    - reject relationship rows: those rows carry no topic namespace (they
+      target the author or the delegating partner), so every open reject
+      group of the summoned partner closes.
+
+    Post-hoc sediment, safe-degraded like every N3 trace: each append runs
+    through ``record_behavior_entry_safe``, so a failure only warns and never
+    rolls the summon back. Returns True when at least one group was actually
+    closed, False when the partner carried no clearable pressure.
+    """
+    resolve_agent(db, workspace_id, agent_id)
+    if not topic.strip():
+        raise NovelError(ErrorCode.USAGE_ERROR, "topic must not be empty")
+    with db.workspace_session(workspace_id) as session:
+        relationship_rows = (
+            session.query(BehaviorTimeline)
+            .filter(
+                BehaviorTimeline.workspace_id == workspace_id,
+                BehaviorTimeline.agent_id == agent_id,
+                BehaviorTimeline.kind == "relationship",
+            )
+            .order_by(_ROWID.asc())
+            .all()
+        )
+        viewpoint_rows = (
+            session.query(BehaviorTimeline)
+            .filter(
+                BehaviorTimeline.workspace_id == workspace_id,
+                BehaviorTimeline.agent_id == agent_id,
+                BehaviorTimeline.kind == "viewpoint",
+            )
+            .order_by(_ROWID.asc())
+            .all()
+        )
+        conflict_rows = (
+            session.query(BehaviorTimeline)
+            .filter(
+                BehaviorTimeline.workspace_id == workspace_id,
+                BehaviorTimeline.agent_id == agent_id,
+                BehaviorTimeline.kind == CONFLICT_KIND,
+            )
+            .order_by(_ROWID.asc())
+            .all()
+        )
+    closed = False
+    open_conflicts = _open_targets(conflict_rows)
+    if topic in open_conflicts:
+        record_behavior_entry_safe(
+            db,
+            workspace_id,
+            agent_id=agent_id,
+            kind=CONFLICT_KIND,
+            target=topic,
+            summary=f"自然召集后「{topic}」分歧清零，池不再累积该议题",
+            after_value="分歧清零（自然召集）",
+            source=RESOLVED_SOURCE,
+        )
+        closed = True
+    open_viewpoints = _open_targets(viewpoint_rows)
+    if topic in open_viewpoints and any(
+        row.target == topic and row.source.startswith(OVERRIDE_SOURCE_PREFIX)
+        for row in viewpoint_rows
+    ):
+        record_behavior_entry_safe(
+            db,
+            workspace_id,
+            agent_id=agent_id,
+            kind="viewpoint",
+            target=topic,
+            summary="自然召集后立场压力清零",
+            after_value="清零（自然召集）",
+            source=RESOLVED_SOURCE,
+        )
+        closed = True
+    open_relationships = _open_targets(relationship_rows)
+    for target in open_relationships:
+        if any(
+            row.target == target and row.source in REJECT_SOURCES
+            for row in relationship_rows
+        ):
+            record_behavior_entry_safe(
+                db,
+                workspace_id,
+                agent_id=agent_id,
+                kind="relationship",
+                target=target,
+                summary="自然召集后被拒压力清零",
+                after_value="清零（自然召集）",
+                source=RESOLVED_SOURCE,
+            )
+            closed = True
+    return closed
 
 
 def patience_pool(db: DB, workspace_id: str, agent_id: str) -> PatiencePool:

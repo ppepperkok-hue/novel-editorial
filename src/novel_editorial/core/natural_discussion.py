@@ -9,11 +9,9 @@ query time, never scanned): S3 writes the kind=cooldown marker after a real
 summon, and this module only recalls whether the newest marker for the pair
 is still inside the cooldown window.
 
-S1 scope: judge only. Nothing here summons a discussion, writes a cooldown
-record or touches the business path. ``check_summon_trigger_safe`` degrades
-to a stderr warning and prints a candidate hint when a trigger fires, so a
-failure can never roll the calling business operation back (N3-style safe
-degrade, same pattern as record_behavior_entry_safe).
+S1 scope: judge only. Nothing here summoned a discussion, wrote a cooldown
+record or touched the business path; ``check_summon_trigger_safe`` degraded
+to a stderr warning and printed a candidate hint when a trigger fired.
 
 S2 scope (N29-B): ``summon_natural_discussion`` opens the full N4 discussion
 shape - open_discussion, both sides contribute, editor-in-chief summarizes -
@@ -22,10 +20,19 @@ templates from core.discussion (no LLM, no new copy), then appends one
 agent.message event carrying kind=natural_discussion so the author can see
 the summon in `events list` (N29-F4). The summon is a collaboration chain,
 never a creation chain: it writes no prose, edits no draft and never decides
-for the author (red line: 创作链由作者把守). The whole summon runs
-safe-degraded: any failure only warns on stderr and returns None, and no
-summon happens unless the partner is actually a candidate (switch on, pool
-bottom, topic not cooling).
+for the author (red line: 创作链由作者把守).
+
+S3 scope (N29-C): ``check_summon_trigger_safe`` stops hinting and runs the
+real summon from the three accumulation paths (decision reject, talk
+override, summarize divergence); after a successful round the summon writes
+the kind=cooldown marker (source=discussion:summoned, target=topic,
+after_value=pool summary) and clears the candidate's pool through
+core.patience.clear_pool_pressure (复用 N28 RESOLVED_SOURCE 中和语义, 清零进
+冷却、未解决重新攒). A reentrancy guard blocks the candidate's own round from
+triggering a second summon when the N4 shape makes them refuse again (防风暴).
+The whole summon stays safe-degraded: any failure only warns on stderr and
+returns None, and no summon happens unless the partner is actually a
+candidate (switch on, pool bottom, topic not cooling).
 """
 
 from __future__ import annotations
@@ -37,9 +44,15 @@ from typing import TypedDict
 from sqlalchemy import literal_column
 
 from novel_editorial.core.agents import get_agent_by_id, get_default_writer, list_agents
+from novel_editorial.core.behavior import record_behavior_entry
 from novel_editorial.core.chat import get_agent
 from novel_editorial.core.errors import ErrorCode, NovelError
-from novel_editorial.core.patience import POOL_MIN, RESOLVED_SOURCE, patience_pool
+from novel_editorial.core.patience import (
+    POOL_MIN,
+    RESOLVED_SOURCE,
+    clear_pool_pressure,
+    patience_pool,
+)
 from novel_editorial.events import EventType
 from novel_editorial.store.db import DB
 from novel_editorial.store.events import record_event
@@ -62,9 +75,9 @@ COOLDOWN_PERIOD_DAYS = 3
 #: Behavior kind carrying the cooldown marker (S3 writes it; S1 only reads).
 COOLDOWN_KIND = "cooldown"
 
-#: Stable source written on a real natural summon (S3 contract). The S1
+#: Stable source written on a real natural summon (S3 contract). The S1/S2
 #: reader accepts any kind=cooldown row regardless of source; the constant
-#: pins the source so S3 and S1 stay consistent.
+#: pins the source so S3 and the readers stay consistent.
 COOLDOWN_SOURCE = "discussion:summoned"
 
 #: Stable payload contract of the natural-summon marker event (S2). The event
@@ -74,6 +87,14 @@ COOLDOWN_SOURCE = "discussion:summoned"
 SUMMON_INITIATOR = "agent"
 SUMMON_KIND = "natural_discussion"
 SUMMON_TRIGGER = "patience_exhausted"
+
+#: Reentrancy guard: one natural summon per (workspace, agent) at a time.
+#: The N4 round's own summary runs the same trigger check for refusing
+#: partners, and a conflict-driven candidate who refuses again inside the
+#: round would otherwise summon recursively (M5-N29-S3-FIX). Deterministic
+#: and bounded: the guard only skips the same agent while its own round is
+#: still opening, and every round terminates.
+_SUMMONS_IN_PROGRESS: set[tuple[str, str]] = set()
 
 # SQLite rowid ordering: rows are append-only, so rowid desc yields the
 # newest marker even when created_at collides within one tick.
@@ -310,31 +331,32 @@ def check_summon_trigger_safe(
     target: str,
     now: datetime | None = None,
 ) -> bool:
-    """Run the post-event trigger check, degrading to a stderr warning.
+    """Run the post-event trigger check, summoning when the partner qualifies.
 
     Called once after the three accumulation paths (decision reject, talk
-    override, summarize divergence). Any failure is caught and only warned so
-    it can never roll the business operation back (safe degrade). When the
-    partner is a candidate, prints a single hint line - S1 judges and hints
-    only; the actual summon belongs to S2. The proactive_enabled switch gates
-    the check too: when off, fully silent - no candidates, no hint.
+    override, summarize divergence). S1 judged and hinted; S3 wires the real
+    summon: when the partner is a candidate, ``summon_natural_discussion``
+    opens the N4 round around their pending topic, writes the cooldown marker
+    and clears the pool (清零进冷却). Any failure is caught and only warned so
+    it can never roll the business operation back (safe degrade), and the
+    check returns True exactly when a natural round was actually summoned.
+    The proactive_enabled switch gates the check too: when off, fully silent -
+    no candidates, no hint, no summon.
     """
     if not db.settings.proactive_enabled:
         return False
     try:
-        candidate = is_summon_candidate(
+        if not is_summon_candidate(
             db, workspace_id, agent_id=agent_id, target=target, now=now
-        )
+        ):
+            return False
+        agent = get_agent_by_id(db, workspace_id, agent_id)
+        if agent is None:
+            return False
+        return summon_natural_discussion(db, workspace_id, agent, now=now) is not None
     except Exception as exc:
         print(f"warning: natural discussion check skipped: {exc}", file=sys.stderr)
         return False
-    if candidate:
-        print(
-            f"natural discussion candidate: agent={agent_id} target={target}"
-            "（S3 触发接线待接）",
-            file=sys.stderr,
-        )
-    return candidate
 
 
 def _resolve_counterpart(
@@ -427,6 +449,16 @@ def summon_natural_discussion(
     sides: N4 splits 分歧双方 and 主编通气总结, so a pool-bottom editor
     candidate is skipped with a warning - the editor chairs the round and
     must not summarize their own stance (M5-N29-S2-FIX).
+
+    S3 (N29-C): after the round and the marker event succeed, the summon
+    writes the kind=cooldown marker (source=discussion:summoned, target=topic,
+    after_value=pool summary) and clears the candidate's pool via
+    core.patience.clear_pool_pressure - the same append-only RESOLVED_SOURCE
+    neutralization N28 uses, so 清零进冷却 and 未解决重新攒 stay replayable.
+    A reentrancy guard keeps the round itself from re-summoning: when the N4
+    shape makes the candidate refuse again on an unresolved topic, the inner
+    trigger check sees the same (workspace, agent) summon already in progress
+    and skips with a warning (防风暴).
     """
     if not db.settings.proactive_enabled:
         return None
@@ -463,6 +495,13 @@ def summon_natural_discussion(
                 file=sys.stderr,
             )
             return None
+        summon_key = (workspace_id, agent.id)
+        if summon_key in _SUMMONS_IN_PROGRESS:
+            print(
+                "warning: natural discussion summon skipped: already in progress",
+                file=sys.stderr,
+            )
+            return None
         # Imported inside the function: discussion.py imports
         # check_summon_trigger_safe from this module, so a module-level import
         # here would form an import cycle (core -> core is legal, cycles are
@@ -475,36 +514,65 @@ def summon_natural_discussion(
 
         counterpart = _resolve_counterpart(db, workspace_id, agent, topic)
         summarizer = get_agent(db, workspace_id, AgentRole.EDITOR_IN_CHIEF)
-        discussion_id, _ = open_discussion(
-            db, workspace_id, topic=topic, participants=[agent, counterpart]
-        )
-        contribute_to_discussion(
-            db, workspace_id, discussion_id=discussion_id, topic=topic, agent=agent
-        )
-        contribute_to_discussion(
-            db, workspace_id, discussion_id=discussion_id, topic=topic, agent=counterpart
-        )
-        summary = summarize_discussion(
-            db,
-            workspace_id,
-            discussion_id=discussion_id,
-            topic=topic,
-            summarizer=summarizer,
-        )
-        record_event(
-            db,
-            workspace_id,
-            type=EventType.AGENT_MESSAGE,
-            actor=agent.name,
-            payload={
-                "initiator": SUMMON_INITIATOR,
-                "kind": SUMMON_KIND,
-                "trigger": SUMMON_TRIGGER,
-                "agent_id": agent.id,
-                "topic": topic,
-                "discussion_id": discussion_id,
-            },
-        )
+        _SUMMONS_IN_PROGRESS.add(summon_key)
+        try:
+            discussion_id, _ = open_discussion(
+                db, workspace_id, topic=topic, participants=[agent, counterpart]
+            )
+            contribute_to_discussion(
+                db, workspace_id, discussion_id=discussion_id, topic=topic, agent=agent
+            )
+            contribute_to_discussion(
+                db,
+                workspace_id,
+                discussion_id=discussion_id,
+                topic=topic,
+                agent=counterpart,
+            )
+            summary = summarize_discussion(
+                db,
+                workspace_id,
+                discussion_id=discussion_id,
+                topic=topic,
+                summarizer=summarizer,
+            )
+            record_event(
+                db,
+                workspace_id,
+                type=EventType.AGENT_MESSAGE,
+                actor=agent.name,
+                payload={
+                    "initiator": SUMMON_INITIATOR,
+                    "kind": SUMMON_KIND,
+                    "trigger": SUMMON_TRIGGER,
+                    "agent_id": agent.id,
+                    "topic": topic,
+                    "discussion_id": discussion_id,
+                },
+            )
+            # S3: cooldown write-back + pool clearing (清零进冷却). The pool
+            # summary is recalled right before the clear so the cooldown row
+            # documents the pre-clear ledger, including any conflict the round
+            # itself just refused into.
+            pool_detail = patience_pool(db, workspace_id, agent.id)
+            states = pool_detail["states"]
+            record_behavior_entry(
+                db,
+                workspace_id,
+                agent_id=agent.id,
+                kind=COOLDOWN_KIND,
+                target=topic,
+                summary="自然召集后议题进入冷却",
+                after_value=(
+                    f"pool={pool_detail['pool']} "
+                    f"(rejected={states['rejected']} "
+                    f"overridden={states['overridden']} conflict={states['conflict']})"
+                ),
+                source=COOLDOWN_SOURCE,
+            )
+            clear_pool_pressure(db, workspace_id, agent_id=agent.id, topic=topic)
+        finally:
+            _SUMMONS_IN_PROGRESS.discard(summon_key)
         return {
             "discussion_id": discussion_id,
             "topic": topic,

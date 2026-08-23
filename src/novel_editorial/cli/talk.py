@@ -216,8 +216,9 @@ def talk_send(
             summary="作者拍板优先",
             source=f"override:{rule.rule}",
         )
-        # N29-A S1 trigger check: after the override accumulates, judge once
-        # whether the partner is a summon candidate. Safe-degraded.
+        # N29 trigger check (S3 实际召集): after the override accumulates,
+        # summon the natural discussion once when the partner is a candidate.
+        # Safe-degraded.
         check_summon_trigger_safe(
             db, workspace_id, agent_id=agent.id, target=rule.rule
         )

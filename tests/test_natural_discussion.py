@@ -23,6 +23,7 @@ from sqlalchemy import literal_column
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
+from novel_editorial.core.behavior import list_behavior_timeline
 from novel_editorial.core.chat import list_messages
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.decision import decide
@@ -36,7 +37,9 @@ from novel_editorial.core.discussion import (
 )
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.natural_discussion import (
+    COOLDOWN_KIND,
     COOLDOWN_PERIOD_DAYS,
+    COOLDOWN_SOURCE,
     SUMMON_KIND,
     SUMMON_TRIGGER,
     check_summon_trigger_safe,
@@ -449,8 +452,8 @@ def test_is_summon_candidate_gates_on_pool_and_cooldown(
     )
 
 
-def test_check_summon_trigger_safe_hints_when_candidate(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+def test_check_summon_trigger_safe_summons_when_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     db = _db()
@@ -459,10 +462,24 @@ def test_check_summon_trigger_safe_hints_when_candidate(
     assert check_summon_trigger_safe(
         db, workspace_id, agent_id=reviewer.id, target="放行，忽略矛盾"
     )
-    captured = capsys.readouterr()
-    assert "natural discussion candidate" in captured.err
-    assert reviewer.id in captured.err
-    assert "放行，忽略矛盾" in captured.err
+    # S3 实际召集：N4 轮次落库 + 冷却记录 + 池清零。
+    messages = _messages_in_order(db, workspace_id)
+    assert [
+        json.loads(m.payload).get("kind") for m in messages if m.role != "system"
+    ] == [
+        "discussion_open",
+        "discussion_contribution",
+        "discussion_contribution",
+        "discussion_summary",
+    ]
+    cooldowns = list_behavior_timeline(db, workspace_id, kind=COOLDOWN_KIND)
+    assert len(cooldowns) == 1
+    assert cooldowns[0].source == COOLDOWN_SOURCE
+    assert cooldowns[0].target == "reviewer_consistency"
+    assert "pool=0" in (cooldowns[0].after_value or "")
+    pool = patience_pool(db, workspace_id, reviewer.id)
+    assert pool["states"]["overridden"] == 0
+    assert pool["pool"] == 7
 
 
 def test_check_summon_trigger_safe_silent_when_not_candidate(
@@ -475,7 +492,9 @@ def test_check_summon_trigger_safe_silent_when_not_candidate(
     assert not check_summon_trigger_safe(
         db, workspace_id, agent_id=reviewer.id, target="放行，忽略矛盾"
     )
-    assert "natural discussion candidate" not in capsys.readouterr().err
+    assert "natural discussion summon" not in capsys.readouterr().err
+    assert list_messages(db, workspace_id) == []
+    assert list_events(db, workspace_id) == []
 
 
 def test_check_summon_trigger_safe_silent_when_switch_off(
@@ -489,7 +508,9 @@ def test_check_summon_trigger_safe_silent_when_switch_off(
     assert not check_summon_trigger_safe(
         db, workspace_id, agent_id=reviewer.id, target="放行，忽略矛盾"
     )
-    assert "natural discussion candidate" not in capsys.readouterr().err
+    assert "natural discussion summon" not in capsys.readouterr().err
+    assert list_messages(db, workspace_id) == []
+    assert list_events(db, workspace_id) == []
 
 
 def test_check_summon_trigger_safe_degrades_on_failure(
@@ -520,12 +541,39 @@ def test_check_summon_trigger_safe_degrades_on_failure(
     captured = capsys.readouterr()
     assert "warning: natural discussion check skipped" in captured.err
     assert "boom" in captured.err
-    assert "natural discussion candidate" not in captured.err
+    assert "natural discussion summon" not in captured.err
+    assert list_messages(db, workspace_id) == []
 
 
-def test_decision_reject_trigger_check_when_writer_bottomed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+def test_check_summon_trigger_safe_degrades_when_summon_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
 ) -> None:
+    """召集侧失败也只告警：check 返回 False，不向业务路径抛错."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    reviewer = _bottom_reviewer_by_overrides(db, workspace_id)
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("summon boom")
+
+    monkeypatch.setattr(
+        "novel_editorial.core.natural_discussion.summon_natural_discussion", _boom
+    )
+    assert not check_summon_trigger_safe(
+        db, workspace_id, agent_id=reviewer.id, target="reviewer_consistency"
+    )
+    captured = capsys.readouterr()
+    assert "warning: natural discussion check skipped" in captured.err
+    assert "summon boom" in captured.err
+    assert list_messages(db, workspace_id) == []
+
+
+def test_decision_reject_triggers_natural_summon_when_writer_bottomed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """写手池底 + reject 事件 → 自动召集一轮（议题=第一章），冷却落库、池清零."""
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     db = _db()
     writer = _bottom_writer_by_rejections(db, workspace_id)
@@ -533,10 +581,21 @@ def test_decision_reject_trigger_check_when_writer_bottomed(
 
     decide(db, workspace_id, draft.id, action="reject")
 
-    captured = capsys.readouterr()
-    assert "natural discussion candidate" in captured.err
-    assert writer.id in captured.err
-    assert "第一章" in captured.err
+    messages = _messages_in_order(db, workspace_id)
+    assert [
+        json.loads(m.payload).get("kind") for m in messages if m.role != "system"
+    ] == [
+        "discussion_open",
+        "discussion_contribution",
+        "discussion_contribution",
+        "discussion_summary",
+    ]
+    cooldowns = list_behavior_timeline(db, workspace_id, kind=COOLDOWN_KIND)
+    assert len(cooldowns) == 1
+    assert cooldowns[0].target == "第一章"
+    pool = patience_pool(db, workspace_id, writer.id)
+    assert pool["states"]["rejected"] == 0
+    assert pool["pool"] == 4
 
 
 def test_decision_reject_trigger_check_silent_without_pool_bottom(
@@ -549,12 +608,15 @@ def test_decision_reject_trigger_check_silent_without_pool_bottom(
 
     decide(db, workspace_id, draft.id, action="reject")
 
-    assert "natural discussion candidate" not in capsys.readouterr().err
+    assert "natural discussion summon" not in capsys.readouterr().err
+    assert [m for m in list_messages(db, workspace_id) if m.role != "system"] == []
+    assert list_behavior_timeline(db, workspace_id, kind=COOLDOWN_KIND) == []
 
 
-def test_talk_override_trigger_check_when_reviewer_bottomed(
+def test_talk_override_triggers_natural_summon_when_reviewer_bottomed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """override×3（两次直插 + 一次 CLI）→ 第三次见底后 talk 路径自动召集."""
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     db = _db()
     reviewer = _bottom_reviewer_by_overrides(db, workspace_id, count=2)
@@ -564,27 +626,42 @@ def test_talk_override_trigger_check_when_reviewer_bottomed(
     )
 
     assert result.exit_code == 0, result.output
-    assert "natural discussion candidate" in result.output
-    assert reviewer.id in result.output
-    assert "reviewer_consistency" in result.output
+    messages = _messages_in_order(db, workspace_id)
+    assert [
+        json.loads(m.payload).get("kind") for m in messages if m.role != "system"
+    ].count(
+        "discussion_open"
+    ) == 1
+    cooldowns = list_behavior_timeline(db, workspace_id, kind=COOLDOWN_KIND)
+    assert len(cooldowns) == 1
+    assert cooldowns[0].target == "reviewer_consistency"
+    pool = patience_pool(db, workspace_id, reviewer.id)
+    assert pool["states"]["overridden"] == 0
+    assert pool["pool"] == 7
 
 
 def test_talk_override_trigger_check_silent_without_pool_bottom(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
 
     result = runner.invoke(
         app, ["talk", "send", workspace_id, "@审稿 以老板身份，放行，忽略矛盾"]
     )
 
     assert result.exit_code == 0, result.output
-    assert "natural discussion candidate" not in result.output
+    messages = _messages_in_order(db, workspace_id)
+    assert not any(
+        json.loads(m.payload).get("kind") == "discussion_open" for m in messages
+    )
+    assert list_behavior_timeline(db, workspace_id, kind=COOLDOWN_KIND) == []
 
 
-def test_summarize_divergence_trigger_check_when_reviewer_bottomed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+def test_summarize_divergence_triggers_natural_summon_when_reviewer_bottomed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """分歧沉淀后池见底 → summarize 路径自动召集第二轮（议题=分歧 topic）."""
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     db = _db()
     writer = _agent(db, workspace_id, AgentRole.WRITER)
@@ -609,10 +686,22 @@ def test_summarize_divergence_trigger_check_when_reviewer_bottomed(
         summarizer=summarizer,
     )
 
-    captured = capsys.readouterr()
-    assert "natural discussion candidate" in captured.err
-    assert reviewer.id in captured.err
-    assert topic in captured.err
+    # 自动召集第二轮（自然轮）：分歧 topic 的冲突清零，override 消耗保留。
+    messages = _messages_in_order(db, workspace_id)
+    assert [
+        json.loads(m.payload).get("kind") for m in messages if m.role != "system"
+    ].count(
+        "discussion_open"
+    ) == 2
+    cooldowns = list_behavior_timeline(db, workspace_id, kind=COOLDOWN_KIND)
+    assert len(cooldowns) == 1
+    assert cooldowns[0].target == topic
+    pool = patience_pool(db, workspace_id, reviewer.id)
+    assert pool["states"]["conflict"] == 0
+    # override 属于 rule 命名空间（reviewer_consistency），议题是 conflict
+    # topic，不在本次清零范围。
+    assert pool["states"]["overridden"] == 2
+    assert pool["pool"] == 1
 
 
 def test_summarize_divergence_trigger_check_silent_without_pool_bottom(
@@ -642,7 +731,13 @@ def test_summarize_divergence_trigger_check_silent_without_pool_bottom(
         summarizer=summarizer,
     )
 
-    assert "natural discussion candidate" not in capsys.readouterr().err
+    assert list_behavior_timeline(db, workspace_id, kind=COOLDOWN_KIND) == []
+    messages = _messages_in_order(db, workspace_id)
+    assert [
+        json.loads(m.payload).get("kind") for m in messages if m.role != "system"
+    ].count(
+        "discussion_open"
+    ) == 1
 
 
 def test_summarize_trigger_check_silent_after_author_concluded(
@@ -676,8 +771,14 @@ def test_summarize_trigger_check_silent_after_author_concluded(
         summarizer=summarizer,
     )
 
-    # 已存在 discussion_decision 时直接跳过触发检查，池底伙伴也不得提示。
-    assert "natural discussion candidate" not in capsys.readouterr().err
+    # 已存在 discussion_decision 时直接跳过触发检查，池底伙伴也不得召集。
+    assert list_behavior_timeline(db, workspace_id, kind=COOLDOWN_KIND) == []
+    messages = _messages_in_order(db, workspace_id)
+    assert [
+        json.loads(m.payload).get("kind") for m in messages if m.role != "system"
+    ].count(
+        "discussion_open"
+    ) == 1
     # 摘要本身仍然真实产出，守卫只拦触发提示，不拦总结。
     assert "围绕「放行，忽略矛盾」，各方的表态汇总如下：" in summary.content
 
@@ -689,15 +790,26 @@ def test_summon_candidates_reject_cooldown_key_matches_decision_trigger(
 
     decide reject 的触发键是章节标题（decision.py 的 reject_target），S3 的
     cooldown 写回也用同一把键；summon_candidates 必须查同一把键，否则两入口
-    防风暴口径不一致。
+    防风暴口径不一致。第 4 条 reject 直插落库（不触发 check），保持池底但不
+    自动召集，便于只测候选键。
     """
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     db = _db()
     writer = _agent(db, workspace_id, AgentRole.WRITER)
     now = datetime(2026, 8, 24, 12, 0, 0, tzinfo=UTC)
-    for title in ["第一章", "第二章", "第三章", "第四章"]:
+    for title in ["第一章", "第二章", "第三章"]:
         draft = _create_draft(db, workspace_id, writer.id, title=title)
         decide(db, workspace_id, draft.id, action="reject")
+    _insert_entry(
+        db,
+        workspace_id,
+        agent_id=writer.id,
+        kind="relationship",
+        target="作者",
+        source="decision:reject",
+        summary="稿子被退回",
+    )
+    assert patience_pool(db, workspace_id, writer.id)["pool"] == 0
 
     candidates = summon_candidates(db, workspace_id, now=now)
     writer_candidates = [
@@ -705,7 +817,7 @@ def test_summon_candidates_reject_cooldown_key_matches_decision_trigger(
     ]
     assert len(writer_candidates) == 1
     # 纯被拒池底伙伴的 pending topic = 最近一条 decision:reject 的 target。
-    assert writer_candidates[0]["topic"] == "第四章"
+    assert writer_candidates[0]["topic"] == "第三章"
 
     # 对同一把键写 cooldown 后，summon_candidates 不再列出该写手。
     _insert_entry(
@@ -713,7 +825,7 @@ def test_summon_candidates_reject_cooldown_key_matches_decision_trigger(
         workspace_id,
         agent_id=writer.id,
         kind="cooldown",
-        target="第四章",
+        target="第三章",
         source="discussion:summoned",
         created_at=now - timedelta(hours=1),
     )
@@ -824,6 +936,16 @@ def test_summon_natural_discussion_full_round_with_reviewer_candidate(
         "discussion_id": result["discussion_id"],
     }
 
+    # S3：冷却落库（含池值摘要）+ override 压力清零，池回到基线。
+    cooldowns = list_behavior_timeline(db, workspace_id, kind=COOLDOWN_KIND)
+    assert len(cooldowns) == 1
+    assert cooldowns[0].source == COOLDOWN_SOURCE
+    assert cooldowns[0].target == topic
+    assert "pool=0" in (cooldowns[0].after_value or "")
+    pool = patience_pool(db, workspace_id, reviewer.id)
+    assert pool["states"]["overridden"] == 0
+    assert pool["pool"] == 7
+
 
 def test_summon_natural_discussion_writer_candidate_pairs_with_reviewer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -833,17 +955,34 @@ def test_summon_natural_discussion_writer_candidate_pairs_with_reviewer(
     db = _db()
     writer = _agent(db, workspace_id, AgentRole.WRITER)
     reviewer = _agent(db, workspace_id, AgentRole.REVIEWER)
-    for title in ["第一章", "第二章", "第三章", "第四章"]:
+    for title in ["第一章", "第二章", "第三章"]:
         draft = _create_draft(db, workspace_id, writer.id, title=title)
         decide(db, workspace_id, draft.id, action="reject")
+    # 第 4 条直插落库：池底但不触发自动召集，便于直接验证召集行为。
+    _insert_entry(
+        db,
+        workspace_id,
+        agent_id=writer.id,
+        kind="relationship",
+        target="作者",
+        source="decision:reject",
+        summary="稿子被退回",
+    )
     assert patience_pool(db, workspace_id, writer.id)["pool"] == 0
 
     result = summon_natural_discussion(db, workspace_id, writer)
 
     assert result is not None
-    assert result["topic"] == "第四章"
+    assert result["topic"] == "第三章"
     assert result["agent_id"] == writer.id
     assert result["counterpart"] == reviewer.name
+    # S3：冷却落库 + 被拒压力清零，池回到基线。
+    cooldowns = list_behavior_timeline(db, workspace_id, kind=COOLDOWN_KIND)
+    assert len(cooldowns) == 1
+    assert cooldowns[0].target == "第三章"
+    pool = patience_pool(db, workspace_id, writer.id)
+    assert pool["states"]["rejected"] == 0
+    assert pool["pool"] == 4
 
 
 def test_summon_natural_discussion_skips_when_pool_not_bottom(
@@ -982,24 +1121,28 @@ def test_summon_natural_discussion_conflict_topic_recalls_other_participant(
     db = _db()
     writer = _agent(db, workspace_id, AgentRole.WRITER)
     reviewer = _bottom_reviewer_by_overrides(db, workspace_id)
-    summarizer = _agent(db, workspace_id, AgentRole.EDITOR_IN_CHIEF)
     topic = "放行，忽略矛盾"
-
-    previous_id, _ = open_discussion(
-        db, workspace_id, topic=topic, participants=[writer, reviewer]
-    )
-    contribute_to_discussion(
-        db, workspace_id, discussion_id=previous_id, topic=topic, agent=writer
-    )
-    contribute_to_discussion(
-        db, workspace_id, discussion_id=previous_id, topic=topic, agent=reviewer
-    )
-    summarize_discussion(
+    # 上一轮讨论沉淀（与 _trace_discussion_sediment 同形状）+ 未决 conflict：
+    # 议题命名空间能召回对方（写手），且直插落库不触发自动召集。
+    for agent in (reviewer, writer):
+        _insert_entry(
+            db,
+            workspace_id,
+            agent_id=agent.id,
+            kind="viewpoint",
+            target=topic,
+            source="discussion:previous",
+            summary="表达了立场",
+            after_value="表达了立场",
+        )
+    _insert_entry(
         db,
         workspace_id,
-        discussion_id=previous_id,
-        topic=topic,
-        summarizer=summarizer,
+        agent_id=reviewer.id,
+        kind="conflict",
+        target=topic,
+        source="discussion:unresolved",
+        summary="分歧未决",
     )
 
     result = summon_natural_discussion(db, workspace_id, reviewer)
@@ -1007,7 +1150,6 @@ def test_summon_natural_discussion_conflict_topic_recalls_other_participant(
     assert result is not None
     assert result["topic"] == topic
     assert result["counterpart"] == writer.name
-    assert result["discussion_id"] != previous_id
 
 
 def test_summon_natural_discussion_editor_in_chief_candidate_skipped(
@@ -1124,28 +1266,41 @@ def test_summon_natural_discussion_no_topic_contract_visible_but_not_summoned(
 def test_summon_natural_discussion_cli_smoke(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """CLI 冒烟：池底审稿（override×3）召集后记录与事件齐全、正文无变化."""
+    """CLI 冒烟：override×3 自动召集；talk list 可见、池清零、冷却可查、正文不动."""
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     db = _db()
-    reviewer = _agent(db, workspace_id, AgentRole.REVIEWER)
     writer = _agent(db, workspace_id, AgentRole.WRITER)
     draft = _create_draft(db, workspace_id, writer.id, title="第一章")
     _create_draft_version(db, workspace_id, draft.id, content="正文原样")
+
     for _ in range(3):
         result = runner.invoke(
             app, ["talk", "send", workspace_id, "@审稿 以老板身份，放行，忽略矛盾"]
         )
         assert result.exit_code == 0, result.output
-    assert patience_pool(db, workspace_id, reviewer.id)["pool"] == 0
 
-    summoned = summon_natural_discussion(db, workspace_id, reviewer)
-
-    assert summoned is not None
+    # 第三次 override 见底后自动召集，无需手工点将。
     listed = runner.invoke(app, ["talk", "list", workspace_id])
     assert listed.exit_code == 0, listed.output
     for mark in ("[author·讨论·开场]", "[agent·讨论·发言]", "[agent·讨论·总结]"):
         assert mark in listed.output
     assert "[author·讨论·拍板]" not in listed.output
+
+    # 池清零：override 消耗归零，耐心回到基线。
+    shown = runner.invoke(app, ["patience", "show", workspace_id])
+    assert shown.exit_code == 0, shown.output
+    assert (
+        "[审稿] pool=7 patience=7 consumed=0 rejected=0 overridden=0 conflict=0"
+        in shown.output
+    )
+
+    # 冷却记录可查。
+    timeline = runner.invoke(
+        app, ["behavior", "timeline", workspace_id, "--kind", "cooldown"]
+    )
+    assert timeline.exit_code == 0, timeline.output
+    assert "source=discussion:summoned" in timeline.output
+    assert "reviewer_consistency" in timeline.output
 
     events_listed = runner.invoke(app, ["events", "list", workspace_id])
     assert events_listed.exit_code == 0, events_listed.output
@@ -1153,8 +1308,181 @@ def test_summon_natural_discussion_cli_smoke(
     assert '"initiator": "agent"' in events_listed.output
 
     # 输出真实摘要：自然召集的总结走 N4 确定性模板。
-    assert SUMMARY_LEAD.format(topic="reviewer_consistency") in summoned["summary"]
+    messages = _messages_in_order(db, workspace_id)
+    summaries = [
+        m
+        for m in messages
+        if json.loads(m.payload).get("kind") == "discussion_summary"
+    ]
+    assert len(summaries) == 1
+    assert SUMMARY_LEAD.format(topic="reviewer_consistency") in summaries[0].content
     assert _draft_version_content(db, workspace_id, draft.id) == "正文原样"
+
+
+def test_trigger_in_cooldown_does_not_summon_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """冷却期内再触发不重复：池再见底但议题冷却，无第二轮讨论."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    reviewer = _agent(db, workspace_id, AgentRole.REVIEWER)
+
+    for _ in range(3):
+        result = runner.invoke(
+            app, ["talk", "send", workspace_id, "@审稿 以老板身份，放行，忽略矛盾"]
+        )
+        assert result.exit_code == 0, result.output
+    assert patience_pool(db, workspace_id, reviewer.id)["pool"] == 7
+    assert len(list_behavior_timeline(db, workspace_id, kind=COOLDOWN_KIND)) == 1
+
+    # 冷却内再攒 3 次：池再见底，但 within_cooldown 挡下，不重复召集。
+    for _ in range(3):
+        result = runner.invoke(
+            app, ["talk", "send", workspace_id, "@审稿 以老板身份，放行，忽略矛盾"]
+        )
+        assert result.exit_code == 0, result.output
+    assert patience_pool(db, workspace_id, reviewer.id)["pool"] == 0
+    messages = _messages_in_order(db, workspace_id)
+    assert [
+        json.loads(m.payload).get("kind") for m in messages if m.role != "system"
+    ].count(
+        "discussion_open"
+    ) == 1
+    assert len(list_behavior_timeline(db, workspace_id, kind=COOLDOWN_KIND)) == 1
+
+
+def test_after_cooldown_expiry_reaccumulated_pool_retriggers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """冷却过期 + 重新攒满 → 再次自动召集，形成第二轮讨论."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    reviewer = _agent(db, workspace_id, AgentRole.REVIEWER)
+
+    for _ in range(3):
+        result = runner.invoke(
+            app, ["talk", "send", workspace_id, "@审稿 以老板身份，放行，忽略矛盾"]
+        )
+        assert result.exit_code == 0, result.output
+    assert patience_pool(db, workspace_id, reviewer.id)["pool"] == 7
+    assert len(list_behavior_timeline(db, workspace_id, kind=COOLDOWN_KIND)) == 1
+
+    # 模拟冷却过期：把 cooldown 记录回拨到冷却期外（惰性时间，懒结算）。
+    with db.workspace_session(workspace_id) as session:
+        row = (
+            session.query(BehaviorTimeline)
+            .filter_by(
+                workspace_id=workspace_id,
+                agent_id=reviewer.id,
+                kind=COOLDOWN_KIND,
+            )
+            .first()
+        )
+        assert row is not None
+        row.created_at = datetime.now(UTC) - timedelta(days=COOLDOWN_PERIOD_DAYS + 1)
+        session.commit()
+    assert not within_cooldown(
+        db, workspace_id, reviewer.id, "reviewer_consistency"
+    )
+
+    # 重新攒：再来 3 次 override → 池再见底 → 再次自动召集。
+    for _ in range(3):
+        result = runner.invoke(
+            app, ["talk", "send", workspace_id, "@审稿 以老板身份，放行，忽略矛盾"]
+        )
+        assert result.exit_code == 0, result.output
+    messages = _messages_in_order(db, workspace_id)
+    assert [
+        json.loads(m.payload).get("kind") for m in messages if m.role != "system"
+    ].count(
+        "discussion_open"
+    ) == 2
+    assert len(list_behavior_timeline(db, workspace_id, kind=COOLDOWN_KIND)) == 2
+
+
+def test_summon_conflict_candidate_no_recursion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    """冲突驱动池底伙伴在自然轮次再次拒绝 → 递归守卫：只开一轮、告警可见."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    reviewer = _agent(db, workspace_id, AgentRole.REVIEWER)
+    topic = "放行，忽略矛盾"
+    for _ in range(7):
+        _insert_entry(
+            db,
+            workspace_id,
+            agent_id=reviewer.id,
+            kind="conflict",
+            target=topic,
+            source="discussion:unresolved",
+            summary="分歧未决",
+        )
+    assert patience_pool(db, workspace_id, reviewer.id)["pool"] == 0
+
+    result = summon_natural_discussion(db, workspace_id, reviewer)
+
+    assert result is not None
+    # 自然轮次里审稿按立场再次拒绝（rule 未被拍板），守卫拦下内层触发。
+    messages = _messages_in_order(db, workspace_id)
+    assert [json.loads(m.payload)["kind"] for m in messages].count(
+        "discussion_open"
+    ) == 1
+    assert "already in progress" in capsys.readouterr().err
+    # 召集后议题冲突清零，池回到基线（未解决重新攒的前提）。
+    pool = patience_pool(db, workspace_id, reviewer.id)
+    assert pool["states"]["conflict"] == 0
+    assert pool["pool"] == 7
+
+
+def test_author_conclude_converges_natural_round(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """作者拍板即收敛：conclude 中和自然轮次后，同议题不再召集."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    reviewer = _agent(db, workspace_id, AgentRole.REVIEWER)
+    topic = "放行，忽略矛盾"
+    for _ in range(7):
+        _insert_entry(
+            db,
+            workspace_id,
+            agent_id=reviewer.id,
+            kind="conflict",
+            target=topic,
+            source="discussion:unresolved",
+            summary="分歧未决",
+        )
+    assert patience_pool(db, workspace_id, reviewer.id)["pool"] == 0
+
+    # 触发自动召集（与 summarize 分歧路径同入口）。
+    assert check_summon_trigger_safe(
+        db, workspace_id, agent_id=reviewer.id, target=topic
+    )
+    messages = _messages_in_order(db, workspace_id)
+    opened = [
+        m for m in messages if json.loads(m.payload).get("kind") == "discussion_open"
+    ]
+    assert len(opened) == 1
+    natural_id = json.loads(opened[0].payload)["discussion_id"]
+
+    # 作者拍板：conclude 自然轮次 → 冲突已中和、池回到基线。
+    conclude_discussion(
+        db, workspace_id, discussion_id=natural_id, topic=topic, outcome="按审稿意见修"
+    )
+    pool = patience_pool(db, workspace_id, reviewer.id)
+    assert pool["states"]["conflict"] == 0
+    assert pool["pool"] == 7
+
+    # 收敛后同议题再触发：池未再见底，不重复召集。
+    assert not check_summon_trigger_safe(
+        db, workspace_id, agent_id=reviewer.id, target=topic
+    )
+    assert [json.loads(m.payload)["kind"] for m in _messages_in_order(db, workspace_id)].count(
+        "discussion_open"
+    ) == 1
 
 
 def test_summon_natural_discussion_cli_smoke_editor_in_chief_skipped(

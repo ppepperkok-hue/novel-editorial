@@ -272,10 +272,18 @@ def test_talk_list_marks_override(tmp_path: Path, monkeypatch) -> None:
     listed = runner.invoke(app, ["talk", "list", workspace_id])
     assert listed.exit_code == 0, listed.output
     lines = listed.output.strip().splitlines()
-    assert len(lines) == 3
+    # 责编耐心 3、一次 override 即见底（S3 自动召集）：前三条是本次对话，
+    # 后面跟着一轮自然召集的讨论（点将写手 + 主编总结）及 mood 留痕。
     assert lines[0] == "[author] 作者: @责编 删掉钩子，我拍板"
     assert lines[1].startswith("[agent·分歧·推翻] 责编: ")
     assert lines[2].startswith("[system] 责编: 责编 的状态从")
+    assert any(
+        line == "[author·讨论·开场] 作者: 作者发起讨论「editor_hooks」（参与：责编、写手）"
+        for line in lines
+    )
+    assert any(line.startswith("[agent·讨论·发言] 责编: ") for line in lines)
+    assert any(line.startswith("[agent·讨论·发言] 写手: ") for line in lines)
+    assert any(line.startswith("[agent·讨论·总结] 总编: ") for line in lines)
 
 
 def test_talk_list_marks_rebuttal(tmp_path: Path, monkeypatch) -> None:

@@ -441,10 +441,12 @@ def summarize_discussion(
     # line: 作者拍板即收敛，冲突痕迹不再累积).
     if _discussion_decision(db, workspace_id, discussion_id) is not None:
         return message
-    # N29-A S1 trigger check: after an unresolved divergence accumulates,
-    # judge once for each refusing partner (the ones who drained the pool).
-    # Mirrors _trace_unresolved_conflicts' scope: an author-overridden rule
-    # already converged and never counts as an unresolved 分歧. Safe-degraded.
+    # N29 trigger check (S3 实际召集): after an unresolved divergence
+    # accumulates, summon once for each refusing partner (the ones who drained
+    # the pool), one by one in deterministic contribution order. Mirrors
+    # _trace_unresolved_conflicts' scope: an author-overridden rule already
+    # converged and never counts as an unresolved 分歧. Safe-degraded, and the
+    # summon's reentrancy guard stops a candidate's own round from re-triggering.
     for entry in positions:
         if entry.get("position") != "refused":
             continue

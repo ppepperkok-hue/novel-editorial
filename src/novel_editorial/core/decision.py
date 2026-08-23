@@ -150,9 +150,10 @@ def decide(
                 1,
                 event="decision:reject",
             )
-            # N29-A S1 trigger check: after the reject accumulates, judge once
-            # whether the writer is a summon candidate (pool == 0, not cooling).
-            # Safe-degraded: a failure only warns and never rolls the verdict.
+            # N29 trigger check (S3 实际召集): after the reject accumulates,
+            # summon the natural discussion once when the writer is a
+            # candidate (pool == 0, not cooling). Safe-degraded: a failure
+            # only warns and never rolls the verdict.
             check_summon_trigger_safe(
                 db,
                 workspace_id,
