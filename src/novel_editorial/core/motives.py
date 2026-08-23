@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.llm.client import LLMClient, LLMMessage
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import Agent, AgentMotive, AgentRole, MotiveKind
 
@@ -68,6 +69,76 @@ def _warn_feedback_skipped(operation: str, exc: Exception) -> None:
     print(f"warning: motive feedback skipped ({operation}): {exc}", file=sys.stderr)
 
 
+def _build_motive_prompt(
+    event_kind: str,
+    rule: _MotiveRule,
+    agent: Agent,
+) -> list[LLMMessage]:
+    """Build the refinement prompt carrying the event and partner context.
+
+    The prompt names the triggering event, the partner (name + role), the
+    motive kind and the deterministic template content, so the LLM rewrites
+    the same fact with fuller context and the mock path can assert exactly
+    which context was handed over (N28-F: prompt is assertable under mock).
+    """
+    return [
+        LLMMessage(
+            role="system",
+            content=(
+                "你是小说编辑部的设定助手。请把伙伴的一条动机写成一句自然、"
+                "简短、口语化的中文内心话，保持原意，不解释、不加引号。"
+            ),
+        ),
+        LLMMessage(
+            role="user",
+            content=(
+                f"事件：{event_kind}\n"
+                f"伙伴：{agent.name}（{agent.role}）\n"
+                f"动机类型：{rule.kind.value}\n"
+                f"模板内容：{rule.content}\n"
+                "请改写这条动机内容。"
+            ),
+        ),
+    ]
+
+
+def _refine_motive_content(
+    db: DB,
+    event_kind: str,
+    rule: _MotiveRule,
+    agent: Agent,
+    client: LLMClient | None,
+) -> str:
+    """Return the motive content, LLM-refined when the switch and client are on.
+
+    The deterministic template stays the zero-token path: switch off or no
+    client never touches the LLM. With the switch on and a client present the
+    refinement runs once per new motive row; any failure - an exception or an
+    empty reply - degrades back to the template with an explicit stderr
+    warning, because a motive is a post-hoc behavioral fact and must never
+    interrupt the business result (N28 red line).
+    """
+    if client is None or not db.settings.motive_llm_enabled:
+        return rule.content
+    try:
+        result = client.complete(_build_motive_prompt(event_kind, rule, agent))
+    except Exception as exc:
+        print(
+            f"warning: motive LLM refinement failed, falling back to template: {exc}",
+            file=sys.stderr,
+        )
+        return rule.content
+    content = result.content.strip()
+    if not content:
+        print(
+            "warning: motive LLM refinement returned empty content, "
+            "falling back to template",
+            file=sys.stderr,
+        )
+        return rule.content
+    return content
+
+
 @dataclass(frozen=True)
 class _MotiveRule:
     """One deterministic event-kind -> motive template (N27 S1)."""
@@ -104,6 +175,8 @@ def derive_motives(
     workspace_id: str,
     event_kind: str,
     context: dict[str, Any] | None = None,
+    *,
+    client: LLMClient | None = None,
 ) -> list[AgentMotive]:
     """Create motives from a business event using deterministic rules.
 
@@ -118,6 +191,14 @@ def derive_motives(
     database; if a concurrent winner commits the same source between the
     lookup and the insert, the insert is rejected and this function rolls
     back, re-reads the committed row and strengthens it instead of raising.
+
+    ``client`` is the optional N28-F LLM refinement: with
+    ``db.settings.motive_llm_enabled`` on and a client supplied, a brand-new
+    motive row gets its content from the client (the prompt carries the event
+    and partner context); a failed or empty reply falls back to the template
+    with a stderr warning. Switch off, no client, or a re-triggered existing
+    motive (which only strengthens) keep the deterministic template - the
+    zero-token path.
     """
     context = context if context is not None else {}
     rule = _MOTIVE_RULES.get(event_kind)
@@ -147,12 +228,12 @@ def derive_motives(
             )
         agent_id = fallback.id
     with db.workspace_session(workspace_id) as session:
-        if (
+        agent = (
             session.query(Agent)
             .filter_by(workspace_id=workspace_id, id=agent_id)
             .first()
-            is None
-        ):
+        )
+        if agent is None:
             raise NovelError(ErrorCode.NOT_FOUND, f"agent not found: {agent_id}")
         source = f"{_MOTIVE_EVENT_SOURCE_PREFIX}{event_kind}"
         existing = (
@@ -174,11 +255,12 @@ def derive_motives(
             )
             session.commit()
             return [existing]
+        content = _refine_motive_content(db, event_kind, rule, agent, client)
         motive = AgentMotive(
             workspace_id=workspace_id,
             agent_id=agent_id,
             kind=rule.kind,
-            content=rule.content,
+            content=content,
             source=source,
         )
         session.add(motive)

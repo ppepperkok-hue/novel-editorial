@@ -13,7 +13,7 @@ from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
 from novel_editorial.core.behavior import list_behavior_timeline
-from novel_editorial.core.config import load_settings
+from novel_editorial.core.config import Settings, load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.motives import (
     clear_motive,
@@ -24,6 +24,8 @@ from novel_editorial.core.motives import (
     strengthen_motive,
     upsert_motive_feedback,
 )
+from novel_editorial.core.workspace import create_workspace
+from novel_editorial.llm.client import LLMMessage, LLMResult, MockLLMClient
 from novel_editorial.store.db import DB, run_migrations, workspace_db_path
 from novel_editorial.store.models import (
     ROLE_PERSONALITY_PARAMS,
@@ -38,6 +40,20 @@ PRE_MOTIVE_HEAD = "9833bf1054ab"
 PRE_MOTIVE_UNIQUE_HEAD = "c1557045673c"
 
 
+class _CountingLLMClient(MockLLMClient):
+    """Mock client that records every refinement call and its prompt."""
+
+    def __init__(self, reply: str = "LLM 提炼文案") -> None:
+        super().__init__(reply=reply)
+        self.calls = 0
+        self.messages: list[LLMMessage] = []
+
+    def complete(self, messages: list[LLMMessage]) -> LLMResult:
+        self.calls += 1
+        self.messages = list(messages)
+        return super().complete(messages)
+
+
 def _create_workspace(
     tmp_path: Path, monkeypatch, title: str = "动机之书"
 ) -> str:
@@ -50,6 +66,23 @@ def _create_workspace(
 
 def _db() -> DB:
     return DB(load_settings())
+
+
+def _make_llm_workspace(
+    tmp_path: Path,
+    *,
+    enabled: bool,
+) -> tuple[DB, str, _CountingLLMClient]:
+    """Workspace + DB with the motive LLM switch pinned to ``enabled``."""
+    settings = Settings(
+        data_dir=tmp_path / "data",
+        config_path=tmp_path / "config.toml",
+        motive_llm_enabled=enabled,
+    )
+    db = DB(settings)
+    db.init_schema()
+    workspace = create_workspace(db, title="LLM动机之书", genre="悬疑")
+    return db, workspace.id, _CountingLLMClient()
 
 
 def _agent(db: DB, workspace_id: str, role: str) -> Agent:
@@ -351,6 +384,143 @@ def test_derive_repeat_strength_clamps_at_100(
 
     assert repeated.strength == 100
     assert [motive.id for motive in list_motives(db, workspace_id)] == [motive.id]
+
+
+def test_derive_llm_enabled_uses_client_content(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    db, workspace_id, client = _make_llm_workspace(tmp_path, enabled=True)
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+
+    motive = derive_motives(
+        db,
+        workspace_id,
+        "draft_generated",
+        {"agent_id": writer.id},
+        client=client,
+    )[0]
+
+    assert client.calls == 1
+    assert motive.content == "LLM 提炼文案"
+    assert motive.kind == MotiveKind.GOAL
+    assert motive.source == "event:draft_generated"
+    assert capsys.readouterr().err == ""
+
+
+def test_derive_llm_prompt_carries_event_and_agent_context(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db, workspace_id, client = _make_llm_workspace(tmp_path, enabled=True)
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+
+    derive_motives(
+        db,
+        workspace_id,
+        "draft_generated",
+        {"agent_id": writer.id},
+        client=client,
+    )
+
+    prompt = "\n".join(message.content for message in client.messages)
+    assert "事件：draft_generated" in prompt
+    assert writer.name in prompt
+    assert writer.role in prompt
+    assert "动机类型：goal" in prompt
+    assert "模板内容：新章已交" in prompt
+
+
+def test_derive_llm_switch_off_ignores_client(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db, workspace_id, client = _make_llm_workspace(tmp_path, enabled=False)
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+
+    motive = derive_motives(
+        db,
+        workspace_id,
+        "draft_generated",
+        {"agent_id": writer.id},
+        client=client,
+    )[0]
+
+    assert client.calls == 0
+    assert motive.content == "新章已交"
+
+
+def test_derive_llm_failure_falls_back_to_template(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    db, workspace_id, _ = _make_llm_workspace(tmp_path, enabled=True)
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+
+    class _BoomClient(MockLLMClient):
+        def complete(self, messages: list[LLMMessage]) -> LLMResult:
+            raise RuntimeError("provider down")
+
+    motive = derive_motives(
+        db,
+        workspace_id,
+        "draft_generated",
+        {"agent_id": writer.id},
+        client=_BoomClient(),
+    )[0]
+
+    assert motive.content == "新章已交"
+    err = capsys.readouterr().err
+    assert "warning: motive LLM refinement failed, falling back to template" in err
+
+
+def test_derive_llm_empty_reply_falls_back_to_template(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    db, workspace_id, _ = _make_llm_workspace(tmp_path, enabled=True)
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+
+    class _EmptyClient(MockLLMClient):
+        def complete(self, messages: list[LLMMessage]) -> LLMResult:
+            return LLMResult(content="")
+
+    motive = derive_motives(
+        db,
+        workspace_id,
+        "draft_generated",
+        {"agent_id": writer.id},
+        client=_EmptyClient(),
+    )[0]
+
+    assert motive.content == "新章已交"
+    err = capsys.readouterr().err
+    assert "warning: motive LLM refinement returned empty content" in err
+
+
+def test_derive_llm_not_called_for_existing_motive(
+    tmp_path: Path, monkeypatch
+) -> None:
+    db, workspace_id, client = _make_llm_workspace(tmp_path, enabled=True)
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+
+    first = derive_motives(
+        db,
+        workspace_id,
+        "draft_generated",
+        {"agent_id": writer.id},
+        client=client,
+    )[0]
+    assert client.calls == 1
+    assert first.content == "LLM 提炼文案"
+
+    second = derive_motives(
+        db,
+        workspace_id,
+        "draft_generated",
+        {"agent_id": writer.id},
+        client=client,
+    )[0]
+
+    assert second.id == first.id
+    assert second.content == "LLM 提炼文案"
+    assert client.calls == 1
+    assert len(list_motives(db, workspace_id)) == 1
 
 
 def test_derive_distinct_agent_kind_source_are_distinct_motives(

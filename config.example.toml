@@ -8,5 +8,5 @@ api_port = 8765
 freedom_dial = 0.0
 # 加权随机种子：同 seed 完全复现、换 seed 有变体；NOVEL_FREEDOM_SEED 可覆盖
 freedom_seed = 42
-# 动机 LLM 提炼开关（N28 占位）：true 仅输出一次告警，行为不变；NOVEL_MOTIVE_LLM_ENABLED 可覆盖
+# 动机 LLM 提炼开关：false 走确定性模板（零 token）；true 由 LLM 改写新动机文案、失败降级回模板；NOVEL_MOTIVE_LLM_ENABLED 可覆盖
 motive_llm_enabled = false

@@ -691,29 +691,49 @@ def test_record_wired_trigger_persists_rendered_message_and_event(
     assert json.loads(events[0].payload) == json.loads(message.payload)
 
 
-def test_motive_llm_switch_warns_once_per_process(
-    tmp_path: Path, monkeypatch, capsys
+def test_motive_llm_enabled_refines_sedimented_motive_content(
+    tmp_path: Path, monkeypatch
 ) -> None:
-    monkeypatch.setattr(proactive, "_motive_llm_warning_shown", False)
     db, workspace_id = _make_db(tmp_path, motive_llm_enabled=True)
-    for _ in range(2):
-        proactive.evaluate_proactive_triggers(
-            db, workspace_id, "style_set", {"description": "平实克制短句"}
-        )
-    captured = capsys.readouterr()
-    assert captured.err.count(proactive.MOTIVE_LLM_WARNING) == 1
-
-
-def test_motive_llm_switch_off_is_silent(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
-    monkeypatch.setattr(proactive, "_motive_llm_warning_shown", False)
-    db, workspace_id = _make_db(tmp_path, motive_llm_enabled=False)
-    proactive.evaluate_proactive_triggers(
-        db, workspace_id, "style_set", {"description": "平实克制短句"}
+    monkeypatch.setattr(
+        proactive,
+        "build_client",
+        lambda settings: MockLLMClient(reply="LLM 提炼文案"),
     )
-    captured = capsys.readouterr()
-    assert captured.err == ""
+
+    fired = proactive.evaluate_proactive_triggers(
+        db,
+        workspace_id,
+        "draft_generated",
+        {"title": "第一章", "current_version": 1, "passed": True},
+    )
+
+    assert [candidate.agent for candidate in fired] == ["写手"]
+    motives = list_motives(db, workspace_id)
+    assert len(motives) == 1
+    assert motives[0].content == "LLM 提炼文案"
+    assert motives[0].source == "event:draft_generated"
+
+
+def test_motive_llm_disabled_never_constructs_client(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def _forbidden_client(settings) -> MockLLMClient:
+        raise AssertionError("client must not be built when the switch is off")
+
+    monkeypatch.setattr(proactive, "build_client", _forbidden_client)
+    db, workspace_id = _make_db(tmp_path, motive_llm_enabled=False)
+
+    proactive.evaluate_proactive_triggers(
+        db,
+        workspace_id,
+        "draft_generated",
+        {"title": "第一章", "current_version": 1, "passed": True},
+    )
+
+    motives = list_motives(db, workspace_id)
+    assert len(motives) == 1
+    assert motives[0].content == "新章已交"
 
 
 def _isolate_trigger_registry(monkeypatch) -> None:
@@ -789,16 +809,19 @@ def test_freedom_seed_reproduces_pick_and_seed_change_varies(
     assert [candidate.agent for candidate in other] == ["责编"]
 
 
-def test_cli_draft_generate_sediments_motive_and_warns_once(
+def test_cli_draft_generate_sediments_llm_motive_when_enabled(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.setenv("NOVEL_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("NOVEL_CONFIG", str(tmp_path / "config.toml"))
     monkeypatch.setenv("NOVEL_MOTIVE_LLM_ENABLED", "true")
-    monkeypatch.setattr(proactive, "_motive_llm_warning_shown", False)
     monkeypatch.setattr(
         "novel_editorial.cli.draft.build_client",
         lambda settings: MockLLMClient(reply="正文内容"),
+    )
+    monkeypatch.setattr(
+        "novel_editorial.core.proactive.build_client",
+        lambda settings: MockLLMClient(reply="LLM 提炼文案"),
     )
     created = runner.invoke(app, ["works", "create", "主动之书"])
     assert created.exit_code == 0, created.output
@@ -810,15 +833,15 @@ def test_cli_draft_generate_sediments_motive_and_warns_once(
     assert generated.exit_code == 0, generated.output
     assert "写手: 《第一章》初稿写完了" in generated.output
     assert "责编: 《第一章》过了质量门，我试读了开头「正文内容」" in generated.output
-    assert generated.output.count(proactive.MOTIVE_LLM_WARNING) == 1
 
     listed = runner.invoke(app, ["motives", "list", workspace_id])
     assert listed.exit_code == 0, listed.output
     assert "[写手]" in listed.output
     assert "[goal]" in listed.output
     assert "source=event:draft_generated" in listed.output
-    assert "新章已交" in listed.output
+    assert "LLM 提炼文案" in listed.output
 
     db = DB(load_settings())
     motives = list_motives(db, workspace_id)
     assert len(motives) == 1
+    assert motives[0].content == "LLM 提炼文案"

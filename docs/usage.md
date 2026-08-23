@@ -34,7 +34,7 @@ embedding_top_k = 5
 - `proactive_max_per_agent`：每位伙伴在一部作品里的主动发言上限（整数），默认 `3`；达到上限后不再新增，设 `0` 等于不发（talk 首轮提问除外）。
 - `freedom_dial`：自由程度旋钮（浮点，0–1），默认 `0`；`0` 永远选最高权重候选（保守可预期），`>0` 时低权重但更野的候选也可能被选中，越接近 `1` 越随机（见「自由意志 · 动机与选择（N27）」）。
 - `freedom_seed`：加权随机种子（整数），默认 `42`；同 seed 完全复现，换 seed 才有变体。
-- `motive_llm_enabled`：动机 LLM 提炼开关（布尔），默认 `false`；开启时只输出一次「LLM 提炼未实现（N28）」告警，行为不变（N28 占位）。
+- `motive_llm_enabled`：动机 LLM 提炼开关（布尔），默认 `false`；关闭时动机文案走确定性模板（零 token），开启时新沉淀的动机由 LLM 改写文案、失败自动降级回模板并告警（见「反馈与沉默（N28）」）。
 - `embedding_backend`：语义记忆检索的嵌入后端（`local` / `api`），默认 `local`；`api` 需显式配置 `embedding_model`。
 - `embedding_model`：api 后端的嵌入模型名，默认空；api 后端必须显式配置，local 后端忽略。
 - `embedding_dim`：local 后端的向量维度（整数），默认 `256`，范围 32–4096。
@@ -57,7 +57,7 @@ embedding_top_k = 5
 | `NOVEL_PROACTIVE_MAX_PER_AGENT` | 每位伙伴主动发言上限 | `config.toml` 的 `proactive_max_per_agent`，再退到 `3` | `1` |
 | `NOVEL_FREEDOM_DIAL` | 自由程度旋钮（0–1） | `config.toml` 的 `freedom_dial`，再退到 `0` | `0.5` |
 | `NOVEL_FREEDOM_SEED` | 加权随机种子 | `config.toml` 的 `freedom_seed`，再退到 `42` | `7` |
-| `NOVEL_MOTIVE_LLM_ENABLED` | 动机 LLM 提炼开关（N28 占位） | `config.toml` 的 `motive_llm_enabled`，再退到 `false` | `true` |
+| `NOVEL_MOTIVE_LLM_ENABLED` | 动机 LLM 提炼开关（默认关；开时 LLM 改写、失败降级模板） | `config.toml` 的 `motive_llm_enabled`，再退到 `false` | `true` |
 | `NOVEL_EMBEDDING_BACKEND` | 语义检索嵌入后端（`local` / `api`） | `local` | `api` |
 | `NOVEL_EMBEDDING_MODEL` | api 后端的嵌入模型名；api 后端必须显式配置 | 空 | `text-embedding-3-small` |
 | `NOVEL_EMBEDDING_DIM` | local 后端向量维度 | `256` | `512` |
@@ -786,7 +786,7 @@ for seed in (0, 7, 42):
 ### 开关
 
 - `proactive_enabled`：主动行为总开关（见「主动行为」），关掉后全静默——不发消息、不落事件、不沉淀动机。
-- `motive_llm_enabled` / `NOVEL_MOTIVE_LLM_ENABLED`：动机 LLM 提炼开关，默认 `false`。N28 之前只是占位：开启时每次进程只向 stderr 输出一次 `LLM motive refinement is not implemented yet (N28)` 告警，行为完全不变，不会被静默吞掉。
+- `motive_llm_enabled` / `NOVEL_MOTIVE_LLM_ENABLED`：动机 LLM 提炼开关，默认 `false`。关闭时动机文案走确定性模板（零 token）；开启时新沉淀的动机由 LLM 改写文案（prompt 带事件与角色上下文），调用失败或空回复降级回模板并向 stderr 告警，业务不受影响。细节与示例见「反馈与沉默（N28）」。
 
 ### mock 实跑示例（无 key 可复现）
 
@@ -819,6 +819,153 @@ uv run novel-editorial events list <作品ID>
 ```
 
 （`<作品ID>`、`<草稿ID>`、`<动机ID>` 与 `<时间戳>` 换成实际输出，每次运行不同；stderr 日志已省略，其余为 mock 下的真实输出。）
+
+## 反馈与沉默（N28）
+
+N27 让伙伴「会惦记、会选」，N28 让惦记与选择开始有后果：被拒会低落、被采纳会起劲、想说没说留得下账、憋久了攒得出火气。作者不需要拧数值，说话和拍板就能影响他们；每条变化都带来源，全过程在 CLI 可查。反馈、沉默、耐心池的写入都是业务完成之后的旁路——失败只向 stderr 告警，绝不影响业务结果。
+
+### 行为结果反哺动机（decide / delegation / talk）
+
+真实路径会自动回写动机。同一来源只保留一条，重复反馈只加强强度（0–100 钳制）：
+
+- `decision accept`：清掉写手这条稿的 `goal`（`source=event:draft_generated`「新章已交」）；
+- `decision reject`：给写手加 `pending_issue`「被退稿了，这事还惦记着」（`source=decision:reject`），并写 `stubbornness` 漂移（坚持度上升，`source=drift:decision:reject`）；
+- `delegation` 拒绝 / 接受：回写委托方的动机（`delegation:refused` 加惦记、接受后清掉对应惦记）；
+- `talk send` 里 `@点名` 表扬（「做得好」「干得漂亮」）→ 该伙伴 `impression`「被作者表扬了」（`source=author_feedback:praise`）；批评（「别总」「太差了」）→ 该伙伴 `pending_issue`「被作者批评了」（`source=author_feedback:criticism`）。批评词前带「不 / 别 / 勿 / 莫 / 不必」等否定词时不触发。
+
+写入失败只在 stderr 输出 `warning: motive feedback skipped: ...`，拍板、委托、对话本身照常完成、不回滚。
+
+### 作者「放下」与言语反馈
+
+- `motives drop <作品ID> <动机ID>`：清掉一条动机，并追加 `viewpoint` 留痕（`source=author_feedback:drop`）——放下是可解释的，不是静默删除；
+- `talk send` 里说「那个先放下吧」「先别惦记」「不要老惦记」：清掉作者自己让伙伴背上的 `pending_issue`（来源 `decision:reject` / `author_feedback:criticism`），并留 `source=author_feedback:let_go` 的「作者说放下，不再惦记」痕迹；伙伴之间互委产生的惦记不受影响。
+
+### 沉默留痕（silence）
+
+伙伴评估了相关议题、最高倾向过了显著线、却选择不开口时，落一条 `silence` 时间线记录；倾向没变就不重复记，不相关的话题根本不记，所以账本不会刷屏。查看：
+
+```bash
+uv run novel-editorial behavior timeline <作品ID> --kind silence
+# <时间戳> [silence] 责编 -> talk_first_round: 评估「talk_first_round」相关议题，最高倾向 0.48，选择不开口 | 无 -> 倾向 0.48 | source=talk_first_round
+```
+
+### 耐心池（patience）
+
+`patience show <作品ID>` 按伙伴展示池值（0–10）与三状态计数：
+
+```text
+[写手] pool=3 patience=4 consumed=1 rejected=1 overridden=0 conflict=0
+  rejected: 作者: 稿子被退回 (source=decision:reject)
+```
+
+三状态：被拒（`decision:reject` / `delegation:refused`，权重 1）、被压下（作者推翻，`source=override:*`，权重 3）、分歧未决（`conflict`，权重 1；作者拍板中和后不再消耗）。池值 = 有效耐心 − 消耗，钳制到 0–10；见底只记账与可见，不会自动发起行动（那是 N29 的事）。
+
+### LLM 动机提炼开关（motive_llm_enabled）
+
+- 默认 `false`（`NOVEL_MOTIVE_LLM_ENABLED` 可覆盖）：动机文案走确定性模板，零 token、行为可复现；
+- 开启时：新沉淀的动机由 LLM 改写文案（prompt 带事件与伙伴上下文）；调用失败或返回空内容时降级回模板，并向 stderr 输出 `warning: motive LLM refinement failed, falling back to template: ...`，业务不中断；
+- 开关只影响新沉淀动机的文案，不改变来源、类型、强度与「同一来源只保留一条」的语义；已存在的动机不会被改写。没有 API key 时开关开着走 mock 客户端（回复固定为「（模拟回复）」），方便对照。
+
+### 示例（mock 下实跑）
+
+下面全部在未配置 key 时复现（临时 `NOVEL_DATA_DIR` / `NOVEL_CONFIG`；`<作品ID>`、`<草稿ID>`、`<动机ID>` 换成实际输出，时间戳随运行变化，其余为真实输出）：
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-n28\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-n28\config.toml"
+Remove-Item Env:NOVEL_LLM_API_KEY, Env:NOVEL_LLM_BASE_URL, Env:NOVEL_LLM_MODEL -ErrorAction SilentlyContinue
+Remove-Item Env:NOVEL_MOTIVE_LLM_ENABLED -ErrorAction SilentlyContinue
+```
+
+```bash
+uv run novel-editorial works create 反馈之书 --genre 悬疑
+# created workspace <作品ID>: 反馈之书
+
+uv run novel-editorial draft generate <作品ID> --title 第一章
+# draft <草稿ID> 第一章 now at v1
+# awaiting decision: <草稿ID>
+# 写手: 《第一章》初稿写完了，我按节奏收尾，先交给你过目。
+# 责编: 《第一章》过了质量门，我试读了开头「（模拟回复）」，节奏在线，建议作者拍板。
+
+uv run novel-editorial talk send <作品ID> "@写手 这段太差了"
+# 作者: @写手 这段太差了
+# 写手: （模拟回复）
+# （其余伙伴的对话回复按轮次出现，此处省略）
+
+uv run novel-editorial motives list <作品ID>
+# <动机ID> [写手] [goal] strength=100 source=event:draft_generated touched=<时间戳> 新章已交
+# <动机ID> [写手] [pending_issue] strength=100 source=author_feedback:criticism touched=<时间戳> 被作者批评了
+
+uv run novel-editorial talk send <作品ID> "那个先放下吧"
+# 作者: 那个先放下吧
+
+uv run novel-editorial motives list <作品ID>
+# <动机ID> [写手] [goal] strength=100 source=event:draft_generated touched=<时间戳> 新章已交
+# （批评产生的 pending_issue 已被「放下」清掉）
+
+uv run novel-editorial motives drop <作品ID> <goal的动机ID>
+# dropped motive <动机ID> [goal] 新章已交
+
+uv run novel-editorial decision reject <草稿ID>
+# draft <草稿ID> rejected
+
+uv run novel-editorial patience show <作品ID>
+# [写手] pool=3 patience=4 consumed=1 rejected=1 overridden=0 conflict=0
+#   rejected: 作者: 稿子被退回 (source=decision:reject)
+# [审稿] pool=7 patience=7 consumed=0 rejected=0 overridden=0 conflict=0
+# [责编] pool=3 patience=3 consumed=0 rejected=0 overridden=0 conflict=0
+# [总编] pool=8 patience=8 consumed=0 rejected=0 overridden=0 conflict=0
+
+uv run novel-editorial behavior timeline <作品ID>
+# <时间戳> [viewpoint] 写手 -> 被作者批评了: 作者说放下，不再惦记 (pending_issue) | source=author_feedback:let_go
+# <时间戳> [viewpoint] 写手 -> 新章已交: 作者放下动机 [goal] | source=author_feedback:drop
+# <时间戳> [relationship] 写手 -> 作者: 稿子被退回 | source=decision:reject
+# <时间戳> [impression] 写手 -> 作者: 对我的要求高 | source=decision:reject
+```
+
+沉默需要多候选评估才会出现。以下 Python 片段（mock 下可复现，`db` / `workspace_id` 已建好）给 `talk_first_round` 补上责编与写手两个候选；评估后总编发言、责编与写手相关但沉默，CLI 即可查到：
+
+```python
+from novel_editorial.core import proactive
+from novel_editorial.core.config import load_settings
+from novel_editorial.store.db import DB
+
+db = DB(load_settings())
+for agent, kind in (
+    ("责编", proactive.PROACTIVE_KIND_REVIEW),
+    ("写手", proactive.PROACTIVE_KIND_QUESTION),
+):
+    proactive.register_proactive_trigger(
+        trigger="talk_first_round",
+        agent=agent,
+        kind=kind,
+        content=f"{agent}候选",
+        condition=lambda context: True,
+    )
+fired = proactive.evaluate_proactive_triggers(
+    db, "<作品ID>", "talk_first_round",
+    {"first_round": True, "has_style_anchor": False},
+)
+print(fired[0].agent)  # 总编
+```
+
+```bash
+uv run novel-editorial behavior timeline <作品ID> --kind silence
+# <时间戳> [silence] 责编 -> talk_first_round: 评估「talk_first_round」相关议题，最高倾向 0.48，选择不开口 | 无 -> 倾向 0.48 | source=talk_first_round
+# <时间戳> [silence] 写手 -> talk_first_round: 评估「talk_first_round」相关议题，最高倾向 0.40，选择不开口 | 无 -> 倾向 0.40 | source=talk_first_round
+```
+
+LLM 开关对照（真实 CLI）：默认关闭时动机文案是模板「新章已交」；`NOVEL_MOTIVE_LLM_ENABLED=true` 后重建一部作品再 `draft generate`，动机文案变成 mock 客户端回复「（模拟回复）」：
+
+```powershell
+$env:NOVEL_MOTIVE_LLM_ENABLED = "true"
+uv run novel-editorial works create 开关对照之书 --genre 悬疑
+# created workspace <作品ID>: 开关对照之书
+
+uv run novel-editorial draft generate <作品ID> --title 第一章
+uv run novel-editorial motives list <作品ID>
+# <动机ID> [写手] [goal] strength=100 source=event:draft_generated touched=<时间戳> （模拟回复）
+```
 
 ## 判断权与分歧（拒绝、反驳与推翻）
 

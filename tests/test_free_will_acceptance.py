@@ -260,39 +260,32 @@ def test_acceptance_switch_proactive_disabled_full_silence(
 
 
 @pytest.mark.smoke
-def test_acceptance_switch_motive_llm_warns_once_when_enabled(
-    tmp_path: Path, monkeypatch, capsys
+def test_acceptance_switch_motive_llm_refines_when_enabled(
+    tmp_path: Path,
 ) -> None:
-    """FW-G4: motive_llm_enabled=true warns once; false warns zero times."""
-    monkeypatch.setattr(proactive, "_motive_llm_warning_shown", False)
+    """FW-G4: motive_llm_enabled=true refines motive content; false keeps template."""
+    context = {"title": "第一章", "current_version": 1, "passed": True}
     db, workspace_id = _make_db(tmp_path, motive_llm_enabled=True)
-    context = {"description": "平实克制短句"}
-    for _ in range(2):
-        fired = proactive.evaluate_proactive_triggers(
-            db, workspace_id, "style_set", context
-        )
-        assert fired == [
-            proactive.ProactiveCandidate(
-                agent="审稿",
-                kind=proactive.PROACTIVE_KIND_CONSISTENCY,
-                content=(
-                    "风格锚点定了：「$description」。"
-                    "我盯着设定看了一遍，开头那句跟「$description」会不会打架？"
-                ),
-            )
-        ]
-    captured = capsys.readouterr()
-    assert captured.err.count(proactive.MOTIVE_LLM_WARNING) == 1
 
-    monkeypatch.setattr(proactive, "_motive_llm_warning_shown", False)
+    fired = proactive.evaluate_proactive_triggers(
+        db, workspace_id, "draft_generated", context
+    )
+
+    assert [candidate.agent for candidate in fired] == ["写手"]
+    motives = list_motives(db, workspace_id)
+    assert len(motives) == 1
+    assert motives[0].content == "（模拟回复）"
+    assert motives[0].source == "event:draft_generated"
+
     db_off, workspace_off = _make_db(
         tmp_path / "off", motive_llm_enabled=False
     )
     proactive.evaluate_proactive_triggers(
-        db_off, workspace_off, "style_set", context
+        db_off, workspace_off, "draft_generated", context
     )
-    captured_off = capsys.readouterr()
-    assert captured_off.err == ""
+    motives_off = list_motives(db_off, workspace_off)
+    assert len(motives_off) == 1
+    assert motives_off[0].content == "新章已交"
 
 
 @pytest.mark.smoke

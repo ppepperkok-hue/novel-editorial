@@ -18,8 +18,10 @@ candidate as the old deterministic path, so the five registered behaviors
 keep their exact copy, payload and event contract. Triggers without a topic
 entry in core/choice.py keep the legacy deterministic path (condition +
 budget), so custom registrations and old call sites behave exactly as before.
-The motive_llm_enabled switch only prints a one-time N28 placeholder warning
-and never changes behavior.
+The motive_llm_enabled switch (N28-F) refines the sedimented motive's content
+through the LLM: when on, _sediment_motive builds a client from the same
+settings and hands it to derive_motives; when off (or on a failed refinement)
+the deterministic template stays, so the zero-token path is unchanged.
 
 S3 (N28-D) adds the silence trace: after a multi-candidate wired evaluation,
 each relevant partner who stayed quiet with a tendency over the significance
@@ -55,6 +57,7 @@ from novel_editorial.core.chat import _record_message_in_session
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.evolution import effective_param
 from novel_editorial.core.motives import derive_motives, list_motives
+from novel_editorial.llm.client import build_client
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import AgentMotive, Message
 
@@ -86,12 +89,6 @@ TRIGGER_TALK_FIRST_ROUND = "talk_first_round"
 
 TriggerContext = Mapping[str, Any]
 ConditionFn = Callable[[TriggerContext], bool]
-
-#: Explicit N28 placeholder warning. The switch is a stub: when enabled it is
-#: surfaced once instead of being silently ignored, then evaluation continues
-#: on the deterministic templates (09 design: LLM refinement is N28's job).
-MOTIVE_LLM_WARNING = "LLM motive refinement is not implemented yet (N28)"
-_motive_llm_warning_shown = False
 
 #: Trigger -> derive_motives event kind (S4). Sedimentation is opt-in per
 #: trigger: only event kinds with an existing deterministic rule in
@@ -211,24 +208,23 @@ def proactive_within_limit(db: DB, workspace_id: str, agent: str, max_per_agent:
     return count_proactive_messages(db, workspace_id, agent) < max_per_agent
 
 
-def _warn_motive_llm_unavailable() -> None:
-    """Print the N28 placeholder warning once per process, never spam."""
-    global _motive_llm_warning_shown
-    if not _motive_llm_warning_shown:
-        print(MOTIVE_LLM_WARNING, file=sys.stderr)
-        _motive_llm_warning_shown = True
-
-
 def _sediment_motive(
     db: DB,
     workspace_id: str,
     trigger: str,
     context: TriggerContext,
 ) -> None:
-    """Sediment a motive for the event when a deterministic rule exists."""
+    """Sediment a motive for the event when a deterministic rule exists.
+
+    With ``motive_llm_enabled`` on, a client built from the same settings is
+    handed to ``derive_motives`` so the new motive's content is refined by the
+    LLM (core -> llm is a legal dependency direction); switch off keeps the
+    zero-token deterministic template and never constructs a client.
+    """
     event_kind = _TRIGGER_MOTIVE_EVENT_KINDS.get(trigger)
     if event_kind is None:
         return
+    client = build_client(db.settings) if db.settings.motive_llm_enabled else None
     # Pass the caller-provided agent_id through (None/absent keeps the rule's
     # role fallback in derive_motives), so the motive belongs to the partner
     # who actually caused the event - never guessed from context keys.
@@ -237,6 +233,7 @@ def _sediment_motive(
         workspace_id,
         event_kind,
         {"agent_id": context.get("agent_id")},
+        client=client,
     )
 
 
@@ -398,8 +395,6 @@ def evaluate_proactive_triggers(
     """
     if not db.settings.proactive_enabled:
         return []
-    if db.settings.motive_llm_enabled:
-        _warn_motive_llm_unavailable()
     context = context if context is not None else {}
     specs = _PROACTIVE_TRIGGERS.get(trigger, [])
     if not specs:
