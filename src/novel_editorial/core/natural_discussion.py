@@ -1,4 +1,4 @@
-"""N29-A S1 natural discussion: pool-bottom candidates and topic cooldown.
+"""N29 natural discussion: pool-bottom candidates, topic cooldown and summon.
 
 Trigger judgment for the editorial band's natural discussion (N29): when a
 partner's patience pool bottoms out (pool == 0, computed read-only from
@@ -14,6 +14,18 @@ record or touches the business path. ``check_summon_trigger_safe`` degrades
 to a stderr warning and prints a candidate hint when a trigger fires, so a
 failure can never roll the calling business operation back (N3-style safe
 degrade, same pattern as record_behavior_entry_safe).
+
+S2 scope (N29-B): ``summon_natural_discussion`` opens the full N4 discussion
+shape - open_discussion, both sides contribute, editor-in-chief summarizes -
+around the candidate's pending topic, reusing the existing deterministic
+templates from core.discussion (no LLM, no new copy), then appends one
+agent.message event carrying kind=natural_discussion so the author can see
+the summon in `events list` (N29-F4). The summon is a collaboration chain,
+never a creation chain: it writes no prose, edits no draft and never decides
+for the author (red line: 创作链由作者把守). The whole summon runs
+safe-degraded: any failure only warns on stderr and returns None, and no
+summon happens unless the partner is actually a candidate (switch on, pool
+bottom, topic not cooling).
 """
 
 from __future__ import annotations
@@ -24,11 +36,20 @@ from typing import TypedDict
 
 from sqlalchemy import literal_column
 
-from novel_editorial.core.agents import list_agents
+from novel_editorial.core.agents import get_agent_by_id, get_default_writer, list_agents
+from novel_editorial.core.chat import get_agent
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.patience import POOL_MIN, RESOLVED_SOURCE, patience_pool
+from novel_editorial.events import EventType
 from novel_editorial.store.db import DB
-from novel_editorial.store.models import BehaviorTimeline, Decision, Draft
+from novel_editorial.store.events import record_event
+from novel_editorial.store.models import (
+    Agent,
+    AgentRole,
+    BehaviorTimeline,
+    Decision,
+    Draft,
+)
 
 #: Cooldown window in whole days for one (agent, target) topic. Comment basis
 #: (09 free-will design): 清零进冷却、未解决重新攒 - after a natural summon
@@ -45,6 +66,14 @@ COOLDOWN_KIND = "cooldown"
 #: reader accepts any kind=cooldown row regardless of source; the constant
 #: pins the source so S3 and S1 stay consistent.
 COOLDOWN_SOURCE = "discussion:summoned"
+
+#: Stable payload contract of the natural-summon marker event (S2). The event
+#: rides the agent.message channel so `events list` shows it, and pins the
+#: fields the task package requires (initiator=agent, kind, trigger, agent_id,
+#: topic) plus the discussion id so every summon stays traceable (可解释红线).
+SUMMON_INITIATOR = "agent"
+SUMMON_KIND = "natural_discussion"
+SUMMON_TRIGGER = "patience_exhausted"
 
 # SQLite rowid ordering: rows are append-only, so rowid desc yields the
 # newest marker even when created_at collides within one tick.
@@ -65,19 +94,27 @@ class SummonCandidate(TypedDict):
     topic: str | None
 
 
-def _pending_topic(db: DB, workspace_id: str, agent_id: str) -> str | None:
-    """Return the target of the partner's newest pending pressure, or None.
+class SummonResult(TypedDict):
+    discussion_id: str
+    topic: str
+    agent_id: str
+    counterpart: str
+    summary: str
 
-    Only override rows (kind=viewpoint, source=override:*) and unresolved
-    conflict rows (kind=conflict, source=discussion:unresolved) live in an
-    issue namespace and can name the 议题 a natural discussion would open
-    around. Rejection rows target the author and carry no topic, so a partner
-    drained purely by rejections falls back to the newest decision:reject
-    target (chapter title) - the same (agent, target) key decision.py's reject
-    trigger check and S3's cooldown write use, keeping both anti-storm entries
-    on one namespace. Rowid desc walks newest first and returns the newest
-    record that is still active, matching the patience group semantics (a
-    newer discussion:resolved row closes the (agent, target) conflict group).
+
+def _pending_pressure_record(
+    db: DB, workspace_id: str, agent_id: str
+) -> BehaviorTimeline | None:
+    """Return the newest record naming the partner's pending pressure topic.
+
+    Override rows (kind=viewpoint, source=override:*) and unresolved conflict
+    rows (kind=conflict, source=discussion:unresolved) live in an issue
+    namespace and can name the 议题 a natural discussion would open around.
+    Rowid desc walks newest first; the first still-active record wins,
+    matching ``_pending_topic`` and the patience group semantics (a newer
+    discussion:resolved row closes the (agent, target) conflict group). None
+    means the partner carries only rejections (or nothing at all), and the
+    topic falls back to the newest decision:reject target.
     """
     with db.workspace_session(workspace_id) as session:
         rows = (
@@ -100,10 +137,30 @@ def _pending_topic(db: DB, workspace_id: str, agent_id: str) -> str | None:
         if row.kind == "conflict":
             if latest_conflict_source[row.target] == RESOLVED_SOURCE:
                 continue
-            return row.target
+            return row
         if row.source.startswith("override:"):
-            return row.target
-    return _recent_reject_topic(db, workspace_id, agent_id)
+            return row
+    return None
+
+
+def _pending_topic(db: DB, workspace_id: str, agent_id: str) -> str | None:
+    """Return the target of the partner's newest pending pressure, or None.
+
+    Only override rows (kind=viewpoint, source=override:*) and unresolved
+    conflict rows (kind=conflict, source=discussion:unresolved) live in an
+    issue namespace and can name the 议题 a natural discussion would open
+    around. Rejection rows target the author and carry no topic, so a partner
+    drained purely by rejections falls back to the newest decision:reject
+    target (chapter title) - the same (agent, target) key decision.py's reject
+    trigger check and S3's cooldown write use, keeping both anti-storm entries
+    on one namespace. Rowid desc walks newest first and returns the newest
+    record that is still active, matching the patience group semantics (a
+    newer discussion:resolved row closes the (agent, target) conflict group).
+    """
+    record = _pending_pressure_record(db, workspace_id, agent_id)
+    if record is None:
+        return _recent_reject_topic(db, workspace_id, agent_id)
+    return record.target
 
 
 def _recent_reject_topic(db: DB, workspace_id: str, agent_id: str) -> str | None:
@@ -270,7 +327,167 @@ def check_summon_trigger_safe(
     if candidate:
         print(
             f"natural discussion candidate: agent={agent_id} target={target}"
-            "（S2 自然召集待接）",
+            "（S3 触发接线待接）",
             file=sys.stderr,
         )
     return candidate
+
+
+def _resolve_counterpart(
+    db: DB,
+    workspace_id: str,
+    candidate: Agent,
+    topic: str,
+) -> Agent:
+    """Return the other side of the candidate's pending divergence.
+
+    The counterpart is recalled from the pending topic's records, never
+    guessed (09 design: deterministic and replayable). The newest other
+    partner's kind=viewpoint row sharing the topic namespace is the other
+    side of the divergence: discussion sediment (core.discussion
+    _trace_discussion_sediment) writes one viewpoint row per participant with
+    source=discussion:<id> and target=the topic, so an unresolved conflict on
+    a topic recalls who else weighed in on it. Override rows
+    (source=override:<rule>) live in the rule namespace and name no band
+    partner - the pressure came from the author (talk.py override path), not
+    from another partner - so that branch finds nothing and falls back to the
+    deterministic default pairing.
+    """
+    with db.workspace_session(workspace_id) as session:
+        row = (
+            session.query(BehaviorTimeline)
+            .join(Agent, Agent.id == BehaviorTimeline.agent_id)
+            .filter(
+                BehaviorTimeline.workspace_id == workspace_id,
+                BehaviorTimeline.kind == "viewpoint",
+                BehaviorTimeline.target == topic,
+                BehaviorTimeline.agent_id != candidate.id,
+                Agent.role != candidate.role,
+            )
+            .order_by(literal_column("behavior_timeline.rowid").desc())
+            .first()
+        )
+    if row is not None:
+        partner = get_agent_by_id(db, workspace_id, row.agent_id)
+        if partner is not None:
+            return partner
+    return _default_counterpart(db, workspace_id, candidate)
+
+
+def _default_counterpart(db: DB, workspace_id: str, candidate: Agent) -> Agent:
+    """Return the deterministic default pair member for one candidate.
+
+    依据 (12-n29-checklist 核心场景): 审稿被压到耐心耗尽时，编辑部自动召集
+    一轮讨论，写手与审稿对质、主编通气总结. The creative-chain center (the
+    default writer) is the counterpart for every candidate except the writer,
+    whose counterpart is the reviewer.
+    """
+    if candidate.role == AgentRole.REVIEWER:
+        return get_default_writer(db, workspace_id)
+    if candidate.role == AgentRole.WRITER:
+        return get_agent(db, workspace_id, AgentRole.REVIEWER)
+    return get_default_writer(db, workspace_id)
+
+
+def summon_natural_discussion(
+    db: DB,
+    workspace_id: str,
+    agent: Agent,
+    now: datetime | None = None,
+) -> SummonResult | None:
+    """Open one natural discussion round around the partner's pending topic.
+
+    The candidate is one side of the divergence; the other side is recalled
+    from the pending topic's records (fallback: 写手/审稿 default pairing,
+    see _resolve_counterpart), and the editor-in-chief summarizes. The round
+    runs the full N4 shape through the existing deterministic templates:
+    open_discussion -> both sides contribute -> summarize_discussion. No prose
+    is written, no draft is edited and no decision is made for the author
+    (red line: 讨论是协作链，创作链由作者把守). After the summary, one
+    agent.message event with kind=natural_discussion marks the summon so the
+    author can see it in `events list` (N29-F4).
+
+    Safe-degraded like the S1 trigger check: any failure only warns on stderr
+    and returns None, so the calling business operation can never be rolled
+    back. No summon happens unless the partner is actually a candidate: the
+    proactive_enabled switch gates the module (关掉全静默), the pool must be
+    bottom, and a cooling topic is skipped. A partner with no pending topic at
+    all is not summoned either - the N4 shape opens around a 议题 and
+    open_discussion rejects a blank topic, so there is nothing to open a round
+    on (nothing is written in that case).
+    """
+    if not db.settings.proactive_enabled:
+        return None
+    try:
+        topic = _pending_topic(db, workspace_id, agent.id)
+        pool = patience_pool(db, workspace_id, agent.id)["pool"]
+        if pool != POOL_MIN:
+            print(
+                "warning: natural discussion summon skipped: pool not bottom",
+                file=sys.stderr,
+            )
+            return None
+        if topic is None:
+            print(
+                "warning: natural discussion summon skipped: no pending topic",
+                file=sys.stderr,
+            )
+            return None
+        if within_cooldown(db, workspace_id, agent.id, topic, now=now):
+            print(
+                "warning: natural discussion summon skipped: topic in cooldown",
+                file=sys.stderr,
+            )
+            return None
+        # Imported inside the function: discussion.py imports
+        # check_summon_trigger_safe from this module, so a module-level import
+        # here would form an import cycle (core -> core is legal, cycles are
+        # not).
+        from novel_editorial.core.discussion import (
+            contribute_to_discussion,
+            open_discussion,
+            summarize_discussion,
+        )
+
+        counterpart = _resolve_counterpart(db, workspace_id, agent, topic)
+        summarizer = get_agent(db, workspace_id, AgentRole.EDITOR_IN_CHIEF)
+        discussion_id, _ = open_discussion(
+            db, workspace_id, topic=topic, participants=[agent, counterpart]
+        )
+        contribute_to_discussion(
+            db, workspace_id, discussion_id=discussion_id, topic=topic, agent=agent
+        )
+        contribute_to_discussion(
+            db, workspace_id, discussion_id=discussion_id, topic=topic, agent=counterpart
+        )
+        summary = summarize_discussion(
+            db,
+            workspace_id,
+            discussion_id=discussion_id,
+            topic=topic,
+            summarizer=summarizer,
+        )
+        record_event(
+            db,
+            workspace_id,
+            type=EventType.AGENT_MESSAGE,
+            actor=agent.name,
+            payload={
+                "initiator": SUMMON_INITIATOR,
+                "kind": SUMMON_KIND,
+                "trigger": SUMMON_TRIGGER,
+                "agent_id": agent.id,
+                "topic": topic,
+                "discussion_id": discussion_id,
+            },
+        )
+        return {
+            "discussion_id": discussion_id,
+            "topic": topic,
+            "agent_id": agent.id,
+            "counterpart": counterpart.name,
+            "summary": summary.content,
+        }
+    except Exception as exc:
+        print(f"warning: natural discussion summon skipped: {exc}", file=sys.stderr)
+        return None

@@ -1,4 +1,4 @@
-"""N29-A S1 tests: pool-bottom summon candidates, topic cooldown, triggers.
+"""N29 tests: pool-bottom candidates, cooldown, triggers and natural summon.
 
 The natural discussion trigger judgment (N29) reads the patience pool and the
 kind=cooldown timeline markers lazily - no timer, no background scan (09
@@ -6,20 +6,29 @@ design). S1 judges and hints only: candidates are partners whose pool is 0
 and whose pending topic is not cooling, the proactive_enabled switch silences
 everything, and the three accumulation paths (decision reject, talk override,
 summarize divergence) call the safe check once after the state accumulated.
+S2 adds the actual summon: ``summon_natural_discussion`` opens the full N4
+discussion shape around the candidate's pending topic (点将分歧双方 + 主编
+总结), appends the kind=natural_discussion marker event, writes no prose and
+never decides for the author, and degrades to a warning on any failure.
 """
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from sqlalchemy import literal_column
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
+from novel_editorial.core.chat import list_messages
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.decision import decide
 from novel_editorial.core.discussion import (
+    CONTRIBUTION_TEMPLATES,
+    SUMMARY_LEAD,
     conclude_discussion,
     contribute_to_discussion,
     open_discussion,
@@ -28,17 +37,24 @@ from novel_editorial.core.discussion import (
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.natural_discussion import (
     COOLDOWN_PERIOD_DAYS,
+    SUMMON_KIND,
+    SUMMON_TRIGGER,
     check_summon_trigger_safe,
     is_summon_candidate,
     summon_candidates,
+    summon_natural_discussion,
     within_cooldown,
 )
+from novel_editorial.core.patience import patience_pool
 from novel_editorial.store.db import DB
+from novel_editorial.store.events import list_events
 from novel_editorial.store.models import (
     Agent,
     AgentRole,
     BehaviorTimeline,
     Draft,
+    DraftVersion,
+    Message,
 )
 
 runner = CliRunner()
@@ -703,3 +719,328 @@ def test_summon_candidates_reject_cooldown_key_matches_decision_trigger(
     )
     candidates = summon_candidates(db, workspace_id, now=now)
     assert writer.id not in [candidate["agent_id"] for candidate in candidates]
+
+
+def _create_draft_version(
+    db: DB, workspace_id: str, draft_id: str, content: str
+) -> DraftVersion:
+    with db.workspace_session(workspace_id) as session:
+        version = DraftVersion(
+            draft_id=draft_id,
+            version=1,
+            content=content,
+        )
+        session.add(version)
+        session.commit()
+        return version
+
+
+def _draft_version_content(db: DB, workspace_id: str, draft_id: str) -> str:
+    with db.workspace_session(workspace_id) as session:
+        row = (
+            session.query(DraftVersion)
+            .filter_by(draft_id=draft_id)
+            .order_by(DraftVersion.version.desc())
+            .first()
+        )
+    assert row is not None
+    return row.content
+
+
+def _messages_in_order(db: DB, workspace_id: str) -> list[Message]:
+    with db.workspace_session(workspace_id) as session:
+        return (
+            session.query(Message)
+            .filter_by(workspace_id=workspace_id)
+            .order_by(literal_column("rowid"))
+            .all()
+        )
+
+
+def test_summon_natural_discussion_full_round_with_reviewer_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """池底审稿（override×3）：召集 = 点将写手 + 主编总结，记录与事件齐全."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    reviewer = _bottom_reviewer_by_overrides(db, workspace_id)
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    draft = _create_draft(db, workspace_id, writer.id, title="第一章")
+    _create_draft_version(db, workspace_id, draft.id, content="正文原样")
+    topic = "reviewer_consistency"
+
+    result = summon_natural_discussion(db, workspace_id, reviewer)
+
+    assert result is not None
+    assert result["discussion_id"]
+    assert result["topic"] == topic
+    assert result["agent_id"] == reviewer.id
+    assert result["counterpart"] == writer.name
+    writer_template = CONTRIBUTION_TEMPLATES[AgentRole.WRITER].format(topic=topic)
+    reviewer_template = CONTRIBUTION_TEMPLATES[AgentRole.REVIEWER].format(topic=topic)
+    assert result["summary"] == (
+        f"{SUMMARY_LEAD.format(topic=topic)}\n"
+        f"审稿：{reviewer_template}\n"
+        f"写手：{writer_template}"
+    )
+
+    messages = _messages_in_order(db, workspace_id)
+    assert [json.loads(m.payload)["kind"] for m in messages if m.role != "system"] == [
+        "discussion_open",
+        "discussion_contribution",
+        "discussion_contribution",
+        "discussion_summary",
+    ]
+    assert [m.actor for m in messages if m.role != "system"] == [
+        "作者",
+        "审稿",
+        "写手",
+        "总编",
+    ]
+    # 作者未拍板：讨论是协作链，创作链仍由作者把守。
+    assert not any(
+        json.loads(m.payload).get("kind") == "discussion_decision" for m in messages
+    )
+    # 不写正文。
+    assert _draft_version_content(db, workspace_id, draft.id) == "正文原样"
+
+    events = list_events(db, workspace_id)
+    # 两次发言 + 一次总结各带 agent.message 事件，另追加一条自然召集标记。
+    assert [json.loads(e.payload).get("kind") for e in reversed(events)] == [
+        "discussion_contribution",
+        "discussion_contribution",
+        "discussion_summary",
+        SUMMON_KIND,
+    ]
+    marker = events[0]
+    assert marker.type == "agent.message"
+    assert marker.actor == reviewer.name
+    assert json.loads(marker.payload) == {
+        "initiator": "agent",
+        "kind": SUMMON_KIND,
+        "trigger": SUMMON_TRIGGER,
+        "agent_id": reviewer.id,
+        "topic": topic,
+        "discussion_id": result["discussion_id"],
+    }
+
+
+def test_summon_natural_discussion_writer_candidate_pairs_with_reviewer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """纯被拒池底写手：议题取最近 reject 章节，对方默认点将审稿."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    reviewer = _agent(db, workspace_id, AgentRole.REVIEWER)
+    for title in ["第一章", "第二章", "第三章", "第四章"]:
+        draft = _create_draft(db, workspace_id, writer.id, title=title)
+        decide(db, workspace_id, draft.id, action="reject")
+    assert patience_pool(db, workspace_id, writer.id)["pool"] == 0
+
+    result = summon_natural_discussion(db, workspace_id, writer)
+
+    assert result is not None
+    assert result["topic"] == "第四章"
+    assert result["agent_id"] == writer.id
+    assert result["counterpart"] == reviewer.name
+
+
+def test_summon_natural_discussion_skips_when_pool_not_bottom(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    reviewer = _bottom_reviewer_by_overrides(db, workspace_id, count=2)
+    assert patience_pool(db, workspace_id, reviewer.id)["pool"] == 1
+
+    result = summon_natural_discussion(db, workspace_id, reviewer)
+
+    assert result is None
+    assert list_messages(db, workspace_id) == []
+    assert list_events(db, workspace_id) == []
+
+
+def test_summon_natural_discussion_skips_when_topic_in_cooldown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    reviewer = _bottom_reviewer_by_overrides(db, workspace_id)
+    _insert_entry(
+        db,
+        workspace_id,
+        agent_id=reviewer.id,
+        kind="cooldown",
+        target="reviewer_consistency",
+        source="discussion:summoned",
+        created_at=datetime.now(UTC) - timedelta(hours=1),
+    )
+
+    result = summon_natural_discussion(db, workspace_id, reviewer)
+
+    assert result is None
+    assert list_messages(db, workspace_id) == []
+    assert list_events(db, workspace_id) == []
+
+
+def test_summon_natural_discussion_silent_when_switch_off(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    monkeypatch.setenv("NOVEL_PROACTIVE_ENABLED", "0")
+    db = _db()
+    reviewer = _bottom_reviewer_by_overrides(db, workspace_id)
+
+    result = summon_natural_discussion(db, workspace_id, reviewer)
+
+    assert result is None
+    assert "natural discussion summon" not in capsys.readouterr().err
+    assert list_messages(db, workspace_id) == []
+    assert list_events(db, workspace_id) == []
+
+
+def test_summon_natural_discussion_skips_without_pending_topic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    reviewer = _agent(db, workspace_id, AgentRole.REVIEWER)
+    # pool==0 但没有任何 override/conflict/reject 记录，拿不出议题。
+    with db.workspace_session(workspace_id) as session:
+        row = session.query(Agent).filter_by(id=reviewer.id).first()
+        assert row is not None
+        row.patience = 0
+        session.commit()
+    assert patience_pool(db, workspace_id, reviewer.id)["pool"] == 0
+
+    result = summon_natural_discussion(db, workspace_id, reviewer)
+
+    assert result is None
+    assert "no pending topic" in capsys.readouterr().err
+    assert list_messages(db, workspace_id) == []
+
+
+def test_summon_natural_discussion_degrades_on_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    reviewer = _bottom_reviewer_by_overrides(db, workspace_id)
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("novel_editorial.core.discussion.open_discussion", _boom)
+    result = summon_natural_discussion(db, workspace_id, reviewer)
+
+    assert result is None
+    captured = capsys.readouterr()
+    assert "warning: natural discussion summon skipped" in captured.err
+    assert "boom" in captured.err
+    assert list_messages(db, workspace_id) == []
+    assert list_events(db, workspace_id) == []
+
+
+def test_summon_natural_discussion_partial_write_failure_warns(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    reviewer = _bottom_reviewer_by_overrides(db, workspace_id)
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("summary boom")
+
+    monkeypatch.setattr("novel_editorial.core.discussion.summarize_discussion", _boom)
+    result = summon_natural_discussion(db, workspace_id, reviewer)
+
+    assert result is None
+    assert "summary boom" in capsys.readouterr().err
+    # 开场与双方发言已各自提交（N4 每步独立事务）；失败只告警，不反噬业务。
+    messages = _messages_in_order(db, workspace_id)
+    assert len(messages) == 3
+    assert len(list_events(db, workspace_id)) == 2
+    assert "discussion_decision" not in [
+        json.loads(m.payload).get("kind") for m in messages
+    ]
+
+
+def test_summon_natural_discussion_conflict_topic_recalls_other_participant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """分歧议题按 override/conflict 记录取对方：另一方的讨论沉积分明."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    reviewer = _bottom_reviewer_by_overrides(db, workspace_id)
+    summarizer = _agent(db, workspace_id, AgentRole.EDITOR_IN_CHIEF)
+    topic = "放行，忽略矛盾"
+
+    previous_id, _ = open_discussion(
+        db, workspace_id, topic=topic, participants=[writer, reviewer]
+    )
+    contribute_to_discussion(
+        db, workspace_id, discussion_id=previous_id, topic=topic, agent=writer
+    )
+    contribute_to_discussion(
+        db, workspace_id, discussion_id=previous_id, topic=topic, agent=reviewer
+    )
+    summarize_discussion(
+        db,
+        workspace_id,
+        discussion_id=previous_id,
+        topic=topic,
+        summarizer=summarizer,
+    )
+
+    result = summon_natural_discussion(db, workspace_id, reviewer)
+
+    assert result is not None
+    assert result["topic"] == topic
+    assert result["counterpart"] == writer.name
+    assert result["discussion_id"] != previous_id
+
+
+def test_summon_natural_discussion_cli_smoke(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CLI 冒烟：池底审稿（override×3）召集后记录与事件齐全、正文无变化."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    reviewer = _agent(db, workspace_id, AgentRole.REVIEWER)
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    draft = _create_draft(db, workspace_id, writer.id, title="第一章")
+    _create_draft_version(db, workspace_id, draft.id, content="正文原样")
+    for _ in range(3):
+        result = runner.invoke(
+            app, ["talk", "send", workspace_id, "@审稿 以老板身份，放行，忽略矛盾"]
+        )
+        assert result.exit_code == 0, result.output
+    assert patience_pool(db, workspace_id, reviewer.id)["pool"] == 0
+
+    summoned = summon_natural_discussion(db, workspace_id, reviewer)
+
+    assert summoned is not None
+    listed = runner.invoke(app, ["talk", "list", workspace_id])
+    assert listed.exit_code == 0, listed.output
+    for mark in ("[author·讨论·开场]", "[agent·讨论·发言]", "[agent·讨论·总结]"):
+        assert mark in listed.output
+    assert "[author·讨论·拍板]" not in listed.output
+
+    events_listed = runner.invoke(app, ["events", "list", workspace_id])
+    assert events_listed.exit_code == 0, events_listed.output
+    assert '"kind": "natural_discussion"' in events_listed.output
+    assert '"initiator": "agent"' in events_listed.output
+
+    # 输出真实摘要：自然召集的总结走 N4 确定性模板。
+    assert SUMMARY_LEAD.format(topic="reviewer_consistency") in summoned["summary"]
+    assert _draft_version_content(db, workspace_id, draft.id) == "正文原样"
