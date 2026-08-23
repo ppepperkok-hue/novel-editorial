@@ -129,4 +129,5 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 ## 状态
 
 - S1 完成（2026-08-24）：cooldown 行为 kind + core/natural_discussion.py 触发判定（池底候选 / 议题冷却 / 开关）+ 三累积点接线，commits 7ae1f3e / c182f29；全量 1416 测试绿；独立审查 2 条意见已修复复核收敛，归档 docs/reviews/20260824-M5N29S1-initial.md。
-- 待办：S2 自然召集（点将分歧双方 + 主编，走 N4 discussion 形态）。
+- S2 完成（2026-08-24）：summon_natural_discussion 完整 N4 形态 + natural_discussion 事件 + 总编中立守卫 + no-topic 契约，commits bf548a8 / ddf0dba；全量 1430 测试绿；独立审查 2 条意见已修复复核收敛，归档 docs/reviews/20260824-M5N29S2-initial.md。
+- 待办：S3 清零与冷却（召集后写 cooldown + 池清零 + 三触发点正式接线 + 未解决重新攒）。
