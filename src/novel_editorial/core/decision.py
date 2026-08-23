@@ -21,6 +21,7 @@ from novel_editorial.core.chat import (
 from novel_editorial.core.draft import get_draft
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.motives import clear_motives_safe, upsert_motive_feedback_safe
+from novel_editorial.core.natural_discussion import check_summon_trigger_safe
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import Agent, AgentRole, Decision, Draft, MotiveKind
 
@@ -39,6 +40,7 @@ def decide(
 ) -> Draft:
     get_draft(db, workspace_id, draft_id)
     writer_id: str | None = None
+    reject_target = draft_id
     with db.workspace_session(workspace_id) as session:
         draft = (
             session.query(Draft)
@@ -67,6 +69,8 @@ def decide(
                 raise NovelError(ErrorCode.USAGE_ERROR, "note requires --content")
         else:
             raise NovelError(ErrorCode.USAGE_ERROR, f"unknown decision action: {action}")
+        if action == "reject":
+            reject_target = draft.title.strip() or draft_id
         session.add(
             Decision(
                 workspace_id=workspace_id,
@@ -145,5 +149,14 @@ def decide(
                 "stubbornness",
                 1,
                 event="decision:reject",
+            )
+            # N29-A S1 trigger check: after the reject accumulates, judge once
+            # whether the writer is a summon candidate (pool == 0, not cooling).
+            # Safe-degraded: a failure only warns and never rolls the verdict.
+            check_summon_trigger_safe(
+                db,
+                workspace_id,
+                agent_id=writer_id,
+                target=reject_target,
             )
     return draft

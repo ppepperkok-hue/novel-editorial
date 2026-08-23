@@ -37,6 +37,7 @@ from novel_editorial.core.discussion import (
     summarize_discussion,
 )
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.natural_discussion import check_summon_trigger_safe
 from novel_editorial.llm.client import LLMMessage, build_client
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import Agent, AgentRole, StyleAnchor
@@ -214,6 +215,11 @@ def talk_send(
             target=AUTHOR_ACTOR,
             summary="作者拍板优先",
             source=f"override:{rule.rule}",
+        )
+        # N29-A S1 trigger check: after the override accumulates, judge once
+        # whether the partner is a summon candidate. Safe-degraded.
+        check_summon_trigger_safe(
+            db, workspace_id, agent_id=agent.id, target=rule.rule
         )
         typer.echo(f"{AUTHOR_ACTOR}: {message}")
         typer.echo(f"{agent.name}: {content}")

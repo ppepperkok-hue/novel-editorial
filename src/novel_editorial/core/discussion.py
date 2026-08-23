@@ -20,6 +20,7 @@ from novel_editorial.core.chat import (
     update_agent_mood,
 )
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.natural_discussion import check_summon_trigger_safe
 from novel_editorial.core.patience import RESOLVED_SOURCE
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import Agent, AgentRole, BehaviorTimeline, Message
@@ -434,6 +435,20 @@ def summarize_discussion(
         topic=topic,
         positions=positions,
     )
+    # N29-A S1 trigger check: after an unresolved divergence accumulates,
+    # judge once for each refusing partner (the ones who drained the pool).
+    # Mirrors _trace_unresolved_conflicts' scope: an author-overridden rule
+    # already converged and never counts as an unresolved 分歧. Safe-degraded.
+    for entry in positions:
+        if entry.get("position") != "refused":
+            continue
+        agent = _get_agent_by_name(db, workspace_id, str(entry.get("agent", "")))
+        if agent is None:
+            continue
+        rule = str(entry.get("rule", ""))
+        if rule and has_same_rule_override(db, workspace_id, agent, rule):
+            continue
+        check_summon_trigger_safe(db, workspace_id, agent_id=agent.id, target=topic)
     return message
 
 

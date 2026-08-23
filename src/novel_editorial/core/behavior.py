@@ -17,6 +17,7 @@ BEHAVIOR_KINDS = (
     "viewpoint",
     "silence",
     "conflict",
+    "cooldown",
 )
 
 # SQLite assigns every row an implicit rowid. Rows are only appended, never

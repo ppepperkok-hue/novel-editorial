@@ -174,13 +174,14 @@ def test_record_rejects_unknown_kind_as_usage_error(tmp_path: Path, monkeypatch)
     assert list_behavior_timeline(db, workspace_id) == []
 
 
-def test_behavior_kinds_include_silence_and_conflict() -> None:
+def test_behavior_kinds_include_silence_conflict_and_cooldown() -> None:
     assert set(BEHAVIOR_KINDS) == {
         "impression",
         "relationship",
         "viewpoint",
         "silence",
         "conflict",
+        "cooldown",
     }
 
 
@@ -230,6 +231,33 @@ def test_record_list_and_state_for_silence_and_conflict(
     }
     assert state[("审稿", "silence", "规则矛盾")].id == silence.id
     assert state[("审稿", "conflict", "伏笔A")].id == conflict.id
+
+
+def test_record_list_and_state_for_cooldown_kind(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    cooldown = record_behavior_entry(
+        db,
+        workspace_id,
+        agent_id="审稿",
+        kind="cooldown",
+        target="放行，忽略矛盾",
+        summary="议题进入冷却，未解决冷却过后重新攒",
+        after_value="pool=0",
+        source="discussion:summoned",
+    )
+
+    entries = list_behavior_timeline(db, workspace_id, kind="cooldown")
+    assert [entry.id for entry in entries] == [cooldown.id]
+    assert entries[0].kind == "cooldown"
+    assert entries[0].source == "discussion:summoned"
+    assert entries[0].after_value == "pool=0"
+
+    state = current_behavior_state(db, workspace_id, kind="cooldown")
+    assert set(state) == {("审稿", "cooldown", "放行，忽略矛盾")}
+    assert state[("审稿", "cooldown", "放行，忽略矛盾")].id == cooldown.id
 
 
 @pytest.mark.parametrize(
