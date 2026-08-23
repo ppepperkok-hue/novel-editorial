@@ -160,4 +160,5 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 - S2 完成（2026-08-23）：decide / delegation / talk 反馈闭环（动机回写 + 作者放下 / 言语反馈 + 漂移写入），commits 85a05b6 / 5d15e0b；全量 1353 测试绿；独立审查 2 条 P3 已修复复核收敛，归档 docs/reviews/20260823-M5N28S2-initial.md。
 - S3 完成（2026-08-23）：沉默留痕（相关 + 显著线 + 倾向变化三门槛、连续沉默去重、safe 降级），commit e3350dc；全量 1363 测试绿；独立审查零意见，归档 docs/reviews/20260823-M5N28S3.md。
 - S4 完成（2026-08-23）：耐心池三状态记账 + 悬置天数懒惰结算 + patience show CLI + 分歧未决沉淀与拍板中和，commits e9483b0 / ab90d78；全量 1383 测试绿；独立审查 2 条 P2 已修复复核收敛，归档 docs/reviews/20260823-M5N28S4-initial.md。
-- 待办：S5 LLM 提炼实装、文档与收口（usage「反馈与沉默」节 + 全量回归 + smoke_m3 + stress_m3 + 独立审查归档）。
+- S5 完成（2026-08-23）：LLM 动机提炼实装（开关对照、失败降级、提炼移出事务、构造降级保护）+ usage「反馈与沉默」节 + 配置注释同步，commits c20e0b5 / ca68294；全量 1392 测试 + smoke_m3 + stress_m3 全绿；独立审查 P2+P3 已修复复核收敛，归档 docs/reviews/20260823-M5N28S5-initial.md。
+- **N28 收口（2026-08-23）**：S1–S5 全部完成，里程碑 M11 自由意志 · 反馈与沉默达成；N29 编辑部自然讨论按 backlog 待用户立项。
