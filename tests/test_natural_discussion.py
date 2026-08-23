@@ -20,6 +20,7 @@ from novel_editorial.cli.app import app
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.decision import decide
 from novel_editorial.core.discussion import (
+    conclude_discussion,
     contribute_to_discussion,
     open_discussion,
     summarize_discussion,
@@ -626,3 +627,79 @@ def test_summarize_divergence_trigger_check_silent_without_pool_bottom(
     )
 
     assert "natural discussion candidate" not in capsys.readouterr().err
+
+
+def test_summarize_trigger_check_silent_after_author_concluded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    """拍板即收敛: conclude 后再 summarize 不再对已解决分歧提示自然召集."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    reviewer = _bottom_reviewer_by_overrides(db, workspace_id, count=3)
+    summarizer = _agent(db, workspace_id, AgentRole.EDITOR_IN_CHIEF)
+    topic = "放行，忽略矛盾"
+
+    discussion_id, _ = open_discussion(
+        db, workspace_id, topic=topic, participants=[writer, reviewer]
+    )
+    contribute_to_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, agent=writer
+    )
+    contribute_to_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, agent=reviewer
+    )
+    conclude_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, outcome="接受审稿意见"
+    )
+    summary = summarize_discussion(
+        db,
+        workspace_id,
+        discussion_id=discussion_id,
+        topic=topic,
+        summarizer=summarizer,
+    )
+
+    # 已存在 discussion_decision 时直接跳过触发检查，池底伙伴也不得提示。
+    assert "natural discussion candidate" not in capsys.readouterr().err
+    # 摘要本身仍然真实产出，守卫只拦触发提示，不拦总结。
+    assert "围绕「放行，忽略矛盾」，各方的表态汇总如下：" in summary.content
+
+
+def test_summon_candidates_reject_cooldown_key_matches_decision_trigger(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """被拒池底写手的 pending topic 取最近一次 decision:reject 的章节标题.
+
+    decide reject 的触发键是章节标题（decision.py 的 reject_target），S3 的
+    cooldown 写回也用同一把键；summon_candidates 必须查同一把键，否则两入口
+    防风暴口径不一致。
+    """
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    now = datetime(2026, 8, 24, 12, 0, 0, tzinfo=UTC)
+    for title in ["第一章", "第二章", "第三章", "第四章"]:
+        draft = _create_draft(db, workspace_id, writer.id, title=title)
+        decide(db, workspace_id, draft.id, action="reject")
+
+    candidates = summon_candidates(db, workspace_id, now=now)
+    writer_candidates = [
+        candidate for candidate in candidates if candidate["agent_id"] == writer.id
+    ]
+    assert len(writer_candidates) == 1
+    # 纯被拒池底伙伴的 pending topic = 最近一条 decision:reject 的 target。
+    assert writer_candidates[0]["topic"] == "第四章"
+
+    # 对同一把键写 cooldown 后，summon_candidates 不再列出该写手。
+    _insert_entry(
+        db,
+        workspace_id,
+        agent_id=writer.id,
+        kind="cooldown",
+        target="第四章",
+        source="discussion:summoned",
+        created_at=now - timedelta(hours=1),
+    )
+    candidates = summon_candidates(db, workspace_id, now=now)
+    assert writer.id not in [candidate["agent_id"] for candidate in candidates]

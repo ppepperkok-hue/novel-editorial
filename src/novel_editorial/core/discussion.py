@@ -435,6 +435,12 @@ def summarize_discussion(
         topic=topic,
         positions=positions,
     )
+    # 拍板即收敛: once the author concluded the round a discussion_decision
+    # exists, the divergence is no longer pending and no natural-summon hint
+    # may fire - the same guard _trace_unresolved_conflicts uses (N29 red
+    # line: 作者拍板即收敛，冲突痕迹不再累积).
+    if _discussion_decision(db, workspace_id, discussion_id) is not None:
+        return message
     # N29-A S1 trigger check: after an unresolved divergence accumulates,
     # judge once for each refusing partner (the ones who drained the pool).
     # Mirrors _trace_unresolved_conflicts' scope: an author-overridden rule

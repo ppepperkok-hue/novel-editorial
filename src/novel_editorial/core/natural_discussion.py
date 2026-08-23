@@ -28,7 +28,7 @@ from novel_editorial.core.agents import list_agents
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.patience import POOL_MIN, RESOLVED_SOURCE, patience_pool
 from novel_editorial.store.db import DB
-from novel_editorial.store.models import BehaviorTimeline
+from novel_editorial.store.models import BehaviorTimeline, Decision, Draft
 
 #: Cooldown window in whole days for one (agent, target) topic. Comment basis
 #: (09 free-will design): 清零进冷却、未解决重新攒 - after a natural summon
@@ -71,8 +71,11 @@ def _pending_topic(db: DB, workspace_id: str, agent_id: str) -> str | None:
     Only override rows (kind=viewpoint, source=override:*) and unresolved
     conflict rows (kind=conflict, source=discussion:unresolved) live in an
     issue namespace and can name the 议题 a natural discussion would open
-    around; rejection rows target the author and carry no topic, so they
-    never contribute. Rowid desc walks newest first and returns the newest
+    around. Rejection rows target the author and carry no topic, so a partner
+    drained purely by rejections falls back to the newest decision:reject
+    target (chapter title) - the same (agent, target) key decision.py's reject
+    trigger check and S3's cooldown write use, keeping both anti-storm entries
+    on one namespace. Rowid desc walks newest first and returns the newest
     record that is still active, matching the patience group semantics (a
     newer discussion:resolved row closes the (agent, target) conflict group).
     """
@@ -100,7 +103,38 @@ def _pending_topic(db: DB, workspace_id: str, agent_id: str) -> str | None:
             return row.target
         if row.source.startswith("override:"):
             return row.target
-    return None
+    return _recent_reject_topic(db, workspace_id, agent_id)
+
+
+def _recent_reject_topic(db: DB, workspace_id: str, agent_id: str) -> str | None:
+    """Return the partner's newest decision:reject target (chapter title).
+
+    The decision-reject trigger check (core.decision.decide) keys its cooldown
+    check on the rejected draft's title, falling back to the draft id when the
+    title is blank (``reject_target = draft.title.strip() or draft_id``).
+    Reject rows in the behavior timeline target the author and carry no topic,
+    so the key is recalled from the decision log instead: the newest
+    action=reject decision for the partner's draft, resolved to the same
+    title-or-id. S3 writes kind=cooldown with target=this key after a real
+    summon, so reading it here keeps summon_candidates and the reject trigger
+    check on the same (agent, target) namespace (防风暴口径一致).
+    """
+    with db.workspace_session(workspace_id) as session:
+        row = (
+            session.query(Draft)
+            .join(Decision, Decision.draft_id == Draft.id)
+            .filter(
+                Decision.workspace_id == workspace_id,
+                Draft.workspace_id == workspace_id,
+                Draft.writer_id == agent_id,
+                Decision.action == "reject",
+            )
+            .order_by(literal_column("decisions.rowid").desc())
+            .first()
+        )
+    if row is None:
+        return None
+    return row.title.strip() or row.id
 
 
 def within_cooldown(
@@ -171,8 +205,12 @@ def summon_candidates(
     A partner is a candidate when their patience pool is 0 (computed
     read-only from core.patience) and their newest pending pressure topic is
     not inside the cooldown window. A partner drained purely by rejections
-    has no pending topic - there is no (agent, target) cooldown key for them,
-    so they stay candidates and S2 falls back to the default pairing. The
+    carries the newest decision:reject target (chapter title) as their
+    pending topic - the same (agent, target) key decision.py's reject trigger
+    check uses and the same key S3 writes kind=cooldown with after a real
+    summon, so both anti-storm entries consult one namespace. A partner with
+    no pending topic at all (no issue rows and no reject decision log) stays
+    a candidate and S2 falls back to the default pairing. The
     proactive_enabled switch gates the whole module: when off, no candidates
     (fully silent, no natural summon). Order is deterministic: candidates are
     sorted by partner name (unique per workspace), so the result is
