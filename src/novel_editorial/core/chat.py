@@ -62,8 +62,18 @@ OVERRIDE_PHRASES: tuple[str, ...] = (
 #: feedback loop, exact substring matching keeps every path assertable).
 #: Priority when several match: praise, then criticism, then let-go.
 PRAISE_PHRASES: tuple[str, ...] = ("做得好", "干得漂亮")
-CRITICISM_PHRASES: tuple[str, ...] = ("别总", "不要老", "太差了")
-LET_GO_PHRASES: tuple[str, ...] = ("那个先放下吧", "先别惦记")
+#: Criticism phrases run through ``_keyword_triggered``: a negation prefix
+#: (不/别/勿/莫/不必) right before the phrase means the author softens or
+#: rejects the criticism itself (「这段不太差了」), so no criticism motive is
+#: written. 「不要老」 is deliberately not here: the negation starts the
+#: phrase itself, so bare substring matching would misjudge encouragement to
+#: stop dwelling; that meaning lives in LET_GO_PHRASES below.
+CRITICISM_PHRASES: tuple[str, ...] = ("别总", "太差了")
+#: 「不要老惦记」 is let-go, not criticism: the author tells a partner to stop
+#: dwelling on a thread, which is exactly the "放下 / 不再惦记" release
+#: semantic, so it resolves author-related pending issues instead of adding
+#: a new one.
+LET_GO_PHRASES: tuple[str, ...] = ("那个先放下吧", "先别惦记", "不要老惦记")
 
 #: Stable motive sources for the author's own words (N28-B). They are
 #: explainable verbatim in ``motives list`` and the behavior timeline.
@@ -362,7 +372,7 @@ def _apply_author_feedback(db: DB, workspace_id: str, message: str) -> bool:
             source=SOURCE_AUTHOR_PRAISE,
         )
         return True
-    if any(phrase in message for phrase in CRITICISM_PHRASES):
+    if any(_keyword_triggered(message, phrase) for phrase in CRITICISM_PHRASES):
         if role is None:
             return False
         agent = get_agent(db, workspace_id, role)

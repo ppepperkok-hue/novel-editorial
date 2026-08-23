@@ -343,6 +343,9 @@ def clear_motives(
     delegator's pending issue, and author let-go phrases resolve the
     workspace's author-related pending issues. Deletion is the designed
     "resolved" lifecycle step; decay never deletes, only clear paths do.
+    ``source_prefix`` is an exact string prefix, not a LIKE pattern: ``%``
+    and ``_`` in the prefix are escaped so ``event:draft_`` only matches
+    sources literally starting with ``event:draft_`` (never ``event:draftX``).
     """
     with db.workspace_session(workspace_id) as session:
         query = session.query(AgentMotive).filter_by(workspace_id=workspace_id)
@@ -353,7 +356,14 @@ def clear_motives(
         if source is not None:
             query = query.filter_by(source=source)
         if source_prefix is not None:
-            query = query.filter(AgentMotive.source.like(f"{source_prefix}%"))
+            escaped_prefix = (
+                source_prefix.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_")
+            )
+            query = query.filter(
+                AgentMotive.source.like(f"{escaped_prefix}%", escape="\\")
+            )
         rows = query.order_by(AgentMotive.id).all()
         for row in rows:
             session.delete(row)

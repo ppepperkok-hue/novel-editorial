@@ -938,6 +938,55 @@ def test_clear_motives_filters_by_agent_kind_and_source(
     } == {"author_feedback:criticism", "event:draft_generated"}
 
 
+def test_clear_motives_source_prefix_is_exact_string_prefix(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """source_prefix is an exact prefix, never a LIKE pattern (P3 fix).
+
+    ``event:draft_`` must only clear ``event:draft_generated``; the ``_`` and
+    ``%`` inside the prefix are literal characters, not SQL wildcards, so a
+    source where the wildcard would match a non-underscore character
+    (``event:draftX``) or a literal ``%`` (``event:draft%extra``) survives
+    both clears.
+    """
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    derive_motives(db, workspace_id, "draft_generated", {"agent_id": writer.id})
+    upsert_motive_feedback(
+        db,
+        workspace_id,
+        writer.id,
+        kind=MotiveKind.GOAL.value,
+        content="新章已交",
+        source="event:draftX",
+    )
+    upsert_motive_feedback(
+        db,
+        workspace_id,
+        writer.id,
+        kind=MotiveKind.GOAL.value,
+        content="新章已交",
+        source="event:draft%extra",
+    )
+
+    cleared = clear_motives(db, workspace_id, source_prefix="event:draft_")
+
+    assert [motive.source for motive in cleared] == ["event:draft_generated"]
+    assert {
+        motive.source for motive in list_motives(db, workspace_id)
+    } == {"event:draftX", "event:draft%extra"}
+
+    percent_cleared = clear_motives(
+        db, workspace_id, source_prefix="event:draft%"
+    )
+
+    assert [motive.source for motive in percent_cleared] == ["event:draft%extra"]
+    assert {
+        motive.source for motive in list_motives(db, workspace_id)
+    } == {"event:draftX"}
+
+
 def test_motives_cli_drop_end_to_end(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     db = _db()

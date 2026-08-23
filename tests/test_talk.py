@@ -564,6 +564,51 @@ def test_talk_criticism_creates_named_partner_pending_issue(
     assert criticism[0].content == "被作者批评了"
 
 
+def test_talk_negated_or_softened_phrases_are_not_criticism(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """「不太差」否定句与「不要老惦记」宽慰句不得写成批评动机 (P3 fix).
+
+    The criticism phrases honor the shared negation guard, so
+    「这段不太差了」 softens instead of criticizing. The ambiguous 「不要老」
+    prefix is reclassified as let-go (作者劝放下), so 「不要老惦记那个伏笔」
+    resolves author-related pending issues instead of adding a criticism motive.
+    """
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+    upsert_motive_feedback(
+        db,
+        workspace_id,
+        writer.id,
+        kind="pending_issue",
+        content="被退稿了，这事还惦记着",
+        source="decision:reject",
+    )
+
+    softened = runner.invoke(
+        app, ["talk", "send", workspace_id, "@写手 这段不太差了"]
+    )
+    assert softened.exit_code == 0, softened.output
+    eased = runner.invoke(
+        app, ["talk", "send", workspace_id, "@写手 不要老惦记那个伏笔"]
+    )
+    assert eased.exit_code == 0, eased.output
+
+    assert [
+        motive
+        for motive in list_motives(db, workspace_id)
+        if motive.source == "author_feedback:criticism"
+    ] == []
+    traces = [
+        row
+        for row in list_behavior_timeline(db, workspace_id)
+        if row.source == "author_feedback:let_go"
+    ]
+    assert len(traces) == 1
+    assert [motive.source for motive in list_motives(db, workspace_id)] == []
+
+
 def test_talk_let_go_clears_author_related_pending_issues(
     tmp_path: Path, monkeypatch
 ) -> None:
