@@ -81,6 +81,17 @@ def _freeze_time(monkeypatch, value: datetime) -> None:
     monkeypatch.setattr("novel_editorial.store.models.datetime", FrozenDateTime)
 
 
+def _freeze_evolution_time(monkeypatch, value: datetime) -> None:
+    """Freeze core.evolution.datetime so settlement reads a controlled now."""
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None) -> datetime:
+            return value
+
+    monkeypatch.setattr("novel_editorial.core.evolution.datetime", FrozenDateTime)
+
+
 def _column_names(path: Path, table: str) -> set[str]:
     connection = sqlite3.connect(path)
     try:
@@ -219,6 +230,7 @@ def test_rebase_settles_toward_zero_by_whole_days(
     writer = _agent(db, workspace_id, AgentRole.WRITER)
     base = datetime(2026, 8, 20, 12, 0, 0, tzinfo=UTC)
     _freeze_time(monkeypatch, base)
+    _freeze_evolution_time(monkeypatch, base)
     apply_param_drift(db, workspace_id, writer.id, "proactivity", 5)
     apply_param_drift(db, workspace_id, writer.id, "patience", -5)
 
@@ -252,6 +264,32 @@ def test_rebase_is_idempotent_for_same_now(tmp_path: Path, monkeypatch) -> None:
     second = rebase_param_drift(db, workspace_id, writer.id, now=now)
     assert first == second
     assert second["proactivity"] == 2
+
+    traces = list_behavior_timeline(db, workspace_id)
+    rebase_traces = [trace for trace in traces if trace.source == "drift:rebase"]
+    assert len(rebase_traces) == 1
+
+
+def test_rebase_is_idempotent_for_same_explicit_now_without_frozen_clock(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Same fixed ``now`` must settle exactly once even with a real clock.
+
+    The rebase trace itself records ``resolved`` as its touch time, so a second
+    call with the same ``now`` sees zero whole days (N28-C S1 idempotency).
+    """
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+
+    apply_param_drift(db, workspace_id, writer.id, "proactivity", 5)
+    now = datetime.now(UTC) + timedelta(days=2)
+
+    first = rebase_param_drift(db, workspace_id, writer.id, now=now)
+    second = rebase_param_drift(db, workspace_id, writer.id, now=now)
+
+    assert first == second
+    assert second["proactivity"] == 3
 
     traces = list_behavior_timeline(db, workspace_id)
     rebase_traces = [trace for trace in traces if trace.source == "drift:rebase"]
@@ -300,6 +338,35 @@ def test_rebase_unknown_agent_not_found(tmp_path: Path, monkeypatch) -> None:
     with pytest.raises(NovelError) as excinfo:
         rebase_param_drift(_db(), workspace_id, "nope")
     assert excinfo.value.code == ErrorCode.NOT_FOUND
+
+
+def test_apply_param_drift_rebases_existing_drift_before_adding_delta(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Every apply touch settles existing drift before stacking the new delta."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    base = datetime(2026, 8, 20, 12, 0, 0, tzinfo=UTC)
+    _freeze_time(monkeypatch, base)
+    _freeze_evolution_time(monkeypatch, base)
+
+    apply_param_drift(db, workspace_id, writer.id, "proactivity", 5)
+    _freeze_evolution_time(monkeypatch, base + timedelta(days=2))
+
+    entry = apply_param_drift(db, workspace_id, writer.id, "proactivity", 3)
+
+    # 2 whole days settle 5 -> 3, then the +3 delta stacks to 6 (not 5+3=8).
+    assert _drift(db, workspace_id, writer.id, "proactivity") == 6
+    assert entry.before_value == "3"
+    assert entry.after_value == "6"
+
+    traces = list_behavior_timeline(db, workspace_id)
+    rebase_traces = [trace for trace in traces if trace.source == "drift:rebase"]
+    assert len(rebase_traces) == 1
+    assert rebase_traces[0].target == "proactivity"
+    assert rebase_traces[0].before_value == "5"
+    assert rebase_traces[0].after_value == "3"
 
 
 def test_agent_drift_columns_default_zero(tmp_path: Path, monkeypatch) -> None:

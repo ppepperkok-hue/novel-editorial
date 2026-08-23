@@ -96,6 +96,11 @@ def apply_param_drift(
 ) -> BehaviorTimeline:
     """Apply one drift step and leave an atomic behavior-timeline trace.
 
+    Every touch settles existing drift first: the current time is recalled and
+    any whole-day decay is applied before the new delta stacks on top (lazy
+    rebase as the internal pre-step, N28-C S1 acceptance). This keeps the
+    production path honest even when no caller explicitly rebases.
+
     The new drift is clamp(current + delta, -10, 10). The agent update and the
     trace commit in one workspace transaction, so a drift write can never
     exist without its explainable source. ``event`` names the feedback that
@@ -106,6 +111,9 @@ def apply_param_drift(
         raise NovelError(
             ErrorCode.USAGE_ERROR, f"delta must be an integer, got {delta!r}"
         )
+    # Lazy rebase on touch: settle any whole-day decay as of real time before
+    # stacking the new delta. No-op when no drift trace exists yet.
+    rebase_param_drift(db, workspace_id, agent_id)
     agent = resolve_agent(db, workspace_id, agent_id)
     with db.workspace_session(workspace_id) as session:
         row = (
@@ -146,9 +154,10 @@ def rebase_param_drift(
 
     One point per full day, both signs, never crossing 0. The settlement and
     its trace commit atomically, and the trace itself becomes the new touch
-    time, so re-running with the same ``now`` is a no-op (idempotent); later
-    runs only settle what the extra whole days moved (monotonic). Returns the
-    four current drift values keyed by field.
+    time (recorded as ``resolved``, not the wall clock), so re-running with the
+    same ``now`` is a no-op (idempotent); later runs only settle what the extra
+    whole days moved (monotonic). Returns the four current drift values keyed
+    by field.
     """
     resolved = datetime.now(UTC) if now is None else _as_utc(now)
     agent = resolve_agent(db, workspace_id, agent_id)
@@ -185,6 +194,7 @@ def rebase_param_drift(
                     BehaviorTimeline(
                         workspace_id=workspace_id,
                         agent_id=row.id,
+                        created_at=resolved,
                         kind="viewpoint",
                         target=field,
                         summary=(
