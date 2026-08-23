@@ -1,4 +1,12 @@
-"""Author decision services: accept / reject / note on drafts."""
+"""Author decision services: accept / reject / note on drafts.
+
+Decisions are the N28-A feedback source: after the decision transaction
+commits, accept resolves the writer's draft goal motive and boosts the
+writer's proactivity drift, while reject creates/strengthens the writer's
+pending_issue motive and boosts the stubbornness drift. Every write-back runs
+through the safe entry points (post-hoc, warning-only on failure) so a motive
+or drift failure never rolls the verdict back.
+"""
 
 from __future__ import annotations
 
@@ -8,11 +16,13 @@ from novel_editorial.core.chat import (
     MOOD_ACCEPTED,
     MOOD_REJECTED,
     _update_agent_mood_in_session,
+    apply_drift_safe,
 )
 from novel_editorial.core.draft import get_draft
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.motives import clear_motives_safe, upsert_motive_feedback_safe
 from novel_editorial.store.db import DB
-from novel_editorial.store.models import Agent, AgentRole, Decision, Draft
+from novel_editorial.store.models import Agent, AgentRole, Decision, Draft, MotiveKind
 
 DRAFT_STATUS = "draft"
 ACCEPTED_STATUS = "accepted"
@@ -100,4 +110,40 @@ def decide(
             summary="认可我的产出" if accepted else "对我的要求高",
             source=f"decision:{action}",
         )
+        # N28-A feedback write-backs (post-hoc, safe-degraded): acceptance
+        # resolves the draft goal and the writer is energized; rejection
+        # leaves a pending issue and makes the writer hold their ground.
+        if accepted:
+            clear_motives_safe(
+                db,
+                workspace_id,
+                agent_id=writer_id,
+                kind=MotiveKind.GOAL.value,
+                source_prefix="event:draft_",
+            )
+            apply_drift_safe(
+                db,
+                workspace_id,
+                writer_id,
+                "proactivity",
+                1,
+                event="decision:accept",
+            )
+        else:
+            upsert_motive_feedback_safe(
+                db,
+                workspace_id,
+                writer_id,
+                kind=MotiveKind.PENDING_ISSUE.value,
+                content="被退稿了，这事还惦记着",
+                source="decision:reject",
+            )
+            apply_drift_safe(
+                db,
+                workspace_id,
+                writer_id,
+                "stubbornness",
+                1,
+                event="decision:reject",
+            )
     return draft

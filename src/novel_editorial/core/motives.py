@@ -8,6 +8,7 @@ clear_motive is the only removal path.
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -20,6 +21,13 @@ from novel_editorial.store.db import DB
 from novel_editorial.store.models import Agent, AgentMotive, AgentRole, MotiveKind
 
 _MOTIVE_EVENT_SOURCE_PREFIX = "event:"
+
+#: N28-A feedback write-back: the first feedback for a (kind, source) creates
+#: the motive at the model's default strength; every later feedback for the
+#: same source strengthens it by this delta (clamped to [0, 100] by the shared
+#: strength helper). The delta is fixed so repeated feedback stays assertable
+#: and reproducible (09 design: deterministic rules, no LLM in the loop).
+FEEDBACK_MOTIVE_BOOST = 10
 
 
 def _now_utc(now: datetime | None) -> datetime:
@@ -53,6 +61,11 @@ def _apply_strength_delta(motive: AgentMotive, amount: int, now: datetime) -> No
     """Shared strengthen semantics: delta clamped to [0, 100], touch refreshed."""
     motive.strength = max(0, min(100, motive.strength + amount))
     motive.last_touched_at = now
+
+
+def _warn_feedback_skipped(operation: str, exc: Exception) -> None:
+    """Report one skipped feedback write-back on stderr (N28 red line)."""
+    print(f"warning: motive feedback skipped ({operation}): {exc}", file=sys.stderr)
 
 
 @dataclass(frozen=True)
@@ -213,7 +226,168 @@ def strengthen_motive(
             raise NovelError(ErrorCode.NOT_FOUND, f"motive not found: {motive_id}")
         _apply_strength_delta(motive, amount, datetime.now(UTC))
         session.commit()
-        return motive
+    return motive
+
+
+def upsert_motive_feedback(
+    db: DB,
+    workspace_id: str,
+    agent_id: str,
+    *,
+    kind: str,
+    content: str,
+    source: str,
+) -> AgentMotive:
+    """Create one feedback motive on first write-back, strengthen it on repeat.
+
+    N28-A mirrors derive_motives' "one source one line" invariant: the same
+    (workspace_id, agent_id, kind, source) may never insert twice, so the
+    first feedback creates the motive at default strength and every later
+    feedback for the same source strengthens it by ``FEEDBACK_MOTIVE_BOOST``
+    (clamped to 100) and refreshes last_touched_at. The source is supplied by
+    the caller so every feedback row stays explainable (``decision:reject``,
+    ``author_feedback:praise``, ...).
+    """
+    with db.workspace_session(workspace_id) as session:
+        existing = (
+            session.query(AgentMotive)
+            .filter_by(
+                workspace_id=workspace_id,
+                agent_id=agent_id,
+                kind=kind,
+                source=source,
+            )
+            .order_by(AgentMotive.id)
+            .first()
+        )
+        if existing is not None:
+            _apply_strength_delta(existing, FEEDBACK_MOTIVE_BOOST, datetime.now(UTC))
+            session.commit()
+            return existing
+        motive = AgentMotive(
+            workspace_id=workspace_id,
+            agent_id=agent_id,
+            kind=kind,
+            content=content,
+            source=source,
+        )
+        session.add(motive)
+        try:
+            session.commit()
+        except IntegrityError:
+            # A concurrent winner committed the same source between the lookup
+            # and the insert; roll back and strengthen the winner instead.
+            session.rollback()
+            existing = (
+                session.query(AgentMotive)
+                .filter_by(
+                    workspace_id=workspace_id,
+                    agent_id=agent_id,
+                    kind=kind,
+                    source=source,
+                )
+                .order_by(AgentMotive.id)
+                .first()
+            )
+            if existing is None:
+                raise
+            _apply_strength_delta(existing, FEEDBACK_MOTIVE_BOOST, datetime.now(UTC))
+            session.commit()
+            return existing
+    return motive
+
+
+def upsert_motive_feedback_safe(
+    db: DB,
+    workspace_id: str,
+    agent_id: str,
+    *,
+    kind: str,
+    content: str,
+    source: str,
+) -> AgentMotive | None:
+    """Upsert one feedback motive, degrading to a stderr warning on failure.
+
+    Feedback write-backs are post-hoc (N28-A/B): a failure must never roll the
+    business result back, so every exception is caught and reported. Returns
+    the motive on success and None when the write was skipped.
+    """
+    try:
+        return upsert_motive_feedback(
+            db,
+            workspace_id,
+            agent_id,
+            kind=kind,
+            content=content,
+            source=source,
+        )
+    except Exception as exc:
+        _warn_feedback_skipped(f"upsert {source}", exc)
+        return None
+
+
+def clear_motives(
+    db: DB,
+    workspace_id: str,
+    *,
+    agent_id: str | None = None,
+    kind: str | None = None,
+    source: str | None = None,
+    source_prefix: str | None = None,
+) -> list[AgentMotive]:
+    """Delete every matching motive and return the removed rows.
+
+    Filters are optional and AND together. This is the bulk sibling of
+    ``clear_motive`` and the N28 write-back resolution path: decide accept
+    resolves the writer's draft goal, delegation accept resolves the
+    delegator's pending issue, and author let-go phrases resolve the
+    workspace's author-related pending issues. Deletion is the designed
+    "resolved" lifecycle step; decay never deletes, only clear paths do.
+    """
+    with db.workspace_session(workspace_id) as session:
+        query = session.query(AgentMotive).filter_by(workspace_id=workspace_id)
+        if agent_id is not None:
+            query = query.filter_by(agent_id=agent_id)
+        if kind is not None:
+            query = query.filter_by(kind=kind)
+        if source is not None:
+            query = query.filter_by(source=source)
+        if source_prefix is not None:
+            query = query.filter(AgentMotive.source.like(f"{source_prefix}%"))
+        rows = query.order_by(AgentMotive.id).all()
+        for row in rows:
+            session.delete(row)
+        session.commit()
+        return rows
+
+
+def clear_motives_safe(
+    db: DB,
+    workspace_id: str,
+    *,
+    agent_id: str | None = None,
+    kind: str | None = None,
+    source: str | None = None,
+    source_prefix: str | None = None,
+) -> list[AgentMotive]:
+    """Clear matching motives, degrading to a stderr warning on failure.
+
+    Same degradation contract as ``upsert_motive_feedback_safe``: the business
+    result must survive a failed clear, so the exception is caught, reported,
+    and an empty list is returned.
+    """
+    try:
+        return clear_motives(
+            db,
+            workspace_id,
+            agent_id=agent_id,
+            kind=kind,
+            source=source,
+            source_prefix=source_prefix,
+        )
+    except Exception as exc:
+        _warn_feedback_skipped("clear", exc)
+        return []
 
 
 def decay_motives(

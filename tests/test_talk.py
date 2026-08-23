@@ -12,11 +12,19 @@ from novel_editorial.cli.talk import (
     _proactive_kind,
 )
 from novel_editorial.core import proactive
-from novel_editorial.core.chat import has_proactive_message, list_messages, record_message
+from novel_editorial.core.behavior import list_behavior_timeline
+from novel_editorial.core.chat import (
+    get_agent,
+    has_proactive_message,
+    list_messages,
+    record_message,
+)
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.motives import list_motives, upsert_motive_feedback
 from novel_editorial.llm.client import LLMClient, LLMMessage, LLMResult, MockLLMClient
 from novel_editorial.store.db import DB, workspace_db_path
+from novel_editorial.store.models import AgentMotive, AgentRole
 
 runner = CliRunner()
 
@@ -494,3 +502,147 @@ def test_disabled_proactive_keeps_question_but_skips_direction(
         if json.loads(message.payload).get("kind") == proactive.PROACTIVE_KIND_DIRECTION
     ]
     assert directions == []
+
+
+def test_talk_praise_strengthens_named_partner_impression(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+
+    first = runner.invoke(app, ["talk", "send", workspace_id, "@写手 这段做得好"])
+    assert first.exit_code == 0, first.output
+
+    praise = [
+        motive
+        for motive in list_motives(db, workspace_id)
+        if motive.source == "author_feedback:praise"
+    ]
+    assert len(praise) == 1
+    assert praise[0].agent_id == writer.id
+    assert praise[0].kind == "impression"
+    assert praise[0].content == "被作者表扬了"
+    assert praise[0].strength == 100
+
+    with db.workspace_session(workspace_id) as session:
+        stored = session.get(AgentMotive, praise[0].id)
+        assert stored is not None
+        stored.strength = 60
+        session.commit()
+
+    second = runner.invoke(app, ["talk", "send", workspace_id, "@写手 干得漂亮"])
+    assert second.exit_code == 0, second.output
+
+    remaining = [
+        motive
+        for motive in list_motives(db, workspace_id)
+        if motive.source == "author_feedback:praise"
+    ]
+    assert len(remaining) == 1
+    assert remaining[0].strength == 70
+
+
+def test_talk_criticism_creates_named_partner_pending_issue(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+
+    result = runner.invoke(app, ["talk", "send", workspace_id, "@写手 别总这样写"])
+    assert result.exit_code == 0, result.output
+
+    criticism = [
+        motive
+        for motive in list_motives(db, workspace_id)
+        if motive.source == "author_feedback:criticism"
+    ]
+    assert len(criticism) == 1
+    assert criticism[0].agent_id == writer.id
+    assert criticism[0].kind == "pending_issue"
+    assert criticism[0].content == "被作者批评了"
+
+
+def test_talk_let_go_clears_author_related_pending_issues(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+    editor = get_agent(db, workspace_id, AgentRole.EDITOR)
+    upsert_motive_feedback(
+        db,
+        workspace_id,
+        writer.id,
+        kind="pending_issue",
+        content="被退稿了，这事还惦记着",
+        source="decision:reject",
+    )
+    upsert_motive_feedback(
+        db,
+        workspace_id,
+        writer.id,
+        kind="pending_issue",
+        content="被作者批评了",
+        source="author_feedback:criticism",
+    )
+    upsert_motive_feedback(
+        db,
+        workspace_id,
+        editor.id,
+        kind="pending_issue",
+        content="委托被拒，这事还惦记着",
+        source="delegation:refused",
+    )
+    assert len(list_motives(db, workspace_id)) == 3
+
+    result = runner.invoke(app, ["talk", "send", workspace_id, "那个先放下吧"])
+    assert result.exit_code == 0, result.output
+
+    remaining = list_motives(db, workspace_id)
+    assert [motive.source for motive in remaining] == ["delegation:refused"]
+    traces = [
+        row
+        for row in list_behavior_timeline(db, workspace_id)
+        if row.source == "author_feedback:let_go"
+    ]
+    assert len(traces) == 2
+    assert all(row.kind == "viewpoint" for row in traces)
+    assert all(row.agent_id == writer.id for row in traces)
+
+
+def test_talk_praise_without_mention_touches_no_motive(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+
+    result = runner.invoke(app, ["talk", "send", workspace_id, "大家这章做得好"])
+    assert result.exit_code == 0, result.output
+
+    assert list_motives(DB(load_settings()), workspace_id) == []
+
+
+def test_talk_feedback_failure_keeps_author_message(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("novel_editorial.core.motives.upsert_motive_feedback", boom)
+    result = runner.invoke(app, ["talk", "send", workspace_id, "@写手 做得好"])
+    assert result.exit_code == 0, result.output
+    assert (
+        "warning: motive feedback skipped (upsert author_feedback:praise): boom"
+        in result.output
+    )
+
+    db = DB(load_settings())
+    messages = list_messages(db, workspace_id)
+    assert any(
+        message.role == "author" and "做得好" in message.content
+        for message in messages
+    )
+    assert list_motives(db, workspace_id) == []

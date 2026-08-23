@@ -183,21 +183,29 @@ def test_decision_accept_and_reject_trace_impression_and_relationship(
 
     writer_id = _writer_id(workspace_id)
     rows = _behavior_rows(workspace_id)
-    assert len(rows) == 4
+    assert len(rows) == 6
     by_key = {(row.kind, row.source): row for row in rows}
     assert set(by_key) == {
         ("impression", "decision:accept"),
         ("relationship", "decision:accept"),
+        ("viewpoint", "drift:decision:accept"),
         ("impression", "decision:reject"),
         ("relationship", "decision:reject"),
+        ("viewpoint", "drift:decision:reject"),
     }
     assert by_key[("impression", "decision:accept")].summary == "认可我的产出"
     assert by_key[("relationship", "decision:accept")].summary == "稿子被认可"
     assert by_key[("impression", "decision:reject")].summary == "对我的要求高"
     assert by_key[("relationship", "decision:reject")].summary == "稿子被退回"
+    assert by_key[("viewpoint", "drift:decision:accept")].target == "proactivity"
+    assert by_key[("viewpoint", "drift:decision:reject")].target == "stubbornness"
     for row in rows:
         assert row.agent_id == writer_id
-        assert row.target == "作者"
+        if row.source.startswith("drift:"):
+            assert row.kind == "viewpoint"
+            assert row.target in {"proactivity", "stubbornness"}
+        else:
+            assert row.target == "作者"
 
 
 def test_decision_note_traces_nothing(tmp_path: Path, monkeypatch) -> None:
@@ -315,4 +323,12 @@ def test_decision_business_survives_behavior_trace_failure(
         draft = session.query(Draft).filter_by(id=draft_id).first()
         assert draft is not None
         assert draft.status == "accepted"
-    assert _behavior_rows(workspace_id) == []
+    rows = _behavior_rows(workspace_id)
+    # The N3 sediment path (behavior.record_behavior_entry) is what the
+    # monkeypatch breaks; the N28 drift write-back is an independent post-hoc
+    # write and still lands with its explainable source.
+    assert [row for row in rows if row.source.startswith("decision:")] == []
+    assert len(rows) == 1
+    assert rows[0].kind == "viewpoint"
+    assert rows[0].target == "proactivity"
+    assert rows[0].source == "drift:decision:accept"

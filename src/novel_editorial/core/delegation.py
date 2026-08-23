@@ -1,16 +1,27 @@
-"""Delegation conversation model: partners delegate tasks and respond."""
+"""Delegation conversation model: partners delegate tasks and respond.
+
+Delegation verdicts are the N28-A feedback source for the delegating partner:
+after the response message commits, a refusal creates/strengthens the
+delegator's pending_issue motive and boosts the delegator's stubbornness
+drift, while an acceptance resolves the delegator's pending_issue motive and
+boosts the delegator's proactivity drift. Every write-back runs through the
+safe entry points (post-hoc, warning-only on failure) so a motive or drift
+failure never rolls the delegation response back.
+"""
 
 from __future__ import annotations
 
 from novel_editorial.core.behavior import record_behavior_entry_safe
 from novel_editorial.core.chat import (
     _record_message_in_session,
+    apply_drift_safe,
     check_refusal,
     has_same_rule_override,
     has_same_rule_refusal,
 )
+from novel_editorial.core.motives import clear_motives_safe, upsert_motive_feedback_safe
 from novel_editorial.store.db import DB
-from novel_editorial.store.models import Agent, Message
+from novel_editorial.store.models import Agent, Message, MotiveKind
 
 ACCEPT_REPLY = "收到，我这就看。"
 
@@ -124,6 +135,24 @@ def respond_to_delegation(
                 after_value="坚持该立场",
                 source=f"refusal:{rule.rule}",
             )
+        # N28-A write-backs (post-hoc, safe-degraded): a refused delegation
+        # leaves the delegator holding the issue and more stubborn.
+        upsert_motive_feedback_safe(
+            db,
+            workspace_id,
+            from_agent.id,
+            kind=MotiveKind.PENDING_ISSUE.value,
+            content="委托被拒，这事还惦记着",
+            source="delegation:refused",
+        )
+        apply_drift_safe(
+            db,
+            workspace_id,
+            from_agent.id,
+            "stubbornness",
+            1,
+            event="delegation:refused",
+        )
     else:
         record_behavior_entry_safe(
             db,
@@ -142,5 +171,23 @@ def respond_to_delegation(
             target=to_agent.name,
             summary="可协作",
             source="delegation:accepted",
+        )
+        # N28-A write-backs (post-hoc, safe-degraded): an accepted delegation
+        # resolves the delegator's pending issue (from earlier refusals) and
+        # the delegator is energized to keep asking.
+        clear_motives_safe(
+            db,
+            workspace_id,
+            agent_id=from_agent.id,
+            kind=MotiveKind.PENDING_ISSUE.value,
+            source="delegation:refused",
+        )
+        apply_drift_safe(
+            db,
+            workspace_id,
+            from_agent.id,
+            "proactivity",
+            1,
+            event="delegation:accepted",
         )
     return message

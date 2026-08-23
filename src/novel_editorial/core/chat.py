@@ -4,17 +4,27 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from dataclasses import dataclass
 
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
+from novel_editorial.core.behavior import record_behavior_entry_safe
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.motives import clear_motives_safe, upsert_motive_feedback_safe
 from novel_editorial.core.plot import plot_threads_section
 from novel_editorial.events import EventType
 from novel_editorial.store.db import DB
 from novel_editorial.store.events import record_event_in_session
-from novel_editorial.store.models import Agent, AgentRole, Message, Workspace
+from novel_editorial.store.models import (
+    Agent,
+    AgentMotive,
+    AgentRole,
+    Message,
+    MotiveKind,
+    Workspace,
+)
 
 AUTHOR_ACTOR = "作者"
 PROACTIVE_PAYLOAD = {"initiator": "agent", "kind": "proactive_question"}
@@ -46,6 +56,28 @@ OVERRIDE_PHRASES: tuple[str, ...] = (
     "我定了",
     "老板说了算",
     "听我的",
+)
+
+#: N28-B deterministic author-feedback phrases (09 design: no LLM in the
+#: feedback loop, exact substring matching keeps every path assertable).
+#: Priority when several match: praise, then criticism, then let-go.
+PRAISE_PHRASES: tuple[str, ...] = ("做得好", "干得漂亮")
+CRITICISM_PHRASES: tuple[str, ...] = ("别总", "不要老", "太差了")
+LET_GO_PHRASES: tuple[str, ...] = ("那个先放下吧", "先别惦记")
+
+#: Stable motive sources for the author's own words (N28-B). They are
+#: explainable verbatim in ``motives list`` and the behavior timeline.
+SOURCE_AUTHOR_PRAISE = "author_feedback:praise"
+SOURCE_AUTHOR_CRITICISM = "author_feedback:criticism"
+SOURCE_AUTHOR_LET_GO = "author_feedback:let_go"
+
+#: Pending-issue motives whose trigger is the author: author verdicts
+#: (decision:reject) and author criticism. Partner-to-partner issues
+#: (delegation:refused) are deliberately left alone by an author let-go:
+#: "那个先放下吧" releases what the author themselves made the partner carry.
+AUTHOR_RELATED_PENDING_ISSUE_SOURCES: tuple[str, ...] = (
+    "decision:reject",
+    SOURCE_AUTHOR_CRITICISM,
 )
 
 
@@ -255,7 +287,131 @@ def record_message(
             payload=payload,
         )
         session.commit()
-        return message
+    if role == "author" and actor == AUTHOR_ACTOR:
+        # N28-B: the author's words shape partner motives. The feedback runs
+        # after the message committed (post-hoc, safe-degraded), and every
+        # talk path (plain reply, refusal, override) records the author line
+        # through this function, so the write-back is wired once.
+        apply_author_feedback_safe(db, workspace_id, content)
+    return message
+
+
+def apply_drift_safe(
+    db: DB,
+    workspace_id: str,
+    agent_id: str,
+    field: str,
+    delta: int,
+    *,
+    event: str,
+) -> bool:
+    """Apply one personality-drift step, degrading to a stderr warning on failure.
+
+    N28-A feedback drift is post-hoc: a drift write failure must never roll
+    the business result back, so every exception is caught and reported. The
+    import is local because ``core.evolution`` imports ``core.agents``, which
+    imports this module, so a module-level import would create a cycle.
+    """
+    try:
+        from novel_editorial.core.evolution import apply_param_drift
+
+        apply_param_drift(db, workspace_id, agent_id, field, delta, event=event)
+    except Exception as exc:
+        print(f"warning: drift write skipped ({event}): {exc}", file=sys.stderr)
+        return False
+    return True
+
+
+def _mentioned_role(message: str) -> str | None:
+    """Return the addressed role when the author explicitly names one partner.
+
+    N28-B 点名 requires an ``@alias`` mention; feedback never guesses a target
+    from an unaddressed message. Unknown aliases return None instead of
+    raising: the message itself already committed and must not be rolled back
+    by a feedback side effect. This differs from ``resolve_target_role``,
+    which routes the reply and needs an editor-in-chief fallback plus a
+    usage error for unknown aliases.
+    """
+    match = re.search(r"@([^，。：；！？、,.;:!?\s]+)", message)
+    if match is None:
+        return None
+    return ROLE_ALIASES.get(match.group(1))
+
+
+def _apply_author_feedback(db: DB, workspace_id: str, message: str) -> bool:
+    """Apply the deterministic N28-B feedback for one author message.
+
+    Praise / criticism require an explicit @点名: the named partner owns the
+    resulting impression (praise) or pending_issue (criticism) motive. The
+    let-go phrase resolves the workspace's author-related pending-issue
+    motives regardless of addressing - it is a release, not a per-partner
+    order. Each write goes through the safe entry points; any unexpected
+    failure is caught by ``apply_author_feedback_safe`` and only warned.
+    """
+    role = _mentioned_role(message)
+    if any(phrase in message for phrase in PRAISE_PHRASES):
+        if role is None:
+            return False
+        agent = get_agent(db, workspace_id, role)
+        upsert_motive_feedback_safe(
+            db,
+            workspace_id,
+            agent.id,
+            kind=MotiveKind.IMPRESSION.value,
+            content="被作者表扬了",
+            source=SOURCE_AUTHOR_PRAISE,
+        )
+        return True
+    if any(phrase in message for phrase in CRITICISM_PHRASES):
+        if role is None:
+            return False
+        agent = get_agent(db, workspace_id, role)
+        upsert_motive_feedback_safe(
+            db,
+            workspace_id,
+            agent.id,
+            kind=MotiveKind.PENDING_ISSUE.value,
+            content="被作者批评了",
+            source=SOURCE_AUTHOR_CRITICISM,
+        )
+        return True
+    if any(phrase in message for phrase in LET_GO_PHRASES):
+        cleared: list[AgentMotive] = []
+        for source in AUTHOR_RELATED_PENDING_ISSUE_SOURCES:
+            cleared.extend(
+                clear_motives_safe(
+                    db,
+                    workspace_id,
+                    kind=MotiveKind.PENDING_ISSUE.value,
+                    source=source,
+                )
+            )
+        for motive in cleared:
+            record_behavior_entry_safe(
+                db,
+                workspace_id,
+                agent_id=motive.agent_id,
+                kind="viewpoint",
+                target=motive.content,
+                summary=f"作者说放下，不再惦记 ({motive.kind})",
+                source=SOURCE_AUTHOR_LET_GO,
+            )
+        return True
+    return False
+
+
+def apply_author_feedback_safe(db: DB, workspace_id: str, message: str) -> bool:
+    """Apply author feedback, degrading to a stderr warning on failure.
+
+    The N28-B red line: feedback must never break the conversation. The
+    author message already committed when this runs, so any exception is
+    caught, reported, and the message stays recorded.
+    """
+    try:
+        return _apply_author_feedback(db, workspace_id, message)
+    except Exception as exc:
+        print(f"warning: author feedback skipped: {exc}", file=sys.stderr)
+        return False
 
 
 def _update_agent_mood_in_session(

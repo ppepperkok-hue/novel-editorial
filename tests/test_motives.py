@@ -12,14 +12,17 @@ from sqlalchemy.orm import Session
 from typer.testing import CliRunner
 
 from novel_editorial.cli.app import app
+from novel_editorial.core.behavior import list_behavior_timeline
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.motives import (
     clear_motive,
+    clear_motives,
     decay_motives,
     derive_motives,
     list_motives,
     strengthen_motive,
+    upsert_motive_feedback,
 )
 from novel_editorial.store.db import DB, run_migrations, workspace_db_path
 from novel_editorial.store.models import (
@@ -856,3 +859,120 @@ def test_motives_migration_legacy_replay_keeps_existing_data(
         stored = session.get(AgentMotive, motive.id)
         assert stored is not None
         assert stored.content == "新章已交"
+
+
+def test_upsert_motive_feedback_creates_then_strengthens(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+
+    first = upsert_motive_feedback(
+        db,
+        workspace_id,
+        writer.id,
+        kind=MotiveKind.PENDING_ISSUE.value,
+        content="被退稿了，这事还惦记着",
+        source="decision:reject",
+    )
+
+    assert first.strength == 100
+    assert first.source == "decision:reject"
+    with db.workspace_session(workspace_id) as session:
+        stored = session.get(AgentMotive, first.id)
+        assert stored is not None
+        stored.strength = 60
+        session.commit()
+
+    second = upsert_motive_feedback(
+        db,
+        workspace_id,
+        writer.id,
+        kind=MotiveKind.PENDING_ISSUE.value,
+        content="被退稿了，这事还惦记着",
+        source="decision:reject",
+    )
+
+    assert second.id == first.id
+    assert second.strength == 70
+    assert [motive.id for motive in list_motives(db, workspace_id)] == [first.id]
+
+
+def test_clear_motives_filters_by_agent_kind_and_source(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    editor = _agent(db, workspace_id, AgentRole.EDITOR)
+    derive_motives(db, workspace_id, "draft_generated", {"agent_id": writer.id})
+    upsert_motive_feedback(
+        db,
+        workspace_id,
+        writer.id,
+        kind=MotiveKind.PENDING_ISSUE.value,
+        content="被退稿了，这事还惦记着",
+        source="decision:reject",
+    )
+    upsert_motive_feedback(
+        db,
+        workspace_id,
+        editor.id,
+        kind=MotiveKind.PENDING_ISSUE.value,
+        content="被作者批评了",
+        source="author_feedback:criticism",
+    )
+
+    cleared = clear_motives(
+        db,
+        workspace_id,
+        kind=MotiveKind.PENDING_ISSUE.value,
+        source="decision:reject",
+    )
+
+    assert len(cleared) == 1
+    assert cleared[0].agent_id == writer.id
+    assert {
+        motive.source for motive in list_motives(db, workspace_id)
+    } == {"author_feedback:criticism", "event:draft_generated"}
+
+
+def test_motives_cli_drop_end_to_end(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    motive = upsert_motive_feedback(
+        db,
+        workspace_id,
+        writer.id,
+        kind=MotiveKind.PENDING_ISSUE.value,
+        content="被退稿了，这事还惦记着",
+        source="decision:reject",
+    )
+
+    dropped = runner.invoke(app, ["motives", "drop", workspace_id, motive.id])
+
+    assert dropped.exit_code == 0, dropped.output
+    assert (
+        f"dropped motive {motive.id} [pending_issue] 被退稿了，这事还惦记着"
+        in dropped.output
+    )
+    assert list_motives(db, workspace_id) == []
+    traces = list_behavior_timeline(db, workspace_id)
+    assert len(traces) == 1
+    assert traces[0].kind == "viewpoint"
+    assert traces[0].agent_id == writer.id
+    assert traces[0].target == "被退稿了，这事还惦记着"
+    assert traces[0].source == "author_feedback:drop"
+
+
+def test_motives_cli_drop_unknown_is_not_found(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+
+    dropped = runner.invoke(app, ["motives", "drop", workspace_id, "b" * 32])
+
+    assert dropped.exit_code == 1
+    assert "motive not found" in dropped.output

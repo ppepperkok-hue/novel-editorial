@@ -1,13 +1,14 @@
-"""Motives command group (N27 S1): inspect what partners are carrying."""
+"""Motives command group (N27 S1 / N28-B): inspect and release what partners carry."""
 
 from __future__ import annotations
 
 import typer
 
 from novel_editorial.core.agents import resolve_agent
+from novel_editorial.core.behavior import record_behavior_entry_safe
 from novel_editorial.core.chat import get_workspace_or_raise
 from novel_editorial.core.config import load_settings
-from novel_editorial.core.motives import list_motives
+from novel_editorial.core.motives import clear_motive, list_motives
 from novel_editorial.store.db import DB
 from novel_editorial.store.models import Agent
 
@@ -55,3 +56,32 @@ def motives_list(
             f"{motive.id} [{owner}] [{motive.kind}] strength={motive.strength} "
             f"source={motive.source} touched={touched} {motive.content}"
         )
+
+
+@motives_app.command("drop")
+def motives_drop(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+    motive_id: str = typer.Argument(..., help="Motive id"),
+) -> None:
+    """Drop one motive (author let-go; same deletion semantics as clear_motive).
+
+    The removed row is resolved forever - decay never deletes, only explicit
+    clears do. An ``author_feedback:drop`` behavior trace is appended so the
+    release stays explainable (N28-B source trail) even though the motive
+    row itself is gone.
+    """
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    get_workspace_or_raise(db, workspace_id)
+    motive = clear_motive(db, workspace_id, motive_id)
+    record_behavior_entry_safe(
+        db,
+        workspace_id,
+        agent_id=motive.agent_id,
+        kind="viewpoint",
+        target=motive.content,
+        summary=f"作者放下动机 [{motive.kind}]",
+        source="author_feedback:drop",
+    )
+    typer.echo(f"dropped motive {motive.id} [{motive.kind}] {motive.content}")
