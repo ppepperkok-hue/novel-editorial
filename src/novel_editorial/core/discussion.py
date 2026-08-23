@@ -166,6 +166,21 @@ def _discussion_summary(db: DB, workspace_id: str, discussion_id: str) -> Messag
         )
 
 
+def _discussion_decision(db: DB, workspace_id: str, discussion_id: str) -> Message | None:
+    """Return the author's final decision for one discussion, if any."""
+    with db.workspace_session(workspace_id) as session:
+        return (
+            session.query(Message)
+            .filter(
+                Message.workspace_id == workspace_id,
+                Message.payload.like('%"kind": "discussion_decision"%'),
+                Message.payload.like(f'%"discussion_id": "{discussion_id}"%'),
+            )
+            .order_by(literal_column("rowid"))
+            .first()
+        )
+
+
 def _parse_contribution_payload(message: Message) -> dict[str, object]:
     """Decode one contribution payload; malformed payloads fall back to empty."""
     try:
@@ -221,6 +236,48 @@ def _trace_discussion_sediment(
         update_agent_mood(db, workspace_id, agent, MOOD_TALK)
     except Exception as exc:
         print(f"warning: mood trace skipped: {exc}", file=sys.stderr)
+
+
+def _trace_unresolved_conflicts(
+    db: DB,
+    workspace_id: str,
+    *,
+    discussion_id: str,
+    topic: str,
+    positions: Sequence[dict[str, object]],
+) -> None:
+    """Sediment one kind=conflict row per refusing partner on an unresolved round.
+
+    A summary that marks 分歧 but is not yet resolved - no author decision
+    (discussion_decision) and no override convergence for the refusing rule -
+    leaves the divergence pending. Each refusing partner gets one conflict row
+    (source=discussion:unresolved, target=the topic) so the patience pool can
+    account per partner. Post-hoc and safe-degraded: a trace failure only
+    warns and never rolls the summary back (N28 red line).
+    """
+    if _discussion_decision(db, workspace_id, discussion_id) is not None:
+        return
+    for entry in positions:
+        if entry.get("position") != "refused":
+            continue
+        agent = _get_agent_by_name(db, workspace_id, str(entry["agent"]))
+        if agent is None:
+            continue
+        rule = str(entry.get("rule", ""))
+        stance = str(entry.get("stance", ""))
+        if rule and has_same_rule_override(db, workspace_id, agent, rule):
+            continue
+        detail = f"（{rule}：{stance}）" if rule else ""
+        record_behavior_entry_safe(
+            db,
+            workspace_id,
+            agent_id=agent.id,
+            kind="conflict",
+            target=topic,
+            summary=f"讨论「{topic}」分歧未决：{agent.name} 坚持立场{detail}",
+            after_value="分歧未决",
+            source="discussion:unresolved",
+        )
 
 
 def summarize_discussion(
@@ -285,6 +342,13 @@ def summarize_discussion(
             message=contribution,
             entry=entry,
         )
+    _trace_unresolved_conflicts(
+        db,
+        workspace_id,
+        discussion_id=discussion_id,
+        topic=topic,
+        positions=positions,
+    )
     return message
 
 

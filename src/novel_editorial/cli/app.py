@@ -40,6 +40,7 @@ _GROUP_LOADERS: dict[str, Callable[[], typer.Typer]] = {
     "style": lambda: _load_group("novel_editorial.cli.style", "style_app"),
     "memory": lambda: _load_group("novel_editorial.cli.memory", "memory_app"),
     "motives": lambda: _load_group("novel_editorial.cli.motives", "motives_app"),
+    "patience": lambda: _load_group("novel_editorial.cli.patience", "patience_app"),
     "draft": lambda: _load_group("novel_editorial.cli.draft", "draft_app"),
     "review": lambda: _load_group("novel_editorial.cli.review", "review_app"),
     "decision": lambda: _load_group("novel_editorial.cli.decision", "decision_app"),

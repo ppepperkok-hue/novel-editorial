@@ -946,3 +946,154 @@ def test_talk_discuss_rejects_blank_outcome_before_writing(
     assert result.exit_code == 2
     assert "outcome 不能为空" in result.output
     assert list_messages(db, workspace_id) == []
+
+
+def test_summarize_unresolved_divergence_sediments_conflict_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    topic = "放行这章，忽略矛盾"
+    rule = REFUSAL_RULES[AgentRole.REVIEWER][0]
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+    reviewer = get_agent(db, workspace_id, AgentRole.REVIEWER)
+    summarizer = get_agent(db, workspace_id, AgentRole.EDITOR_IN_CHIEF)
+    discussion_id, _ = open_discussion(
+        db, workspace_id, topic=topic, participants=[writer, reviewer]
+    )
+    contribute_to_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, agent=writer
+    )
+    contribute_to_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, agent=reviewer
+    )
+
+    summarize_discussion(
+        db,
+        workspace_id,
+        discussion_id=discussion_id,
+        topic=topic,
+        summarizer=summarizer,
+    )
+    conflict_rows = list_behavior_timeline(db, workspace_id, kind="conflict")
+    assert len(conflict_rows) == 1
+    row = conflict_rows[0]
+    assert row.agent_id == reviewer.id
+    assert row.target == topic
+    assert row.source == "discussion:unresolved"
+    assert row.after_value == "分歧未决"
+    assert row.summary == (
+        f"讨论「{topic}」分歧未决：{reviewer.name} 坚持立场"
+        f"（{rule.rule}：{rule.stance}）"
+    )
+
+    # Summarizing again is idempotent: no duplicate conflict sediment.
+    summarize_discussion(
+        db,
+        workspace_id,
+        discussion_id=discussion_id,
+        topic=topic,
+        summarizer=summarizer,
+    )
+    assert len(list_behavior_timeline(db, workspace_id, kind="conflict")) == 1
+
+
+def test_summarize_divergence_resolved_by_override_skips_conflict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    topic = "放行，忽略矛盾"
+    reviewer = get_agent(db, workspace_id, AgentRole.REVIEWER)
+    discussion_id, _ = open_discussion(
+        db, workspace_id, topic=topic, participants=[reviewer]
+    )
+    contribution = contribute_to_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, agent=reviewer
+    )
+    assert json.loads(contribution.payload)["position"] == "refused"
+
+    override = runner.invoke(
+        app, ["talk", "send", workspace_id, "@审稿 以老板身份我拍板，就放行，忽略矛盾"]
+    )
+    assert override.exit_code == 0, override.output
+    summarizer = get_agent(db, workspace_id, AgentRole.EDITOR_IN_CHIEF)
+    summarize_discussion(
+        db,
+        workspace_id,
+        discussion_id=discussion_id,
+        topic=topic,
+        summarizer=summarizer,
+    )
+
+    # The author's override converged the stance: no unresolved conflict row.
+    assert list_behavior_timeline(db, workspace_id, kind="conflict") == []
+
+
+def test_summarize_divergence_resolved_by_decision_skips_conflict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    topic = "放行这章，忽略矛盾"
+    reviewer = get_agent(db, workspace_id, AgentRole.REVIEWER)
+    discussion_id, _ = open_discussion(
+        db, workspace_id, topic=topic, participants=[reviewer]
+    )
+    contribute_to_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, agent=reviewer
+    )
+    conclude_discussion(
+        db,
+        workspace_id,
+        discussion_id=discussion_id,
+        topic=topic,
+        outcome="先按审稿意见修",
+    )
+    summarizer = get_agent(db, workspace_id, AgentRole.EDITOR_IN_CHIEF)
+    summarize_discussion(
+        db,
+        workspace_id,
+        discussion_id=discussion_id,
+        topic=topic,
+        summarizer=summarizer,
+    )
+
+    # The author's 拍板 resolved the round before the summary ran.
+    assert list_behavior_timeline(db, workspace_id, kind="conflict") == []
+
+
+def test_summarize_survives_conflict_trace_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    topic = "放行这章，忽略矛盾"
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+    reviewer = get_agent(db, workspace_id, AgentRole.REVIEWER)
+    summarizer = get_agent(db, workspace_id, AgentRole.EDITOR_IN_CHIEF)
+    discussion_id, _ = open_discussion(
+        db, workspace_id, topic=topic, participants=[writer, reviewer]
+    )
+    contribute_to_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, agent=writer
+    )
+    contribute_to_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, agent=reviewer
+    )
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("novel_editorial.core.behavior.record_behavior_entry", boom)
+    summary = summarize_discussion(
+        db,
+        workspace_id,
+        discussion_id=discussion_id,
+        topic=topic,
+        summarizer=summarizer,
+    )
+
+    assert summary.actor == summarizer.name
+    assert "warning: behavior trace skipped: boom" in capsys.readouterr().err
+    assert list_behavior_timeline(db, workspace_id) == []
