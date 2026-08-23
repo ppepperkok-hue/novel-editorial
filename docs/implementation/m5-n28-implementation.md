@@ -157,4 +157,5 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 ## 状态
 
 - S1 完成（2026-08-23）：silence / conflict 行为 kind + drift 四列迁移 + core/evolution.py（有效参数 / 漂移写入 / 懒惰回弹），commits 8686113 / 3fdcb8a；全量 1331 测试绿；独立审查 P1+P3 已修复复核收敛，归档 docs/reviews/20260823-M5N28S1-initial.md。
-- 待办：S2 反馈闭环（真实路径回写动机 + 作者放下 / 言语反馈 + 漂移写入）。
+- S2 完成（2026-08-23）：decide / delegation / talk 反馈闭环（动机回写 + 作者放下 / 言语反馈 + 漂移写入），commits 85a05b6 / 5d15e0b；全量 1353 测试绿；独立审查 2 条 P3 已修复复核收敛，归档 docs/reviews/20260823-M5N28S2-initial.md。
+- 待办：S3 沉默留痕（选择器评估后相关且倾向变化的沉默落库 + 可见命令）。
