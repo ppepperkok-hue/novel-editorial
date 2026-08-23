@@ -20,8 +20,9 @@ from novel_editorial.core.chat import (
     update_agent_mood,
 )
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.patience import RESOLVED_SOURCE
 from novel_editorial.store.db import DB
-from novel_editorial.store.models import Agent, AgentRole, Message
+from novel_editorial.store.models import Agent, AgentRole, BehaviorTimeline, Message
 
 CONTRIBUTION_TEMPLATES: dict[str, str] = {
     AgentRole.EDITOR_IN_CHIEF: "关于「{topic}」，我先定个基调：主线不能散，整体稳了再谈细节。",
@@ -181,6 +182,20 @@ def _discussion_decision(db: DB, workspace_id: str, discussion_id: str) -> Messa
         )
 
 
+def _summary_positions(
+    db: DB, workspace_id: str, discussion_id: str
+) -> list[dict[str, object]]:
+    """Return the summary's position entries; malformed payloads fall back to []."""
+    summary = _discussion_summary(db, workspace_id, discussion_id)
+    if summary is None:
+        return []
+    payload = _parse_contribution_payload(summary)
+    positions = payload.get("positions")
+    if not isinstance(positions, list):
+        return []
+    return [entry for entry in positions if isinstance(entry, dict)]
+
+
 def _parse_contribution_payload(message: Message) -> dict[str, object]:
     """Decode one contribution payload; malformed payloads fall back to empty."""
     try:
@@ -277,6 +292,76 @@ def _trace_unresolved_conflicts(
             summary=f"讨论「{topic}」分歧未决：{agent.name} 坚持立场{detail}",
             after_value="分歧未决",
             source="discussion:unresolved",
+        )
+
+
+def _has_unresolved_conflict(
+    db: DB, workspace_id: str, agent_id: str, topic: str
+) -> bool:
+    """True when the latest conflict record for (agent, topic) is unresolved.
+
+    A group is open unless its newest record is a discussion:resolved
+    neutralization row, matching the pool's group semantics.
+    """
+    with db.workspace_session(workspace_id) as session:
+        row = (
+            session.query(BehaviorTimeline)
+            .filter(
+                BehaviorTimeline.workspace_id == workspace_id,
+                BehaviorTimeline.agent_id == agent_id,
+                BehaviorTimeline.kind == "conflict",
+                BehaviorTimeline.target == topic,
+            )
+            .order_by(literal_column("rowid").desc())
+            .first()
+        )
+    return row is not None and row.source != RESOLVED_SOURCE
+
+
+def _trace_resolved_conflicts(
+    db: DB,
+    workspace_id: str,
+    *,
+    topic: str,
+    positions: Sequence[dict[str, object]],
+) -> None:
+    """Neutralize each refusing partner's conflict trace after an author decision.
+
+    Resolution choice (review P2): the behavior timeline is append-only by
+    design (rows are only appended, never deleted; replay and rowid ordering
+    depend on it), so instead of deleting kind=conflict rows we append one
+    source=discussion:resolved neutralization record per refusing partner of
+    the concluded round that still has an unresolved conflict. Pool counting
+    and the pending-days judgment treat a conflict as resolved when a newer
+    discussion:resolved record exists for the same (agent, topic), so a
+    concluded divergence stops consuming patience while the full history stays
+    replayable. Rows carry no discussion id, so neutralization is scoped to
+    (agent, topic), which is also the pool's granularity. Post-hoc and
+    safe-degraded: a trace failure only warns and never rolls the author's
+    decision back (N28 red line).
+    """
+    for entry in positions:
+        if entry.get("position") != "refused":
+            continue
+        agent = _get_agent_by_name(db, workspace_id, str(entry.get("agent", "")))
+        if agent is None:
+            continue
+        if not _has_unresolved_conflict(db, workspace_id, agent.id, topic):
+            continue
+        rule = str(entry.get("rule", ""))
+        stance = str(entry.get("stance", ""))
+        detail = f"（{rule}：{stance}）" if rule else ""
+        record_behavior_entry_safe(
+            db,
+            workspace_id,
+            agent_id=agent.id,
+            kind="conflict",
+            target=topic,
+            summary=(
+                f"讨论「{topic}」已由作者拍板解决：{agent.name} 立场分歧结束{detail}"
+            ),
+            after_value="分歧已解决",
+            source=RESOLVED_SOURCE,
         )
 
 
@@ -380,4 +465,10 @@ def conclude_discussion(
             payload=payload,
         )
         session.commit()
+    _trace_resolved_conflicts(
+        db,
+        workspace_id,
+        topic=topic,
+        positions=_summary_positions(db, workspace_id, discussion_id),
+    )
     return message

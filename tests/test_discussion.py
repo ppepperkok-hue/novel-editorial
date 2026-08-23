@@ -27,6 +27,7 @@ from novel_editorial.core.discussion import (
     summarize_discussion,
 )
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.patience import patience_pool
 from novel_editorial.store.db import DB
 from novel_editorial.store.events import list_events
 from novel_editorial.store.models import Agent, AgentRole, Message
@@ -1097,3 +1098,49 @@ def test_summarize_survives_conflict_trace_failure(
     assert summary.actor == summarizer.name
     assert "warning: behavior trace skipped: boom" in capsys.readouterr().err
     assert list_behavior_timeline(db, workspace_id) == []
+
+
+def test_conclude_after_conflict_sediment_stops_pool_consumption(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    topic = "放行，忽略矛盾"
+    writer = get_agent(db, workspace_id, AgentRole.WRITER)
+    reviewer = get_agent(db, workspace_id, AgentRole.REVIEWER)
+    summarizer = get_agent(db, workspace_id, AgentRole.EDITOR_IN_CHIEF)
+    discussion_id, _ = open_discussion(
+        db, workspace_id, topic=topic, participants=[writer, reviewer]
+    )
+    contribute_to_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, agent=writer
+    )
+    contribute_to_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, agent=reviewer
+    )
+    summarize_discussion(
+        db, workspace_id, discussion_id=discussion_id, topic=topic, summarizer=summarizer
+    )
+    assert patience_pool(db, workspace_id, reviewer.id)["states"]["conflict"] == 1
+
+    conclude_discussion(
+        db,
+        workspace_id,
+        discussion_id=discussion_id,
+        topic=topic,
+        outcome="先按审稿意见修",
+    )
+
+    # The author's 拍板 resolves the round: the pool no longer counts the
+    # divergence, while the append-only timeline keeps the unresolved trace
+    # and the neutralization record for replay.
+    pool = patience_pool(db, workspace_id, reviewer.id)
+    assert pool["states"]["conflict"] == 0
+    assert pool["consumption"] == 0
+    assert pool["pool"] == 7
+    conflict_rows = list_behavior_timeline(db, workspace_id, kind="conflict")
+    assert [row.source for row in conflict_rows] == [
+        "discussion:unresolved",
+        "discussion:resolved",
+    ]
+    assert conflict_rows[-1].after_value == "分歧已解决"

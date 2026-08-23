@@ -12,16 +12,23 @@ query time - no new table. Three states consume patience, each weighted:
   the author directly overrode the partner's held stance, the strongest single
   pressure; the 11-n28-checklist scenario (reviewer patience 7, three
   overrides) bottoms the pool at 0 exactly.
-- conflict: kind=conflict rows (unresolved discussion divergence). Weight 1 -
-  an unresolved disagreement keeps draining patience, but slower than a direct
-  override.
+- conflict: kind=conflict rows whose (agent, target) group is not closed by
+  its newest discussion:resolved neutralization record (unresolved discussion
+  divergence). Weight 1 - an unresolved disagreement keeps draining patience,
+  but slower than a direct override. Neutralization rows are appended when
+  the author concludes the round; they keep the append-only timeline
+  replayable while stopping the pool from being consumed by a resolved
+  disagreement.
 
 Pool value = clamp(effective patience - consumption, 0, 10), where effective
 patience comes from core.evolution.effective_param (baseline + drift).
 ``pending_ignore_days`` is the event-driven "ignored" judgment: when a topic
 is next touched, it recalls how many whole days the partner's pressed or
-unresolved opinion has been pending. It only computes - it never scans on a
-timer and never acts (automatic action stays in N29).
+unresolved opinion has been pending. Override rows live in the rule namespace
+(target=rule id, source=override:<rule>) while conflict rows live in the topic
+namespace (target=topic), so both namespaces are queried and the newest active
+record wins. It only computes - it never scans on a timer and never acts
+(automatic action stays in N29).
 """
 
 from __future__ import annotations
@@ -46,6 +53,11 @@ OVERRIDE_SOURCE_PREFIX = "override:"
 
 #: Behavior kind carrying unresolved discussion divergence (N28-E S4).
 CONFLICT_KIND = "conflict"
+
+#: Neutralization source appended when an author decision resolves a
+#: discussion: the row keeps the append-only timeline replayable while pool
+#: counting and the pending-days judgment treat it as no longer unresolved.
+RESOLVED_SOURCE = "discussion:resolved"
 
 #: State keys in display order; weights justify the per-state cost.
 STATE_KEYS: tuple[str, ...] = ("rejected", "overridden", "conflict")
@@ -96,7 +108,13 @@ def _clamp(value: int, low: int, high: int) -> int:
 def count_patience_states(
     db: DB, workspace_id: str, agent_id: str
 ) -> PatienceStateCounts:
-    """Count the three patience-consuming states for one partner (read-only)."""
+    """Count the three patience-consuming states for one partner (read-only).
+
+    Conflict follows append-only group semantics: every kind=conflict row is
+    read, and a group (agent, target) is open only while its newest record is
+    not a neutralization record (source=discussion:resolved). A concluded
+    divergence therefore stops consuming patience without deleting history.
+    """
     with db.workspace_session(workspace_id) as session:
         rejected = (
             session.query(BehaviorTimeline)
@@ -118,14 +136,23 @@ def count_patience_states(
             )
             .count()
         )
-        conflict = (
+        conflict_rows = (
             session.query(BehaviorTimeline)
             .filter(
                 BehaviorTimeline.workspace_id == workspace_id,
                 BehaviorTimeline.agent_id == agent_id,
                 BehaviorTimeline.kind == CONFLICT_KIND,
             )
-            .count()
+            .order_by(_ROWID.asc())
+            .all()
+        )
+        latest_source: dict[str, str] = {}
+        for row in conflict_rows:
+            latest_source[row.target] = row.source
+        conflict = sum(
+            1
+            for row in conflict_rows
+            if latest_source[row.target] != RESOLVED_SOURCE
         )
     return {"rejected": rejected, "overridden": overridden, "conflict": conflict}
 
@@ -154,7 +181,15 @@ def _state_entries(
                 BehaviorTimeline.source.like(f"{OVERRIDE_SOURCE_PREFIX}%"),
             )
         else:
-            query = query.filter(BehaviorTimeline.kind == CONFLICT_KIND)
+            rows = (
+                query.filter(BehaviorTimeline.kind == CONFLICT_KIND)
+                .order_by(_ROWID.asc())
+                .all()
+            )
+            latest_source: dict[str, str] = {}
+            for row in rows:
+                latest_source[row.target] = row.source
+            return [row for row in rows if latest_source[row.target] != RESOLVED_SOURCE]
         return query.order_by(_ROWID.asc()).all()
 
 
@@ -188,42 +223,65 @@ def pending_ignore_days(
     db: DB,
     workspace_id: str,
     agent_id: str,
-    target: str,
+    topic: str,
+    rule: str | None = None,
     now: datetime | None = None,
 ) -> int:
     """Whole days a pressed/unresolved opinion has been pending for one topic.
 
     Event-driven "ignored" judgment (09 design): no countdown, no background
     scan. The caller touches the topic again and this helper recalls the
-    newest override (kind=viewpoint, source=override:*) or conflict record for
-    (agent, target); whole days since that record is the pending time. Zero
-    when nothing is pending. N29 decides what the day threshold means - this
-    stage only computes.
+    newest active pressure record for the partner in either namespace:
+
+    - override rows (kind=viewpoint, source=override:<rule>) live in the rule
+      namespace and are matched by rule id through their source, not by
+      target;
+    - conflict rows (kind=conflict, target=topic) live in the topic namespace
+      and are matched by target.
+
+    Whole days since the newest active record is the pending time. A
+    neutralization row (kind=conflict, source=discussion:resolved) newer than
+    every conflict for the topic means the divergence is resolved: only an
+    override can still be pending. Zero when nothing is pending. N29 decides
+    what the day threshold means - this stage only computes.
     """
-    if not target.strip():
-        raise NovelError(ErrorCode.USAGE_ERROR, "target must not be empty")
+    if not topic.strip():
+        raise NovelError(ErrorCode.USAGE_ERROR, "topic must not be empty")
     resolve_agent(db, workspace_id, agent_id)
     resolved = datetime.now(UTC) if now is None else _as_utc(now)
+    filters = [
+        and_(
+            BehaviorTimeline.kind == CONFLICT_KIND,
+            BehaviorTimeline.target == topic,
+        )
+    ]
+    if rule:
+        filters.append(
+            and_(
+                BehaviorTimeline.kind == "viewpoint",
+                BehaviorTimeline.source == f"{OVERRIDE_SOURCE_PREFIX}{rule}",
+            )
+        )
     with db.workspace_session(workspace_id) as session:
-        row = (
+        rows = (
             session.query(BehaviorTimeline)
             .filter(
                 BehaviorTimeline.workspace_id == workspace_id,
                 BehaviorTimeline.agent_id == agent_id,
-                BehaviorTimeline.target == target,
-            )
-            .filter(
-                or_(
-                    BehaviorTimeline.kind == CONFLICT_KIND,
-                    and_(
-                        BehaviorTimeline.kind == "viewpoint",
-                        BehaviorTimeline.source.like(f"{OVERRIDE_SOURCE_PREFIX}%"),
-                    ),
-                )
+                or_(*filters),
             )
             .order_by(_ROWID.desc())
-            .first()
+            .all()
         )
-    if row is None:
+    if not rows:
         return 0
-    return max(0, (resolved - _as_utc(row.created_at)).days)
+    newest = rows[0]
+    if newest.kind == CONFLICT_KIND and newest.source == RESOLVED_SOURCE:
+        # The newest topic record is a resolution: the divergence is no longer
+        # pending. Only an override in its own namespace keeps pressing, so
+        # fall back to the newest override row if one exists.
+        for row in rows:
+            if row.kind == "viewpoint":
+                return max(0, (resolved - _as_utc(row.created_at)).days)
+        return 0
+    return max(0, (resolved - _as_utc(newest.created_at)).days)

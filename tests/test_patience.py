@@ -29,6 +29,7 @@ from novel_editorial.core.patience import (
     CONFLICT_WEIGHT,
     OVERRIDDEN_WEIGHT,
     REJECTED_WEIGHT,
+    RESOLVED_SOURCE,
     PatienceStateCounts,
     count_patience_states,
     patience_consumption,
@@ -73,6 +74,7 @@ def _insert_entry(
     target: str,
     source: str,
     summary: str = "",
+    after_value: str | None = None,
     created_at: datetime | None = None,
 ) -> BehaviorTimeline:
     with db.workspace_session(workspace_id) as session:
@@ -82,6 +84,7 @@ def _insert_entry(
             kind=kind,
             target=target,
             summary=summary,
+            after_value=after_value,
             source=source,
             created_at=created_at or datetime.now(UTC),
         )
@@ -293,18 +296,23 @@ def test_pending_ignore_days_recalls_whole_days_since_latest_pending(
     db = _db()
     reviewer = _agent(db, workspace_id, AgentRole.REVIEWER)
     now = datetime(2026, 8, 23, 12, 0, 0, tzinfo=UTC)
+    topic = "放行"
+    rule = "reviewer_consistency"
 
     _insert_entry(
         db,
         workspace_id,
         agent_id=reviewer.id,
         kind="viewpoint",
-        target="放行",
-        source="override:reviewer_consistency",
+        target=rule,
+        source=f"override:{rule}",
         summary="作者推翻后调整",
         created_at=now - timedelta(days=2, hours=5),
     )
-    assert pending_ignore_days(db, workspace_id, reviewer.id, "放行", now=now) == 2
+    assert (
+        pending_ignore_days(db, workspace_id, reviewer.id, topic, rule=rule, now=now)
+        == 2
+    )
 
     # A newer conflict for the same target wins: only one day pending.
     _insert_entry(
@@ -312,13 +320,71 @@ def test_pending_ignore_days_recalls_whole_days_since_latest_pending(
         workspace_id,
         agent_id=reviewer.id,
         kind="conflict",
-        target="放行",
+        target=topic,
         source="discussion:unresolved",
         summary="分歧未决",
         created_at=now - timedelta(days=1),
     )
-    assert pending_ignore_days(db, workspace_id, reviewer.id, "放行", now=now) == 1
+    assert (
+        pending_ignore_days(db, workspace_id, reviewer.id, topic, rule=rule, now=now)
+        == 1
+    )
     assert pending_ignore_days(db, workspace_id, reviewer.id, "别的议题", now=now) == 0
+
+
+def test_pending_ignore_days_merges_override_and_conflict_namespaces(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    reviewer = _agent(db, workspace_id, AgentRole.REVIEWER)
+    now = datetime(2026, 8, 23, 12, 0, 0, tzinfo=UTC)
+    topic = "放行，忽略矛盾"
+    rule = "reviewer_consistency"
+
+    # Real namespaces: override rows target the rule id, conflict rows target
+    # the topic. The newest pending record across both namespaces wins, so an
+    # override that is newer than the topic's conflict must not be missed.
+    _insert_entry(
+        db,
+        workspace_id,
+        agent_id=reviewer.id,
+        kind="conflict",
+        target=topic,
+        source="discussion:unresolved",
+        summary="分歧未决",
+        created_at=now - timedelta(days=2),
+    )
+    _insert_entry(
+        db,
+        workspace_id,
+        agent_id=reviewer.id,
+        kind="viewpoint",
+        target=rule,
+        source=f"override:{rule}",
+        summary="作者推翻后调整",
+        created_at=now - timedelta(days=1),
+    )
+    assert (
+        pending_ignore_days(db, workspace_id, reviewer.id, topic, rule=rule, now=now)
+        == 1
+    )
+
+    # A newer conflict on the topic wins back over the older override.
+    _insert_entry(
+        db,
+        workspace_id,
+        agent_id=reviewer.id,
+        kind="conflict",
+        target=topic,
+        source="discussion:unresolved",
+        summary="分歧未决",
+        created_at=now - timedelta(hours=12),
+    )
+    assert (
+        pending_ignore_days(db, workspace_id, reviewer.id, topic, rule=rule, now=now)
+        == 0
+    )
 
 
 def test_pending_ignore_days_none_or_future_means_zero(
@@ -351,6 +417,47 @@ def test_pending_ignore_days_blank_target_usage_error(
     with pytest.raises(NovelError) as excinfo:
         pending_ignore_days(_db(), workspace_id, reviewer.id, "  ")
     assert excinfo.value.code is ErrorCode.USAGE_ERROR
+
+
+def test_resolved_marker_neutralizes_conflict_count_and_pending_days(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    reviewer = _agent(db, workspace_id, AgentRole.REVIEWER)
+    now = datetime(2026, 8, 23, 12, 0, 0, tzinfo=UTC)
+    topic = "放行，忽略矛盾"
+
+    _insert_entry(
+        db,
+        workspace_id,
+        agent_id=reviewer.id,
+        kind="conflict",
+        target=topic,
+        source="discussion:unresolved",
+        summary="分歧未决",
+        created_at=now - timedelta(days=2),
+    )
+    assert count_patience_states(db, workspace_id, reviewer.id)["conflict"] == 1
+    assert pending_ignore_days(db, workspace_id, reviewer.id, topic, now=now) == 2
+
+    # The author concludes: an append-only neutralization record is sedimented
+    # in the same conflict namespace and must stop the count and the pending
+    # judgment while the unresolved row stays replayable.
+    _insert_entry(
+        db,
+        workspace_id,
+        agent_id=reviewer.id,
+        kind="conflict",
+        target=topic,
+        source=RESOLVED_SOURCE,
+        summary="分歧已解决",
+        after_value="分歧已解决",
+        created_at=now - timedelta(days=1),
+    )
+    assert count_patience_states(db, workspace_id, reviewer.id)["conflict"] == 0
+    assert patience_pool(db, workspace_id, reviewer.id)["consumption"] == 0
+    assert pending_ignore_days(db, workspace_id, reviewer.id, topic, now=now) == 0
 
 
 def test_patience_show_lists_pools_counts_and_real_summaries(
