@@ -95,7 +95,7 @@ def behavior_timeline(
 
 @behavior_app.command("show")
 def behavior_show(workspace_id: str = typer.Argument(..., help="Workspace id")) -> None:
-    """Show each partner's current impression, relationship, and viewpoint state."""
+    """Show each partner's current behavior state (all kinds, incl. silence)."""
     settings = load_settings()
     db = DB(settings)
     db.init_schema()

@@ -21,6 +21,15 @@ budget), so custom registrations and old call sites behave exactly as before.
 The motive_llm_enabled switch only prints a one-time N28 placeholder warning
 and never changes behavior.
 
+S3 (N28-D) adds the silence trace: after a multi-candidate wired evaluation,
+each relevant partner who stayed quiet with a tendency over the significance
+line and a tendency that changed since their latest silence row for the same
+trigger gets a kind=silence behavior_timeline entry (source=trigger,
+target=trigger, before/after = the tendency values). The write goes through
+the safe-degraded path, so a trace failure only warns and never touches the
+business result. Single-candidate and legacy evaluations never record silence
+(N1 compatibility).
+
 The writer, editor, reviewer, and editor-in-chief situations are registered
 here with fixed, deterministic copy. The existing first-round
 PROACTIVE_QUESTION flow in chat/talk is deliberately left untouched.
@@ -29,7 +38,7 @@ PROACTIVE_QUESTION flow in chat/talk is deliberately left untouched.
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from string import Template
 from typing import Any
@@ -38,6 +47,10 @@ from sqlalchemy import func, or_, select
 
 from novel_editorial.core import choice
 from novel_editorial.core.agents import list_agents
+from novel_editorial.core.behavior import (
+    current_behavior_state,
+    record_behavior_entry_safe,
+)
 from novel_editorial.core.chat import _record_message_in_session
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.evolution import effective_param
@@ -274,6 +287,97 @@ def _load_choice_inputs(
     return roles, params, motives, feedback
 
 
+def _format_tendency(weight: float) -> str:
+    """Render one tendency as the stable silence value format.
+
+    Two decimals keep the timeline readable and make the change gate
+    deterministic: identical weights format identically, so consecutive
+    evaluations with an unchanged tendency compare equal and stay
+    deduplicated (N28-G2: continuous silence never spams the timeline).
+    """
+    return f"倾向 {weight:.2f}"
+
+
+def _record_silence_entries(
+    db: DB,
+    workspace_id: str,
+    trigger: str,
+    choice_candidates: Sequence[choice.ChoiceCandidate],
+    agents_by_name: Mapping[str, str],
+    params: Mapping[str, choice.PersonalityParams],
+    motives: Sequence[AgentMotive],
+    feedback: Mapping[str, choice.FeedbackCounts],
+    picked_agents: frozenset[str],
+) -> None:
+    """Sediment kind=silence rows for relevant partners who stayed quiet (N28-D S3).
+
+    The 09 design's silence definition has three gates, all checked after the
+    choice pipeline ran (wired triggers only, multi-candidate evaluations
+    only):
+
+    - relevant: the partner's candidate passed choice.coarse_filter for this
+      trigger (role duty or a matching motive);
+    - motivation over the line: the partner's highest weight in this
+      evaluation is >= choice.DEFAULT_MIN_WEIGHT - the same significance
+      line evaluate_choice gates on. Below it the partner did not really
+      want to speak, so there is nothing to trace;
+    - tendency changed: the highest weight differs from the after_value of
+      the most recent silence row for the same (agent, trigger). Continuous
+      silence with an unchanged tendency is deliberately not re-recorded.
+
+    Each row is written through the safe path (kind=silence, source=trigger,
+    target=trigger, before/after = tendency values), so a trace failure only
+    warns and never touches the business result. The coarse filter and
+    weights are recomputed with the same read-only choice calls the
+    evaluation already used; core/choice.py's pipeline is never modified.
+    """
+    kept = choice.coarse_filter(trigger, choice_candidates, agents_by_name, motives)
+    if not kept:
+        return
+    weights = choice.compute_weights(
+        kept,
+        motives,
+        params,
+        feedback,
+        agents=agents_by_name,
+        trigger=trigger,
+    )
+    ids_by_name = {agent.name: agent.id for agent in list_agents(db, workspace_id)}
+    latest = current_behavior_state(db, workspace_id, kind="silence")
+    tendencies: dict[str, float] = {}
+    for candidate, weight in zip(kept, weights, strict=True):
+        if candidate.agent in picked_agents:
+            # The partner actually spoke in this evaluation; silence only
+            # covers the ones who were relevant but stayed quiet.
+            continue
+        tendencies[candidate.agent] = max(
+            tendencies.get(candidate.agent, 0.0), weight
+        )
+    for name, tendency in tendencies.items():
+        if tendency < choice.DEFAULT_MIN_WEIGHT:
+            continue
+        agent_id = ids_by_name.get(name)
+        if agent_id is None:
+            continue
+        previous = latest.get((agent_id, "silence", trigger))
+        after = _format_tendency(tendency)
+        if previous is not None and previous.after_value == after:
+            continue
+        record_behavior_entry_safe(
+            db,
+            workspace_id,
+            agent_id=agent_id,
+            kind="silence",
+            target=trigger,
+            summary=(
+                f"评估「{trigger}」相关议题，最高倾向 {tendency:.2f}，选择不开口"
+            ),
+            before_value=previous.after_value if previous is not None else None,
+            after_value=after,
+            source=trigger,
+        )
+
+
 def evaluate_proactive_triggers(
     db: DB,
     workspace_id: str,
@@ -287,7 +391,10 @@ def evaluate_proactive_triggers(
     free-will pipeline - sedimenting a motive when the trigger has a rule,
     then coarse-filter -> weights -> weighted pick with dial/seed from
     Settings; other triggers keep the legacy deterministic path. No messages
-    are written here; only motives may be sedimented.
+    are written here; motives and, for multi-candidate wired evaluations,
+    kind=silence traces (relevant partners who stayed quiet with a changed
+    tendency over the significance line) may be sedimented. Silence writes
+    are safe-degraded and never affect the returned candidates.
     """
     if not db.settings.proactive_enabled:
         return []
@@ -370,6 +477,21 @@ def evaluate_proactive_triggers(
             )
             for item in picked
         )
+        picked_agents = frozenset(item.agent for item in picked)
+        try:
+            _record_silence_entries(
+                db,
+                workspace_id,
+                trigger,
+                choice_candidates,
+                agents_by_name,
+                params,
+                motives,
+                feedback,
+                picked_agents,
+            )
+        except Exception as exc:
+            print(f"warning: silence trace skipped: {exc}", file=sys.stderr)
     return candidates
 
 
