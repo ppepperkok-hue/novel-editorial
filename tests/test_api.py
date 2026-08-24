@@ -725,11 +725,13 @@ def test_drafts_list_and_detail_end_to_end(
     versions = body["versions"]
     assert [version["version"] for version in versions] == [1, 2]
     for version in versions:
-        assert set(version) == {"version", "reason", "created_at", "content"}
+        assert set(version) == {"version", "reason", "actor", "created_at", "content"}
     assert versions[0]["content"] == "初版正文"
     assert versions[0]["reason"] == "initial"
+    assert versions[0]["actor"] == ""
     assert versions[1]["content"] == "修订版正文"
     assert versions[1]["reason"] == "revision"
+    assert versions[1]["actor"] == ""
 
     missing = client.get(f"/works/{workspace_id}/drafts/does-not-exist")
     assert missing.status_code == 404
@@ -1209,6 +1211,106 @@ def test_draft_revise_end_to_end(
     assert missing.json() == {"detail": "draft not found: does-not-exist"}
 
 
+def test_author_draft_new_and_save_end_to_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "作者写作之书"}).json()["id"]
+
+    created = client.post(
+        f"/works/{workspace_id}/drafts/new", json={"title": "第一章"}
+    )
+    assert created.status_code == 201
+    body = created.json()
+    assert set(body) == {
+        "id",
+        "title",
+        "status",
+        "current_version",
+        "updated_at",
+        "awaiting_decision",
+    }
+    assert body["title"] == "第一章"
+    assert body["status"] == "draft"
+    assert body["current_version"] == 0
+    assert body["awaiting_decision"] is True
+    draft_id = body["id"]
+
+    detail = client.get(f"/works/{workspace_id}/drafts/{draft_id}").json()
+    assert detail["current_version"] == 0
+    assert detail["versions"] == []
+
+    saved = client.put(
+        f"/works/{workspace_id}/drafts/{draft_id}/content",
+        json={"content": "雨夜，她推开旧车站的门。", "reason": "初稿"},
+    )
+    assert saved.status_code == 200
+    body = saved.json()
+    assert body["id"] == draft_id
+    assert body["current_version"] == 1
+    assert body["status"] == "draft"
+    assert body["awaiting_decision"] is True
+
+    detail = client.get(f"/works/{workspace_id}/drafts/{draft_id}").json()
+    assert len(detail["versions"]) == 1
+    version = detail["versions"][0]
+    assert version["version"] == 1
+    assert version["content"] == "雨夜，她推开旧车站的门。"
+    assert version["reason"] == "初稿"
+    assert version["actor"] == "作者"
+
+    pending = client.get(f"/works/{workspace_id}/pending").json()
+    assert [item["id"] for item in pending] == [draft_id]
+
+
+def test_author_draft_validation_and_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "校验之书"}).json()["id"]
+
+    blank_title = client.post(
+        f"/works/{workspace_id}/drafts/new", json={"title": "   "}
+    )
+    assert blank_title.status_code == 422
+    assert "title" in _detail_text(blank_title.json()["detail"])
+
+    draft_id = client.post(
+        f"/works/{workspace_id}/drafts/new", json={"title": "第一章"}
+    ).json()["id"]
+
+    blank_content = client.put(
+        f"/works/{workspace_id}/drafts/{draft_id}/content",
+        json={"content": " \n "},
+    )
+    assert blank_content.status_code == 422
+    assert "content" in _detail_text(blank_content.json()["detail"])
+
+    missing = client.put(
+        f"/works/{workspace_id}/drafts/does-not-exist/content",
+        json={"content": "正文"},
+    )
+    assert missing.status_code == 404
+    assert missing.json() == {"detail": "draft not found: does-not-exist"}
+
+    with db.workspace_session(workspace_id) as session:
+        accepted = Draft(
+            workspace_id=workspace_id,
+            title="已过",
+            status="accepted",
+            current_version=1,
+        )
+        session.add(accepted)
+        session.commit()
+        accepted_id = accepted.id
+    blocked = client.put(
+        f"/works/{workspace_id}/drafts/{accepted_id}/content",
+        json={"content": "正文"},
+    )
+    assert blocked.status_code == 422
+    assert "cannot revise an accepted draft" in blocked.json()["detail"]
+
+
 def test_draft_decisions_end_to_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1662,6 +1764,59 @@ def test_cli_api_contract_draft_generate(
     assert cli_pending.exit_code == 0, cli_pending.output
     assert cli_draft_id in cli_pending.output
     assert api_draft["id"] in cli_pending.output
+
+
+def test_cli_api_contract_author_draft(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "同源手写"}).json()["id"]
+
+    cli_new = runner.invoke(
+        cli_app, ["draft", "new", workspace_id, "--title", "第一章"]
+    )
+    assert cli_new.exit_code == 0, cli_new.output
+    assert "now at v0" in cli_new.output
+    assert "awaiting decision" in cli_new.output
+    cli_draft_id = cli_new.output.split()[1]
+
+    api_new = client.post(
+        f"/works/{workspace_id}/drafts/new", json={"title": "第二章"}
+    )
+    assert api_new.status_code == 201
+    api_draft = api_new.json()
+    assert api_draft["current_version"] == 0
+
+    cli_saved = runner.invoke(
+        cli_app,
+        ["draft", "save", cli_draft_id, "--content", "作者亲笔", "--reason", "初稿"],
+    )
+    assert cli_saved.exit_code == 0, cli_saved.output
+    assert "now at v1" in cli_saved.output
+    assert "awaiting decision" in cli_saved.output
+
+    api_saved = client.put(
+        f"/works/{workspace_id}/drafts/{api_draft['id']}/content",
+        json={"content": "界面手稿"},
+    )
+    assert api_saved.status_code == 200
+    assert api_saved.json()["current_version"] == 1
+
+    api_drafts = client.get(f"/works/{workspace_id}/drafts").json()
+    cli_list = runner.invoke(cli_app, ["draft", "list", workspace_id])
+    assert cli_list.exit_code == 0, cli_list.output
+    assert len(api_drafts) == 2
+    for item in api_drafts:
+        assert item["id"] in cli_list.output
+        assert item["status"] in cli_list.output
+
+    cli_detail = runner.invoke(cli_app, ["draft", "show", cli_draft_id])
+    assert cli_detail.exit_code == 0, cli_detail.output
+    assert "作者亲笔" in cli_detail.output
+    api_detail = client.get(
+        f"/works/{workspace_id}/drafts/{api_draft['id']}"
+    ).json()
+    assert api_detail["versions"][0]["actor"] == "作者"
 
 
 def test_cli_api_contract_review_add(

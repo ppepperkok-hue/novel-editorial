@@ -9,12 +9,14 @@ from novel_editorial.core.agents import get_agent_by_id, get_default_writer, res
 from novel_editorial.core.chat import get_workspace_or_raise
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.draft import (
+    create_author_draft,
     diff_versions,
     find_draft_anywhere,
     generate_draft,
     get_draft_version,
     list_drafts,
     revise_draft,
+    save_author_version,
 )
 from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.review import list_reviews
@@ -145,6 +147,45 @@ def draft_revise(
             "passed": revised.status == "draft",
         },
     )
+
+
+@draft_app.command("new")
+def draft_new(
+    workspace_id: str = typer.Argument(..., help="Workspace id"),
+    title: str = typer.Option(..., "--title", help="Draft title"),
+) -> None:
+    """Create an empty draft for the author to write directly (no LLM)."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    draft = create_author_draft(db, workspace_id, title=title)
+    typer.echo(f"draft {draft.id} {draft.title} now at v{draft.current_version}")
+    if draft.status == "draft":
+        typer.echo(f"awaiting decision: {draft.id}")
+
+
+@draft_app.command("save")
+def draft_save(
+    draft_id: str = typer.Argument(..., help="Draft id"),
+    content: str = typer.Option(..., "--content", help="Draft content"),
+    reason: str = typer.Option("作者修改", "--reason", help="Reason for the change"),
+) -> None:
+    """Save an author-written version (quality gate + awaiting decision)."""
+    settings = load_settings()
+    db = DB(settings)
+    db.init_schema()
+    draft = find_draft_anywhere(db, draft_id)
+    updated, _ = save_author_version(
+        db,
+        draft.workspace_id,
+        draft_id,
+        content=content,
+        reason=reason,
+        quality_threshold=settings.quality_threshold,
+    )
+    typer.echo(f"draft {updated.id} {updated.title} now at v{updated.current_version}")
+    if updated.status == "draft":
+        typer.echo(f"awaiting decision: {updated.id}")
 
 
 @draft_app.command("list")

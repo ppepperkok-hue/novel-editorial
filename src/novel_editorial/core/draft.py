@@ -6,6 +6,7 @@ from difflib import unified_diff
 
 from novel_editorial.core.agents import get_agent_by_id, get_default_writer
 from novel_editorial.core.chat import (
+    AUTHOR_ACTOR,
     MOOD_REVISING,
     _record_message_in_session,
     _update_agent_mood_in_session,
@@ -146,6 +147,7 @@ def generate_draft(
                 version=draft.current_version,
                 content=content,
                 reason=reason,
+                actor=writer.name,
             )
         )
         if quality_report.passed:
@@ -229,6 +231,7 @@ def revise_draft(
                 version=draft.current_version,
                 content=content,
                 reason=reason or "revision",
+                actor=writer.name,
             )
         )
         if quality_report.passed:
@@ -270,6 +273,98 @@ def revise_draft(
             )
         session.commit()
     return draft
+
+
+def create_author_draft(db: DB, workspace_id: str, *, title: str) -> Draft:
+    """Create an empty draft owned by the author (no writer, no LLM, v0)."""
+    get_workspace_or_raise(db, workspace_id)
+    with db.workspace_session(workspace_id) as session:
+        draft = Draft(
+            workspace_id=workspace_id,
+            title=title,
+            writer_id=None,
+            status="draft",
+            current_version=0,
+        )
+        session.add(draft)
+        session.flush()
+        record_event_in_session(
+            session,
+            workspace_id,
+            type=EventType.DRAFT_CREATED,
+            actor=AUTHOR_ACTOR,
+            payload={"draft_id": draft.id, "title": title},
+        )
+        session.commit()
+        return draft
+
+
+def save_author_version(
+    db: DB,
+    workspace_id: str,
+    draft_id: str,
+    *,
+    content: str,
+    reason: str = "作者修改",
+    quality_threshold: int = 8,
+) -> tuple[Draft, DraftVersion]:
+    """Save an author-written version, then run the same quality gate as the LLM paths.
+
+    A passing version flips the draft to ``draft`` (awaiting decision) and
+    records the same ``quality_gate.passed`` + ``decision.requested`` events;
+    a failing one follows the established ``quality_failed`` semantics.
+    """
+    if not content.strip():
+        raise NovelError(ErrorCode.USAGE_ERROR, "draft content must not be empty")
+    current = get_draft(db, workspace_id, draft_id)
+    if current.status == "accepted":
+        raise NovelError(ErrorCode.USAGE_ERROR, "cannot revise an accepted draft")
+    anchor = get_style_anchor(db, workspace_id)
+    style_keywords = extract_style_keywords(anchor.description)
+    quality_report = check_quality(
+        content,
+        threshold=quality_threshold,
+        style_keywords=style_keywords,
+    )
+    with db.workspace_session(workspace_id) as session:
+        draft = (
+            session.query(Draft)
+            .filter_by(workspace_id=workspace_id, id=draft_id)
+            .first()
+        )
+        if draft is None:
+            raise NovelError(ErrorCode.NOT_FOUND, f"draft not found: {draft_id}")
+        draft.current_version += 1
+        draft.status = "draft" if quality_report.passed else "quality_failed"
+        version = DraftVersion(
+            draft_id=draft.id,
+            version=draft.current_version,
+            content=content,
+            reason=reason or "作者修改",
+            actor=AUTHOR_ACTOR,
+        )
+        session.add(version)
+        if quality_report.passed:
+            record_event_in_session(
+                session,
+                workspace_id,
+                type=EventType.QUALITY_GATE_PASSED,
+                actor="system",
+                payload={
+                    "draft_id": draft.id,
+                    "version": draft.current_version,
+                    "score": quality_report.score,
+                },
+            )
+            record_event_in_session(
+                session,
+                workspace_id,
+                type=EventType.DECISION_REQUESTED,
+                actor="system",
+                payload={"draft_id": draft.id, "version": draft.current_version},
+            )
+        session.commit()
+        return draft, version
 
 
 def list_drafts(db: DB, workspace_id: str) -> list[Draft]:

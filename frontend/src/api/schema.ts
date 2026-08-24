@@ -363,6 +363,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/works/{workspace_id}/drafts/new": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Author Draft Route
+         * @description Create an empty author-owned draft (no LLM, like ``draft new``).
+         */
+        post: operations["create_author_draft_route_works__workspace_id__drafts_new_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/works/{workspace_id}/drafts/{draft_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Author Draft Route
+         * @description Save an author-written version (quality gate, like ``draft save``).
+         */
+        put: operations["save_author_draft_route_works__workspace_id__drafts__draft_id__content_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/works/{workspace_id}/drafts/{draft_id}/revise": {
         parameters: {
             query?: never;
@@ -488,6 +528,11 @@ export interface components {
             /** Writer */
             writer?: string | null;
         };
+        /** DraftNewBody */
+        DraftNewBody: {
+            /** Title */
+            title: string;
+        };
         /** DraftReviseBody */
         DraftReviseBody: {
             /**
@@ -497,6 +542,16 @@ export interface components {
             reason: string;
             /** Writer */
             writer?: string | null;
+        };
+        /** DraftSaveBody */
+        DraftSaveBody: {
+            /** Content */
+            content: string;
+            /**
+             * Reason
+             * @default 作者修改
+             */
+            reason: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1190,6 +1245,81 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_author_draft_route_works__workspace_id__drafts_new_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftNewBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_author_draft_route_works__workspace_id__drafts__draft_id__content_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftSaveBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

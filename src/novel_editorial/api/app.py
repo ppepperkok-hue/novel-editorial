@@ -135,6 +135,29 @@ class DraftReviseBody(BaseModel):
     writer: str | None = None
 
 
+class DraftNewBody(BaseModel):
+    title: str = Field(min_length=1)
+
+    @field_validator("title")
+    @classmethod
+    def _title_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("title must not be empty or whitespace-only")
+        return value
+
+
+class DraftSaveBody(BaseModel):
+    content: str = Field(min_length=1)
+    reason: str = "作者修改"
+
+    @field_validator("content")
+    @classmethod
+    def _content_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("content must not be empty or whitespace-only")
+        return value
+
+
 class ReviewAddBody(BaseModel):
     draft_id: str = Field(min_length=1)
     source: str = "作者"
@@ -719,6 +742,7 @@ def create_app() -> FastAPI:
                 {
                     "version": version.version,
                     "reason": version.reason,
+                    "actor": version.actor,
                     "created_at": _iso(version.created_at),
                     "content": version.content,
                 }
@@ -832,6 +856,31 @@ def create_app() -> FastAPI:
             _record_proactive_safe(
                 db, workspace_id, proactive.TRIGGER_DRAFT_GATE_PASSED, context
             )
+        return _draft_write_response(draft_row)
+
+    @app.post("/works/{workspace_id}/drafts/new", status_code=201)
+    def create_author_draft_route(
+        workspace_id: str, body: DraftNewBody
+    ) -> dict[str, Any]:
+        """Create an empty author-owned draft (no LLM, like ``draft new``)."""
+        get_workspace_or_raise(db, workspace_id)
+        draft_row = draft.create_author_draft(db, workspace_id, title=body.title)
+        return _draft_write_response(draft_row)
+
+    @app.put("/works/{workspace_id}/drafts/{draft_id}/content")
+    def save_author_draft_route(
+        workspace_id: str, draft_id: str, body: DraftSaveBody
+    ) -> dict[str, Any]:
+        """Save an author-written version (quality gate, like ``draft save``)."""
+        get_workspace_or_raise(db, workspace_id)
+        draft_row, _ = draft.save_author_version(
+            db,
+            workspace_id,
+            draft_id,
+            content=body.content,
+            reason=body.reason,
+            quality_threshold=settings.quality_threshold,
+        )
         return _draft_write_response(draft_row)
 
     @app.post("/works/{workspace_id}/drafts/{draft_id}/revise")

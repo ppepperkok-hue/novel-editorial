@@ -325,6 +325,9 @@ class DraftVersion(Base):
     version: Mapped[int] = mapped_column(Integer)
     content: Mapped[str] = mapped_column(Text)
     reason: Mapped[str] = mapped_column(Text, default="")
+    actor: Mapped[str] = mapped_column(
+        String(100), nullable=False, default="", server_default=""
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

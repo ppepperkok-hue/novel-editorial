@@ -869,6 +869,119 @@
         }
       }
     },
+    "/works/{workspace_id}/drafts/new": {
+      "post": {
+        "summary": "Create Author Draft Route",
+        "description": "Create an empty author-owned draft (no LLM, like ``draft new``).",
+        "operationId": "create_author_draft_route_works__workspace_id__drafts_new_post",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftNewBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Create Author Draft Route Works  Workspace Id  Drafts New Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/works/{workspace_id}/drafts/{draft_id}/content": {
+      "put": {
+        "summary": "Save Author Draft Route",
+        "description": "Save an author-written version (quality gate, like ``draft save``).",
+        "operationId": "save_author_draft_route_works__workspace_id__drafts__draft_id__content_put",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Draft Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftSaveBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Save Author Draft Route Works  Workspace Id  Drafts  Draft Id  Content Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/works/{workspace_id}/drafts/{draft_id}/revise": {
       "post": {
         "summary": "Revise Draft Route",
@@ -1199,6 +1312,20 @@
         "type": "object",
         "title": "DraftGenerateBody"
       },
+      "DraftNewBody": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "title": "DraftNewBody"
+      },
       "DraftReviseBody": {
         "properties": {
           "reason": {
@@ -1220,6 +1347,25 @@
         },
         "type": "object",
         "title": "DraftReviseBody"
+      },
+      "DraftSaveBody": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Content"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": "作者修改"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "DraftSaveBody"
       },
       "HTTPValidationError": {
         "properties": {

@@ -13,10 +13,14 @@ from novel_editorial.core.chat import list_messages
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.draft import (
     build_memory_pack,
+    create_author_draft,
     generate_draft,
     get_draft_version,
+    list_pending_drafts,
     revise_draft,
+    save_author_version,
 )
+from novel_editorial.core.errors import ErrorCode, NovelError
 from novel_editorial.core.memory import archive_memory_notes
 from novel_editorial.core.motives import list_motives
 from novel_editorial.core.outline import create_outline, revise_outline
@@ -25,7 +29,7 @@ from novel_editorial.core.style import get_style_anchor
 from novel_editorial.llm.client import LLMResult, MockLLMClient
 from novel_editorial.store.db import DB, workspace_db_path
 from novel_editorial.store.events import list_events
-from novel_editorial.store.models import Agent, AgentMemory, AgentRole, Draft
+from novel_editorial.store.models import Agent, AgentMemory, AgentRole, Draft, DraftVersion
 
 runner = CliRunner()
 
@@ -910,3 +914,244 @@ def test_draft_revise_cli_explicit_writer_switch(tmp_path: Path, monkeypatch) ->
         draft = session.query(Draft).filter_by(id=draft_id).first()
     assert draft is not None
     assert draft.writer_id == second.id
+
+
+def test_create_author_draft_is_empty_and_events(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    draft = create_author_draft(db, workspace_id, title="作者新章")
+    assert draft.writer_id is None
+    assert draft.status == "draft"
+    assert draft.current_version == 0
+
+    events = list_events(db, workspace_id)
+    created = [event for event in events if event.type == "draft.created"]
+    assert len(created) == 1
+    assert created[0].actor == "作者"
+    assert json.loads(created[0].payload) == {
+        "draft_id": draft.id,
+        "title": "作者新章",
+    }
+
+    with db.workspace_session(workspace_id) as session:
+        versions = session.query(DraftVersion).filter_by(draft_id=draft.id).all()
+    assert versions == []
+
+
+def test_save_author_version_passes_gate_and_requests_decision(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    draft = create_author_draft(db, workspace_id, title="第一章")
+    updated, version = save_author_version(
+        db, workspace_id, draft.id, content="雨夜，她推开旧车站的门。"
+    )
+    assert updated.status == "draft"
+    assert updated.current_version == 1
+    assert version.version == 1
+    assert version.content == "雨夜，她推开旧车站的门。"
+    assert version.reason == "作者修改"
+    assert version.actor == "作者"
+
+    pending = list_pending_drafts(db, workspace_id)
+    assert [item.id for item in pending] == [draft.id]
+
+    events = list_events(db, workspace_id)
+    passed = [event for event in events if event.type == "quality_gate.passed"]
+    requested = [event for event in events if event.type == "decision.requested"]
+    assert len(passed) == 1
+    assert passed[0].actor == "system"
+    assert json.loads(passed[0].payload)["draft_id"] == draft.id
+    assert json.loads(passed[0].payload)["version"] == 1
+    assert len(requested) == 1
+    assert requested[0].actor == "system"
+    assert json.loads(requested[0].payload) == {
+        "draft_id": draft.id,
+        "version": 1,
+    }
+
+
+def test_save_author_version_rejects_blank_content(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    draft = create_author_draft(db, workspace_id, title="空稿")
+    with pytest.raises(NovelError) as excinfo:
+        save_author_version(db, workspace_id, draft.id, content="   ")
+    assert excinfo.value.code is ErrorCode.USAGE_ERROR
+    assert "draft content must not be empty" in excinfo.value.message
+    with db.workspace_session(workspace_id) as session:
+        row = session.get(Draft, draft.id)
+        assert row is not None
+        assert row.current_version == 0
+
+
+def test_save_author_version_quality_failure_is_rejected(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    draft = create_author_draft(db, workspace_id, title="第一章")
+    updated, _ = save_author_version(
+        db,
+        workspace_id,
+        draft.id,
+        content="宛如璀璨的瞬间，她静静轻轻淡淡微微缓缓地叹息",
+        quality_threshold=-1,
+    )
+    assert updated.status == "quality_failed"
+    events = list_events(db, workspace_id)
+    assert all(event.type != "quality_gate.passed" for event in events)
+    assert all(event.type != "decision.requested" for event in events)
+
+
+def test_save_author_version_rejects_accepted_draft(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    with db.workspace_session(workspace_id) as session:
+        accepted = Draft(
+            workspace_id=workspace_id,
+            title="已过",
+            status="accepted",
+            current_version=1,
+        )
+        session.add(accepted)
+        session.commit()
+        accepted_id = accepted.id
+    with pytest.raises(NovelError) as excinfo:
+        save_author_version(db, workspace_id, accepted_id, content="正文")
+    assert excinfo.value.code is ErrorCode.USAGE_ERROR
+    assert "cannot revise an accepted draft" in excinfo.value.message
+
+
+def test_draft_new_and_save_cli(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    created = runner.invoke(
+        app, ["draft", "new", workspace_id, "--title", "作者章"]
+    )
+    assert created.exit_code == 0, created.output
+    assert "now at v0" in created.output
+    assert "awaiting decision" in created.output
+    draft_id = created.output.split()[1]
+
+    saved = runner.invoke(
+        app,
+        ["draft", "save", draft_id, "--content", "作者亲笔正文", "--reason", "初稿"],
+    )
+    assert saved.exit_code == 0, saved.output
+    assert "now at v1" in saved.output
+    assert "awaiting decision" in saved.output
+
+    db = DB(load_settings())
+    with db.workspace_session(workspace_id) as session:
+        version = (
+            session.query(DraftVersion).filter_by(draft_id=draft_id).first()
+        )
+        draft = session.get(Draft, draft_id)
+    assert draft is not None
+    assert draft.writer_id is None
+    assert version is not None
+    assert version.actor == "作者"
+    assert version.reason == "初稿"
+
+
+def test_draft_save_cli_rejects_blank_content(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    created = runner.invoke(
+        app, ["draft", "new", workspace_id, "--title", "空稿"]
+    )
+    assert created.exit_code == 0, created.output
+    draft_id = created.output.split()[1]
+
+    result = runner.invoke(
+        app, ["draft", "save", draft_id, "--content", "   "]
+    )
+    assert result.exit_code == 2
+    assert "draft content must not be empty" in result.output
+
+
+def test_draft_version_migration_backfills_writer_name(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    settings = load_settings()
+    db = DB(settings)
+    default_writer = get_default_writer(db, workspace_id)
+    with db.workspace_session(workspace_id) as session:
+        owned = Draft(
+            workspace_id=workspace_id,
+            title="有主",
+            writer_id=default_writer.id,
+        )
+        session.add(owned)
+        session.flush()
+        session.add(DraftVersion(draft_id=owned.id, version=1, content="旧正文"))
+        orphan = Draft(workspace_id=workspace_id, title="无主")
+        session.add(orphan)
+        session.flush()
+        session.add(DraftVersion(draft_id=orphan.id, version=1, content="孤儿正文"))
+        session.commit()
+        owned_id, orphan_id = owned.id, orphan.id
+
+    path = workspace_db_path(settings, workspace_id)
+    for _ in range(2):
+        connection = sqlite3.connect(path)
+        connection.execute("ALTER TABLE draft_versions DROP COLUMN actor")
+        connection.execute("DELETE FROM alembic_version")
+        connection.execute(
+            "INSERT INTO alembic_version (version_num) VALUES ('0b7aeb265bb2')"
+        )
+        connection.commit()
+        connection.close()
+
+        upgraded = DB(settings)
+        with upgraded.workspace_session(workspace_id) as session:
+            owned_version = (
+                session.query(DraftVersion).filter_by(draft_id=owned_id).first()
+            )
+            orphan_version = (
+                session.query(DraftVersion).filter_by(draft_id=orphan_id).first()
+            )
+        assert owned_version is not None
+        assert owned_version.actor == default_writer.name
+        assert orphan_version is not None
+        assert orphan_version.actor == ""
+
+    # Re-running the migration with the column in place must not clobber
+    # author-written versions (actor = "作者").
+    with upgraded.workspace_session(workspace_id) as session:
+        author_draft = Draft(workspace_id=workspace_id, title="作者稿")
+        session.add(author_draft)
+        session.flush()
+        session.add(
+            DraftVersion(
+                draft_id=author_draft.id,
+                version=1,
+                content="作者正文",
+                actor="作者",
+            )
+        )
+        session.commit()
+        author_draft_id = author_draft.id
+    connection = sqlite3.connect(path)
+    connection.execute("DELETE FROM alembic_version")
+    connection.execute(
+        "INSERT INTO alembic_version (version_num) VALUES ('0b7aeb265bb2')"
+    )
+    connection.commit()
+    connection.close()
+    replayed = DB(settings)
+    with replayed.workspace_session(workspace_id) as session:
+        author_version = (
+            session.query(DraftVersion).filter_by(draft_id=author_draft_id).first()
+        )
+    assert author_version is not None
+    assert author_version.actor == "作者"

@@ -135,7 +135,7 @@ export NOVEL_LLM_MODEL="gpt-4o-mini"
 
 - 得分公式：AI 味词命中数 × 6 + 修饰词命中数 × 3 + 句式重复数 × 4 + 风格一致性罚分（缺失风格关键词的比例 × 0.5）。
 - 通过条件：得分 ≤ 阈值（默认 `8`）；得分越低越「干净」。
-- `draft generate` / `draft revise` 会自动跑门：没过 → 草稿状态 `quality_failed`，此时 `decision accept` 会被拒绝（可 `decision reject` 或修订后重试）。
+- `draft generate` / `draft revise` / `draft save` 会自动跑门：没过 → 草稿状态 `quality_failed`，此时 `decision accept` 会被拒绝（可 `decision reject` 或修订后重试）。
 - 查看详情与定位：
 
 ```bash
@@ -164,6 +164,25 @@ uv run novel-editorial draft generate <作品ID> --title 第一章
 uv run novel-editorial quality explain <草稿ID>
 # 未发现明显 AI 味
 # style: 命中 0/3；缺失：克制、利落、留白
+```
+
+### 作者手动写作（draft new / draft save）
+
+- `draft new <作品ID> --title <标题>`：创建一篇作者持有的空草稿（`writer_id` 为空、v0），落 `draft.created` 事件；正文留待作者直接写。
+- `draft save <草稿ID> --content <正文> [--reason <原因>]`：把作者手写 / 手改的正文存为新版本（`actor=作者`，`reason` 缺省为「作者修改」），随后跑与 `draft generate` / `draft revise` 同口径的质量门；通过 → 状态 `draft`（awaiting decision），不通过 → 状态 `quality_failed`。空白正文报用法错误（退出码 2）。
+- 输出与 `draft generate` / `draft revise` 一致：`draft <草稿ID> <标题> now at v<N>`，状态为 `draft` 时追加 `awaiting decision: <草稿ID>`。
+- 版本留痕：`GET /works/{id}/drafts/{draft_id}` 的 `versions` 每项带 `actor` 字段（这一版是谁写的；LLM 生成 / 修订版本为写手名，作者手写版本为「作者」）。
+
+mock 下实跑示例（临时 `NOVEL_DATA_DIR` / `NOVEL_CONFIG`，无 API key 同样可跑，`<作品ID>` 换成前面输出的真实值）：
+
+```bash
+uv run novel-editorial draft new <作品ID> --title 第一章
+# draft <草稿ID> 第一章 now at v0
+# awaiting decision: <草稿ID>
+
+uv run novel-editorial draft save <草稿ID> --content "雨夜，她推开旧车站的门。" --reason 初稿
+# draft <草稿ID> 第一章 now at v1
+# awaiting decision: <草稿ID>
 ```
 
 好句识别与保留（N22）：`quality explain` 在末尾追加好句区块（有风格锚点时在风格一致性摘要之后），把命中「具体细节信号」、建议保留的句子挑出来，避免去 AI 味时整句误伤。AI 味句若含信号同样会被标为好句——问题定位与好句可同时出现：
@@ -2945,6 +2964,8 @@ uv run novel-editorial api serve [--host HOST] [--port PORT]
 | POST | `/works/{id}/talk` | 发消息给编辑部（body：`message`），成功 201 + 本轮对话输出（author / agent / system 消息数组） |
 | GET | `/works/{id}/talk` | 对话回放，逐条含 `mark` 与 `line`，与 `talk list` 输出逐行对齐 |
 | POST | `/works/{id}/drafts` | 生成草稿（body：`title` / `writer` 可选，走写手 + 质量门），成功 201 + 草稿摘要 |
+| POST | `/works/{id}/drafts/new` | 作者新建空草稿（body：`title` 必填；`writer_id` 为空、v0），成功 201 + 草稿摘要 |
+| PUT | `/works/{id}/drafts/{draft_id}/content` | 作者保存正文为新版本（body：`content` 必填，`reason` 可选，缺省「作者修改」），版本 +1，走质量门，成功 200 + 草稿摘要 |
 | POST | `/works/{id}/drafts/{draft_id}/revise` | 修订草稿（body：`reason` / `writer` 可选），版本 +1 |
 | GET | `/works/{id}/drafts/{draft_id}/decisions` | 草稿的拍板记录（action / actor / content / created_at） |
 | POST | `/works/{id}/reviews` | 加审稿意见（body：`draft_id` / `source` / `content`），成功 201 + 意见对象 |
@@ -2979,7 +3000,7 @@ events.addEventListener("message", (event) => {
 
 ### 只读红线与安全说明
 
-- 写面端点逐条映射既有 CLI 命令（`works create`、`talk send`、`draft generate`、`draft revise`、`review add`、`decision` 三动作、`style set`），业务逻辑一律复用 `core` 既有函数，不在 API 层重写；其余路由全部只读：不落事件、不触发 proactive。
+- 写面端点逐条映射既有 CLI 命令（`works create`、`talk send`、`draft generate`、`draft revise`、`draft new`、`draft save`、`review add`、`decision` 三动作、`style set`），业务逻辑一律复用 `core` 既有函数，不在 API 层重写；其余路由全部只读：不落事件、不触发 proactive。
 - `GET /works/{id}/style` 只读查询：作品没有风格锚点时返回 `{"description": "", "forbidden_words": ""}`，绝不新建行。
 - 默认只绑定 `127.0.0.1` 且无鉴权；不要用 `--host 0.0.0.0` 或公网端口暴露服务。
 
@@ -3004,6 +3025,19 @@ curl -X POST http://127.0.0.1:8765/works \
 
 curl http://127.0.0.1:8765/works/<作品ID>
 # {"id":"<作品ID>","title":"接口之书","genre":"悬疑","description":"","status":"writing","created_at":"<时间戳>","band":[...]}
+
+curl -X POST http://127.0.0.1:8765/works/<作品ID>/drafts/new \
+  -H "Content-Type: application/json" \
+  -d '{"title":"第一章"}'
+# {"id":"<草稿ID>","title":"第一章","status":"draft","current_version":0,"updated_at":"<时间戳>","awaiting_decision":true}
+
+curl -X PUT http://127.0.0.1:8765/works/<作品ID>/drafts/<草稿ID>/content \
+  -H "Content-Type: application/json" \
+  -d '{"content":"雨夜，她推开旧车站的门。","reason":"初稿"}'
+# {"id":"<草稿ID>","title":"第一章","status":"draft","current_version":1,"updated_at":"<时间戳>","awaiting_decision":true}
+
+curl http://127.0.0.1:8765/works/<作品ID>/drafts/<草稿ID>
+# {"id":"<草稿ID>","title":"第一章","status":"draft","current_version":1,"created_at":"<时间戳>","updated_at":"<时间戳>","versions":[{"version":1,"reason":"初稿","actor":"作者","created_at":"<时间戳>","content":"雨夜，她推开旧车站的门。"}]}
 
 curl http://127.0.0.1:8765/works/<作品ID>/events
 # []

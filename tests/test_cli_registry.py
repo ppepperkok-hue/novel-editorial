@@ -33,7 +33,7 @@ SUBCOMMANDS = {
         "archive",
         "restore",
     ),
-    "draft": ("generate", "revise", "list", "show", "diff"),
+    "draft": ("new", "save", "generate", "revise", "list", "show", "diff"),
     "review": ("add", "list"),
     "decision": ("list", "pending", "accept", "reject", "note"),
     "quality": ("check", "explain", "calibrate", "feedback"),
