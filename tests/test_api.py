@@ -120,6 +120,28 @@ def _seed_draft(
         return draft.id
 
 
+def _seed_draft_version(
+    db: DB,
+    workspace_id: str,
+    draft_id: str,
+    *,
+    version: int,
+    content: str,
+    reason: str = "revision",
+) -> None:
+    """Append one version row to an existing draft (no LLM involved)."""
+    with db.workspace_session(workspace_id) as session:
+        session.add(
+            DraftVersion(
+                draft_id=draft_id,
+                version=version,
+                content=content,
+                reason=reason,
+            )
+        )
+        session.commit()
+
+
 def _seed_review(
     db: DB,
     workspace_id: str,
@@ -736,6 +758,152 @@ def test_drafts_list_and_detail_end_to_end(
     missing = client.get(f"/works/{workspace_id}/drafts/does-not-exist")
     assert missing.status_code == 404
     assert missing.json() == {"detail": "draft not found: does-not-exist"}
+
+
+def test_draft_diff_end_to_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "对比之书"}).json()["id"]
+    draft_id = _seed_draft(db, workspace_id, title="第一章", content="第一版正文")
+    _seed_draft_version(
+        db, workspace_id, draft_id, version=2, content="第二版正文，更冷。"
+    )
+
+    response = client.get(
+        f"/works/{workspace_id}/drafts/{draft_id}/diff",
+        params={"version_a": 1, "version_b": 2},
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    text = response.text
+    assert "--- v1" in text
+    assert "+++ v2" in text
+    assert "第一版正文" in text
+    assert "第二版正文，更冷。" in text
+
+
+def test_draft_diff_no_differences_when_versions_match(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "无差之书"}).json()["id"]
+    draft_id = _seed_draft(db, workspace_id, content="同一句话")
+    _seed_draft_version(db, workspace_id, draft_id, version=2, content="同一句话")
+
+    response = client.get(
+        f"/works/{workspace_id}/drafts/{draft_id}/diff",
+        params={"version_a": 1, "version_b": 2},
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    assert response.text == "no differences"
+
+
+def test_draft_diff_respects_version_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "顺序之书"}).json()["id"]
+    draft_id = _seed_draft(db, workspace_id, content="第一版正文")
+    _seed_draft_version(db, workspace_id, draft_id, version=2, content="第二版正文")
+
+    response = client.get(
+        f"/works/{workspace_id}/drafts/{draft_id}/diff",
+        params={"version_a": 2, "version_b": 1},
+    )
+    assert response.status_code == 200
+    text = response.text
+    assert "--- v2" in text
+    assert "+++ v1" in text
+
+
+def test_draft_diff_missing_versions_are_404(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "缺版之书"}).json()["id"]
+    draft_id = _seed_draft(db, workspace_id, content="第一版正文")
+
+    missing_a = client.get(
+        f"/works/{workspace_id}/drafts/{draft_id}/diff",
+        params={"version_a": 99, "version_b": 1},
+    )
+    assert missing_a.status_code == 404
+    assert missing_a.json() == {
+        "detail": f"draft version not found: {draft_id} v99"
+    }
+
+    missing_b = client.get(
+        f"/works/{workspace_id}/drafts/{draft_id}/diff",
+        params={"version_a": 1, "version_b": 99},
+    )
+    assert missing_b.status_code == 404
+    assert missing_b.json() == {
+        "detail": f"draft version not found: {draft_id} v99"
+    }
+
+
+def test_draft_diff_invalid_or_missing_version_params_are_422(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "参数之书"}).json()["id"]
+    draft_id = _seed_draft(db, workspace_id, content="正文")
+
+    non_int = client.get(
+        f"/works/{workspace_id}/drafts/{draft_id}/diff",
+        params={"version_a": "abc", "version_b": 1},
+    )
+    assert non_int.status_code == 422
+    assert "version_a" in _detail_text(non_int.json()["detail"])
+
+    missing = client.get(
+        f"/works/{workspace_id}/drafts/{draft_id}/diff",
+        params={"version_a": 1},
+    )
+    assert missing.status_code == 422
+    assert "version_b" in _detail_text(missing.json()["detail"])
+
+
+def test_draft_diff_v0_draft_is_usage_error_422(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "空稿之书"}).json()["id"]
+    draft_id = client.post(
+        f"/works/{workspace_id}/drafts/new", json={"title": "第一章"}
+    ).json()["id"]
+
+    response = client.get(
+        f"/works/{workspace_id}/drafts/{draft_id}/diff",
+        params={"version_a": 1, "version_b": 1},
+    )
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": "cannot diff a draft with no versions; save a version first"
+    }
+
+
+def test_draft_diff_missing_workspace_or_draft_404(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "缺件之书"}).json()["id"]
+
+    missing_workspace = client.get(
+        "/works/nope/drafts/x/diff",
+        params={"version_a": 1, "version_b": 1},
+    )
+    assert missing_workspace.status_code == 404
+    assert missing_workspace.json() == {"detail": "workspace not found: nope"}
+
+    missing_draft = client.get(
+        f"/works/{workspace_id}/drafts/nope/diff",
+        params={"version_a": 1, "version_b": 1},
+    )
+    assert missing_draft.status_code == 404
+    assert missing_draft.json() == {"detail": "draft not found: nope"}
 
 
 def test_reviews_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1490,6 +1658,7 @@ def test_new_read_routes_are_read_only(
         "/templates",
         f"/works/{workspace_id}/talk",
         f"/works/{workspace_id}/drafts/{draft_id}/decisions",
+        f"/works/{workspace_id}/drafts/{draft_id}/diff?version_a=1&version_b=1",
     ):
         response = client.get(url)
         assert response.status_code == 200, url
@@ -1949,3 +2118,51 @@ def test_cli_api_contract_style_set(
     assert cli_show.exit_code == 0, cli_show.output
     assert "description: 平实短句" in cli_show.output
     assert "forbidden: 不禁" in cli_show.output
+
+
+def test_cli_api_contract_draft_diff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "同源对比"}).json()["id"]
+    draft_id = client.post(
+        f"/works/{workspace_id}/drafts/new", json={"title": "第一章"}
+    ).json()["id"]
+    client.put(
+        f"/works/{workspace_id}/drafts/{draft_id}/content",
+        json={"content": "雨夜，她推开旧车站的门。", "reason": "初稿"},
+    )
+    client.put(
+        f"/works/{workspace_id}/drafts/{draft_id}/content",
+        json={"content": "雨夜，她推开旧车站的门，门轴锈住了。", "reason": "打磨"},
+    )
+
+    api_diff = client.get(
+        f"/works/{workspace_id}/drafts/{draft_id}/diff",
+        params={"version_a": 1, "version_b": 2},
+    )
+    assert api_diff.status_code == 200
+    assert api_diff.headers["content-type"].startswith("text/plain")
+    cli_diff = runner.invoke(cli_app, ["draft", "diff", draft_id, "1", "2"])
+    assert cli_diff.exit_code == 0, cli_diff.output
+    assert api_diff.text.splitlines() == cli_diff.output.strip().splitlines()
+
+    api_same = client.get(
+        f"/works/{workspace_id}/drafts/{draft_id}/diff",
+        params={"version_a": 1, "version_b": 1},
+    )
+    assert api_same.status_code == 200
+    assert api_same.text == "no differences"
+    cli_same = runner.invoke(cli_app, ["draft", "diff", draft_id, "1", "1"])
+    assert cli_same.exit_code == 0, cli_same.output
+    assert cli_same.output.strip() == "no differences"
+
+    missing = client.get(
+        f"/works/{workspace_id}/drafts/{draft_id}/diff",
+        params={"version_a": 1, "version_b": 99},
+    )
+    assert missing.status_code == 404
+    cli_missing = runner.invoke(cli_app, ["draft", "diff", draft_id, "1", "99"])
+    assert cli_missing.exit_code == 1
+    assert "draft version not found" in cli_missing.output
+    assert "draft version not found" in missing.json()["detail"]

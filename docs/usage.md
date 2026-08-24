@@ -2969,6 +2969,7 @@ uv run novel-editorial api serve [--host HOST] [--port PORT]
 | PUT | `/works/{id}/drafts/{draft_id}/content` | 作者保存正文为新版本（body：`content` 必填，`reason` 可选，缺省「作者修改」），版本 +1，走质量门，成功 200 + 草稿摘要 |
 | POST | `/works/{id}/drafts/{draft_id}/revise` | 修订草稿（body：`reason` / `writer` 可选），版本 +1 |
 | GET | `/works/{id}/drafts/{draft_id}/decisions` | 草稿的拍板记录（action / actor / content / created_at） |
+| GET | `/works/{id}/drafts/{draft_id}/diff` | 两个版本的 unified diff（query：`version_a` / `version_b` 必填），返回 `text/plain`，与 `draft diff` 同源；无差异时为 `no differences` |
 | POST | `/works/{id}/reviews` | 加审稿意见（body：`draft_id` / `source` / `content`），成功 201 + 意见对象 |
 | POST | `/works/{id}/style` | 设置风格锚点（body：`description` / `forbidden` 可选），返回 `description` / `forbidden_words` |
 | GET | `/works/{id}/style` | 风格锚点（`description` / `forbidden_words`；未设置时返回空串，不新建行） |
@@ -2980,8 +2981,8 @@ uv run novel-editorial api serve [--host HOST] [--port PORT]
 
 | 情况 | HTTP 状态 |
 | --- | --- |
-| 作品不存在（`NOT_FOUND`） | 404 |
-| 请求体非法（`USAGE_ERROR` 或 Pydantic 校验失败） | 422 |
+| 作品 / 草稿 / 草稿版本不存在（`NOT_FOUND`） | 404 |
+| 请求体或查询参数非法（`USAGE_ERROR` 或 Pydantic 校验失败） | 422 |
 | 其余 `NovelError` 或未捕获异常 | 500 |
 
 ### SSE 实时事件流
@@ -3039,6 +3040,9 @@ curl -X PUT http://127.0.0.1:8765/works/<作品ID>/drafts/<草稿ID>/content \
 
 curl http://127.0.0.1:8765/works/<作品ID>/drafts/<草稿ID>
 # {"id":"<草稿ID>","title":"第一章","status":"draft","current_version":1,"created_at":"<时间戳>","updated_at":"<时间戳>","versions":[{"version":1,"reason":"初稿","actor":"作者","created_at":"<时间戳>","content":"雨夜，她推开旧车站的门。"}]}
+
+curl "http://127.0.0.1:8765/works/<作品ID>/drafts/<草稿ID>/diff?version_a=1&version_b=1"
+# no differences
 
 curl http://127.0.0.1:8765/works/<作品ID>/events
 # []

@@ -229,6 +229,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/works/{workspace_id}/drafts/{draft_id}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Draft Diff
+         * @description Unified diff between two draft versions (like ``draft diff``).
+         *
+         *     Mirrors the CLI semantics: a v0 draft with no versions is a usage
+         *     error, a missing version is not found, and identical versions render
+         *     as ``no differences``.
+         */
+        get: operations["get_draft_diff_works__workspace_id__drafts__draft_id__diff_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/works/{workspace_id}/reviews": {
         parameters: {
             query?: never;
@@ -993,6 +1017,41 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_draft_diff_works__workspace_id__drafts__draft_id__diff_get: {
+        parameters: {
+            query: {
+                version_a: number;
+                version_b: number;
+            };
+            header?: never;
+            path: {
+                workspace_id: string;
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

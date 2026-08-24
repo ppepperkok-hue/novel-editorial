@@ -516,6 +516,71 @@
         }
       }
     },
+    "/works/{workspace_id}/drafts/{draft_id}/diff": {
+      "get": {
+        "summary": "Get Draft Diff",
+        "description": "Unified diff between two draft versions (like ``draft diff``).\n\nMirrors the CLI semantics: a v0 draft with no versions is a usage\nerror, a missing version is not found, and identical versions render\nas ``no differences``.",
+        "operationId": "get_draft_diff_works__workspace_id__drafts__draft_id__diff_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Draft Id"
+            }
+          },
+          {
+            "name": "version_a",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Version A"
+            }
+          },
+          {
+            "name": "version_b",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Version B"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/works/{workspace_id}/reviews": {
       "get": {
         "summary": "Get Reviews",

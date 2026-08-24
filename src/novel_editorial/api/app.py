@@ -750,6 +750,34 @@ def create_app() -> FastAPI:
             ],
         }
 
+    @app.get("/works/{workspace_id}/drafts/{draft_id}/diff")
+    def get_draft_diff(
+        workspace_id: str,
+        draft_id: str,
+        version_a: int = Query(...),
+        version_b: int = Query(...),
+    ) -> PlainTextResponse:
+        """Unified diff between two draft versions (like ``draft diff``).
+
+        Mirrors the CLI semantics: a v0 draft with no versions is a usage
+        error, a missing version is not found, and identical versions render
+        as ``no differences``.
+        """
+        get_workspace_or_raise(db, workspace_id)
+        draft_row = draft.get_draft(db, workspace_id, draft_id)
+        if draft_row.current_version == 0:
+            raise NovelError(
+                ErrorCode.USAGE_ERROR,
+                "cannot diff a draft with no versions; save a version first",
+            )
+        first = draft.get_draft_version(db, workspace_id, draft_id, version_a)
+        second = draft.get_draft_version(db, workspace_id, draft_id, version_b)
+        output = draft.diff_versions(first, second)
+        return PlainTextResponse(
+            output if output else "no differences",
+            media_type="text/plain",
+        )
+
     @app.get("/works/{workspace_id}/reviews")
     def get_reviews(
         workspace_id: str, draft_id: str | None = None
