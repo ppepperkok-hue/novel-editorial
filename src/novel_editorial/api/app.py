@@ -750,7 +750,10 @@ def create_app() -> FastAPI:
             ],
         }
 
-    @app.get("/works/{workspace_id}/drafts/{draft_id}/diff")
+    @app.get(
+        "/works/{workspace_id}/drafts/{draft_id}/diff",
+        response_class=PlainTextResponse,
+    )
     def get_draft_diff(
         workspace_id: str,
         draft_id: str,

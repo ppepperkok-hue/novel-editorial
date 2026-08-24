@@ -906,6 +906,18 @@ def test_draft_diff_missing_workspace_or_draft_404(
     assert missing_draft.json() == {"detail": "draft not found: nope"}
 
 
+def test_openapi_draft_diff_200_is_text_plain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The diff endpoint must advertise text/plain, not application/json."""
+    _make_client(tmp_path, monkeypatch)
+    responses = create_app().openapi()["paths"][
+        "/works/{workspace_id}/drafts/{draft_id}/diff"
+    ]["get"]["responses"]["200"]
+    assert "text/plain" in responses["content"]
+    assert "application/json" not in responses["content"]
+
+
 def test_reviews_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client, db = _make_client(tmp_path, monkeypatch)
     workspace_id = client.post("/works", json={"title": "意见之书"}).json()["id"]
