@@ -11,19 +11,32 @@ import {
 } from "../../components/StateViews";
 import { useEventStream } from "../../hooks/useEventStream";
 import { useWorkspaceSelection } from "../../hooks/useWorkspaceSelection";
-import { usePending } from "./useDecisionQueries";
+import {
+  decisionQueryKeys,
+  usePending,
+} from "./useDecisionQueries";
+import { worksQueryKeys } from "../works/useWorksQueries";
+
+function streamInvalidateKeys(workspaceId: string) {
+  return [
+    decisionQueryKeys.pending(workspaceId),
+    worksQueryKeys.detail(workspaceId),
+  ];
+}
 
 /**
  * Decision workbench: drafts awaiting the author's call (accept / reject /
  * note), with two-step confirmation and a live SSE connection so new pending
- * drafts appear as they arrive. Success refreshes every workspace-scoped
- * query (pending, drafts, workspace detail) so CLI and UI stay in sync.
+ * drafts appear as they arrive. Success refreshes the workspace queries the
+ * page shows (pending, workspace detail) so CLI and UI stay in sync.
  */
 export default function DecisionPage() {
   const { workspaceId } = useParams();
   const workspace = useWorkspaceSelection(workspaceId);
   const pending = usePending(workspaceId);
-  const stream = useEventStream(workspaceId);
+  const stream = useEventStream(workspaceId, {
+    invalidateKeys: streamInvalidateKeys,
+  });
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 

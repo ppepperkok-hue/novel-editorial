@@ -11,7 +11,11 @@ import {
 import { useEventStream } from "../../hooks/useEventStream";
 import { useWorkspaceSelection } from "../../hooks/useWorkspaceSelection";
 import { formatDateTime } from "../../utils/format";
-import { useSendTalk, useTalk } from "./useTalkQueries";
+import { talkQueryKeys, useSendTalk, useTalk } from "./useTalkQueries";
+
+function streamInvalidateKeys(workspaceId: string) {
+  return [talkQueryKeys.talk(workspaceId)];
+}
 
 const ROLE_LABELS: Record<string, string> = {
   author: "作者",
@@ -76,7 +80,9 @@ export default function TalkPage() {
   const { workspaceId } = useParams();
   useWorkspaceSelection(workspaceId);
   const talk = useTalk(workspaceId);
-  const stream = useEventStream(workspaceId);
+  const stream = useEventStream(workspaceId, {
+    invalidateKeys: streamInvalidateKeys,
+  });
   const sendTalkMutation = useSendTalk(workspaceId);
   const [message, setMessage] = useState("");
 

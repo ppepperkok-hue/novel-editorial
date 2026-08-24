@@ -1,4 +1,8 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  type QueryKey,
+} from "@tanstack/react-query";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,14 +23,29 @@ function wrapperFor(queryClient: QueryClient) {
   };
 }
 
-function renderWithClient(options: UseEventStreamOptions = {}) {
+const talkAndPendingKeys = (workspaceId: string): QueryKey[] => [
+  ["works", workspaceId, "talk"],
+  ["works", workspaceId, "pending"],
+];
+
+const talkOnlyKeys = (workspaceId: string): QueryKey[] => [
+  ["works", workspaceId, "talk"],
+];
+
+function renderWithClient(
+  options: UseEventStreamOptions = {},
+  invalidateKeys = talkAndPendingKeys,
+) {
   const queryClient = new QueryClient();
   const invalidateSpy = vi
     .spyOn(queryClient, "invalidateQueries")
     .mockResolvedValue(undefined);
-  const rendered = renderHook(() => useEventStream("w-a", options), {
-    wrapper: wrapperFor(queryClient),
-  });
+  const rendered = renderHook(
+    () => useEventStream("w-a", { ...options, invalidateKeys }),
+    {
+      wrapper: wrapperFor(queryClient),
+    },
+  );
   return { queryClient, invalidateSpy, ...rendered };
 }
 
@@ -42,7 +61,7 @@ afterEach(() => {
 });
 
 describe("useEventStream", () => {
-  it("opens the stream and invalidates talk and pending on each event", () => {
+  it("opens the stream and invalidates the injected keys on each event", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const { result, invalidateSpy } = renderWithClient();
 
@@ -67,6 +86,24 @@ describe("useEventStream", () => {
     });
   });
 
+  it("only invalidates the keys the caller injected", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const { invalidateSpy } = renderWithClient({}, talkOnlyKeys);
+
+    act(() => {
+      FakeEventSource.instances[0].emitOpen();
+    });
+    act(() => {
+      FakeEventSource.instances[0].emitMessage("{}");
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["works", "w-a", "talk"],
+    });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: ["works", "w-a", "pending"],
+    });
+  });
+
   it("shows a reconnect notice after an open drop and keeps auto-reconnect", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const { result } = renderWithClient();
@@ -84,9 +121,10 @@ describe("useEventStream", () => {
 
   it("falls back to polling when EventSource is unavailable", async () => {
     vi.stubGlobal("EventSource", undefined);
-    const { result, invalidateSpy } = renderWithClient({
-      pollIntervalMs: 1000,
-    });
+    const { result, invalidateSpy } = renderWithClient(
+      { pollIntervalMs: 1000 },
+      talkOnlyKeys,
+    );
 
     expect(result.current.status).toBe("polling");
     expect(result.current.notice).toContain("轮询");
@@ -97,7 +135,7 @@ describe("useEventStream", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["works", "w-a", "talk"],
     });
-    expect(invalidateSpy).toHaveBeenCalledWith({
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
       queryKey: ["works", "w-a", "pending"],
     });
   });

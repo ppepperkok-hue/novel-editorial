@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import {
+  useQueryClient,
+  type QueryKey,
+} from "@tanstack/react-query";
 
-import { decisionQueryKeys } from "../features/decision/useDecisionQueries";
-import { talkQueryKeys } from "../features/talk/useTalkQueries";
 import { usePolling } from "./usePolling";
 
 export type EventStreamStatus =
@@ -16,6 +17,12 @@ export interface UseEventStreamOptions {
   pollIntervalMs?: number;
   /** Consecutive failed open attempts before falling back to polling. */
   maxFailedOpenAttempts?: number;
+  /**
+   * Build the query keys to invalidate when an event arrives (or a polling
+   * tick fires). The hook stays feature-agnostic: each workbench injects the
+   * keys for the queries it actually shows.
+   */
+  invalidateKeys?: (workspaceId: string) => QueryKey[];
 }
 
 export interface UseEventStreamResult {
@@ -32,8 +39,8 @@ function streamUrl(workspaceId: string): string {
 
 /**
  * Subscribe to GET /works/{id}/events/stream via EventSource and invalidate
- * the workspace's talk and pending queries on every event, so new messages
- * and newly pending drafts appear without manual refresh.
+ * the injected query keys on every event, so new data appears without manual
+ * refresh.
  *
  * - `Last-Event-ID` resume is handled by the browser's EventSource itself.
  * - Connection state is exposed so the UI can show connecting / open /
@@ -51,6 +58,7 @@ export function useEventStream(
   const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   const maxFailedOpenAttempts =
     options.maxFailedOpenAttempts ?? DEFAULT_MAX_FAILED_OPEN_ATTEMPTS;
+  const invalidateKeys = options.invalidateKeys;
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<"sse" | "polling">("sse");
   const [status, setStatus] = useState<EventStreamStatus>("connecting");
@@ -59,17 +67,18 @@ export function useEventStream(
   const workspaceIdRef = useRef(workspaceId);
   workspaceIdRef.current = workspaceId;
 
+  const invalidateKeysRef = useRef(invalidateKeys);
+  invalidateKeysRef.current = invalidateKeys;
+
   const invalidateWorkspace = useCallback(() => {
     const current = workspaceIdRef.current;
     if (current === undefined || current === "") {
       return;
     }
-    void queryClient.invalidateQueries({
-      queryKey: talkQueryKeys.talk(current),
-    });
-    void queryClient.invalidateQueries({
-      queryKey: decisionQueryKeys.pending(current),
-    });
+    const keys = invalidateKeysRef.current?.(current) ?? [];
+    for (const key of keys) {
+      void queryClient.invalidateQueries({ queryKey: key });
+    }
   }, [queryClient]);
 
   const invalidateRef = useRef(invalidateWorkspace);
