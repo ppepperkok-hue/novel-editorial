@@ -115,3 +115,4 @@
 ## 状态
 
 - S1 完成（2026-08-25）：写面端点 + SSE 实时通道 + OpenAPI 生成类型，commits 74808cf / 2e676a9；全量 1464 测试 + ruff / pyright / 宪法 + 前端四命令全绿；独立审查 2 条 P3 已修复复核收敛，归档 docs/reviews/20260825-FE-W1-S1-initial.md。待办：S2（全功能壳与作品班子工作台）。
+- S2 完成（2026-08-25）：路由壳（React Router / TanStack Query / Zustand）+ 三态基线 + works 工作台，commits 5150963 / e0bf264；前端 64 用例四命令全绿；独立审查 1 条 Important 已修复复核收敛，归档 docs/reviews/20260825-FE-W1-S2-initial.md。待办：S3（对话与正文工作台 + 作者写作能力）。

@@ -74,3 +74,4 @@ Ready to merge: Yes | No | With fixes
 - [20260824 M5-N29-S3 初始审查](20260824-M5N29S3-initial.md)
 - [20260824 M5-N29-S4 审查](20260824-M5N29S4-initial.md)
 - [20260825 FE-W1-S1 审查](20260825-FE-W1-S1-initial.md)
+- [20260825 FE-W1-S2 审查](20260825-FE-W1-S2-initial.md)
