@@ -123,3 +123,4 @@
 - S3a 完成（2026-08-25）：作者写作能力（DraftVersion.actor 迁移 + core 函数 + CLI draft new/save + API 端点），commits 487ee8f / 5ba4615；全量 1478 测试 + ruff / pyright / 宪法全绿；独立审查 1 条 Important 已修复复核收敛，归档 docs/reviews/20260825-FE-W1-S3a-initial.md。待办：S3b（前端对话与正文工作台）。
 - S3b 完成（2026-08-25）：对话工作台 + 正文工作台（编辑器 / 版本 / 审稿意见 / 质量门显示 + react-markdown），commits b6035f5 / a61d06f；前端 93 用例四命令全绿；独立审查 P2+P3 已修复复核收敛，归档 docs/reviews/20260825-FE-W1-S3b-initial.md。待办：S4（拍板工作台 + SSE 客户端接线 + 版本 diff + W1 收口）。
 - S4a 完成（2026-08-25）：draft 版本 diff 端点（与 CLI 同源），commits ea0852e / b0ea354；全量 1487 测试全绿；独立审查 1 条 P2 已修复复核收敛，归档 docs/reviews/20260825-FE-W1-S4a-initial.md。待办：S4b（拍板工作台 + SSE client + diff 界面）。
+- S4b 完成（2026-08-25）：拍板工作台 + useEventStream（重连 / 轮询降级）+ 版本 diff 界面，commits 6e564f4 / dfbdda5；前端 120 用例四命令全绿；独立审查 1 条 P3 已修复复核收敛，归档 docs/reviews/20260825-FE-W1-S4b-initial.md。待办：S4c（演示脚本 + 全量回归 + 审查归档 + W1 收口）。
