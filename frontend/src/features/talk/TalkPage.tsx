@@ -2,11 +2,13 @@ import { useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import type { TalkMessage } from "../../api/client";
+import EventStreamStatus from "../../components/EventStreamStatus";
 import {
   EmptyState,
   ErrorState,
   SkeletonRows,
 } from "../../components/StateViews";
+import { useEventStream } from "../../hooks/useEventStream";
 import { useWorkspaceSelection } from "../../hooks/useWorkspaceSelection";
 import { formatDateTime } from "../../utils/format";
 import { useSendTalk, useTalk } from "./useTalkQueries";
@@ -74,6 +76,7 @@ export default function TalkPage() {
   const { workspaceId } = useParams();
   useWorkspaceSelection(workspaceId);
   const talk = useTalk(workspaceId);
+  const stream = useEventStream(workspaceId);
   const sendTalkMutation = useSendTalk(workspaceId);
   const [message, setMessage] = useState("");
 
@@ -97,9 +100,12 @@ export default function TalkPage() {
     <section className="talk-page" data-testid="talk-page">
       <header className="page-header">
         <h2>对话</h2>
-        <Link className="text-link" to={`/works/${workspaceId ?? ""}`}>
-          返回作品
-        </Link>
+        <div className="workspace-toolbar">
+          <EventStreamStatus status={stream.status} notice={stream.notice} />
+          <Link className="text-link" to={`/works/${workspaceId ?? ""}`}>
+            返回作品
+          </Link>
+        </div>
       </header>
       <section className="panel talk-panel" data-testid="talk-panel">
         <header className="panel-header">

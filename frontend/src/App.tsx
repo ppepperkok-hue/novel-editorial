@@ -1,5 +1,6 @@
 import { NavLink, Navigate, Outlet, Route, Routes } from "react-router-dom";
 
+import DecisionPage from "./features/decision/DecisionPage";
 import OverviewPage from "./features/overview/OverviewPage";
 import TalkPage from "./features/talk/TalkPage";
 import WriterPage from "./features/writer/WriterPage";
@@ -47,6 +48,13 @@ function Shell() {
               >
                 写作
               </NavLink>
+              <NavLink
+                to={`/works/${encodeURIComponent(currentWorkspace.id)}/decisions`}
+                end
+                className={({ isActive }) => navClassName(isActive)}
+              >
+                拍板
+              </NavLink>
             </>
           ) : null}
         </nav>
@@ -78,6 +86,10 @@ export default function App() {
         <Route path="works/:workspaceId" element={<WorksDetailPage />} />
         <Route path="works/:workspaceId/talk" element={<TalkPage />} />
         <Route path="works/:workspaceId/writer" element={<WriterPage />} />
+        <Route
+          path="works/:workspaceId/decisions"
+          element={<DecisionPage />}
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

@@ -6,6 +6,7 @@ import {
   generateDraft,
   getConfig,
   getDraft,
+  getDraftDiff,
   getDrafts,
   getGlobalEvents,
   getInspect,
@@ -291,6 +292,34 @@ describe("api client contract parsing", () => {
     expect(detail.versions).toHaveLength(1);
     expect(detail.versions[0].actor).toBe("写手");
     expect(detail.versions[0].content).toBe("初版正文");
+  });
+
+  it("getDraftDiff requests both versions and returns plain text", async () => {
+    fetchMock.mockResolvedValueOnce(
+      textResponse("--- v1\n+++ v2\n-初版\n+修订版"),
+    );
+
+    const diff = await getDraftDiff("w1", "d1", {
+      version_a: 1,
+      version_b: 2,
+    });
+    expect(diff).toBe("--- v1\n+++ v2\n-初版\n+修订版");
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/works/w1/drafts/d1/diff?version_a=1&version_b=2",
+    );
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init?.headers).toBeInstanceOf(Headers);
+  });
+
+  it("getDraftDiff passes through the generated query type and accepts no differences", async () => {
+    fetchMock.mockResolvedValueOnce(textResponse("no differences"));
+
+    await expect(
+      getDraftDiff("w1", "d1", { version_a: 2, version_b: 2 }),
+    ).resolves.toBe("no differences");
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/works/w1/drafts/d1/diff?version_a=2&version_b=2",
+    );
   });
 
   it("listTalk parses conversation items with the CLI-aligned mark and line", async () => {

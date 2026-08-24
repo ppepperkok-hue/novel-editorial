@@ -74,6 +74,10 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function textResponse(body: string): Response {
+  return new Response(body, { headers: { "Content-Type": "text/plain" } });
+}
+
 function renderWriter(fetchMock: ReturnType<typeof vi.fn>) {
   vi.stubGlobal("fetch", fetchMock);
   const queryClient = new QueryClient({
@@ -92,6 +96,7 @@ function writerRoutes(extra: {
   drafts?: unknown;
   detail?: unknown;
   reviews?: unknown;
+  diff?: unknown;
 } = {}) {
   return vi.fn((input: RequestInfo | URL) => {
     const url = String(input);
@@ -108,6 +113,17 @@ function writerRoutes(extra: {
     }
     if (url === "/works/w-a/reviews?draft_id=d1") {
       return Promise.resolve(jsonResponse(extra.reviews ?? reviewsBody));
+    }
+    if (url.startsWith("/works/w-a/drafts/d1/diff?")) {
+      if (extra.diff instanceof Error) {
+        return Promise.reject(extra.diff);
+      }
+      if (extra.diff && typeof (extra.diff as { then?: unknown }).then === "function") {
+        return extra.diff as Promise<Response>;
+      }
+      return Promise.resolve(
+        textResponse(String(extra.diff ?? "--- v1\n+++ v2\n-旧\n+新")),
+      );
     }
     return Promise.reject(new Error(`未预期的请求：${url}`));
   });
@@ -175,6 +191,9 @@ describe("writer page", () => {
     expect(versions[0]).toHaveTextContent("写手");
     expect(versions[0]).toHaveTextContent("initial");
     expect(screen.getByTestId("review-list")).toHaveTextContent("钩子再亮一点");
+    expect(screen.getByTestId("diff-disabled-hint")).toHaveTextContent(
+      "至少需要两个版本",
+    );
   });
 
   it("shows the v0 empty state and disables save for an empty author draft", async () => {
@@ -729,5 +748,151 @@ describe("writer page", () => {
     expect(screen.getByTestId("draft-status")).toHaveTextContent(
       "质量门未通过",
     );
+  });
+
+  it("shows the default diff between the latest and previous versions", async () => {
+    const versions = [
+      ...draftV1Versions,
+      {
+        version: 2,
+        actor: "作者",
+        reason: "作者修改",
+        created_at: "2026-08-22T12:00:00+00:00",
+        content: "第二版正文",
+      },
+    ];
+    const fetchMock = writerRoutes({
+      detail: draftDetailBody(versions, { current_version: 2 }),
+      diff: "--- v1\n+++ v2\n-旧句\n+新句",
+    });
+    renderWriter(fetchMock);
+
+    await screen.findByRole("heading", { name: "第一章" });
+    const diffOutput = await screen.findByTestId("diff-output");
+    expect(diffOutput).toHaveTextContent("-旧句");
+    expect(diffOutput).toHaveTextContent("+新句");
+    expect(screen.getByTestId("diff-version-a")).toHaveValue("1");
+    expect(screen.getByTestId("diff-version-b")).toHaveValue("2");
+    const diffCalls = fetchMock.mock.calls.filter(([url]) =>
+      String(url).startsWith("/works/w-a/drafts/d1/diff?"),
+    );
+    expect(diffCalls).toHaveLength(1);
+    expect(diffCalls[0][0]).toBe(
+      "/works/w-a/drafts/d1/diff?version_a=1&version_b=2",
+    );
+  });
+
+  it("shows no differences when the server reports identical versions", async () => {
+    const versions = [
+      ...draftV1Versions,
+      {
+        version: 2,
+        actor: "作者",
+        reason: "作者修改",
+        created_at: "2026-08-22T12:00:00+00:00",
+        content: "初版正文",
+      },
+    ];
+    renderWriter(
+      writerRoutes({
+        detail: draftDetailBody(versions, { current_version: 2 }),
+        diff: "no differences",
+      }),
+    );
+
+    await screen.findByRole("heading", { name: "第一章" });
+    expect(await screen.findByTestId("diff-output")).toHaveTextContent(
+      "no differences",
+    );
+  });
+
+  it("shows an inline error for a failing diff and recovers via retry", async () => {
+    const versions = [
+      ...draftV1Versions,
+      {
+        version: 2,
+        actor: "作者",
+        reason: "作者修改",
+        created_at: "2026-08-22T12:00:00+00:00",
+        content: "第二版正文",
+      },
+    ];
+    const extra: {
+      detail?: unknown;
+      diff?: unknown;
+    } = {
+      detail: draftDetailBody(versions, { current_version: 2 }),
+      diff: new Error("差异读取失败"),
+    };
+    renderWriter(writerRoutes(extra));
+
+    const errorState = await screen.findByTestId("panel-state-error");
+    expect(errorState).toHaveTextContent("/works/w-a/drafts/d1/diff");
+    expect(errorState).toHaveTextContent("差异读取失败");
+
+    extra.diff = "--- v1\n+++ v2\n-旧句\n+新句";
+    fireEvent.click(within(errorState).getByRole("button", { name: "重试" }));
+    expect(await screen.findByTestId("diff-output")).toHaveTextContent(
+      "+新句",
+    );
+  });
+
+  it("refetches the diff when the selected versions change", async () => {
+    const versions = [
+      ...draftV1Versions,
+      {
+        version: 2,
+        actor: "作者",
+        reason: "作者修改",
+        created_at: "2026-08-22T12:00:00+00:00",
+        content: "第二版正文",
+      },
+      {
+        version: 3,
+        actor: "写手",
+        reason: "按意见重写",
+        created_at: "2026-08-22T13:00:00+00:00",
+        content: "第三版正文",
+      },
+    ];
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/works/w-a") {
+        return Promise.resolve(jsonResponse(workspaceBody));
+      }
+      if (url === "/works/w-a/drafts") {
+        return Promise.resolve(
+          jsonResponse([{ ...draftSummaryV1, current_version: 3 }]),
+        );
+      }
+      if (url === "/works/w-a/drafts/d1") {
+        return Promise.resolve(
+          jsonResponse(draftDetailBody(versions, { current_version: 3 })),
+        );
+      }
+      if (url === "/works/w-a/reviews?draft_id=d1") {
+        return Promise.resolve(jsonResponse(reviewsBody));
+      }
+      if (url.startsWith("/works/w-a/drafts/d1/diff?")) {
+        const params = new URLSearchParams(url.split("?")[1]);
+        return Promise.resolve(
+          textResponse(
+            `diff ${params.get("version_a")} -> ${params.get("version_b")}`,
+          ),
+        );
+      }
+      return Promise.reject(new Error(`未预期的请求：${url}`));
+    });
+    renderWriter(fetchMock);
+
+    await screen.findByRole("heading", { name: "第一章" });
+    expect(await screen.findByTestId("diff-output")).toHaveTextContent(
+      "diff 2 -> 3",
+    );
+
+    fireEvent.change(screen.getByTestId("diff-version-a"), {
+      target: { value: "1" },
+    });
+    expect(await screen.findByText("diff 1 -> 3")).toBeInTheDocument();
   });
 });

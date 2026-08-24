@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -9,9 +10,10 @@ import {
   within,
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "../../App";
+import { FakeEventSource } from "../../test/fakeEventSource";
 
 const workspaceBody = {
   id: "w-a",
@@ -96,6 +98,10 @@ afterEach(() => {
 });
 
 describe("talk page", () => {
+  beforeEach(() => {
+    FakeEventSource.reset();
+  });
+
   it("shows a skeleton while the conversation is loading", () => {
     const fetchMock = vi
       .fn()
@@ -280,5 +286,31 @@ describe("talk page", () => {
       "href",
       "/works/w-a/writer",
     );
+  });
+
+  it("refreshes the conversation when a new message arrives over SSE", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const talkBody: unknown[] = [plainAuthor];
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/works/w-a") {
+        return Promise.resolve(jsonResponse(workspaceBody));
+      }
+      if (url === "/works/w-a/talk") {
+        return Promise.resolve(jsonResponse(talkBody));
+      }
+      return Promise.reject(new Error(`未预期的请求：${url}`));
+    });
+    renderTalk(fetchMock);
+
+    await screen.findByText("这章钩子不够，谁来想想");
+    act(() => {
+      talkBody.push(disagreementAgent);
+      FakeEventSource.instances[0].emitMessage("{}");
+    });
+
+    expect(await screen.findByText("我先加个反转钩子")).toBeInTheDocument();
+    const items = screen.getAllByTestId("talk-item");
+    expect(items).toHaveLength(2);
   });
 });

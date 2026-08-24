@@ -6,7 +6,7 @@
  * readable Error carrying the request path and HTTP status.
  */
 
-import type { components } from "./schema";
+import type { components, operations } from "./schema";
 
 /**
  * Workspace creation body, taken from the generated OpenAPI types instead of
@@ -384,6 +384,29 @@ export function reviseDraft(
 export function getDraft(workspaceId: string, draftId: string): Promise<DraftDetail> {
   return requestJson<DraftDetail>(
     `${workspacePath(workspaceId)}/drafts/${encodeURIComponent(draftId)}`,
+  );
+}
+
+/** Query of GET /works/{id}/drafts/{draft_id}/diff, from the generated OpenAPI types. */
+type DraftDiffQuery =
+  operations["get_draft_diff_works__workspace_id__drafts__draft_id__diff_get"]["parameters"]["query"];
+
+/**
+ * Unified diff between two draft versions, consumed as plain text (GET
+ * .../diff, like ``draft diff``). Identical versions resolve to
+ * ``no differences``.
+ */
+export function getDraftDiff(
+  workspaceId: string,
+  draftId: string,
+  query: DraftDiffQuery,
+): Promise<string> {
+  const params = new URLSearchParams({
+    version_a: String(query.version_a),
+    version_b: String(query.version_b),
+  });
+  return requestText(
+    `${workspacePath(workspaceId)}/drafts/${encodeURIComponent(draftId)}/diff?${params.toString()}`,
   );
 }
 

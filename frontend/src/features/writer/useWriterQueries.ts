@@ -4,6 +4,7 @@ import {
   createAuthorDraft,
   generateDraft,
   getDraft,
+  getDraftDiff,
   getDrafts,
   getReviews,
   reviseDraft,
@@ -19,6 +20,21 @@ export const writerQueryKeys = {
     ["works", workspaceId, "drafts"] as const,
   detail: (workspaceId: string, draftId: string) =>
     ["works", workspaceId, "drafts", draftId] as const,
+  diff: (
+    workspaceId: string,
+    draftId: string,
+    versionA: number,
+    versionB: number,
+  ) =>
+    [
+      "works",
+      workspaceId,
+      "drafts",
+      draftId,
+      "diff",
+      versionA,
+      versionB,
+    ] as const,
   reviews: (workspaceId: string, draftId: string) =>
     ["works", workspaceId, "reviews", draftId] as const,
 };
@@ -45,6 +61,36 @@ export function useDraftDetail(
       workspaceId !== "" &&
       draftId !== null &&
       draftId !== "",
+  });
+}
+
+/** Unified diff between two draft versions (GET .../diff, plain text). */
+export function useDraftDiff(
+  workspaceId: string | undefined,
+  draftId: string | null,
+  versionA: number | null,
+  versionB: number | null,
+) {
+  return useQuery({
+    queryKey: writerQueryKeys.diff(
+      workspaceId ?? "",
+      draftId ?? "",
+      versionA ?? 0,
+      versionB ?? 0,
+    ),
+    queryFn: () =>
+      getDraftDiff(
+        workspaceId as string,
+        draftId as string,
+        { version_a: versionA as number, version_b: versionB as number },
+      ),
+    enabled:
+      workspaceId !== undefined &&
+      workspaceId !== "" &&
+      draftId !== null &&
+      draftId !== "" &&
+      versionA !== null &&
+      versionB !== null,
   });
 }
 

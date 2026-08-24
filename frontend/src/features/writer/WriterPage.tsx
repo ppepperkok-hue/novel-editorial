@@ -18,6 +18,7 @@ import { formatDateTime } from "../../utils/format";
 import {
   useCreateAuthorDraft,
   useDraftDetail,
+  useDraftDiff,
   useDrafts,
   useGenerateDraft,
   useReviseDraft,
@@ -308,7 +309,101 @@ function ReviseForm({
   );
 }
 
-function VersionPanel({ detail }: { detail: DraftDetail }) {
+function DiffPanel({
+  workspaceId,
+  detail,
+}: {
+  workspaceId: string;
+  detail: DraftDetail;
+}) {
+  const versions = detail.versions;
+  const hasEnoughVersions = versions.length >= 2;
+  const [versionA, setVersionA] = useState<number | null>(null);
+  const [versionB, setVersionB] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (versions.length >= 2) {
+      const before = versions[versions.length - 2];
+      const last = versions[versions.length - 1];
+      setVersionA(before.version);
+      setVersionB(last.version);
+    } else {
+      setVersionA(null);
+      setVersionB(null);
+    }
+  }, [detail.id, versions.length]);
+
+  const diff = useDraftDiff(workspaceId, detail.id, versionA, versionB);
+
+  return (
+    <section className="writer-diff" data-testid="draft-diff-panel">
+      <h4>版本对比</h4>
+      {!hasEnoughVersions ? (
+        <p className="form-hint" data-testid="diff-disabled-hint">
+          至少需要两个版本才能对比
+        </p>
+      ) : (
+        <>
+          <div className="diff-controls">
+            <label className="form-label" htmlFor="diff-version-a">
+              版本 A（旧）
+            </label>
+            <select
+              id="diff-version-a"
+              value={versionA ?? ""}
+              onChange={(event) => setVersionA(Number(event.target.value))}
+              data-testid="diff-version-a"
+            >
+              {versions.map((version) => (
+                <option key={version.version} value={version.version}>
+                  v{version.version}
+                </option>
+              ))}
+            </select>
+            <label className="form-label" htmlFor="diff-version-b">
+              版本 B（新）
+            </label>
+            <select
+              id="diff-version-b"
+              value={versionB ?? ""}
+              onChange={(event) => setVersionB(Number(event.target.value))}
+              data-testid="diff-version-b"
+            >
+              {versions.map((version) => (
+                <option key={version.version} value={version.version}>
+                  v{version.version}
+                </option>
+              ))}
+            </select>
+          </div>
+          {diff.isPending || versionA === null || versionB === null ? (
+            <SkeletonRows count={4} />
+          ) : null}
+          {diff.isError ? (
+            <ErrorState
+              source={`/works/${workspaceId}/drafts/${detail.id}/diff`}
+              message={diff.error.message}
+              onRetry={() => void diff.refetch()}
+            />
+          ) : null}
+          {diff.isSuccess ? (
+            <pre className="diff-output" data-testid="diff-output">
+              {diff.data}
+            </pre>
+          ) : null}
+        </>
+      )}
+    </section>
+  );
+}
+
+function VersionPanel({
+  workspaceId,
+  detail,
+}: {
+  workspaceId: string;
+  detail: DraftDetail;
+}) {
   const [viewedVersion, setViewedVersion] = useState<DraftVersion | null>(null);
 
   useEffect(() => {
@@ -361,6 +456,7 @@ function VersionPanel({ detail }: { detail: DraftDetail }) {
           )}
         </div>
       ) : null}
+      <DiffPanel workspaceId={workspaceId} detail={detail} />
     </section>
   );
 }
@@ -431,7 +527,7 @@ function DraftWorkbench({
           <ReviseForm detail={detail} reviseMutation={reviseMutation} />
         </div>
         <div className="writer-side-col">
-          <VersionPanel detail={detail} />
+          <VersionPanel workspaceId={workspaceId} detail={detail} />
           <ReviewsPanel
             workspaceId={workspaceId}
             detail={detail}
