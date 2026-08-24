@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -8,7 +9,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "../../App";
@@ -45,6 +46,15 @@ const chapterNode = {
   created_at: "2026-08-02T00:00:00+00:00",
 };
 
+function NavigateButton({ to, label }: { to: string; label: string }) {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate(to)}>
+      {label}
+    </button>
+  );
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -55,6 +65,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 function renderStructure(
   fetchMock: ReturnType<typeof vi.fn>,
   initialEntries = ["/works/w-a/structure"],
+  navButtons: Array<{ to: string; label: string }> = [],
 ) {
   vi.stubGlobal("fetch", fetchMock);
   const queryClient = new QueryClient({
@@ -63,6 +74,13 @@ function renderStructure(
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={initialEntries}>
+        {navButtons.map((button) => (
+          <NavigateButton
+            key={button.label}
+            to={button.to}
+            label={button.label}
+          />
+        ))}
         <App />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -179,6 +197,56 @@ describe("structure page", () => {
     expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({
       kind: "章",
       title: "新一章",
+    });
+  });
+
+  it("filters add-form parents by the selected kind", async () => {
+    const fetchMock = baseRoutes([volumeNode, chapterNode]);
+    renderStructure(fetchMock);
+
+    await screen.findByText("第一卷");
+    const type = screen.getByLabelText("类型");
+    const parent = screen.getByLabelText("父节点");
+
+    expect(within(parent).getAllByRole("option")).toHaveLength(1);
+    expect(
+      within(parent).getByRole("option", { name: "根部" }),
+    ).toBeInTheDocument();
+
+    fireEvent.change(type, { target: { value: "章" } });
+    expect(
+      within(parent).getByRole("option", { name: "卷 · 第一卷" }),
+    ).toBeInTheDocument();
+    expect(
+      within(parent).queryByRole("option", { name: "章 · 第一章" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.change(type, { target: { value: "篇目" } });
+    expect(
+      within(parent).getByRole("option", { name: "章 · 第一章" }),
+    ).toBeInTheDocument();
+    expect(
+      within(parent).queryByRole("option", { name: "卷 · 第一卷" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.change(type, { target: { value: "章" } });
+    fireEvent.change(parent, { target: { value: "n1" } });
+    fireEvent.change(type, { target: { value: "卷" } });
+    expect(parent).toHaveValue("");
+    fireEvent.change(screen.getByPlaceholderText("节点标题"), {
+      target: { value: "新卷" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+
+    await screen.findByText("新卷");
+    const createCall = fetchMock.mock.calls.find(
+      ([url, init]) =>
+        url === "/works/w-a/structure" && init?.method === "POST",
+    );
+    expect(createCall).toBeDefined();
+    expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({
+      kind: "卷",
+      title: "新卷",
     });
   });
 
@@ -301,6 +369,62 @@ describe("structure page", () => {
       ).toBe(true);
     });
     expect(JSON.parse(String(moveBody))).toEqual({ root: true });
+  });
+
+  it("filters move parents by the node kind", async () => {
+    const sectionNode = {
+      id: "n3",
+      kind: "section",
+      title: "第一篇",
+      parent_id: "n2" as string | null,
+      sort_order: 1,
+      status: "writing",
+      draft_id: null,
+      created_at: "2026-08-03T00:00:00+00:00",
+    };
+    const fetchMock = baseRoutes([volumeNode, chapterNode, sectionNode]);
+    renderStructure(fetchMock);
+
+    await screen.findByText("第一卷");
+
+    fireEvent.click(
+      within(screen.getByTestId("structure-node-n1")).getAllByRole("button", {
+        name: "移动",
+      })[0],
+    );
+    const volumeMove = screen.getByLabelText("第一卷 移动目标");
+    expect(within(volumeMove).getAllByRole("option")).toHaveLength(1);
+    expect(
+      within(volumeMove).getByRole("option", { name: "根部" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      within(screen.getByTestId("structure-node-n2")).getAllByRole("button", {
+        name: "移动",
+      })[0],
+    );
+    const chapterMove = screen.getByLabelText("第一章 移动目标");
+    expect(
+      within(chapterMove).getByRole("option", { name: "卷 · 第一卷" }),
+    ).toBeInTheDocument();
+    expect(
+      within(chapterMove).queryByRole("option", {
+        name: "篇目 · 第一篇",
+      }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(
+      within(screen.getByTestId("structure-node-n3")).getByRole("button", {
+        name: "移动",
+      }),
+    );
+    const sectionMove = screen.getByLabelText("第一篇 移动目标");
+    expect(
+      within(sectionMove).getByRole("option", { name: "章 · 第一章" }),
+    ).toBeInTheDocument();
+    expect(
+      within(sectionMove).queryByRole("option", { name: "卷 · 第一卷" }),
+    ).not.toBeInTheDocument();
   });
 
   it("deletes a node after two-step confirmation", async () => {
@@ -435,6 +559,142 @@ describe("structure page", () => {
       reason: "加个尾声",
       actor: "作者",
     });
+  });
+
+  it("keeps unsaved outline edits when a refetch lands after save", async () => {
+    const outlineV1 = {
+      id: "o1",
+      workspace_id: "w-a",
+      version: 1,
+      content: "三幕结构",
+      reason: null,
+      actor: "作者",
+      created_at: "2026-08-25T10:00:00+00:00",
+    };
+    let outlineGetCount = 0;
+    let saveStarted = false;
+    let resolveSave: (value: Response) => void = () => {};
+    let resolveRefetch: (value: Response) => void = () => {};
+    const fetchMock = vi.fn(
+      (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url === "/works/w-a") {
+          return Promise.resolve(jsonResponse(workspaceBody));
+        }
+        if (url === "/works/w-a/structure") {
+          return Promise.resolve(jsonResponse([volumeNode]));
+        }
+        if (url === "/works/w-a/outline" && init?.method === "POST") {
+          saveStarted = true;
+          return new Promise<Response>((resolve) => {
+            resolveSave = resolve;
+          });
+        }
+        if (url === "/works/w-a/outline") {
+          outlineGetCount += 1;
+          if (outlineGetCount === 1) {
+            return Promise.resolve(jsonResponse(outlineV1));
+          }
+          return new Promise<Response>((resolve) => {
+            resolveRefetch = resolve;
+          });
+        }
+        return Promise.reject(new Error(`未预期的请求：${url}`));
+      },
+    );
+    renderStructure(fetchMock);
+
+    await screen.findByText("三幕结构");
+    const textarea = screen.getByPlaceholderText("大纲正文，支持多行");
+    fireEvent.change(textarea, { target: { value: "我的手改" } });
+    fireEvent.change(screen.getByPlaceholderText("这次为什么改"), {
+      target: { value: "补个尾声" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存修订" }));
+
+    await waitFor(() => expect(saveStarted).toBe(true));
+    await act(async () => {
+      resolveSave(
+        jsonResponse({
+          ...outlineV1,
+          version: 2,
+          content: "我的手改",
+          reason: "补个尾声",
+          created_at: "2026-08-25T10:01:00+00:00",
+        }),
+      );
+    });
+
+    fireEvent.change(textarea, { target: { value: "我的手改，继续写" } });
+    await waitFor(() => expect(outlineGetCount).toBe(2));
+    await act(async () => {
+      resolveRefetch(
+        jsonResponse({
+          ...outlineV1,
+          version: 3,
+          content: "远端版本",
+          created_at: "2026-08-25T10:02:00+00:00",
+        }),
+      );
+    });
+
+    expect(textarea).toHaveValue("我的手改，继续写");
+    await waitFor(() =>
+      expect(screen.getByTestId("outline-content")).toHaveTextContent(
+        "远端版本",
+      ),
+    );
+  });
+
+  it("resets the outline editor when switching workspaces", async () => {
+    const outlineA = {
+      id: "o1",
+      workspace_id: "w-a",
+      version: 1,
+      content: "甲书大纲",
+      reason: null,
+      actor: "作者",
+      created_at: "2026-08-25T10:00:00+00:00",
+    };
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/works/w-a") {
+        return Promise.resolve(jsonResponse(workspaceBody));
+      }
+      if (url === "/works/w-b") {
+        return Promise.resolve(
+          jsonResponse({ ...workspaceBody, id: "w-b", title: "乙书" }),
+        );
+      }
+      if (url === "/works/w-a/structure") {
+        return Promise.resolve(jsonResponse([volumeNode]));
+      }
+      if (url === "/works/w-b/structure") {
+        return Promise.resolve(jsonResponse([]));
+      }
+      if (url === "/works/w-a/outline") {
+        return Promise.resolve(jsonResponse(outlineA));
+      }
+      if (url === "/works/w-b/outline") {
+        return Promise.resolve(jsonResponse(null));
+      }
+      return Promise.reject(new Error(`未预期的请求：${url}`));
+    });
+    renderStructure(fetchMock, ["/works/w-a/structure"], [
+      { to: "/works/w-b/structure", label: "切到乙书" },
+      { to: "/works/w-a/structure", label: "切回甲书" },
+    ]);
+
+    await screen.findByText("甲书大纲");
+    const textarea = screen.getByPlaceholderText("大纲正文，支持多行");
+    fireEvent.change(textarea, { target: { value: "手改残留" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "切到乙书" }));
+    await screen.findByText("还没有大纲");
+    await waitFor(() => expect(textarea).toHaveValue(""));
+
+    fireEvent.click(screen.getByRole("button", { name: "切回甲书" }));
+    await waitFor(() => expect(textarea).toHaveValue("甲书大纲"));
   });
 
   it("shows an error state when the structure list fails", async () => {

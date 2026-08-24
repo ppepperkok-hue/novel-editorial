@@ -1,4 +1,10 @@
-import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+} from "react";
 import { Link, useParams } from "react-router-dom";
 
 import type { StructureNode } from "../../api/client";
@@ -31,8 +37,22 @@ const STRUCTURE_STATUS_LABELS: Record<string, string> = {
   shelved: "搁置",
 };
 
+/** Only kind -> allowed parent kind; null means the node must be a root. */
+const PARENT_KIND_BY_KIND: Record<string, string | null> = {
+  volume: null,
+  chapter: "volume",
+  section: "chapter",
+};
+
 function kindLabel(kind: string): string {
   return STRUCTURE_KIND_LABELS[kind] ?? kind;
+}
+
+function kindFromLabel(label: string): string {
+  return (
+    Object.entries(STRUCTURE_KIND_LABELS).find(([, value]) => value === label)?.[0] ??
+    label
+  );
 }
 
 function statusLabel(status: string): string {
@@ -77,6 +97,23 @@ function StructureAddForm({
   const [kind, setKind] = useState("卷");
   const [title, setTitle] = useState("");
   const [parent, setParent] = useState("");
+  const allowedParentKind = PARENT_KIND_BY_KIND[kindFromLabel(kind)];
+  const parentCandidates =
+    allowedParentKind === null
+      ? []
+      : nodes.filter((node) => node.kind === allowedParentKind);
+
+  function handleKindChange(nextKind: string) {
+    setKind(nextKind);
+    const allowed = PARENT_KIND_BY_KIND[kindFromLabel(nextKind)];
+    if (
+      allowed === null ||
+      (parent !== "" &&
+        !nodes.some((node) => node.id === parent && node.kind === allowed))
+    ) {
+      setParent("");
+    }
+  }
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -105,7 +142,7 @@ function StructureAddForm({
           <span className="form-label">类型</span>
           <select
             value={kind}
-            onChange={(event) => setKind(event.target.value)}
+            onChange={(event) => handleKindChange(event.target.value)}
           >
             <option value="卷">卷</option>
             <option value="章">章</option>
@@ -127,7 +164,7 @@ function StructureAddForm({
             onChange={(event) => setParent(event.target.value)}
           >
             <option value="">根部</option>
-            {nodes.map((node) => (
+            {parentCandidates.map((node) => (
               <option key={node.id} value={node.id}>
                 {kindLabel(node.kind)} · {node.title}
               </option>
@@ -170,6 +207,15 @@ function StructureNodeRow({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const excluded = subtreeIds(nodes, node.id);
   const currentTarget = node.parent_id ?? "root";
+  const allowedParentKind = PARENT_KIND_BY_KIND[node.kind];
+  const moveCandidates =
+    allowedParentKind === null
+      ? []
+      : nodes.filter(
+          (candidate) =>
+            candidate.kind === allowedParentKind &&
+            !excluded.has(candidate.id),
+        );
 
   function submitRename() {
     const trimmed = titleDraft.trim();
@@ -314,13 +360,11 @@ function StructureNodeRow({
             aria-label={`${node.title} 移动目标`}
           >
             <option value="root">根部</option>
-            {nodes
-              .filter((candidate) => !excluded.has(candidate.id))
-              .map((candidate) => (
-                <option key={candidate.id} value={candidate.id}>
-                  {kindLabel(candidate.kind)} · {candidate.title}
-                </option>
-              ))}
+            {moveCandidates.map((candidate) => (
+              <option key={candidate.id} value={candidate.id}>
+                {kindLabel(candidate.kind)} · {candidate.title}
+              </option>
+            ))}
           </select>
           <button
             type="button"
@@ -446,13 +490,26 @@ function OutlinePanel({ workspaceId }: { workspaceId: string }) {
   const write = useWriteOutline(workspaceId);
   const [content, setContent] = useState("");
   const [reason, setReason] = useState("");
+  const dirtyRef = useRef(false);
+  const lastWorkspaceRef = useRef<string | null>(null);
   const outlineData = outline.data;
 
   useEffect(() => {
-    if (outlineData != null) {
-      setContent(outlineData.content);
+    const latestContent = outlineData?.content ?? "";
+    if (lastWorkspaceRef.current !== workspaceId) {
+      // 切换作品：整体重置编辑器（含 dirty 标记）
+      lastWorkspaceRef.current = workspaceId;
+      dirtyRef.current = false;
+      setContent(latestContent);
+      setReason("");
+      return;
     }
-  }, [outlineData]);
+    // 同一作品的最新版本刷新：保留未保存的手改，否则同步最新内容
+    if (dirtyRef.current) {
+      return;
+    }
+    setContent(latestContent);
+  }, [outlineData, workspaceId]);
 
   function submitOutline(event: FormEvent) {
     event.preventDefault();
@@ -468,6 +525,7 @@ function OutlinePanel({ workspaceId }: { workspaceId: string }) {
       },
       {
         onSuccess: () => {
+          dirtyRef.current = false;
           setReason("");
         },
       },
@@ -511,7 +569,10 @@ function OutlinePanel({ workspaceId }: { workspaceId: string }) {
             <span className="form-label">内容</span>
             <textarea
               value={content}
-              onChange={(event) => setContent(event.target.value)}
+              onChange={(event) => {
+                dirtyRef.current = true;
+                setContent(event.target.value);
+              }}
               rows={6}
               placeholder="大纲正文，支持多行"
             />
