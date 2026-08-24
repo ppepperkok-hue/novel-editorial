@@ -171,6 +171,7 @@ uv run novel-editorial quality explain <草稿ID>
 - `draft new <作品ID> --title <标题>`：创建一篇作者持有的空草稿（`writer_id` 为空、v0），落 `draft.created` 事件；正文留待作者直接写。
 - `draft save <草稿ID> --content <正文> [--reason <原因>]`：把作者手写 / 手改的正文存为新版本（`actor=作者`，`reason` 缺省为「作者修改」），随后跑与 `draft generate` / `draft revise` 同口径的质量门；通过 → 状态 `draft`（awaiting decision），不通过 → 状态 `quality_failed`。空白正文报用法错误（退出码 2）。
 - 输出与 `draft generate` / `draft revise` 一致：`draft <草稿ID> <标题> now at v<N>`，状态为 `draft` 时追加 `awaiting decision: <草稿ID>`。
+- v0 空稿边界：`draft show` 对尚未存正文的草稿正常输出标题与「暂无内容」（退出码 0）；`draft diff` / `draft revise` 此时报用法错误（退出码 2），先 `draft save` 落第一版再对比 / 修订。
 - 版本留痕：`GET /works/{id}/drafts/{draft_id}` 的 `versions` 每项带 `actor` 字段（这一版是谁写的；LLM 生成 / 修订版本为写手名，作者手写版本为「作者」）。
 
 mock 下实跑示例（临时 `NOVEL_DATA_DIR` / `NOVEL_CONFIG`，无 API key 同样可跑，`<作品ID>` 换成前面输出的真实值）：

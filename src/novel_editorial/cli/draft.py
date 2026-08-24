@@ -210,9 +210,13 @@ def draft_show(draft_id: str = typer.Argument(..., help="Draft id")) -> None:
     db = DB(settings)
     db.init_schema()
     draft = find_draft_anywhere(db, draft_id)
-    version = get_draft_version(db, draft.workspace_id, draft_id, draft.current_version)
     typer.echo(f"{draft.title} (v{draft.current_version}, {draft.status})")
     typer.echo(f"writer: {_writer_name(db, draft.workspace_id, draft)}")
+    if draft.current_version == 0:
+        typer.echo("---")
+        typer.echo("暂无内容")
+        return
+    version = get_draft_version(db, draft.workspace_id, draft_id, draft.current_version)
     typer.echo(f"reason: {version.reason}")
     typer.echo("---")
     typer.echo(version.content)
@@ -229,6 +233,11 @@ def draft_diff(
     db = DB(settings)
     db.init_schema()
     draft = find_draft_anywhere(db, draft_id)
+    if draft.current_version == 0:
+        raise NovelError(
+            ErrorCode.USAGE_ERROR,
+            "cannot diff a draft with no versions; save a version first",
+        )
     first = get_draft_version(db, draft.workspace_id, draft_id, version_a)
     second = get_draft_version(db, draft.workspace_id, draft_id, version_b)
     output = diff_versions(first, second)

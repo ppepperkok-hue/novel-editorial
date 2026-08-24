@@ -1061,6 +1061,46 @@ def test_draft_new_and_save_cli(tmp_path: Path, monkeypatch) -> None:
     assert version.reason == "初稿"
 
 
+def test_draft_v0_empty_state_show_and_usage_errors(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A freshly created author draft (v0, no version rows) must stay readable."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    created = runner.invoke(
+        app, ["draft", "new", workspace_id, "--title", "作者章"]
+    )
+    assert created.exit_code == 0, created.output
+    draft_id = created.output.split()[1]
+
+    shown = runner.invoke(app, ["draft", "show", draft_id])
+    assert shown.exit_code == 0, shown.output
+    assert "作者章 (v0, draft)" in shown.output
+    assert "暂无内容" in shown.output
+
+    diff = runner.invoke(app, ["draft", "diff", draft_id, "1", "1"])
+    assert diff.exit_code == 2
+    assert "cannot diff a draft with no versions" in diff.output
+
+    monkeypatch.setattr(
+        "novel_editorial.cli.draft.build_client",
+        lambda settings: MockLLMClient(reply="不该被调用"),
+    )
+    revised = runner.invoke(app, ["draft", "revise", draft_id, "--reason", "改"])
+    assert revised.exit_code == 2
+    assert "cannot revise a draft with no content" in revised.output
+
+    saved = runner.invoke(
+        app,
+        ["draft", "save", draft_id, "--content", "作者亲笔正文"],
+    )
+    assert saved.exit_code == 0, saved.output
+    assert "now at v1" in saved.output
+    shown = runner.invoke(app, ["draft", "show", draft_id])
+    assert shown.exit_code == 0, shown.output
+    assert "作者章 (v1, draft)" in shown.output
+    assert "作者亲笔正文" in shown.output
+
+
 def test_draft_save_cli_rejects_blank_content(
     tmp_path: Path, monkeypatch
 ) -> None:

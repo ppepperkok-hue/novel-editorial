@@ -1310,6 +1310,17 @@ def test_author_draft_validation_and_errors(
     assert blocked.status_code == 422
     assert "cannot revise an accepted draft" in blocked.json()["detail"]
 
+    monkeypatch.setattr(
+        "novel_editorial.api.app.build_client",
+        lambda settings: MockLLMClient(reply="不该被调用"),
+    )
+    revised_v0 = client.post(
+        f"/works/{workspace_id}/drafts/{draft_id}/revise",
+        json={"reason": "改"},
+    )
+    assert revised_v0.status_code == 422
+    assert "cannot revise a draft with no content" in revised_v0.json()["detail"]
+
 
 def test_draft_decisions_end_to_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

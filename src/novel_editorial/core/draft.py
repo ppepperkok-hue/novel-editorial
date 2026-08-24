@@ -186,6 +186,11 @@ def revise_draft(
     current = get_draft(db, workspace_id, draft_id)
     if current.status == "accepted":
         raise NovelError(ErrorCode.USAGE_ERROR, "cannot revise an accepted draft")
+    if current.current_version == 0:
+        raise NovelError(
+            ErrorCode.USAGE_ERROR,
+            "cannot revise a draft with no content; save a version first",
+        )
     workspace = get_workspace_or_raise(db, workspace_id)
     if writer is None:
         if current.writer_id is not None:
