@@ -124,3 +124,4 @@
 - S3b 完成（2026-08-25）：对话工作台 + 正文工作台（编辑器 / 版本 / 审稿意见 / 质量门显示 + react-markdown），commits b6035f5 / a61d06f；前端 93 用例四命令全绿；独立审查 P2+P3 已修复复核收敛，归档 docs/reviews/20260825-FE-W1-S3b-initial.md。待办：S4（拍板工作台 + SSE 客户端接线 + 版本 diff + W1 收口）。
 - S4a 完成（2026-08-25）：draft 版本 diff 端点（与 CLI 同源），commits ea0852e / b0ea354；全量 1487 测试全绿；独立审查 1 条 P2 已修复复核收敛，归档 docs/reviews/20260825-FE-W1-S4a-initial.md。待办：S4b（拍板工作台 + SSE client + diff 界面）。
 - S4b 完成（2026-08-25）：拍板工作台 + useEventStream（重连 / 轮询降级）+ 版本 diff 界面，commits 6e564f4 / dfbdda5；前端 120 用例四命令全绿；独立审查 1 条 P3 已修复复核收敛，归档 docs/reviews/20260825-FE-W1-S4b-initial.md。待办：S4c（演示脚本 + 全量回归 + 审查归档 + W1 收口）。
+- S4c 完成（2026-08-25）：W1 演示脚本（mock 端到端）+ 全量收口回归 + 归档，commit 3ee5053；后端 1487 测试 + smoke_m3 + stress_m3 + ruff / pyright / 宪法 + 前端 120 用例四命令全绿；归档 docs/reviews/20260825-FE-W1-S4c-initial.md。**W1 完成**（不敲 CLI 完成一轮创作闭环）。下一步：W2（结构 / 设定知识 / 总览与 SSE 实时事件流）。
