@@ -124,3 +124,72 @@
 - [ ] 已过「项目与 AI 适配」检查
 - [ ] 版本锁定（frontend/package-lock 或 pnpm-lock，实施阶段落定）
 - [ ] 用户确认
+
+---
+
+# 前端应用（FE）技术栈决策（2026-08-24）
+
+背景：前端另立独立大项目（docs/project-plan/13-frontend-app-checklist.md，里程碑 W1–W4），立项已由用户确认。本项目在 N12 面板补选之上做八层修订：沿用已落地的继续沿用并记录，立项新要求（SSE 实时推送、全功能界面、Electron 桌面壳）逐层补 ADR。**修订声明**：N12 段落中「SSE 后置、MVP 轮询」与「Playwright 后置」两条被本节修订。
+
+## 第 1 层：前端技术栈（修订）
+
+**决策：React 18 + TypeScript + Vite（沿用 SPA）；新增 React Router（多工作台路由）、TanStack Query（服务端状态与 SSE 失效联动）、Zustand（客户端状态）、react-markdown（Markdown 预览）**
+
+- 候选：沿用 React+TS+Vite / Next.js / Redux Toolkit / SWR / CodeMirror。
+- 理由：全功能界面从「三扇窗」长成多工作台，路由与状态管理必须显式化；React Router 生态主流、AI 训练覆盖广；TanStack Query 服务端缓存 / 重试 / 与 SSE 事件失效联动文档成熟；Zustand 轻量，客户端状态（当前作品、抽屉开合）不用 prop drilling；正文编辑器先纯文本 textarea + react-markdown 预览，正文即 Markdown 可读可渲染。
+- 否决项：Next.js——本地 SPA + FastAPI 静态托管已定，SSR / 路由文件约定无收益且改动大；Redux Toolkit——样板重，Zustand 覆盖本项目状态量级；SWR——与 TanStack Query 同类，选生态与失效文档更大的后者；CodeMirror / Monaco——代码编辑器向，正文创作场景收益低、包体大，富文本与高级编辑体验后置另议。
+
+## 第 2 层：UI 组件库（修订）
+
+**决策：沿用「不引入重型组件库；自建设计 token（CSS 变量）+ 原生 CSS；图标 Phosphor（统一 strokeWidth）」；组件面扩为侧栏 / 导航 / 表单 / 对话框 / 抽屉 / 树 / 时间线，全部自建并文档化**
+
+- 理由：本地单用户应用、无主题外包需求；自建组件可控、包体小、可定制性拉满；设计体系沿 N12 一致性锁（单 accent、单圆角体系、单一明暗主题、单图标家族），组件库会把体系稀释成混合风格。
+- 否决项：Ant Design / MUI——重且视觉同质，主题覆盖成本高；Tailwind——引入第二套样式体系，破坏既有 token 纪律；shadcn——依赖链与构建面增加，自建同样工作量下无净收益。
+- 数据可视化：行为时间线 / 耐心池 / 动机强度用轻量自绘（CSS/SVG），不引重型图表库。
+
+## 第 3 层：后端语言与运行时（沿用，记录）
+
+**决策：Python 3.11+（沿用）**——前端项目不改变后端语言；Electron 主进程用 Node，与前端同栈，仅负责窗口与进程编排，不承载业务。
+
+## 第 4 层：开发框架（修订）
+
+**决策：FastAPI + Pydantic v2 + asyncio（沿用）；SSE 实时通道用 sse-starlette（新增）**
+
+- 理由：SSE 是立项拍板的主路径（事件流实时推送），sse-starlette 与 FastAPI 集成好、语义完整（保活 / 游标续传 / 广播），主流且体量小；asyncio 内存队列做单进程 pub/sub 已足够本地单用户。
+- 否决项：WebSocket——双向通信本项目不需要，重连与认证成本更高；完全手写 StreamingResponse——可行但保活、断线、多订阅语义要自造，等于自维护一个小库。
+
+## 第 5 层：数据与存储（沿用，记录）
+
+**决策：SQLite + SQLAlchemy 2.0 + Alembic（沿用）**——数据仍由本地 FastAPI 进程持有；Electron 只做壳，不直连 SQLite，避免双进程写库。
+
+## 第 6 层：API 与通信契约（修订）
+
+**决策：REST + OpenAPI（沿用，无 /v1 前缀的现状不变）；写面扩展逐条映射 CLI 命令；SSE 端点带游标续传（Last-Event-ID）；TS 类型由 openapi-typescript 从 OpenAPI 生成**
+
+- 理由：契约先于实现，OpenAPI 是唯一事实源；写面收敛为「CLI 命令 → API 端点」逐条映射，不另造语义；SSE 断线重连靠 EventSource 原生 + 游标，不静默丢事件；类型生成避免手写两遍、杜绝前后端漂移。
+- 修订记录：N12 的「SSE 后置、MVP 轮询」撤销——SSE 为本项目主路径（用户拍板），轮询仅作可配置降级。
+- 否决项：GraphQL——本地单机查询无复杂度收益；gRPC——浏览器端无原生支持；手写 TS 类型——违反「契约生成、不写两遍」。
+
+## 第 7 层：测试与质量工具链（修订）
+
+**决策：沿用后端 pytest + ruff + pyright + uv；前端 Vitest + React Testing Library + ESLint + tsc；E2E 用 Playwright（从后置升为 W2 起引入）**
+
+- 理由：全功能界面交互面大，单测盖不住主链路；Playwright 覆盖端到端演示与「CLI 与界面同源」对照测试，本地与 CI 同套命令。
+- 修订记录：N12 的「Playwright 后置」撤销——W2 起作为 E2E 与对照测试的承载。
+- CI：沿用 GitHub Actions（.github/workflows/ci.yml），增加前端四命令 + Playwright 冒烟。
+
+## 第 8 层：部署、可观测性与安全（修订）
+
+**决策：Web 沿用 localhost FastAPI + uvicorn 托管 dist；桌面端用 Electron + electron-builder（Windows 优先，macOS / Linux 尽力而为）；Electron 主进程只开窗口并拉起 / 复用本地服务**
+
+- 理由：桌面壳与 web 同源（用户拍板），一套界面两条入口；electron-builder 打包命令显式化、版本锁定；主进程不承载业务，健康检查失败给可读错误。
+- 可观测性：沿用 /health + 结构化日志；SSE 连接状态在界面可见（断线提示 + 自动重连）。
+- 密钥与安全：密钥规则不变（环境变量 / 本地配置，永不入库）；单用户 localhost，无鉴权（立项边界）。
+
+## 验收门（第 2 步 · FE）
+
+- [x] 八层逐层有决定，跳过层（第 3/5 层）为沿用记录
+- [x] 每个选型有 ADR，否决项有记录
+- [x] 已过「项目与 AI 适配」检查（主流、显式、可验证、契约锁定）
+- [x] 版本锁定：frontend/package-lock.json 已有；Electron 版本于 W4 实施时锁定
+- [ ] 用户确认
