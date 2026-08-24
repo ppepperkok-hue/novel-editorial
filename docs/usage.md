@@ -2974,6 +2974,55 @@ uv run novel-editorial api serve [--host HOST] [--port PORT]
 | POST | `/works/{id}/style` | 设置风格锚点（body：`description` / `forbidden` 可选），返回 `description` / `forbidden_words` |
 | GET | `/works/{id}/style` | 风格锚点（`description` / `forbidden_words`；未设置时返回空串，不新建行） |
 | GET | `/works/{id}/structure` | 结构节点数组（id / kind / title / parent_id / sort_order / status / draft_id） |
+| POST | `/works/{id}/structure` | 加结构节点（body：`kind` / `title` 必填，`parent` / `draft` / `order` 可选），成功 201 + 节点对象 |
+| PATCH | `/works/{id}/structure/{node_id}` | 改名（body：`title`）或改进度状态（body：`status`），二选一 |
+| POST | `/works/{id}/structure/{node_id}/move` | 移动节点（body：`parent` / `root` / `order`，`parent` 与 `root` 互斥） |
+| DELETE | `/works/{id}/structure/{node_id}` | 删除节点及整棵子树（草稿正文不动），返回 `{"removed": N}` |
+| GET | `/works/{id}/outline` | 当前大纲版本（id / version / content / reason / actor / created_at）；无大纲返回 `null` |
+| POST | `/works/{id}/outline` | 建大纲（body：`content` 必填，`actor` 可选，无 `reason`）成功 201；修订（带 `reason`）成功 200，版本 +1 |
+| GET | `/works/{id}/settings` | 设定数组（kind / name / content / source / current_version / created_at / updated_at），query：`kind` 可选过滤 |
+| GET | `/works/{id}/settings/check` | 陈旧 / 同名冲突检查报告，`text/plain`，与 `setting check` 同文本 |
+| POST | `/works/{id}/settings` | 加设定（body：`kind` / `name` / `content` / `source`）成功 201；修订（body：`setting_id` / `content` / `reason` / `actor`）成功 200 |
+| GET | `/works/{id}/settings/{setting_id}` | 单条设定当前版 |
+| GET | `/works/{id}/inspirations` | 灵感数组（新到旧），query：`kind` 精确过滤、`keyword` 大小写不敏感子串匹配 content / source |
+| GET | `/works/{id}/inspirations/{inspiration_id}` | 单条灵感（kind / content / source） |
+| POST | `/works/{id}/inspirations` | 加灵感（body：`content` 必填，`kind` 缺省「灵感」，`source` 缺省空），成功 201 |
+| DELETE | `/works/{id}/inspirations/{inspiration_id}` | 删灵感，返回 `{"id", "kind"}` |
+
+### 结构 / 大纲 / 设定 / 灵感写面
+
+写面端点逐条映射 CLI 命令，业务一律走 `core` 既有函数：同一份数据同一时刻 API 与 CLI 结果一致；参数校验的文案与 CLI 同源（kind / status 接受中文标签，非法值返回与 CLI 相同的错误文案，映射到 422）。
+
+- `kind`（结构）接受 `volume` / `chapter` / `section` 或其中文标签 `卷` / `章` / `篇目`；`status`（结构）接受 `writing` / `completed` / `shelved` 或 `创作中` / `已完成` / `搁置`——与 `structure` CLI 完全一致。
+- 设定 `kind` 只接受中文标签 `人物` / `关系` / `时间线` / `世界观`（与 `setting` CLI 相同）；`GET /works/{id}/settings?kind=人物` 等价于 `setting list --kind 人物`。
+- 大纲 POST 用 `reason` 区分建 / 修订：无 `reason` 建 v1（再建报 422「already exists」），有 `reason` 版本 +1（无大纲时修订报 404）。
+- 设定 POST 用 `setting_id` 区分加 / 修订：无 `setting_id` 为新增（`kind` / `name` 必填），有 `setting_id` 为修订（`reason` 必填）。
+- 结构 PATCH 一次只做一件事：`title` 与 `status` 同时给或都不给都报 422。
+- 灵感过滤与 CLI 一致：`kind` 精确匹配、`keyword` 大小写不敏感子串匹配 content / source；删除成功返回 `{"id": "<ID>", "kind": "<分类>"}`。
+
+mock 下 curl 示例（`<作品ID>` 换成实际值，每次运行不同）：
+
+```bash
+curl -X POST http://127.0.0.1:8765/works/<作品ID>/structure \
+  -H "Content-Type: application/json" \
+  -d '{"kind":"卷","title":"第一卷"}'
+# {"id":"<节点ID>","kind":"volume","title":"第一卷","parent_id":null,"sort_order":1,"status":"writing","draft_id":null,"created_at":"<时间戳>"}
+
+curl -X POST http://127.0.0.1:8765/works/<作品ID>/outline \
+  -H "Content-Type: application/json" \
+  -d '{"content":"楔子：雨夜车站"}'
+# {"id":"<大纲ID>","workspace_id":"<作品ID>","version":1,"content":"楔子：雨夜车站","reason":"initial","actor":"作者","created_at":"<时间戳>"}
+
+curl -X POST http://127.0.0.1:8765/works/<作品ID>/settings \
+  -H "Content-Type: application/json" \
+  -d '{"kind":"人物","name":"沈夜","content":"雨夜归乡的侦探"}'
+# {"id":"<设定ID>","kind":"character","name":"沈夜","content":"雨夜归乡的侦探","source":"作者","current_version":1,"created_at":"<时间戳>","updated_at":"<时间戳>"}
+
+curl -X POST http://127.0.0.1:8765/works/<作品ID>/inspirations \
+  -H "Content-Type: application/json" \
+  -d '{"content":"码头雾气与旧钟","kind":"意象"}'
+# {"id":"<灵感ID>","workspace_id":"<作品ID>","kind":"意象","content":"码头雾气与旧钟","source":"","created_at":"<时间戳>","updated_at":"<时间戳>"}
+```
 
 ### 错误映射
 
@@ -3002,7 +3051,7 @@ events.addEventListener("message", (event) => {
 
 ### 只读红线与安全说明
 
-- 写面端点逐条映射既有 CLI 命令（`works create`、`talk send`、`draft generate`、`draft revise`、`draft new`、`draft save`、`review add`、`decision` 三动作、`style set`），业务逻辑一律复用 `core` 既有函数，不在 API 层重写；其余路由全部只读：不落事件、不触发 proactive。
+- 写面端点逐条映射既有 CLI 命令（`works create`、`talk send`、`draft generate`、`draft revise`、`draft new`、`draft save`、`review add`、`decision` 三动作、`style set`、`structure add / rename / move / remove / status`、`outline create / revise`、`setting add / revise`、`inspiration add / remove`），业务逻辑一律复用 `core` 既有函数，不在 API 层重写；其余路由全部只读：不落事件、不触发 proactive。
 - `GET /works/{id}/style` 只读查询：作品没有风格锚点时返回 `{"description": "", "forbidden_words": ""}`，绝不新建行。
 - 默认只绑定 `127.0.0.1` 且无鉴权；不要用 `--host 0.0.0.0` 或公网端口暴露服务。
 

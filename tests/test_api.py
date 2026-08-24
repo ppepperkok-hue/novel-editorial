@@ -527,6 +527,10 @@ def test_style_route_missing_anchor_is_read_only(
         "/works/missing/events",
         "/works/missing/style",
         "/works/missing/structure",
+        "/works/missing/outline",
+        "/works/missing/settings",
+        "/works/missing/settings/check",
+        "/works/missing/inspirations",
     ],
 )
 def test_workspace_visibility_routes_missing_workspace_404(
@@ -552,6 +556,10 @@ def test_visibility_routes_are_read_only(
         f"/works/{workspace_id}/events",
         f"/works/{workspace_id}/style",
         f"/works/{workspace_id}/structure",
+        f"/works/{workspace_id}/outline",
+        f"/works/{workspace_id}/settings",
+        f"/works/{workspace_id}/settings/check",
+        f"/works/{workspace_id}/inspirations",
     ):
         response = client.get(url)
         assert response.status_code == 200
@@ -1671,6 +1679,10 @@ def test_new_read_routes_are_read_only(
         f"/works/{workspace_id}/talk",
         f"/works/{workspace_id}/drafts/{draft_id}/decisions",
         f"/works/{workspace_id}/drafts/{draft_id}/diff?version_a=1&version_b=1",
+        f"/works/{workspace_id}/outline",
+        f"/works/{workspace_id}/settings",
+        f"/works/{workspace_id}/settings/check",
+        f"/works/{workspace_id}/inspirations",
     ):
         response = client.get(url)
         assert response.status_code == 200, url
@@ -2178,3 +2190,663 @@ def test_cli_api_contract_draft_diff(
     assert cli_missing.exit_code == 1
     assert "draft version not found" in cli_missing.output
     assert "draft version not found" in missing.json()["detail"]
+
+
+def test_cli_api_contract_structure_add_rename_status_move_remove(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "同源结构"}).json()["id"]
+
+    cli_volume = runner.invoke(
+        cli_app, ["structure", "add", workspace_id, "卷", "第一卷"]
+    )
+    assert cli_volume.exit_code == 0, cli_volume.output
+    volume_id = cli_volume.output.split()[1]
+    assert cli_volume.output.strip() == f"created {volume_id} volume 第一卷"
+
+    api_chapter = client.post(
+        f"/works/{workspace_id}/structure",
+        json={"kind": "chapter", "title": "第一章", "parent": volume_id},
+    )
+    assert api_chapter.status_code == 201
+    chapter = api_chapter.json()
+    assert set(chapter) == {
+        "id",
+        "kind",
+        "title",
+        "parent_id",
+        "sort_order",
+        "status",
+        "draft_id",
+        "created_at",
+    }
+    assert chapter["kind"] == "chapter"
+    assert chapter["title"] == "第一章"
+    assert chapter["parent_id"] == volume_id
+    assert chapter["sort_order"] == 1
+
+    cli_section = runner.invoke(
+        cli_app,
+        [
+            "structure",
+            "add",
+            workspace_id,
+            "篇目",
+            "第一节",
+            "--parent",
+            chapter["id"],
+        ],
+    )
+    assert cli_section.exit_code == 0, cli_section.output
+    section_id = cli_section.output.split()[1]
+
+    api_list = client.get(f"/works/{workspace_id}/structure").json()
+    assert [node["id"] for node in api_list] == [volume_id, chapter["id"], section_id]
+    cli_list = runner.invoke(cli_app, ["structure", "list", workspace_id])
+    assert cli_list.exit_code == 0, cli_list.output
+    assert cli_list.output.splitlines() == [
+        f"[卷] 第一卷（{volume_id}）",
+        f"  [章] 第一章（{chapter['id']}）",
+        f"    [篇目] 第一节（{section_id}）",
+    ]
+
+    events = client.get(f"/works/{workspace_id}/events").json()
+    created_kinds = {
+        event["payload"].get("kind")
+        for event in events
+        if event["payload"].get("kind", "").startswith("structure_")
+    }
+    assert "structure_created" in created_kinds
+
+    renamed = client.patch(
+        f"/works/{workspace_id}/structure/{chapter['id']}",
+        json={"title": "新第一章"},
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["title"] == "新第一章"
+
+    statused = client.patch(
+        f"/works/{workspace_id}/structure/{chapter['id']}",
+        json={"status": "completed"},
+    )
+    assert statused.status_code == 200
+    assert statused.json()["status"] == "completed"
+
+    cli_status = runner.invoke(
+        cli_app, ["structure", "status", workspace_id, chapter["id"], "创作中"]
+    )
+    assert cli_status.exit_code == 0, cli_status.output
+    api_after_status = client.get(f"/works/{workspace_id}/structure").json()
+    chapter_status = next(
+        node["status"]
+        for node in api_after_status
+        if node["id"] == chapter["id"]
+    )
+    assert chapter_status == "writing"
+
+    moved = client.post(
+        f"/works/{workspace_id}/structure/{chapter['id']}/move", json={"root": True}
+    )
+    assert moved.status_code == 200
+    assert moved.json()["parent_id"] is None
+
+    moved_back = client.post(
+        f"/works/{workspace_id}/structure/{chapter['id']}/move",
+        json={"parent": volume_id, "order": 1},
+    )
+    assert moved_back.status_code == 200
+    assert moved_back.json()["parent_id"] == volume_id
+    assert moved_back.json()["sort_order"] == 1
+
+    removed = client.delete(f"/works/{workspace_id}/structure/{volume_id}")
+    assert removed.status_code == 200
+    assert removed.json() == {"removed": 3}
+    assert client.get(f"/works/{workspace_id}/structure").json() == []
+    cli_empty = runner.invoke(cli_app, ["structure", "list", workspace_id])
+    assert cli_empty.exit_code == 0, cli_empty.output
+    assert cli_empty.output.strip() == "no structure"
+
+
+def test_structure_api_errors_match_cli_and_isolation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_a = client.post("/works", json={"title": "甲书"}).json()["id"]
+    workspace_b = client.post("/works", json={"title": "乙书"}).json()["id"]
+
+    invalid_kind = client.post(
+        f"/works/{workspace_a}/structure", json={"kind": "book", "title": "书"}
+    )
+    assert invalid_kind.status_code == 422
+    assert "invalid kind: book" in invalid_kind.json()["detail"]
+    cli_invalid = runner.invoke(
+        cli_app, ["structure", "add", workspace_a, "book", "书"]
+    )
+    assert cli_invalid.exit_code == 2
+    assert "invalid kind: book" in cli_invalid.output
+
+    blank_title = client.post(
+        f"/works/{workspace_a}/structure", json={"kind": "chapter", "title": "   "}
+    )
+    assert blank_title.status_code == 422
+    assert "node title must not be empty" in blank_title.json()["detail"]
+    cli_blank = runner.invoke(
+        cli_app, ["structure", "add", workspace_a, "chapter", "   "]
+    )
+    assert cli_blank.exit_code == 2
+    assert "node title must not be empty" in cli_blank.output
+
+    missing_parent = client.post(
+        f"/works/{workspace_a}/structure",
+        json={"kind": "chapter", "title": "孤儿", "parent": "missing"},
+    )
+    assert missing_parent.status_code == 404
+    assert "structure node not found: missing" in missing_parent.json()["detail"]
+    cli_missing_parent = runner.invoke(
+        cli_app,
+        ["structure", "add", workspace_a, "chapter", "孤儿", "--parent", "missing"],
+    )
+    assert cli_missing_parent.exit_code == 1
+
+    volume = client.post(
+        f"/works/{workspace_a}/structure", json={"kind": "volume", "title": "卷"}
+    ).json()
+    foreign = client.post(
+        f"/works/{workspace_a}/structure",
+        json={"kind": "chapter", "title": "章", "parent": volume["id"]},
+    ).json()
+
+    conflict = client.post(
+        f"/works/{workspace_a}/structure/{foreign['id']}/move",
+        json={"parent": volume["id"], "root": True},
+    )
+    assert conflict.status_code == 422
+    assert "mutually exclusive" in conflict.json()["detail"]
+    cli_conflict = runner.invoke(
+        cli_app,
+        [
+            "structure",
+            "move",
+            workspace_a,
+            foreign["id"],
+            "--parent",
+            volume["id"],
+            "--root",
+        ],
+    )
+    assert cli_conflict.exit_code == 2
+
+    neither = client.patch(
+        f"/works/{workspace_a}/structure/{foreign['id']}", json={}
+    )
+    assert neither.status_code == 422
+    both = client.patch(
+        f"/works/{workspace_a}/structure/{foreign['id']}",
+        json={"title": "x", "status": "completed"},
+    )
+    assert both.status_code == 422
+
+    missing_node = client.patch(
+        f"/works/{workspace_a}/structure/missing", json={"title": "x"}
+    )
+    assert missing_node.status_code == 404
+    assert "structure node not found: missing" in missing_node.json()["detail"]
+    assert (
+        client.delete(f"/works/{workspace_a}/structure/missing").status_code == 404
+    )
+
+    cross_patch = client.patch(
+        f"/works/{workspace_b}/structure/{foreign['id']}", json={"title": "x"}
+    )
+    assert cross_patch.status_code == 404
+    cross_move = client.post(
+        f"/works/{workspace_b}/structure/{foreign['id']}/move", json={"root": True}
+    )
+    assert cross_move.status_code == 404
+    cross_delete = client.delete(
+        f"/works/{workspace_b}/structure/{foreign['id']}"
+    )
+    assert cross_delete.status_code == 404
+    assert client.get(f"/works/{workspace_b}/structure").json() == []
+
+
+def test_cli_api_contract_outline_create_revise_show(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "同源大纲"}).json()["id"]
+
+    cli_created = runner.invoke(
+        cli_app,
+        ["outline", "create", workspace_id, "--content", "楔子：雨夜车站", "--actor", "作者"],
+    )
+    assert cli_created.exit_code == 0, cli_created.output
+    assert cli_created.output.strip() == "outline v1 created"
+
+    api_show = client.get(f"/works/{workspace_id}/outline")
+    assert api_show.status_code == 200
+    created = api_show.json()
+    assert created["version"] == 1
+    assert created["content"] == "楔子：雨夜车站"
+    assert created["actor"] == "作者"
+    assert created["reason"] == "initial"
+    assert created["workspace_id"] == workspace_id
+
+    api_revised = client.post(
+        f"/works/{workspace_id}/outline",
+        json={
+            "content": "楔子：雨夜车站，钟停十一点",
+            "reason": "加悬念",
+            "actor": "责编",
+        },
+    )
+    assert api_revised.status_code == 200
+    revised = api_revised.json()
+    assert revised["version"] == 2
+    assert revised["actor"] == "责编"
+
+    cli_show = runner.invoke(cli_app, ["outline", "show", workspace_id])
+    assert cli_show.exit_code == 0, cli_show.output
+    assert cli_show.output.startswith("outline v2：")
+    assert "钟停十一点" in cli_show.output
+
+    cli_revised = runner.invoke(
+        cli_app,
+        [
+            "outline",
+            "revise",
+            workspace_id,
+            "--content",
+            "楔子：雨夜车站，钟停十一点，列车误点",
+            "--reason",
+            "再打磨",
+        ],
+    )
+    assert cli_revised.exit_code == 0, cli_revised.output
+    api_after = client.get(f"/works/{workspace_id}/outline").json()
+    assert api_after["version"] == 3
+    assert "列车误点" in api_after["content"]
+
+
+def test_outline_api_create_path_empty_state_and_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "大纲空态"}).json()["id"]
+
+    empty = client.get(f"/works/{workspace_id}/outline")
+    assert empty.status_code == 200
+    assert empty.json() is None
+    cli_empty = runner.invoke(cli_app, ["outline", "show", workspace_id])
+    assert cli_empty.exit_code == 0, cli_empty.output
+    assert cli_empty.output.strip() == "no outline"
+
+    api_created = client.post(
+        f"/works/{workspace_id}/outline", json={"content": "初版"}
+    )
+    assert api_created.status_code == 201
+    assert api_created.json()["version"] == 1
+    assert api_created.json()["actor"] == "作者"
+
+    duplicated = client.post(
+        f"/works/{workspace_id}/outline", json={"content": "重复"}
+    )
+    assert duplicated.status_code == 422
+    assert "already exists" in duplicated.json()["detail"]
+    cli_duplicated = runner.invoke(
+        cli_app, ["outline", "create", workspace_id, "--content", "重复"]
+    )
+    assert cli_duplicated.exit_code == 2
+    assert "already exists" in cli_duplicated.output
+
+    other = client.post("/works", json={"title": "无大纲"}).json()["id"]
+    revise_missing = client.post(
+        f"/works/{other}/outline", json={"content": "内容", "reason": "理由"}
+    )
+    assert revise_missing.status_code == 404
+    assert "outline not found" in revise_missing.json()["detail"]
+    cli_revise_missing = runner.invoke(
+        cli_app,
+        ["outline", "revise", other, "--content", "内容", "--reason", "理由"],
+    )
+    assert cli_revise_missing.exit_code == 1
+    assert "outline not found" in cli_revise_missing.output
+
+    blank = client.post(f"/works/{workspace_id}/outline", json={"content": "   "})
+    assert blank.status_code == 422
+    assert "outline content must not be empty" in blank.json()["detail"]
+    cli_blank = runner.invoke(
+        cli_app, ["outline", "create", workspace_id, "--content", "   "]
+    )
+    assert cli_blank.exit_code == 2
+
+    missing_ws = client.get("/works/missing/outline")
+    assert missing_ws.status_code == 404
+    assert "workspace not found: missing" in missing_ws.json()["detail"]
+
+
+def test_cli_api_contract_setting_add_list_show_revise_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "同源设定"}).json()["id"]
+
+    cli_added = runner.invoke(
+        cli_app,
+        [
+            "setting",
+            "add",
+            workspace_id,
+            "--kind",
+            "人物",
+            "--name",
+            "沈夜",
+            "--content",
+            "雨夜归乡的侦探",
+        ],
+    )
+    assert cli_added.exit_code == 0, cli_added.output
+    cli_setting_id = cli_added.output.split()[1]
+    assert cli_added.output.strip() == f"added {cli_setting_id} [人物] 沈夜 v1"
+
+    api_added = client.post(
+        f"/works/{workspace_id}/settings",
+        json={"kind": "世界观", "name": "旧城", "content": "雨夜常驻"},
+    )
+    assert api_added.status_code == 201
+    api_setting = api_added.json()
+    assert api_setting["kind"] == "world"
+    assert api_setting["name"] == "旧城"
+    assert api_setting["content"] == "雨夜常驻"
+    assert api_setting["source"] == "作者"
+    assert api_setting["current_version"] == 1
+
+    api_list = client.get(f"/works/{workspace_id}/settings").json()
+    assert [entry["id"] for entry in api_list] == [cli_setting_id, api_setting["id"]]
+    cli_list = runner.invoke(cli_app, ["setting", "list", workspace_id])
+    assert cli_list.exit_code == 0, cli_list.output
+    assert cli_list.output.splitlines() == [
+        f"{cli_setting_id} [人物] 沈夜 v1 雨夜归乡的侦探",
+        f"{api_setting['id']} [世界观] 旧城 v1 雨夜常驻",
+    ]
+
+    api_filtered = client.get(
+        f"/works/{workspace_id}/settings", params={"kind": "人物"}
+    ).json()
+    assert [entry["id"] for entry in api_filtered] == [cli_setting_id]
+    cli_filtered = runner.invoke(
+        cli_app, ["setting", "list", workspace_id, "--kind", "人物"]
+    )
+    assert cli_filtered.exit_code == 0, cli_filtered.output
+    assert [line.split()[0] for line in cli_filtered.output.splitlines()] == [
+        cli_setting_id
+    ]
+
+    api_show = client.get(f"/works/{workspace_id}/settings/{api_setting['id']}")
+    assert api_show.status_code == 200
+    assert api_show.json()["content"] == "雨夜常驻"
+    cli_show = runner.invoke(
+        cli_app, ["setting", "show", workspace_id, cli_setting_id]
+    )
+    assert cli_show.exit_code == 0, cli_show.output
+    assert "沈夜 [人物] v1" in cli_show.output
+
+    api_revised = client.post(
+        f"/works/{workspace_id}/settings",
+        json={
+            "setting_id": api_setting["id"],
+            "content": "雨夜常驻三百年",
+            "reason": "世界观扩展",
+            "actor": "责编",
+        },
+    )
+    assert api_revised.status_code == 200
+    assert api_revised.json()["current_version"] == 2
+
+    api_check = client.get(f"/works/{workspace_id}/settings/check")
+    assert api_check.status_code == 200
+    assert api_check.headers["content-type"].startswith("text/plain")
+    cli_check = runner.invoke(cli_app, ["setting", "check", workspace_id])
+    assert cli_check.exit_code == 0, cli_check.output
+    assert api_check.text.splitlines() == cli_check.output.strip().splitlines()
+    assert "settings: 2 entries (1 revised)" in api_check.text
+
+
+def test_setting_api_errors_match_cli_and_isolation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_a = client.post("/works", json={"title": "甲书"}).json()["id"]
+    workspace_b = client.post("/works", json={"title": "乙书"}).json()["id"]
+
+    invalid_kind = client.post(
+        f"/works/{workspace_a}/settings",
+        json={"kind": "character", "name": "x", "content": "y"},
+    )
+    assert invalid_kind.status_code == 422
+    assert "invalid kind: character" in invalid_kind.json()["detail"]
+    cli_invalid = runner.invoke(
+        cli_app,
+        [
+            "setting",
+            "add",
+            workspace_a,
+            "--kind",
+            "character",
+            "--name",
+            "x",
+            "--content",
+            "y",
+        ],
+    )
+    assert cli_invalid.exit_code == 2
+    assert "invalid kind: character" in cli_invalid.output
+
+    blank_name = client.post(
+        f"/works/{workspace_a}/settings",
+        json={"kind": "人物", "name": "   ", "content": "y"},
+    )
+    assert blank_name.status_code == 422
+    assert "setting name must not be empty" in blank_name.json()["detail"]
+    blank_content = client.post(
+        f"/works/{workspace_a}/settings",
+        json={"kind": "人物", "name": "x", "content": "   "},
+    )
+    assert blank_content.status_code == 422
+    assert "setting content must not be empty" in blank_content.json()["detail"]
+    cli_blank = runner.invoke(
+        cli_app,
+        ["setting", "add", workspace_a, "--kind", "人物", "--name", "x", "--content", ""],
+    )
+    assert cli_blank.exit_code == 2
+
+    missing_kind = client.post(
+        f"/works/{workspace_a}/settings", json={"name": "x", "content": "y"}
+    )
+    assert missing_kind.status_code == 422
+    assert "setting kind is required" in missing_kind.json()["detail"]
+    missing_name = client.post(
+        f"/works/{workspace_a}/settings", json={"kind": "人物", "content": "y"}
+    )
+    assert missing_name.status_code == 422
+    assert "setting name is required" in missing_name.json()["detail"]
+
+    entry = client.post(
+        f"/works/{workspace_a}/settings",
+        json={"kind": "人物", "name": "沈夜", "content": "甲书"},
+    ).json()
+
+    revise_missing = client.post(
+        f"/works/{workspace_a}/settings",
+        json={"setting_id": "f" * 32, "content": "x", "reason": "y"},
+    )
+    assert revise_missing.status_code == 404
+    assert "setting not found" in revise_missing.json()["detail"]
+    cli_revise_missing = runner.invoke(
+        cli_app,
+        ["setting", "revise", workspace_a, "f" * 32, "--content", "x", "--reason", "y"],
+    )
+    assert cli_revise_missing.exit_code == 1
+
+    missing_reason = client.post(
+        f"/works/{workspace_a}/settings",
+        json={"setting_id": entry["id"], "content": "y"},
+    )
+    assert missing_reason.status_code == 422
+    assert "setting reason is required" in missing_reason.json()["detail"]
+
+    cross_show = client.get(f"/works/{workspace_b}/settings/{entry['id']}")
+    assert cross_show.status_code == 404
+    cross_revise = client.post(
+        f"/works/{workspace_b}/settings",
+        json={"setting_id": entry["id"], "content": "x", "reason": "y"},
+    )
+    assert cross_revise.status_code == 404
+    assert client.get(f"/works/{workspace_b}/settings").json() == []
+
+    invalid_filter = client.get(
+        f"/works/{workspace_a}/settings", params={"kind": "teaser"}
+    )
+    assert invalid_filter.status_code == 422
+    assert "invalid kind: teaser" in invalid_filter.json()["detail"]
+    missing_ws = client.get("/works/missing/settings")
+    assert missing_ws.status_code == 404
+    assert "workspace not found: missing" in missing_ws.json()["detail"]
+
+
+def test_cli_api_contract_inspiration_add_list_show_remove(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "同源灵感"}).json()["id"]
+
+    cli_added = runner.invoke(
+        cli_app,
+        [
+            "inspiration",
+            "add",
+            workspace_id,
+            "--content",
+            "码头雾气与旧钟",
+            "--kind",
+            "意象",
+        ],
+    )
+    assert cli_added.exit_code == 0, cli_added.output
+    cli_id = cli_added.output.split()[1]
+
+    api_added = client.post(
+        f"/works/{workspace_id}/inspirations",
+        json={"content": "茶馆争吵", "kind": "场景", "source": "from the DAWN notebook"},
+    )
+    assert api_added.status_code == 201
+    api_row = api_added.json()
+    assert api_row["kind"] == "场景"
+    assert api_row["source"] == "from the DAWN notebook"
+
+    api_second = client.post(
+        f"/works/{workspace_id}/inspirations",
+        json={"content": "雨夜巷口的猫", "kind": "意象"},
+    )
+    assert api_second.status_code == 201
+    api2_id = api_second.json()["id"]
+
+    api_list = client.get(f"/works/{workspace_id}/inspirations").json()
+    assert [row["id"] for row in api_list] == [api2_id, api_row["id"], cli_id]
+    cli_list = runner.invoke(cli_app, ["inspiration", "list", workspace_id])
+    assert cli_list.exit_code == 0, cli_list.output
+    assert cli_list.output.splitlines() == [
+        f"{api2_id} [意象] 雨夜巷口的猫",
+        f"{api_row['id']} [场景] 茶馆争吵",
+        f"{cli_id} [意象] 码头雾气与旧钟",
+    ]
+
+    api_kind = client.get(
+        f"/works/{workspace_id}/inspirations", params={"kind": "意象"}
+    ).json()
+    assert [row["id"] for row in api_kind] == [api2_id, cli_id]
+    api_keyword = client.get(
+        f"/works/{workspace_id}/inspirations", params={"keyword": "DAWN"}
+    ).json()
+    assert [row["id"] for row in api_keyword] == [api_row["id"]]
+    cli_keyword = runner.invoke(
+        cli_app, ["inspiration", "list", workspace_id, "--keyword", "DAWN"]
+    )
+    assert cli_keyword.exit_code == 0, cli_keyword.output
+    assert [line.split()[0] for line in cli_keyword.output.splitlines()] == [
+        api_row["id"]
+    ]
+
+    api_show = client.get(f"/works/{workspace_id}/inspirations/{cli_id}")
+    assert api_show.status_code == 200
+    assert api_show.json()["content"] == "码头雾气与旧钟"
+    assert api_show.json()["source"] == ""
+    cli_show = runner.invoke(
+        cli_app, ["inspiration", "show", workspace_id, cli_id]
+    )
+    assert cli_show.exit_code == 0, cli_show.output
+    assert cli_show.output.splitlines() == [
+        "kind: 意象",
+        "content: 码头雾气与旧钟",
+        "source: (empty)",
+    ]
+
+    removed = client.delete(f"/works/{workspace_id}/inspirations/{api2_id}")
+    assert removed.status_code == 200
+    assert removed.json() == {"id": api2_id, "kind": "意象"}
+    api_after = client.get(f"/works/{workspace_id}/inspirations").json()
+    assert [row["id"] for row in api_after] == [api_row["id"], cli_id]
+    cli_after = runner.invoke(cli_app, ["inspiration", "list", workspace_id])
+    assert cli_after.exit_code == 0, cli_after.output
+    assert api2_id not in cli_after.output
+
+
+def test_inspiration_api_errors_match_cli_and_isolation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_a = client.post("/works", json={"title": "甲书"}).json()["id"]
+    workspace_b = client.post("/works", json={"title": "乙书"}).json()["id"]
+
+    blank = client.post(f"/works/{workspace_a}/inspirations", json={"content": "   "})
+    assert blank.status_code == 422
+    assert "inspiration content must not be empty" in blank.json()["detail"]
+    cli_blank = runner.invoke(
+        cli_app, ["inspiration", "add", workspace_a, "--content", "   "]
+    )
+    assert cli_blank.exit_code == 2
+    assert "inspiration content must not be empty" in cli_blank.output
+
+    blank_kind = client.post(
+        f"/works/{workspace_a}/inspirations", json={"content": "x", "kind": "  "}
+    )
+    assert blank_kind.status_code == 422
+    assert "inspiration kind must not be empty" in blank_kind.json()["detail"]
+
+    missing_ws = client.post("/works/missing/inspirations", json={"content": "x"})
+    assert missing_ws.status_code == 404
+    assert "workspace not found: missing" in missing_ws.json()["detail"]
+    cli_missing_ws = runner.invoke(
+        cli_app, ["inspiration", "add", "f" * 32, "--content", "无主灵感"]
+    )
+    assert cli_missing_ws.exit_code == 1
+
+    row = client.post(
+        f"/works/{workspace_a}/inspirations", json={"content": "北站的旧钟"}
+    ).json()
+    missing_show = client.get(
+        f"/works/{workspace_a}/inspirations/missing-id"
+    )
+    assert missing_show.status_code == 404
+    assert "inspiration not found: missing-id" in missing_show.json()["detail"]
+    cli_missing_show = runner.invoke(
+        cli_app, ["inspiration", "show", workspace_a, "a" * 32]
+    )
+    assert cli_missing_show.exit_code == 1
+
+    cross_show = client.get(f"/works/{workspace_b}/inspirations/{row['id']}")
+    assert cross_show.status_code == 404
+    cross_delete = client.delete(f"/works/{workspace_b}/inspirations/{row['id']}")
+    assert cross_delete.status_code == 404
+    assert client.get(f"/works/{workspace_b}/inspirations").json() == []

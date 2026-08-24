@@ -504,8 +504,192 @@ export interface paths {
          */
         get: operations["get_workspace_structure_works__workspace_id__structure_get"];
         put?: never;
+        /**
+         * Create Structure Node Route
+         * @description Add a structure node (volume/chapter/section, like ``structure add``).
+         */
+        post: operations["create_structure_node_route_works__workspace_id__structure_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/works/{workspace_id}/structure/{node_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Structure Node Route
+         * @description Remove a node and its whole subtree (like ``structure remove``).
+         */
+        delete: operations["delete_structure_node_route_works__workspace_id__structure__node_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Patch Structure Node Route
+         * @description Rename a node or set its status (like ``structure rename/status``).
+         */
+        patch: operations["patch_structure_node_route_works__workspace_id__structure__node_id__patch"];
+        trace?: never;
+    };
+    "/works/{workspace_id}/structure/{node_id}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move Structure Node Route
+         * @description Move a node under a parent or back to the root (like ``structure move``).
+         */
+        post: operations["move_structure_node_route_works__workspace_id__structure__node_id__move_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/works/{workspace_id}/outline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Workspace Outline
+         * @description Current outline version, or null when none (like ``outline show``).
+         */
+        get: operations["get_workspace_outline_works__workspace_id__outline_get"];
+        put?: never;
+        /**
+         * Write Workspace Outline Route
+         * @description Create the first outline (no reason) or revise it (with reason).
+         */
+        post: operations["write_workspace_outline_route_works__workspace_id__outline_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/works/{workspace_id}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Workspace Settings
+         * @description Settings list, optionally filtered by kind label (like ``setting list``).
+         */
+        get: operations["get_workspace_settings_works__workspace_id__settings_get"];
+        put?: never;
+        /**
+         * Write Workspace Setting Route
+         * @description Add a setting (no setting_id) or revise one (with setting_id + reason).
+         */
+        post: operations["write_workspace_setting_route_works__workspace_id__settings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/works/{workspace_id}/settings/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check Workspace Settings
+         * @description Stale/same-name conflict report, same text as ``setting check``.
+         */
+        get: operations["check_workspace_settings_works__workspace_id__settings_check_get"];
+        put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/works/{workspace_id}/settings/{setting_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Workspace Setting
+         * @description One setting with its latest version content (like ``setting show``).
+         */
+        get: operations["get_workspace_setting_works__workspace_id__settings__setting_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/works/{workspace_id}/inspirations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Workspace Inspirations
+         * @description Inspirations, newest first (like ``inspiration list``).
+         */
+        get: operations["get_workspace_inspirations_works__workspace_id__inspirations_get"];
+        put?: never;
+        /**
+         * Create Inspiration Route
+         * @description Add one inspiration snippet (like ``inspiration add``).
+         */
+        post: operations["create_inspiration_route_works__workspace_id__inspirations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/works/{workspace_id}/inspirations/{inspiration_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Workspace Inspiration
+         * @description One inspiration with its source (like ``inspiration show``).
+         */
+        get: operations["get_workspace_inspiration_works__workspace_id__inspirations__inspiration_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Inspiration Route
+         * @description Remove one inspiration (like ``inspiration remove``).
+         */
+        delete: operations["delete_inspiration_route_works__workspace_id__inspirations__inspiration_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -582,6 +766,33 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** InspirationAddBody */
+        InspirationAddBody: {
+            /** Content */
+            content: string;
+            /**
+             * Kind
+             * @default 灵感
+             */
+            kind: string;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+        };
+        /** OutlineWriteBody */
+        OutlineWriteBody: {
+            /** Content */
+            content: string;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Actor
+             * @default 作者
+             */
+            actor: string;
+        };
         /** ReviewAddBody */
         ReviewAddBody: {
             /** Draft Id */
@@ -593,6 +804,61 @@ export interface components {
             source: string;
             /** Content */
             content: string;
+        };
+        /** SettingWriteBody */
+        SettingWriteBody: {
+            /** Kind */
+            kind?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Content */
+            content: string;
+            /**
+             * Source
+             * @default 作者
+             */
+            source: string;
+            /** Setting Id */
+            setting_id?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Actor
+             * @default 作者
+             */
+            actor: string;
+        };
+        /** StructureAddBody */
+        StructureAddBody: {
+            /** Kind */
+            kind: string;
+            /** Title */
+            title: string;
+            /** Parent */
+            parent?: string | null;
+            /** Draft */
+            draft?: string | null;
+            /** Order */
+            order?: number | null;
+        };
+        /** StructureMoveBody */
+        StructureMoveBody: {
+            /** Parent */
+            parent?: string | null;
+            /**
+             * Root
+             * @default false
+             */
+            root: boolean;
+            /** Order */
+            order?: number | null;
+        };
+        /** StructurePatchBody */
+        StructurePatchBody: {
+            /** Title */
+            title?: string | null;
+            /** Status */
+            status?: string | null;
         };
         /** StyleSetBody */
         StyleSetBody: {
@@ -1561,6 +1827,501 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_structure_node_route_works__workspace_id__structure_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StructureAddBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_structure_node_route_works__workspace_id__structure__node_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: number;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_structure_node_route_works__workspace_id__structure__node_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StructurePatchBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_structure_node_route_works__workspace_id__structure__node_id__move_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StructureMoveBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workspace_outline_works__workspace_id__outline_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    } | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    write_workspace_outline_route_works__workspace_id__outline_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OutlineWriteBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workspace_settings_works__workspace_id__settings_get: {
+        parameters: {
+            query?: {
+                kind?: string | null;
+            };
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    write_workspace_setting_route_works__workspace_id__settings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingWriteBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_workspace_settings_works__workspace_id__settings_check_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workspace_setting_works__workspace_id__settings__setting_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                setting_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workspace_inspirations_works__workspace_id__inspirations_get: {
+        parameters: {
+            query?: {
+                kind?: string | null;
+                keyword?: string | null;
+            };
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_inspiration_route_works__workspace_id__inspirations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InspirationAddBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workspace_inspiration_works__workspace_id__inspirations__inspiration_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                inspiration_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_inspiration_route_works__workspace_id__inspirations__inspiration_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                inspiration_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
                 };
             };
             /** @description Validation Error */

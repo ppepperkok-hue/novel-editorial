@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, Query, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
@@ -20,10 +20,13 @@ from sse_starlette.sse import EventSourceResponse
 from novel_editorial.core import (
     decision,
     draft,
+    inspiration,
     log,
+    outline,
     overview,
     proactive,
     review,
+    setting,
     structure,
     style,
     templates,
@@ -65,7 +68,10 @@ from novel_editorial.store.models import (
     Draft,
     DraftVersion,
     Event,
+    Inspiration,
     Message,
+    Outline,
+    SettingEntry,
     StyleAnchor,
     Workspace,
     WorkspaceStructureNode,
@@ -176,6 +182,47 @@ class StyleSetBody(BaseModel):
     forbidden: str = ""
 
 
+class StructureAddBody(BaseModel):
+    kind: str
+    title: str
+    parent: str | None = None
+    draft: str | None = None
+    order: int | None = None
+
+
+class StructurePatchBody(BaseModel):
+    title: str | None = None
+    status: str | None = None
+
+
+class StructureMoveBody(BaseModel):
+    parent: str | None = None
+    root: bool = False
+    order: int | None = None
+
+
+class OutlineWriteBody(BaseModel):
+    content: str
+    reason: str | None = None
+    actor: str = "作者"
+
+
+class SettingWriteBody(BaseModel):
+    kind: str | None = None
+    name: str | None = None
+    content: str
+    source: str = "作者"
+    setting_id: str | None = None
+    reason: str | None = None
+    actor: str = "作者"
+
+
+class InspirationAddBody(BaseModel):
+    content: str
+    kind: str = "灵感"
+    source: str = ""
+
+
 def _workspace_dict(workspace: Workspace) -> dict[str, Any]:
     return {field: getattr(workspace, field) for field in _WORKSPACE_FIELDS}
 
@@ -215,6 +262,106 @@ def _node_dict(node: WorkspaceStructureNode) -> dict[str, Any]:
         "status": node.status,
         "draft_id": node.draft_id,
         "created_at": _iso(node.created_at),
+    }
+
+
+#: Kind/status label maps mirroring ``cli/structure.py`` so the API accepts the
+#: same inputs with the same error text (api must not import cli).
+_STRUCTURE_KIND_LABELS: dict[str, str] = {
+    structure.KIND_VOLUME: "卷",
+    structure.KIND_CHAPTER: "章",
+    structure.KIND_SECTION: "篇目",
+}
+_STRUCTURE_STATUS_LABELS: dict[str, str] = {
+    structure.STATUS_WRITING: "创作中",
+    structure.STATUS_COMPLETED: "已完成",
+    structure.STATUS_SHELVED: "搁置",
+}
+
+
+def _structure_kind_from_label(value: str) -> str:
+    """Map a kind input (canonical or Chinese label) to its canonical value."""
+    for canonical, label in _STRUCTURE_KIND_LABELS.items():
+        if value == canonical or value == label:
+            return canonical
+    expected = "、".join(_STRUCTURE_KIND_LABELS.values())
+    raise NovelError(
+        ErrorCode.USAGE_ERROR, f"invalid kind: {value} (expected one of: {expected})"
+    )
+
+
+def _structure_status_from_label(value: str) -> str:
+    """Map a status input (canonical or Chinese label) to its canonical value."""
+    for canonical, label in _STRUCTURE_STATUS_LABELS.items():
+        if value == canonical or value == label:
+            return canonical
+    expected = "、".join(_STRUCTURE_STATUS_LABELS.values())
+    raise NovelError(
+        ErrorCode.USAGE_ERROR,
+        f"invalid status: {value} (expected one of: {expected})",
+    )
+
+
+def _setting_kind_from_label(value: str) -> str:
+    """Map a Chinese kind label back to its canonical kind (like ``setting`` CLI)."""
+    for kind, label in setting.KIND_LABELS.items():
+        if value == label:
+            return kind
+    expected = "、".join(setting.KIND_LABELS.values())
+    raise NovelError(
+        ErrorCode.USAGE_ERROR, f"invalid kind: {value} (expected one of: {expected})"
+    )
+
+
+def _structure_current_parent(
+    db: DB, workspace_id: str, node_id: str
+) -> str | None:
+    """Return a node's current parent id (None means the root level)."""
+    with db.workspace_session(workspace_id) as session:
+        node = (
+            session.query(WorkspaceStructureNode)
+            .filter_by(workspace_id=workspace_id, id=node_id)
+            .first()
+        )
+    if node is None:
+        raise NovelError(ErrorCode.NOT_FOUND, f"structure node not found: {node_id}")
+    return node.parent_id
+
+
+def _outline_dict(outline_row: Outline) -> dict[str, Any]:
+    return {
+        "id": outline_row.id,
+        "workspace_id": outline_row.workspace_id,
+        "version": outline_row.version,
+        "content": outline_row.content,
+        "reason": outline_row.reason,
+        "actor": outline_row.actor,
+        "created_at": _iso(outline_row.created_at),
+    }
+
+
+def _setting_dict(entry: SettingEntry) -> dict[str, Any]:
+    return {
+        "id": entry.id,
+        "kind": entry.kind,
+        "name": entry.name,
+        "content": entry.content,
+        "source": entry.source,
+        "current_version": entry.current_version,
+        "created_at": _iso(entry.created_at),
+        "updated_at": _iso(entry.updated_at),
+    }
+
+
+def _inspiration_dict(row: Inspiration) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "workspace_id": row.workspace_id,
+        "kind": row.kind,
+        "content": row.content,
+        "source": row.source,
+        "created_at": _iso(row.created_at),
+        "updated_at": _iso(row.updated_at),
     }
 
 
@@ -1024,6 +1171,220 @@ def create_app() -> FastAPI:
         """Flat, parent-first structure nodes for one workspace."""
         get_workspace_or_raise(db, workspace_id)
         return [_node_dict(node) for node in structure.list_structure(db, workspace_id)]
+
+    @app.post("/works/{workspace_id}/structure", status_code=201)
+    def create_structure_node_route(
+        workspace_id: str, body: StructureAddBody
+    ) -> dict[str, Any]:
+        """Add a structure node (volume/chapter/section, like ``structure add``)."""
+        get_workspace_or_raise(db, workspace_id)
+        node = structure.create_node(
+            db,
+            workspace_id,
+            kind=_structure_kind_from_label(body.kind),
+            title=body.title,
+            parent_id=body.parent,
+            draft_id=body.draft,
+            sort_order=body.order,
+        )
+        return _node_dict(node)
+
+    @app.patch("/works/{workspace_id}/structure/{node_id}")
+    def patch_structure_node_route(
+        workspace_id: str, node_id: str, body: StructurePatchBody
+    ) -> dict[str, Any]:
+        """Rename a node or set its status (like ``structure rename/status``)."""
+        get_workspace_or_raise(db, workspace_id)
+        if body.title is not None and body.status is not None:
+            raise NovelError(
+                ErrorCode.USAGE_ERROR, "provide exactly one of title or status"
+            )
+        if body.title is not None:
+            node = structure.rename_node(db, workspace_id, node_id, body.title)
+        elif body.status is not None:
+            node = structure.set_node_status(
+                db,
+                workspace_id,
+                node_id,
+                _structure_status_from_label(body.status),
+            )
+        else:
+            raise NovelError(
+                ErrorCode.USAGE_ERROR, "provide exactly one of title or status"
+            )
+        return _node_dict(node)
+
+    @app.post("/works/{workspace_id}/structure/{node_id}/move")
+    def move_structure_node_route(
+        workspace_id: str, node_id: str, body: StructureMoveBody
+    ) -> dict[str, Any]:
+        """Move a node under a parent or back to the root (like ``structure move``)."""
+        get_workspace_or_raise(db, workspace_id)
+        if body.parent is not None and body.root:
+            raise NovelError(
+                ErrorCode.USAGE_ERROR, "parent and root are mutually exclusive"
+            )
+        if body.root:
+            parent_id = None
+        elif body.parent is not None:
+            parent_id = body.parent
+        elif body.order is not None:
+            parent_id = _structure_current_parent(db, workspace_id, node_id)
+        else:
+            parent_id = None
+        node = structure.move_node(
+            db, workspace_id, node_id, parent_id=parent_id, sort_order=body.order
+        )
+        return _node_dict(node)
+
+    @app.delete("/works/{workspace_id}/structure/{node_id}")
+    def delete_structure_node_route(
+        workspace_id: str, node_id: str
+    ) -> dict[str, int]:
+        """Remove a node and its whole subtree (like ``structure remove``)."""
+        get_workspace_or_raise(db, workspace_id)
+        removed = structure.remove_node(db, workspace_id, node_id)
+        return {"removed": removed}
+
+    @app.get("/works/{workspace_id}/outline")
+    def get_workspace_outline(workspace_id: str) -> dict[str, Any] | None:
+        """Current outline version, or null when none (like ``outline show``)."""
+        get_workspace_or_raise(db, workspace_id)
+        outline_row = outline.get_outline(db, workspace_id)
+        return _outline_dict(outline_row) if outline_row is not None else None
+
+    @app.post("/works/{workspace_id}/outline")
+    def write_workspace_outline_route(
+        workspace_id: str, body: OutlineWriteBody, response: Response
+    ) -> dict[str, Any]:
+        """Create the first outline (no reason) or revise it (with reason)."""
+        get_workspace_or_raise(db, workspace_id)
+        if body.reason is None:
+            outline_row = outline.create_outline(
+                db, workspace_id, content=body.content, actor=body.actor
+            )
+            response.status_code = 201
+        else:
+            outline_row = outline.revise_outline(
+                db,
+                workspace_id,
+                content=body.content,
+                reason=body.reason,
+                actor=body.actor,
+            )
+        return _outline_dict(outline_row)
+
+    @app.get("/works/{workspace_id}/settings")
+    def get_workspace_settings(
+        workspace_id: str, kind: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Settings list, optionally filtered by kind label (like ``setting list``)."""
+        get_workspace_or_raise(db, workspace_id)
+        kind_value = _setting_kind_from_label(kind) if kind is not None else None
+        return [
+            _setting_dict(entry)
+            for entry in setting.list_settings(db, workspace_id, kind=kind_value)
+        ]
+
+    @app.get(
+        "/works/{workspace_id}/settings/check", response_class=PlainTextResponse
+    )
+    def check_workspace_settings(workspace_id: str) -> PlainTextResponse:
+        """Stale/same-name conflict report, same text as ``setting check``."""
+        return PlainTextResponse(
+            setting.check_settings(db, workspace_id),
+            media_type="text/plain",
+        )
+
+    @app.get("/works/{workspace_id}/settings/{setting_id}")
+    def get_workspace_setting(
+        workspace_id: str, setting_id: str
+    ) -> dict[str, Any]:
+        """One setting with its latest version content (like ``setting show``)."""
+        get_workspace_or_raise(db, workspace_id)
+        return _setting_dict(setting.get_setting(db, workspace_id, setting_id))
+
+    @app.post("/works/{workspace_id}/settings")
+    def write_workspace_setting_route(
+        workspace_id: str, body: SettingWriteBody, response: Response
+    ) -> dict[str, Any]:
+        """Add a setting (no setting_id) or revise one (with setting_id + reason)."""
+        get_workspace_or_raise(db, workspace_id)
+        if body.setting_id is None:
+            if body.kind is None:
+                raise NovelError(ErrorCode.USAGE_ERROR, "setting kind is required")
+            if body.name is None:
+                raise NovelError(ErrorCode.USAGE_ERROR, "setting name is required")
+            entry = setting.add_setting(
+                db,
+                workspace_id,
+                kind=_setting_kind_from_label(body.kind),
+                name=body.name,
+                content=body.content,
+                source=body.source,
+            )
+            response.status_code = 201
+        else:
+            if body.reason is None:
+                raise NovelError(ErrorCode.USAGE_ERROR, "setting reason is required")
+            entry = setting.revise_setting(
+                db,
+                workspace_id,
+                body.setting_id,
+                content=body.content,
+                reason=body.reason,
+                actor=body.actor,
+            )
+        return _setting_dict(entry)
+
+    @app.get("/works/{workspace_id}/inspirations")
+    def get_workspace_inspirations(
+        workspace_id: str,
+        kind: str | None = None,
+        keyword: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Inspirations, newest first (like ``inspiration list``)."""
+        get_workspace_or_raise(db, workspace_id)
+        return [
+            _inspiration_dict(row)
+            for row in inspiration.list_inspirations(
+                db, workspace_id, kind=kind, keyword=keyword
+            )
+        ]
+
+    @app.get("/works/{workspace_id}/inspirations/{inspiration_id}")
+    def get_workspace_inspiration(
+        workspace_id: str, inspiration_id: str
+    ) -> dict[str, Any]:
+        """One inspiration with its source (like ``inspiration show``)."""
+        get_workspace_or_raise(db, workspace_id)
+        return _inspiration_dict(
+            inspiration.get_inspiration(db, workspace_id, inspiration_id)
+        )
+
+    @app.post("/works/{workspace_id}/inspirations", status_code=201)
+    def create_inspiration_route(
+        workspace_id: str, body: InspirationAddBody
+    ) -> dict[str, Any]:
+        """Add one inspiration snippet (like ``inspiration add``)."""
+        get_workspace_or_raise(db, workspace_id)
+        row = inspiration.add_inspiration(
+            db,
+            workspace_id,
+            content=body.content,
+            kind=body.kind,
+            source=body.source,
+        )
+        return _inspiration_dict(row)
+
+    @app.delete("/works/{workspace_id}/inspirations/{inspiration_id}")
+    def delete_inspiration_route(
+        workspace_id: str, inspiration_id: str
+    ) -> dict[str, str]:
+        """Remove one inspiration (like ``inspiration remove``)."""
+        get_workspace_or_raise(db, workspace_id)
+        removed = inspiration.remove_inspiration(db, workspace_id, inspiration_id)
+        return {"id": removed.id, "kind": removed.kind}
 
     frontend_dist = _frontend_dist_dir()
     if frontend_dist.is_dir():
