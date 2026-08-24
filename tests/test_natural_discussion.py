@@ -590,6 +590,34 @@ def test_decision_reject_triggers_natural_summon_when_writer_bottomed(
         "discussion_contribution",
         "discussion_summary",
     ]
+    # 可见性（N29-D）：events list 带 natural_discussion 召集标记（发起方是
+    # 伙伴而非作者），talk list 可见 N4 讨论标记且作者未拍板。
+    events = list_events(db, workspace_id)
+    markers = [
+        json.loads(e.payload)
+        for e in events
+        if json.loads(e.payload).get("kind") == SUMMON_KIND
+    ]
+    assert len(markers) == 1
+    opened = [
+        m
+        for m in messages
+        if json.loads(m.payload).get("kind") == "discussion_open"
+    ]
+    assert len(opened) == 1
+    assert markers[0] == {
+        "initiator": "agent",
+        "kind": SUMMON_KIND,
+        "trigger": SUMMON_TRIGGER,
+        "agent_id": writer.id,
+        "topic": "第一章",
+        "discussion_id": json.loads(opened[0].payload)["discussion_id"],
+    }
+    listed = runner.invoke(app, ["talk", "list", workspace_id])
+    assert listed.exit_code == 0, listed.output
+    for mark in ("[author·讨论·开场]", "[agent·讨论·发言]", "[agent·讨论·总结]"):
+        assert mark in listed.output
+    assert "[author·讨论·拍板]" not in listed.output
     cooldowns = list_behavior_timeline(db, workspace_id, kind=COOLDOWN_KIND)
     assert len(cooldowns) == 1
     assert cooldowns[0].target == "第一章"
@@ -739,6 +767,19 @@ def test_summarize_divergence_triggers_natural_summon_when_reviewer_bottomed(
     ].count(
         "discussion_open"
     ) == 2
+    # 可见性（N29-D）：第二轮自然召集在 events list 留有 natural_discussion
+    # 标记，发起方是池底伙伴（initiator=agent、trigger=patience_exhausted）。
+    events = list_events(db, workspace_id)
+    markers = [
+        json.loads(e.payload)
+        for e in events
+        if json.loads(e.payload).get("kind") == SUMMON_KIND
+    ]
+    assert len(markers) == 1
+    assert markers[0]["initiator"] == "agent"
+    assert markers[0]["trigger"] == SUMMON_TRIGGER
+    assert markers[0]["topic"] == topic
+    assert markers[0]["agent_id"] == reviewer.id
     cooldowns = list_behavior_timeline(db, workspace_id, kind=COOLDOWN_KIND)
     assert len(cooldowns) == 1
     assert cooldowns[0].target == topic

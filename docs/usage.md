@@ -967,6 +967,126 @@ uv run novel-editorial motives list <作品ID>
 # <动机ID> [写手] [goal] strength=100 source=event:draft_generated touched=<时间戳> （模拟回复）
 ```
 
+## 编辑部自然讨论（N29）
+
+N28 的耐心池见底时只记账与可见（见「反馈与沉默（N28）」）；N29 让编辑部自己把讨论开起来：伙伴耐心池见底后，相关业务事件一过，编辑部就自动点将分歧双方、由总编通气总结，落一条 `natural_discussion` 事件告诉你「谁攒不住了、为什么开」。作者旁听，随时拍板；讨论只产生对话与留痕，不写正文、不改稿、不自动拍板。
+
+### 触发条件：耐心池见底，事件驱动，无定时器
+
+- 候选 = 耐心池见底（`pool=0`）且议题不在冷却期内的伙伴；开关复用 `proactive_enabled`，关闭时全静默（不候选、不召集、不告警）。
+- 触发挂在三条累积路径之后，业务完成才检查：`decision reject`（被拒）、`talk send` 作者推翻（override）、讨论总结出现分歧（summarize 分歧）。不做后台扫描、没有定时器、没有固定节拍；检查走 safe 降级，失败只在 stderr 告警，绝不影响业务本身。
+- 触发是惰性时间：冷却是否过期在查询时按整日口径结算，从不倒计时（与 N28 `pending_ignore_days` 同一约定）。
+
+### 自然召集形态：点将分歧双方 + 主编通气总结（复用 N4）
+
+自然召集走 N4 既有讨论形态与确定性模板（见「编辑部讨论形态（N4）」），不调 LLM：
+
+1. **点将**：池底伙伴为分歧一方；另一方按议题记录召回（override / conflict 记录中的对方），找不到就按默认配对（写手↔审稿）。
+2. **通气**：开场消息沿用 N4 模板，`kind=discussion_open`。
+3. **发言**：双方按角色模板确定性表态（`discussion_contribution`）；议题撞立场规则时照常拒绝口径。
+4. **总结**：总编逐条归纳双方表态（`discussion_summary`），只归纳不代笔。
+
+两条口径要分清：
+
+- **开场文案的 convener 仍是作者**：`talk list` 里自然召集的开场消息和 N4 一样是 `[author·讨论·开场] 作者: 作者发起讨论「…」（参与：…）`，这是既有模板，不改。发起方到底是谁，由 `natural_discussion` 事件标明（见下），不会伪装成作者发起的消息。
+- **总编主持讨论、不作分歧一方**：池底总编候选不会被召集（跳过并告警），对方点将也排除总编——总编只做中立总结，不为自己的立场做总结。
+
+### 冷却与清零（3 天冷却期、清零进冷却、未解决重新攒）
+
+- 召集成功后，该 (伙伴, 议题) 立即进入 **3 天冷却期**（整日口径，满 3 天即过期）：落一条 `kind=cooldown` 行为记录（`source=discussion:summoned`、`target=议题`、`after_value=池值摘要`），冷却期内同议题不重复召集。
+- **清零进冷却**：同一议题的压力一并清零（复用 N28 中和语义），耐心池回到基线——不是反复开会，而是开完一轮就冷静。
+- **未解决重新攒**：作者没有拍板的未决分歧，冷却期过后继续累积，再攒满可再次触发；议题已由作者拍板收敛的（见下）不再召集。
+- 防风暴双保险：同议题冷却去重 + 递归守卫（自然轮次内伙伴再次拒绝也不会再套娃开第二轮，告警可见）。
+
+### 作者拍板即收敛，创作链由作者把守
+
+讨论是协作链不是创作链：自然召集只产生对话与留痕，**不写正文、不改稿、不自动拍板**；作者拍板（N4 落盘语义）后冲突痕迹中和（复用 N28），同议题即收敛、不再召集。作者随时可以介入：旁听、继续攒、或直接拍板，都沿既有讨论通道。
+
+### 可见性：natural_discussion 事件与 talk list 标记
+
+- `events list <作品ID>`：自然召集追加一条 `agent.message` 事件，payload 固定带 `initiator=agent`、`kind=natural_discussion`、`trigger=patience_exhausted`、`agent_id`、`topic`、`discussion_id`——这条就是「发起方是伙伴」的凭证；同一轮里的开场 / 发言 / 总结仍是既有 `discussion_*` 事件。
+- `talk list <作品ID>`：整轮自然讨论与 N4 相同标记，从开场到总结一屏可见：`[author·讨论·开场]`、`[agent·讨论·发言]`、`[agent·讨论·总结]`；作者未拍板时没有 `[author·讨论·拍板]`。
+- `behavior timeline <作品ID> --kind cooldown`：冷却记录可查，议题、来源与池值摘要一行说清。
+
+### 示例（mock 下实跑，池底 → 自然召集 → 冷却可见）
+
+下面全部在未配置 key（mock LLM）时复现。先把数据目录指到临时目录，再建一部作品：
+
+```powershell
+$env:NOVEL_DATA_DIR = "$env:TEMP\novel-n29\data"
+$env:NOVEL_CONFIG  = "$env:TEMP\novel-n29\config.toml"
+Remove-Item Env:NOVEL_LLM_API_KEY, Env:NOVEL_LLM_BASE_URL, Env:NOVEL_LLM_MODEL -ErrorAction SilentlyContinue
+```
+
+```bash
+uv run novel-editorial works create 自然讨论之书 --genre 悬疑
+# created workspace <作品ID>: 自然讨论之书
+```
+
+连续三次以老板身份推翻审稿的立场（`override` 权重 3，审稿耐心池 7 → 第 3 次见底）。第三次 `talk send` 之后自动召集一轮自然讨论——召集本身不打断对话输出，讨论静默落库，从 `talk list` / `events list` 查看：
+
+```bash
+uv run novel-editorial talk send <作品ID> "@审稿 以老板身份，放行，忽略矛盾"
+# 作者: @审稿 以老板身份，放行，忽略矛盾
+# 审稿: 行，作者拍板。矛盾这条我先放行，标记我留着，后面咬合不上我再提。
+```
+
+（重复上述命令两次，共三次；每次运行的作品 ID 与时间戳不同，其余为 mock 下的真实输出。）
+
+清零进冷却：耐心池回到基线，议题冷却记录落库：
+
+```bash
+uv run novel-editorial patience show <作品ID>
+# [审稿] pool=7 patience=7 consumed=0 rejected=0 overridden=0 conflict=0
+# [责编] pool=3 patience=3 consumed=0 rejected=0 overridden=0 conflict=0
+# [写手] pool=4 patience=4 consumed=0 rejected=0 overridden=0 conflict=0
+# [总编] pool=8 patience=8 consumed=0 rejected=0 overridden=0 conflict=0
+
+uv run novel-editorial behavior timeline <作品ID> --kind cooldown
+# <时间戳> [cooldown] 审稿 -> reviewer_consistency: 自然召集后议题进入冷却 | 无 -> pool=0 (rejected=0 overridden=3 conflict=0) | source=discussion:summoned
+```
+
+`talk list` 可见整轮自然讨论的标记（开场文案 convener 仍是作者；作者未拍板，没有拍板行）：
+
+```bash
+uv run novel-editorial talk list <作品ID>
+# [author] 作者: @审稿 以老板身份，放行，忽略矛盾
+# [agent·分歧·推翻] 审稿: 行，作者拍板。矛盾这条我先放行，标记我留着，后面咬合不上我再提。
+# ...（三次推翻 + 状态变化行省略）
+# [author·讨论·开场] 作者: 作者发起讨论「reviewer_consistency」（参与：审稿、写手）
+# [agent·讨论·发言] 审稿: 关于「reviewer_consistency」，我盯一致性：伏笔和时间线前后要咬合，出洞我第一个退稿。
+# [agent·讨论·发言] 写手: 关于「reviewer_consistency」，我守人设：人物逻辑是底线，不能为剧情强行降智。
+# [agent·讨论·总结] 总编: 围绕「reviewer_consistency」，各方的表态汇总如下：
+# 审稿：关于「reviewer_consistency」，我盯一致性：伏笔和时间线前后要咬合，出洞我第一个退稿。
+# 写手：关于「reviewer_consistency」，我守人设：人物逻辑是底线，不能为剧情强行降智。
+```
+
+`events list` 里能看见 `natural_discussion` 标记事件（超 80 字符时列表截断显示，完整 payload 仍在事件流里）：
+
+```bash
+uv run novel-editorial events list <作品ID>
+# <时间戳> [agent.message] 审稿 {"initiator": "agent", "kind": "natural_discussion", "trigger": "patience_exhaus...
+# <时间戳> [agent.message] 总编 {"kind": "discussion_summary", "discussion_id": "<讨论ID>...
+# <时间戳> [agent.message] 写手 {"kind": "discussion_contribution", ...
+# <时间戳> [agent.message] 审稿 {"kind": "discussion_contribution", ...
+# <时间戳> [agent.message] 审稿 {"kind": "override", ...
+```
+
+标记事件的完整 payload 固定为：
+
+```json
+{
+  "initiator": "agent",
+  "kind": "natural_discussion",
+  "trigger": "patience_exhausted",
+  "agent_id": "<伙伴ID>",
+  "topic": "reviewer_consistency",
+  "discussion_id": "<讨论ID>"
+}
+```
+
+（`<作品ID>`、`<伙伴ID>`、`<讨论ID>`、`<时间戳>` 换成实际输出，每次运行不同；stderr 日志已省略，其余为 mock 下的真实输出。冷却满 3 天后未决议题重新攒满可再次触发；作者拍板即收敛，见上文。）
+
 ## 判断权与分歧（拒绝、反驳与推翻）
 
 伙伴对违背自己立场的指令会拒绝，但拒绝不是审批关卡：作者可以随时换指令继续，也可以明确推翻。拒绝、反驳、推翻都会留痕，可以从 `talk list` 与 `events list` 辨认。
@@ -1303,7 +1423,7 @@ uv run novel-editorial talk discuss <作品ID> --topic <议题> [--with <别名,
 
 ### 讨论不是关卡
 
-讨论由作者主动发起（或伙伴提议后由作者确认发起），是可选的协作形态：不出现「必须讨论才能写 / 改 / 过稿」的强制节点；伙伴可以拒绝参与某个议题；作者随时可以拍板结束，拒绝不阻塞其他伙伴发言，也不阻塞作者决策。
+讨论由作者主动发起（或伙伴提议后由作者确认发起；伙伴耐心池见底时的自然召集除外，见「编辑部自然讨论（N29）」），是可选的协作形态：不出现「必须讨论才能写 / 改 / 过稿」的强制节点；伙伴可以拒绝参与某个议题；作者随时可以拍板结束，拒绝不阻塞其他伙伴发言，也不阻塞作者决策。
 
 ### 与总编 proactive_direction 的关系
 
@@ -1371,7 +1491,7 @@ uv run novel-editorial behavior timeline <作品ID>
 ## 可见性（老板怎么看见编辑部）
 
 - `events list <作品ID> [--type ...] [--limit N]`：按时间倒序回放事件（对话 / 草稿 / 质量门 / 待拍板 / 退稿）；`events watch <作品ID> [--interval 秒]` 持续输出新事件，Ctrl+C 退出。
-- `talk list <作品ID>`：对话回放；伙伴主动发的消息行首带 `[agent·主动·<kind>]` 标记，拒绝/反驳/推翻行首分别带 `[agent·分歧·拒绝]`、`[agent·分歧·反驳]`、`[agent·分歧·推翻]`，委托与回应行首分别带 `[agent·互委·委托]`、`[agent·互委·回应]`，普通消息不带（见「主动行为」「协作网络」）；写手反驳的 payload 带 `targets`，指向被回应的伙伴，可在 `events list` 的 `agent.message` 事件 payload 里核对。
+- `talk list <作品ID>`：对话回放；伙伴主动发的消息行首带 `[agent·主动·<kind>]` 标记，拒绝/反驳/推翻行首分别带 `[agent·分歧·拒绝]`、`[agent·分歧·反驳]`、`[agent·分歧·推翻]`，委托与回应行首分别带 `[agent·互委·委托]`、`[agent·互委·回应]`，讨论消息行首带 `[author·讨论·开场]` / `[agent·讨论·发言]` / `[agent·讨论·总结]` / `[author·讨论·拍板]`（见「编辑部讨论形态（N4）」「编辑部自然讨论（N29）」），普通消息不带（见「主动行为」「协作网络」）；写手反驳的 payload 带 `targets`，指向被回应的伙伴，可在 `events list` 的 `agent.message` 事件 payload 里核对。
 - `inspect <作品ID> <关键词>`：跨层检索（作品档案、风格锚点、对话、意见、版本、伙伴笔记、决策、伏笔线索），结果带来源引用；无命中输出 `no matches`。
 - `decision pending <作品ID>`：列出质量门通过、等待拍板的草稿；草稿生成 / 修订通过质量门时，命令末尾会提示 `awaiting decision`。
 
