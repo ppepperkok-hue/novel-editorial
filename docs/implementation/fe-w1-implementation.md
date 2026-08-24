@@ -107,7 +107,9 @@
 - 包 FE-W1-S2：frontend/ 路由壳 + 状态库 + 三态基线 + works 工作台 + frontend 测试 + package.json / package-lock。
 - 包 FE-W1-S3a：作者写作能力（store/models.py + migrations/ + core/draft.py + cli/draft.py + api 端点 + 后端测试 + OpenAPI 重生成）。
 - 包 FE-W1-S3b：frontend/ talk + writer 工作台 + react-markdown + 测试（S3a 验收后再发）。
-- 包 FE-W1-S4：frontend/ decision 工作台 + 演示脚本 + 回归 + 审查归档。
+- 包 FE-W1-S4a：diff 端点（api/app.py + tests/test_api.py + docs/usage.md + OpenAPI 重生成）。
+- 包 FE-W1-S4b：frontend/ decision 工作台 + SSE client 接线 + diff 界面 + 测试。
+- 包 FE-W1-S4c：W1 演示脚本 + 全量回归 + 独立审查归档 + 收口。
 
 ## 变更纪律
 
