@@ -216,6 +216,10 @@ describe("writer page", () => {
       "空稿（尚无内容）",
     );
     expect(screen.getByTestId("save-content-button")).toBeDisabled();
+    expect(screen.getByTestId("revise-button")).toBeDisabled();
+    expect(screen.getByTestId("revise-empty-hint")).toHaveTextContent(
+      "先保存第一版",
+    );
     expect(screen.getByTestId("draft-versions-panel")).toHaveTextContent(
       "暂无版本",
     );
@@ -552,6 +556,11 @@ describe("writer page", () => {
         ),
       ).toHaveLength(2);
     });
+    await waitFor(() => {
+      expect(screen.getByTestId("editor-textarea")).toHaveValue(
+        "修订后的正文",
+      );
+    });
     const posts = fetchMock.mock.calls.filter(
       ([url, init]) =>
         String(url).endsWith("/revise") && init?.method === "POST",
@@ -560,6 +569,75 @@ describe("writer page", () => {
     expect(JSON.parse(posts[0][1]?.body as string)).toEqual({
       reason: "按意见重写",
     });
+  });
+
+  it("keeps unsaved editor input when a new version arrives from a refresh", async () => {
+    let versions = [...draftV1Versions];
+    let currentVersion = 1;
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/works/w-a") {
+        return Promise.resolve(jsonResponse(workspaceBody));
+      }
+      if (url === "/works/w-a/drafts") {
+        return Promise.resolve(jsonResponse([draftSummaryV1]));
+      }
+      if (url === "/works/w-a/drafts/d1") {
+        return Promise.resolve(
+          jsonResponse(
+            draftDetailBody(versions, { current_version: currentVersion }),
+          ),
+        );
+      }
+      if (url === "/works/w-a/drafts/d1/revise" && init?.method === "POST") {
+        currentVersion = 2;
+        versions = [
+          ...versions,
+          {
+            version: 2,
+            actor: "写手",
+            reason: "按意见重写",
+            created_at: "2026-08-22T12:00:00+00:00",
+            content: "修订后的正文",
+          },
+        ];
+        return Promise.resolve(
+          jsonResponse({
+            id: "d1",
+            title: "第一章",
+            status: "draft",
+            current_version: 2,
+            updated_at: "2026-08-22T12:00:00+00:00",
+            awaiting_decision: true,
+          }),
+        );
+      }
+      if (url === "/works/w-a/reviews?draft_id=d1") {
+        return Promise.resolve(jsonResponse(reviewsBody));
+      }
+      return Promise.reject(new Error(`未预期的请求：${url}`));
+    });
+    renderWriter(fetchMock);
+
+    await screen.findByRole("heading", { name: "第一章" });
+    const editor = screen.getByTestId("editor-textarea");
+    fireEvent.change(editor, {
+      target: { value: "我的未保存修改" },
+    });
+    fireEvent.change(screen.getByTestId("revise-reason-input"), {
+      target: { value: "按意见重写" },
+    });
+    fireEvent.click(screen.getByTestId("revise-button"));
+
+    await screen.findByTestId("revise-result");
+    await waitFor(() => {
+      expect(screen.getByTestId("editor-sync-notice")).toHaveTextContent(
+        "检测到新版本",
+      );
+    });
+    expect(screen.getByTestId("editor-textarea")).toHaveValue(
+      "我的未保存修改",
+    );
   });
 
   it("toggles between the textarea and the Markdown preview", async () => {

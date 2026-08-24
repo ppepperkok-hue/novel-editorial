@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import { Link, useParams } from "react-router-dom";
 
@@ -61,13 +61,31 @@ function DraftEditor({
   const [mode, setMode] = useState<"write" | "preview">("write");
   const [reason, setReason] = useState("");
   const [lastSaved, setLastSaved] = useState<DraftWriteResponse | null>(null);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
+  const dirtyRef = useRef(false);
+  const lastHandledIdRef = useRef<string | null>(null);
+  const latestText = latestVersion(detail)?.content ?? "";
 
   useEffect(() => {
-    setContent(latestVersion(detail)?.content ?? "");
-    setReason("");
-    setLastSaved(null);
-    setMode("write");
-  }, [detail.id]);
+    if (lastHandledIdRef.current !== detail.id) {
+      // 切换草稿：整体重置编辑器状态
+      lastHandledIdRef.current = detail.id;
+      dirtyRef.current = false;
+      setContent(latestText);
+      setSyncNotice(null);
+      setReason("");
+      setLastSaved(null);
+      setMode("write");
+      return;
+    }
+    // 同一草稿的最新版本刷新：保留未保存的手改，否则同步最新正文
+    if (dirtyRef.current) {
+      setSyncNotice("检测到新版本，你未保存的修改仍在编辑器中");
+      return;
+    }
+    setContent(latestText);
+    setSyncNotice(null);
+  }, [detail.id, latestText]);
 
   const canSave =
     content.trim() !== "" && !saveMutation.isPending && detail.status !== "accepted";
@@ -86,7 +104,11 @@ function DraftEditor({
         },
       },
       {
-        onSuccess: (result) => setLastSaved(result),
+        onSuccess: (result) => {
+          dirtyRef.current = false;
+          setSyncNotice(null);
+          setLastSaved(result);
+        },
       },
     );
   }
@@ -122,6 +144,15 @@ function DraftEditor({
           当前 v{detail.current_version}
         </span>
       </div>
+      {syncNotice !== null ? (
+        <div
+          className="result-banner editor-sync-notice"
+          data-testid="editor-sync-notice"
+          role="status"
+        >
+          {syncNotice}
+        </div>
+      ) : null}
       {detail.versions.length === 0 ? (
         <div className="editor-empty" data-testid="draft-empty-v0">
           <EmptyState
@@ -134,7 +165,10 @@ function DraftEditor({
         <textarea
           className="editor-textarea"
           value={content}
-          onChange={(event) => setContent(event.target.value)}
+          onChange={(event) => {
+            dirtyRef.current = true;
+            setContent(event.target.value);
+          }}
           placeholder="从第一行开始写正文…"
           aria-label="正文内容"
           data-testid="editor-textarea"
@@ -203,10 +237,12 @@ function ReviseForm({
     setLastRevised(null);
   }, [detail.id]);
 
+  const hasLatestContent = hasContent(detail);
   const canRevise =
     reason.trim() !== "" &&
     !reviseMutation.isPending &&
-    detail.status !== "accepted";
+    detail.status !== "accepted" &&
+    hasLatestContent;
 
   function handleRevise() {
     const text = reason.trim();
@@ -251,6 +287,11 @@ function ReviseForm({
           {reviseMutation.isPending ? "修订中…" : "生成修订版"}
         </button>
       </div>
+      {!hasLatestContent ? (
+        <p className="form-hint" data-testid="revise-empty-hint">
+          空稿暂无内容，先保存第一版再生成修订版
+        </p>
+      ) : null}
       {reviseMutation.isError ? (
         <p className="inline-error" data-testid="revise-error">
           {reviseMutation.error.message}
