@@ -77,3 +77,4 @@
 ## 状态
 
 - S1 完成（2026-08-25）：结构 / 大纲 / 设定 / 灵感写面与读面端点（逐条映射 CLI），commits a86d96e / 69d2b6a；全量 1500 测试 + ruff / pyright / 宪法 + gen:types / typecheck 全绿；独立审查 1 条 P3 已修复复核收敛，归档 docs/reviews/20260825-FE-W2-S1-initial.md。待办：S2（结构 / 大纲 / 设定 / 灵感工作台）。
+- S2 完成（2026-08-25）：结构工作台（卷章篇树 / 大纲 / 进度）+ 设定与灵感工作台（设定库 / check 报告 / 灵感素材 / 穿透检索），commits 1cab0c7 / 6a8aeb5；前端 160 用例四命令全绿；独立审查 2 条 P3 已修复复核收敛，归档 docs/reviews/20260825-FE-W2-S2-initial.md。待办：S3（总览 SSE 合并 + W2 收口）。
