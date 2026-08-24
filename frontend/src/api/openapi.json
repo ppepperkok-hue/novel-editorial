@@ -1248,6 +1248,7 @@
           },
           "content": {
             "type": "string",
+            "minLength": 1,
             "title": "Content"
           }
         },
@@ -1278,6 +1279,7 @@
         "properties": {
           "message": {
             "type": "string",
+            "minLength": 1,
             "title": "Message"
           }
         },

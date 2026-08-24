@@ -14,7 +14,7 @@ from typing import Any
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sse_starlette.sse import EventSourceResponse
 
 from novel_editorial.core import (
@@ -115,7 +115,14 @@ class DecisionBody(BaseModel):
 
 
 class TalkSendBody(BaseModel):
-    message: str
+    message: str = Field(min_length=1)
+
+    @field_validator("message")
+    @classmethod
+    def _message_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("message must not be empty or whitespace-only")
+        return value
 
 
 class DraftGenerateBody(BaseModel):
@@ -131,7 +138,14 @@ class DraftReviseBody(BaseModel):
 class ReviewAddBody(BaseModel):
     draft_id: str = Field(min_length=1)
     source: str = "作者"
-    content: str
+    content: str = Field(min_length=1)
+
+    @field_validator("content")
+    @classmethod
+    def _content_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("content must not be empty or whitespace-only")
+        return value
 
 
 class StyleSetBody(BaseModel):
@@ -488,7 +502,11 @@ async def _event_stream(
     """Yield workspace events strictly after the cursor, then poll for new ones."""
     cursor = after_rowid
     while True:
-        records = list_events_since(db, workspace_id, after_rowid=cursor)
+        # Run the synchronous store query in a worker thread so the uvicorn
+        # event loop and sse-starlette heartbeats never block on SQLite.
+        records = await asyncio.to_thread(
+            list_events_since, db, workspace_id, after_rowid=cursor
+        )
         for record in records:
             yield {
                 "id": str(record.rowid),

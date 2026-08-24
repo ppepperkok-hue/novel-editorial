@@ -25,7 +25,7 @@ from novel_editorial.core.style import set_style_anchor
 from novel_editorial.events import EventType
 from novel_editorial.llm.client import MockLLMClient
 from novel_editorial.store.db import DB
-from novel_editorial.store.events import list_events_since, record_event
+from novel_editorial.store.events import EventRecord, list_events_since, record_event
 from novel_editorial.store.models import Agent, Draft, DraftVersion, Event, Review, Workspace
 
 runner = CliRunner()
@@ -55,6 +55,22 @@ def _table_counts(db: DB, workspace_id: str) -> list[dict[str, int]]:
                 }
             )
     return snapshots
+
+
+def _detail_text(detail: object) -> str:
+    """Flatten a FastAPI validation detail into one searchable string."""
+    if isinstance(detail, str):
+        return detail
+    if not isinstance(detail, list):
+        return str(detail)
+    parts: list[str] = []
+    for item in detail:
+        if not isinstance(item, dict):
+            parts.append(str(item))
+            continue
+        loc = ".".join(str(part) for part in item.get("loc", []))
+        parts.append(f"{loc}: {item.get('msg', item)}")
+    return " | ".join(parts)
 
 
 def _seed_workspace(client: TestClient, db: DB, title: str = "可见性之书") -> str:
@@ -1048,6 +1064,31 @@ def test_talk_send_unknown_alias_and_missing_workspace(
     assert missing.json() == {"detail": "workspace not found: missing"}
 
 
+def test_talk_send_rejects_empty_or_blank_message(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P3-2: blank messages are a 422 usage error with no DB or LLM side effects."""
+
+    def llm_must_not_run(*args, **kwargs) -> None:
+        raise AssertionError("LLM must not be called for a blank message")
+
+    monkeypatch.setattr(api_app, "build_client", llm_must_not_run)
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "空消息之书"}).json()["id"]
+    before_counts = _table_counts(db, workspace_id)
+
+    for message in ("", "   ", "\t\n "):
+        response = client.post(
+            f"/works/{workspace_id}/talk", json={"message": message}
+        )
+        assert response.status_code == 422, repr(message)
+        text = _detail_text(response.json()["detail"])
+        assert "message" in text
+        assert "whitespace-only" in text or "at least 1 character" in text
+
+    assert _table_counts(db, workspace_id) == before_counts
+
+
 def test_talk_list_renders_like_cli(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1265,6 +1306,28 @@ def test_review_add_end_to_end(
     assert missing.json() == {"detail": "draft not found: does-not-exist"}
 
 
+def test_review_add_rejects_empty_or_blank_content(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P3-2: blank review content is a 422 usage error and nothing is stored."""
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "空意见之书"}).json()["id"]
+    draft_id = _seed_draft(db, workspace_id)
+    before_counts = _table_counts(db, workspace_id)
+
+    for content in ("", "  ", "\n\t"):
+        response = client.post(
+            f"/works/{workspace_id}/reviews",
+            json={"draft_id": draft_id, "source": "责编", "content": content},
+        )
+        assert response.status_code == 422, repr(content)
+        text = _detail_text(response.json()["detail"])
+        assert "content" in text
+        assert "whitespace-only" in text or "at least 1 character" in text
+
+    assert _table_counts(db, workspace_id) == before_counts
+
+
 def test_style_set_end_to_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1449,6 +1512,60 @@ def test_sse_sends_heartbeat_comments(
                         break
 
         assert len(pings) >= 2
+    finally:
+        _stop_api_server(server, thread)
+
+
+def test_sse_poll_query_runs_off_event_loop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P3-1: a slow events query must not block heartbeats or other requests."""
+    real_list_events_since = api_app.list_events_since
+
+    def slow_list_events_since(
+        db: DB, workspace_id: str, *, after_rowid: int | None = None
+    ) -> list[EventRecord]:
+        time.sleep(1.2)
+        return real_list_events_since(db, workspace_id, after_rowid=after_rowid)
+
+    monkeypatch.setattr(api_app, "list_events_since", slow_list_events_since)
+    server, thread, port = _start_api_server(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    with httpx.Client(base_url=f"http://127.0.0.1:{port}", timeout=10) as http:
+        workspace_id = http.post("/works", json={"title": "不卡循环之书"}).json()["id"]
+    try:
+        record_event(
+            db,
+            workspace_id,
+            type=EventType.SYSTEM,
+            actor="system",
+            payload={"n": 1},
+        )
+        record_event(
+            db,
+            workspace_id,
+            type=EventType.SYSTEM,
+            actor="system",
+            payload={"n": 2},
+        )
+        url = f"http://127.0.0.1:{port}/works/{workspace_id}/events/stream"
+        with httpx.Client(timeout=10) as http:
+            with http.stream("GET", url) as response:
+                assert response.status_code == 200
+                for line in response.iter_lines():
+                    if line.startswith("data:"):
+                        break
+                with httpx.Client(
+                    base_url=f"http://127.0.0.1:{port}", timeout=3
+                ) as health:
+                    for _ in range(2):
+                        started = time.monotonic()
+                        health_response = health.get("/health")
+                        elapsed = time.monotonic() - started
+                        assert health_response.status_code == 200
+                        assert elapsed < 1.0, (
+                            f"health check blocked for {elapsed:.2f}s"
+                        )
     finally:
         _stop_api_server(server, thread)
 
