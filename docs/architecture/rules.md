@@ -7,7 +7,7 @@
 - 采用 src 布局：`src/novel_editorial/` 为包根，`tests/` 镜像包结构。
 - 模块小写下划线；类用 PascalCase；常量用 UPPER_SNAKE。
 - 分层目录约定：`cli/`（命令入口）、`api/`（HTTP 入口层；依赖方向 `api → core → store/llm/quality`，api 不得 import cli）、`core/`（领域模型与服务）、`store/`（数据访问）、`llm/`（LLM 客户端）、`quality/`（质量门）、`events.py`（事件契约）。
-- 前端目录约定（N12 面板）：`frontend/` 为唯一前端根（package.json / tsconfig / vite 配置 / src/ 组件）；前端不 import 任何 Python 代码，只按 N24 API 的 OpenAPI 契约请求；构建产物 `frontend/dist` 由 `api` 层静态托管。
+- 前端目录约定（N12 面板）：`frontend/` 为唯一前端根（package.json / tsconfig / vite 配置 / src/ 组件）；前端不 import 任何 Python 代码，只按 N24 API 的 OpenAPI 契约请求；构建产物 `frontend/dist` 由 `api` 层静态托管。前端大项目（FE）的架构与接入规则见 `docs/architecture/frontend-app.md`。
 - 每部作品数据放 `data/works/<workspace_id>/`，全局库放 `data/global.db`；配置放 `config.toml`（用户级可覆盖）。
 
 ## 2. 依赖方向
