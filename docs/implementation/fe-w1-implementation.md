@@ -20,14 +20,15 @@
 - 后端新增依赖：sse-starlette（SSE 实时通道）。
 - src/novel_editorial/api/ 扩展写面端点 + OpenAPI；依赖方向 api → core 不变，业务仍下沉 core。
 - events.py 事件契约不变（SSE 复用既有事件结构）；错误码枚举不变；不新增表、不迁移。
+- S3 将涉及 DraftVersion 增加 actor 列（Alembic 加性迁移，作者改稿留痕）：本阶段 S1 不碰表结构与 core/draft，留到 S3 单独立评估。
 
 ## 子阶段 S1：后端契约与实时通道（FE-A）
 
 ### 做什么
 
-- 写面端点（逐条映射 CLI 命令）：works 详情 / 班子 / 模板，talk send / list，draft create / save / generate / revise / versions，review add，decision 三动作，style get / set。
+- 写面端点（逐条映射**既有** CLI 命令，参数与错误码同源）：works 详情 / 班子 / 模板，talk send / list，draft generate / revise / list / show / diff，review add / list，decision list / pending / 三动作，style get / set。业务逻辑一律调 core 既有函数，不重写。
 - OpenAPI 同步更新；openapi-typescript 生成 TS 类型进 frontend/src/api/（生成产物不手改）。
-- SSE 端点 `/events/stream`：游标续传（Last-Event-ID），payload 复用 events.py 契约；sse-starlette；断线重连语义与轮询降级（可配置）。
+- SSE 端点 `/works/{workspace_id}/events/stream`：游标续传（Last-Event-ID = 该作品库 rowid，严格大于游标），payload 复用 events.py 契约；sse-starlette；断线重连语义与轮询降级（可配置）。
 
 ### 做到什么程度
 
@@ -39,7 +40,7 @@
 
 ### 暂不做
 
-- 前端工作台实现（S2–S4）；SSE 之外的双向机制。
+- 前端工作台实现（S2–S4）；SSE 之外的双向机制；作者手动写作能力（新建空草稿 / 作者改稿落版本，需 DraftVersion.actor 迁移，S3 单独立评估）；全局事件流合并（W2）。
 
 ## 子阶段 S2：全功能壳与作品班子工作台（FE-B + FE-C）
 
@@ -66,6 +67,7 @@
 
 - 对话工作台：talk 发送 / 回放、分歧 / 讨论标记（对齐 talk list 输出）。
 - 正文工作台：纯文本 + Markdown 预览编辑器、手动保存、LLM 生成 / 修订接线、版本列表与对比、审稿意见显示、质量门结果与待拍板提示。
+- 后端作者写作能力（本阶段落地）：core 作者存稿函数 + DraftVersion.actor 列 Alembic 加性迁移 + CLI `draft new` / `draft save` + 对应 API 端点；动工前先给影响评估（表结构为地基，评估后再实现）。
 
 ### 做到什么程度
 
@@ -100,9 +102,9 @@
 
 ## 任务包规划（09a 文件不相交）
 
-- 包 FE-W1-S1：src/novel_editorial/api/ + pyproject.toml（sse-starlette）+ OpenAPI + frontend/src/api 生成类型 + 后端契约 / SSE 测试。
+- 包 FE-W1-S1：src/novel_editorial/api/app.py + tests/test_api.py + pyproject.toml / uv.lock（sse-starlette）+ frontend/src/api 生成类型与 gen:types 脚本 + frontend/package.json / package-lock（openapi-typescript）+ docs/usage.md HTTP API 节。
 - 包 FE-W1-S2：frontend/ 路由壳 + 状态库 + 三态基线 + works 工作台 + frontend 测试 + package.json / package-lock。
-- 包 FE-W1-S3：frontend/ talk + writer 工作台 + 测试。
+- 包 FE-W1-S3：作者写作能力（core/draft + store/models.py + migrations/ + cli/draft.py + api 端点）+ frontend/ talk + writer 工作台 + 测试。
 - 包 FE-W1-S4：frontend/ decision 工作台 + 演示脚本 + 回归 + 审查归档。
 
 ## 变更纪律
