@@ -119,3 +119,4 @@
 - S1 完成（2026-08-25）：写面端点 + SSE 实时通道 + OpenAPI 生成类型，commits 74808cf / 2e676a9；全量 1464 测试 + ruff / pyright / 宪法 + 前端四命令全绿；独立审查 2 条 P3 已修复复核收敛，归档 docs/reviews/20260825-FE-W1-S1-initial.md。待办：S2（全功能壳与作品班子工作台）。
 - S2 完成（2026-08-25）：路由壳（React Router / TanStack Query / Zustand）+ 三态基线 + works 工作台，commits 5150963 / e0bf264；前端 64 用例四命令全绿；独立审查 1 条 Important 已修复复核收敛，归档 docs/reviews/20260825-FE-W1-S2-initial.md。待办：S3（对话与正文工作台 + 作者写作能力）。
 - S3a 完成（2026-08-25）：作者写作能力（DraftVersion.actor 迁移 + core 函数 + CLI draft new/save + API 端点），commits 487ee8f / 5ba4615；全量 1478 测试 + ruff / pyright / 宪法全绿；独立审查 1 条 Important 已修复复核收敛，归档 docs/reviews/20260825-FE-W1-S3a-initial.md。待办：S3b（前端对话与正文工作台）。
+- S3b 完成（2026-08-25）：对话工作台 + 正文工作台（编辑器 / 版本 / 审稿意见 / 质量门显示 + react-markdown），commits b6035f5 / a61d06f；前端 93 用例四命令全绿；独立审查 P2+P3 已修复复核收敛，归档 docs/reviews/20260825-FE-W1-S3b-initial.md。待办：S4（拍板工作台 + SSE 客户端接线 + 版本 diff + W1 收口）。
