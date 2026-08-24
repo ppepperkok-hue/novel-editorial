@@ -76,4 +76,4 @@
 
 ## 状态
 
-- 待开工：S1 起。
+- S1 完成（2026-08-25）：结构 / 大纲 / 设定 / 灵感写面与读面端点（逐条映射 CLI），commits a86d96e / 69d2b6a；全量 1500 测试 + ruff / pyright / 宪法 + gen:types / typecheck 全绿；独立审查 1 条 P3 已修复复核收敛，归档 docs/reviews/20260825-FE-W2-S1-initial.md。待办：S2（结构 / 大纲 / 设定 / 灵感工作台）。
