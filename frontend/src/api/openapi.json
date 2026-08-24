@@ -1614,6 +1614,17 @@
               }
             }
           },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -1721,6 +1732,17 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Write Workspace Setting Route Works  Workspace Id  Settings Post"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
                 }
               }
             }

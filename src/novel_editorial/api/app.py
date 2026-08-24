@@ -719,6 +719,16 @@ def _frontend_dist_dir() -> Path:
     return Path(__file__).resolve().parents[3] / "frontend" / "dist"
 
 
+_CREATED_JSON_RESPONSE: dict[str, Any] = {
+    "description": "Created",
+    "content": {
+        "application/json": {
+            "schema": {"type": "object", "additionalProperties": True}
+        }
+    },
+}
+
+
 def create_app() -> FastAPI:
     """Build the FastAPI application bound to the current configuration."""
     settings = load_settings()
@@ -1253,7 +1263,10 @@ def create_app() -> FastAPI:
         outline_row = outline.get_outline(db, workspace_id)
         return _outline_dict(outline_row) if outline_row is not None else None
 
-    @app.post("/works/{workspace_id}/outline")
+    @app.post(
+        "/works/{workspace_id}/outline",
+        responses={201: _CREATED_JSON_RESPONSE},
+    )
     def write_workspace_outline_route(
         workspace_id: str, body: OutlineWriteBody, response: Response
     ) -> dict[str, Any]:
@@ -1304,7 +1317,10 @@ def create_app() -> FastAPI:
         get_workspace_or_raise(db, workspace_id)
         return _setting_dict(setting.get_setting(db, workspace_id, setting_id))
 
-    @app.post("/works/{workspace_id}/settings")
+    @app.post(
+        "/works/{workspace_id}/settings",
+        responses={201: _CREATED_JSON_RESPONSE},
+    )
     def write_workspace_setting_route(
         workspace_id: str, body: SettingWriteBody, response: Response
     ) -> dict[str, Any]:

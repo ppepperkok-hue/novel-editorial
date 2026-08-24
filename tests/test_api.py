@@ -926,6 +926,21 @@ def test_openapi_draft_diff_200_is_text_plain(
     assert "application/json" not in responses["content"]
 
 
+def test_openapi_outline_settings_post_declare_201(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Outline/settings create paths must advertise 201 (create) and keep 200 (revise)."""
+    _make_client(tmp_path, monkeypatch)
+    spec = create_app().openapi()["paths"]
+    for path in (
+        "/works/{workspace_id}/outline",
+        "/works/{workspace_id}/settings",
+    ):
+        responses = spec[path]["post"]["responses"]
+        assert "201" in responses
+        assert "200" in responses
+
+
 def test_reviews_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client, db = _make_client(tmp_path, monkeypatch)
     workspace_id = client.post("/works", json={"title": "意见之书"}).json()["id"]

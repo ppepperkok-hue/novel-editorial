@@ -2046,6 +2046,17 @@ export interface operations {
                     };
                 };
             };
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -2109,6 +2120,17 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Created */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
