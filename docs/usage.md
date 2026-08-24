@@ -1004,7 +1004,7 @@ N28 的耐心池见底时只记账与可见（见「反馈与沉默（N28）」�
 
 ### 可见性：natural_discussion 事件与 talk list 标记
 
-- `events list <作品ID>`：自然召集追加一条 `agent.message` 事件，payload 固定带 `initiator=agent`、`kind=natural_discussion`、`trigger=patience_exhausted`、`agent_id`、`topic`、`discussion_id`——这条就是「发起方是伙伴」的凭证；同一轮里的开场 / 发言 / 总结仍是既有 `discussion_*` 事件。
+- `events list <作品ID>`：自然召集追加一条 `agent.message` 事件，payload 固定带 `initiator=agent`、`kind=natural_discussion`、`trigger=patience_exhausted`、`agent_id`、`topic`、`discussion_id`——这条就是「发起方是伙伴」的凭证；同轮讨论的开场不出现在这里：开场是作者消息（payload 带 `kind=discussion_open`），作者消息不进事件流；发言 / 总结是伙伴消息（`discussion_contribution` / `discussion_summary`），照常出现在 `events list`。
 - `talk list <作品ID>`：整轮自然讨论与 N4 相同标记，从开场到总结一屏可见：`[author·讨论·开场]`、`[agent·讨论·发言]`、`[agent·讨论·总结]`；作者未拍板时没有 `[author·讨论·拍板]`。
 - `behavior timeline <作品ID> --kind cooldown`：冷却记录可查，议题、来源与池值摘要一行说清。
 
@@ -1037,14 +1037,16 @@ uv run novel-editorial talk send <作品ID> "@审稿 以老板身份，放行，
 
 ```bash
 uv run novel-editorial patience show <作品ID>
-# [审稿] pool=7 patience=7 consumed=0 rejected=0 overridden=0 conflict=0
 # [责编] pool=3 patience=3 consumed=0 rejected=0 overridden=0 conflict=0
-# [写手] pool=4 patience=4 consumed=0 rejected=0 overridden=0 conflict=0
 # [总编] pool=8 patience=8 consumed=0 rejected=0 overridden=0 conflict=0
+# [审稿] pool=7 patience=7 consumed=0 rejected=0 overridden=0 conflict=0
+# [写手] pool=4 patience=4 consumed=0 rejected=0 overridden=0 conflict=0
 
 uv run novel-editorial behavior timeline <作品ID> --kind cooldown
 # <时间戳> [cooldown] 审稿 -> reviewer_consistency: 自然召集后议题进入冷却 | 无 -> pool=0 (rejected=0 overridden=3 conflict=0) | source=discussion:summoned
 ```
+
+（`patience show` 按伙伴创建顺序（`created_at, id`）输出，行序每次运行可能不同，数值稳定。）
 
 `talk list` 可见整轮自然讨论的标记（开场文案 convener 仍是作者；作者未拍板，没有拍板行）：
 
@@ -1069,6 +1071,8 @@ uv run novel-editorial events list <作品ID>
 # <时间戳> [agent.message] 总编 {"kind": "discussion_summary", "discussion_id": "<讨论ID>...
 # <时间戳> [agent.message] 写手 {"kind": "discussion_contribution", ...
 # <时间戳> [agent.message] 审稿 {"kind": "discussion_contribution", ...
+# <时间戳> [agent.message] 审稿 {"kind": "override", ...
+# <时间戳> [agent.message] 审稿 {"kind": "override", ...
 # <时间戳> [agent.message] 审稿 {"kind": "override", ...
 ```
 
