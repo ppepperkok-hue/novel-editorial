@@ -131,4 +131,4 @@ pytest + ruff + pyright + 宪法 + smoke_m3 + stress_m3 + 文档实跑。
 - S1 完成（2026-08-24）：cooldown 行为 kind + core/natural_discussion.py 触发判定（池底候选 / 议题冷却 / 开关）+ 三累积点接线，commits 7ae1f3e / c182f29；全量 1416 测试绿；独立审查 2 条意见已修复复核收敛，归档 docs/reviews/20260824-M5N29S1-initial.md。
 - S2 完成（2026-08-24）：summon_natural_discussion 完整 N4 形态 + natural_discussion 事件 + 总编中立守卫 + no-topic 契约，commits bf548a8 / ddf0dba；全量 1430 测试绿；独立审查 2 条意见已修复复核收敛，归档 docs/reviews/20260824-M5N29S2-initial.md。
 - S3 完成（2026-08-24）：三触发点实际召集 + cooldown 写回 + 池清零（含 reject 组专属开闭语义，非 reject 事件不复活历史拒绝）+ 递归守卫，commits 2aa2ae1 / 7fc1de1；全量 1440 测试绿；独立审查 1 条关键意见已修复复核收敛，归档 docs/reviews/20260824-M5N29S3-initial.md。
-- 待办：S4 可见性、文档与收口（usage「编辑部自然讨论」节 + 全量回归 + smoke_m3 + stress_m3 + 独立审查归档）。
+- S4 完成（2026-08-24）：usage「编辑部自然讨论」节 + 可见性断言测试，commits 9afd04c / 9c4a419；全量 1440 测试 + smoke_m3 + stress_m3 + 宪法全绿；独立审查 2 条 P3 已修复复核收敛，归档 docs/reviews/20260824-M5N29S4-initial.md。N29 收口。
