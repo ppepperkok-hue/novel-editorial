@@ -2,22 +2,33 @@
 
 from __future__ import annotations
 
+import json
+import socket
+import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx
 import pytest
+import uvicorn
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect, text
+from typer.testing import CliRunner
 
 from novel_editorial.api import app as api_app
 from novel_editorial.api.app import create_app
+from novel_editorial.cli.app import app as cli_app
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.structure import create_node
 from novel_editorial.core.style import set_style_anchor
 from novel_editorial.events import EventType
+from novel_editorial.llm.client import MockLLMClient
 from novel_editorial.store.db import DB
-from novel_editorial.store.events import record_event
+from novel_editorial.store.events import list_events_since, record_event
 from novel_editorial.store.models import Agent, Draft, DraftVersion, Event, Review, Workspace
+
+runner = CliRunner()
 
 
 def _make_client(
@@ -112,6 +123,58 @@ def _seed_review(
             )
         )
         session.commit()
+
+
+def _patch_llm(monkeypatch: pytest.MonkeyPatch, reply: str) -> None:
+    """Point both the CLI and the API at the same deterministic mock client."""
+    monkeypatch.setattr(
+        "novel_editorial.cli.talk.build_client",
+        lambda settings: MockLLMClient(reply=reply),
+    )
+    monkeypatch.setattr(
+        "novel_editorial.cli.draft.build_client",
+        lambda settings: MockLLMClient(reply=reply),
+    )
+    monkeypatch.setattr(
+        "novel_editorial.api.app.build_client",
+        lambda settings: MockLLMClient(reply=reply),
+    )
+
+
+def _free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def _start_api_server(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[uvicorn.Server, threading.Thread, int]:
+    """Start a real uvicorn server bound to a free local port."""
+    monkeypatch.setenv("NOVEL_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("NOVEL_CONFIG", str(tmp_path / "config.toml"))
+    monkeypatch.setenv("NOVEL_FRONTEND_DIST", str(tmp_path / "no-dist"))
+    port = _free_port()
+    config = uvicorn.Config(
+        create_app,
+        factory=True,
+        host="127.0.0.1",
+        port=port,
+        log_level="warning",
+    )
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 10
+    while not server.started and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert server.started, "API server failed to start"
+    return server, thread, port
+
+
+def _stop_api_server(server: uvicorn.Server, thread: threading.Thread) -> None:
+    server.should_exit = True
+    thread.join(timeout=10)
 
 
 def test_health(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -849,9 +912,12 @@ def test_panel_routes_404_for_missing_workspace(
         "/works/missing/pending",
         "/works/missing/drafts",
         "/works/missing/drafts/x",
+        "/works/missing/drafts/x/decisions",
+        "/works/missing/talk",
         "/works/missing/reviews?draft_id=x",
         "/works/missing/inspect?keyword=k",
         "/works/missing/log",
+        "/works/missing/events/stream",
     )
     for path in paths:
         response = client.get(path)
@@ -885,3 +951,718 @@ def test_panel_read_routes_do_not_write(
 
     assert _table_counts(db, workspace_id) == before_counts
     assert client.get(f"/works/{workspace_id}/events").json() == events_before
+
+
+def test_templates_endpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    response = client.get("/templates")
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["name"] for item in body] == ["网文", "同人", "正统"]
+    for item in body:
+        assert set(item) == {"name", "description"}
+        assert item["description"]
+
+
+def test_talk_send_end_to_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_llm(monkeypatch, reply="（模拟回复）")
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "对话之书"}).json()["id"]
+
+    response = client.post(
+        f"/works/{workspace_id}/talk", json={"message": "我们写一个侦探故事"}
+    )
+    assert response.status_code == 201
+    assert set(response.json()) == {"messages"}
+    messages = response.json()["messages"]
+    assert [message["role"] for message in messages] == [
+        "author",
+        "agent",
+        "system",
+        "agent",
+        "agent",
+    ]
+    assert messages[0]["actor"] == "作者"
+    assert messages[0]["content"] == "我们写一个侦探故事"
+    assert messages[0]["payload"] == {}
+    assert messages[1]["actor"] == "总编"
+    assert messages[1]["content"] == "（模拟回复）"
+    assert messages[2]["payload"]["kind"] == "mood_change"
+    assert messages[3]["actor"] == "责编"
+    assert messages[3]["content"].startswith("我想先确认一下")
+    assert messages[3]["payload"]["kind"] == "proactive_question"
+    assert messages[4]["actor"] == "总编"
+    assert messages[4]["payload"]["kind"] == "proactive_direction"
+    for message in messages:
+        assert set(message) == {
+            "id",
+            "role",
+            "actor",
+            "content",
+            "payload",
+            "created_at",
+        }
+
+    second = client.post(f"/works/{workspace_id}/talk", json={"message": "第二条"})
+    assert second.status_code == 201
+    second_messages = second.json()["messages"]
+    assert [message["role"] for message in second_messages] == ["author", "agent"]
+    assert second_messages[1]["content"] == "（模拟回复）"
+
+
+def test_talk_send_refusal_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "立场之书"}).json()["id"]
+    response = client.post(
+        f"/works/{workspace_id}/talk", json={"message": "@责编 删掉钩子"}
+    )
+    assert response.status_code == 201
+    messages = response.json()["messages"]
+    assert messages[0]["content"] == "@责编 删掉钩子"
+    refusal = messages[1]
+    assert refusal["payload"]["kind"] == "refusal"
+    assert refusal["payload"]["rule"] == "editor_hooks"
+    assert "钩子" in refusal["content"]
+
+
+def test_talk_send_unknown_alias_and_missing_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "别名之书"}).json()["id"]
+
+    invalid = client.post(
+        f"/works/{workspace_id}/talk", json={"message": "@主编大人 你好"}
+    )
+    assert invalid.status_code == 422
+    assert "unknown partner alias" in invalid.json()["detail"]
+
+    missing = client.post("/works/missing/talk", json={"message": "你好"})
+    assert missing.status_code == 404
+    assert missing.json() == {"detail": "workspace not found: missing"}
+
+
+def test_talk_list_renders_like_cli(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_llm(monkeypatch, reply="（模拟回复）")
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "回放之书"}).json()["id"]
+    client.post(f"/works/{workspace_id}/talk", json={"message": "我们写一个侦探故事"})
+
+    response = client.get(f"/works/{workspace_id}/talk")
+    assert response.status_code == 200
+    items = response.json()
+    assert len(items) == 5
+    for item in items:
+        assert set(item) == {
+            "id",
+            "role",
+            "actor",
+            "content",
+            "payload",
+            "created_at",
+            "mark",
+            "line",
+        }
+    assert items[0]["mark"] is None
+    assert items[0]["line"] == "[author] 作者: 我们写一个侦探故事"
+    assert items[1]["line"] == "[agent] 总编: （模拟回复）"
+    assert items[2]["mark"] is None
+    assert items[2]["line"].startswith("[system] 总编: 总编 的状态从")
+    assert items[3]["mark"] == "agent·主动·proactive_question"
+    assert items[4]["mark"] == "agent·主动·proactive_direction"
+
+
+def test_draft_generate_end_to_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_llm(monkeypatch, reply="正文内容")
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "生成之书"}).json()["id"]
+
+    response = client.post(f"/works/{workspace_id}/drafts", json={})
+    assert response.status_code == 201
+    body = response.json()
+    assert set(body) == {
+        "id",
+        "title",
+        "status",
+        "current_version",
+        "updated_at",
+        "awaiting_decision",
+    }
+    assert body["title"] == "未命名章节"
+    assert body["status"] == "draft"
+    assert body["current_version"] == 1
+    assert body["awaiting_decision"] is True
+
+    detail = client.get(f"/works/{workspace_id}/drafts/{body['id']}").json()
+    assert detail["versions"][0]["content"] == "正文内容"
+    assert detail["versions"][0]["reason"] == "initial"
+
+    pending = client.get(f"/works/{workspace_id}/pending").json()
+    assert [item["id"] for item in pending] == [body["id"]]
+
+
+def test_draft_generate_writer_validation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_llm(monkeypatch, reply="正文内容")
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "写手校验"}).json()["id"]
+
+    non_writer = client.post(
+        f"/works/{workspace_id}/drafts", json={"writer": "责编"}
+    )
+    assert non_writer.status_code == 422
+    assert "not a writer" in non_writer.json()["detail"]
+
+    unknown = client.post(f"/works/{workspace_id}/drafts", json={"writer": "路人"})
+    assert unknown.status_code == 404
+    assert "agent not found" in unknown.json()["detail"]
+
+
+def test_draft_revise_end_to_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    replies = ["初稿内容", "修订稿内容", "（未使用）"]
+    monkeypatch.setattr(
+        "novel_editorial.api.app.build_client",
+        lambda settings: MockLLMClient(reply=replies.pop(0)),
+    )
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "修订之书"}).json()["id"]
+    draft_id = client.post(
+        f"/works/{workspace_id}/drafts", json={"title": "第一章"}
+    ).json()["id"]
+
+    revised = client.post(
+        f"/works/{workspace_id}/drafts/{draft_id}/revise",
+        json={"reason": "收钩子"},
+    )
+    assert revised.status_code == 200
+    body = revised.json()
+    assert body["id"] == draft_id
+    assert body["current_version"] == 2
+    assert body["status"] == "draft"
+    assert body["awaiting_decision"] is True
+
+    detail = client.get(f"/works/{workspace_id}/drafts/{draft_id}").json()
+    assert [version["content"] for version in detail["versions"]] == [
+        "初稿内容",
+        "修订稿内容",
+    ]
+    assert detail["versions"][1]["reason"] == "收钩子"
+
+    missing = client.post(
+        f"/works/{workspace_id}/drafts/does-not-exist/revise", json={}
+    )
+    assert missing.status_code == 404
+    assert missing.json() == {"detail": "draft not found: does-not-exist"}
+
+
+def test_draft_decisions_end_to_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "拍板记录"}).json()["id"]
+    first_id = _seed_draft(db, workspace_id, title="第一章")
+    second_id = _seed_draft(db, workspace_id, title="第二章")
+    _seed_draft(db, workspace_id, title="第三章")
+
+    empty = client.get(f"/works/{workspace_id}/drafts/{first_id}/decisions")
+    assert empty.status_code == 200
+    assert empty.json() == []
+
+    accepted = client.post(
+        f"/works/{workspace_id}/decisions",
+        json={"draft_id": first_id, "action": "accept"},
+    )
+    assert accepted.status_code == 201
+    rejected = client.post(
+        f"/works/{workspace_id}/decisions",
+        json={"draft_id": second_id, "action": "reject"},
+    )
+    assert rejected.status_code == 201
+    noted = client.post(
+        f"/works/{workspace_id}/decisions",
+        json={"draft_id": second_id, "action": "note", "content": "补充说明"},
+    )
+    assert noted.status_code == 201
+
+    decisions = client.get(f"/works/{workspace_id}/drafts/{second_id}/decisions")
+    assert decisions.status_code == 200
+    body = decisions.json()
+    assert [item["action"] for item in body] == ["reject", "note"]
+    for item in body:
+        assert set(item) == {
+            "id",
+            "draft_id",
+            "action",
+            "actor",
+            "content",
+            "created_at",
+        }
+        assert item["draft_id"] == second_id
+        assert item["actor"] == "作者"
+    assert body[1]["content"] == "补充说明"
+
+    missing = client.get(f"/works/{workspace_id}/drafts/does-not-exist/decisions")
+    assert missing.status_code == 404
+    assert missing.json() == {"detail": "draft not found: does-not-exist"}
+
+
+def test_review_add_end_to_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "意见之书"}).json()["id"]
+    draft_id = _seed_draft(db, workspace_id)
+
+    response = client.post(
+        f"/works/{workspace_id}/reviews",
+        json={"draft_id": draft_id, "source": "责编", "content": "退稿：钩子不成立"},
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert set(body) == {"id", "role", "actor", "content", "created_at"}
+    assert body["role"] == "agent"
+    assert body["actor"] == "责编"
+    assert body["content"] == "退稿：钩子不成立"
+
+    author = client.post(
+        f"/works/{workspace_id}/reviews",
+        json={"draft_id": draft_id, "source": "作者", "content": "方向没问题"},
+    )
+    assert author.status_code == 201
+    assert author.json()["role"] == "author"
+    assert author.json()["actor"] == "作者"
+
+    listed = client.get(
+        f"/works/{workspace_id}/reviews", params={"draft_id": draft_id}
+    ).json()
+    assert [item["actor"] for item in listed] == ["责编", "作者"]
+
+    unknown = client.post(
+        f"/works/{workspace_id}/reviews",
+        json={"draft_id": draft_id, "source": "路人", "content": "x"},
+    )
+    assert unknown.status_code == 422
+    assert "unknown reviewer alias" in unknown.json()["detail"]
+
+    missing = client.post(
+        f"/works/{workspace_id}/reviews",
+        json={"draft_id": "does-not-exist", "source": "作者", "content": "x"},
+    )
+    assert missing.status_code == 404
+    assert missing.json() == {"detail": "draft not found: does-not-exist"}
+
+
+def test_style_set_end_to_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "风格之书"}).json()["id"]
+
+    response = client.post(
+        f"/works/{workspace_id}/style",
+        json={"description": "冷峻克制", "forbidden": "宛如、仿佛"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "description": "冷峻克制",
+        "forbidden_words": "宛如、仿佛",
+    }
+
+    fetched = client.get(f"/works/{workspace_id}/style").json()
+    assert fetched == {"description": "冷峻克制", "forbidden_words": "宛如、仿佛"}
+
+    # Like ``style set``, the API route fires the reviewer consistency message.
+    talk = client.get(f"/works/{workspace_id}/talk").json()
+    assert any(
+        item["payload"].get("kind") == "proactive_consistency" for item in talk
+    )
+
+    overwrite = client.post(f"/works/{workspace_id}/style", json={"description": "平实"})
+    assert overwrite.status_code == 200
+    assert overwrite.json() == {"description": "平实", "forbidden_words": ""}
+
+
+def test_new_read_routes_are_read_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "只读新路由"}).json()["id"]
+    draft_id = _seed_draft(db, workspace_id, title="第一章")
+    noted = client.post(
+        f"/works/{workspace_id}/decisions",
+        json={"draft_id": draft_id, "action": "note", "content": "先记一笔"},
+    )
+    assert noted.status_code == 201
+
+    before_counts = _table_counts(db, workspace_id)
+    events_before = client.get(f"/works/{workspace_id}/events").json()
+
+    for url in (
+        "/templates",
+        f"/works/{workspace_id}/talk",
+        f"/works/{workspace_id}/drafts/{draft_id}/decisions",
+    ):
+        response = client.get(url)
+        assert response.status_code == 200, url
+
+    assert _table_counts(db, workspace_id) == before_counts
+    assert client.get(f"/works/{workspace_id}/events").json() == events_before
+
+
+def test_sse_stream_replays_events_with_rowid_cursor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, thread, port = _start_api_server(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    with httpx.Client(base_url=f"http://127.0.0.1:{port}", timeout=10) as http:
+        workspace_id = http.post("/works", json={"title": "事件流之书"}).json()["id"]
+    try:
+        record_event(
+            db,
+            workspace_id,
+            type=EventType.SYSTEM,
+            actor="system",
+            payload={"n": 1},
+        )
+        record_event(
+            db,
+            workspace_id,
+            type=EventType.SYSTEM,
+            actor="system",
+            payload={"n": 2},
+        )
+        records = list_events_since(db, workspace_id)
+        rowids = [record.rowid for record in records]
+        assert len(rowids) == 2
+
+        url = f"http://127.0.0.1:{port}/works/{workspace_id}/events/stream"
+        with httpx.Client(timeout=10) as http:
+            with http.stream("GET", url) as response:
+                assert response.status_code == 200
+                assert response.headers["content-type"].startswith(
+                    "text/event-stream"
+                )
+                ids: list[str] = []
+                data_lines: list[str] = []
+                for line in response.iter_lines():
+                    if line.startswith("id:"):
+                        ids.append(line[3:].strip())
+                    elif line.startswith("data:"):
+                        data_lines.append(line[5:].strip())
+                        if len(data_lines) == 2:
+                            break
+
+        assert ids == [str(rowids[0]), str(rowids[1])]
+        events = [json.loads(line) for line in data_lines]
+        assert [event["payload"]["n"] for event in events] == [1, 2]
+        for event in events:
+            assert set(event) == {
+                "id",
+                "workspace_id",
+                "type",
+                "time",
+                "actor",
+                "payload",
+            }
+            assert event["workspace_id"] == workspace_id
+    finally:
+        _stop_api_server(server, thread)
+
+
+def test_sse_resumes_strictly_after_last_event_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server, thread, port = _start_api_server(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    with httpx.Client(base_url=f"http://127.0.0.1:{port}", timeout=10) as http:
+        workspace_id = http.post("/works", json={"title": "续传之书"}).json()["id"]
+    try:
+        for n in (1, 2, 3):
+            record_event(
+                db,
+                workspace_id,
+                type=EventType.SYSTEM,
+                actor="system",
+                payload={"n": n},
+            )
+        records = list_events_since(db, workspace_id)
+        assert [
+            json.loads(record.event.payload)["n"] for record in records
+        ] == [1, 2, 3]
+        cursor = records[1].rowid
+
+        url = f"http://127.0.0.1:{port}/works/{workspace_id}/events/stream"
+        with httpx.Client(timeout=10) as http:
+            with http.stream("GET", url, headers={"Last-Event-ID": str(cursor)}) as response:
+                assert response.status_code == 200
+                ids: list[str] = []
+                data_lines: list[str] = []
+                for line in response.iter_lines():
+                    if line.startswith("id:"):
+                        ids.append(line[3:].strip())
+                    elif line.startswith("data:"):
+                        data_lines.append(line[5:].strip())
+                        if len(data_lines) == 1:
+                            break
+
+        assert ids == [str(records[2].rowid)]
+        event = json.loads(data_lines[0])
+        assert event["payload"] == {"n": 3}
+        assert event["id"] == records[2].event.id
+    finally:
+        _stop_api_server(server, thread)
+
+
+def test_sse_sends_heartbeat_comments(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(api_app, "SSE_HEARTBEAT_SECONDS", 0.2)
+    server, thread, port = _start_api_server(tmp_path, monkeypatch)
+    with httpx.Client(base_url=f"http://127.0.0.1:{port}", timeout=10) as http:
+        workspace_id = http.post("/works", json={"title": "心跳之书"}).json()["id"]
+    try:
+        url = f"http://127.0.0.1:{port}/works/{workspace_id}/events/stream"
+        with httpx.Client(timeout=10) as http:
+            with http.stream("GET", url) as response:
+                pings: list[str] = []
+                seen = 0
+                for line in response.iter_lines():
+                    seen += 1
+                    if line.startswith(": ping"):
+                        pings.append(line)
+                        if len(pings) >= 2:
+                            break
+                    if seen > 200:
+                        break
+
+        assert len(pings) >= 2
+    finally:
+        _stop_api_server(server, thread)
+
+
+def test_sse_missing_workspace_returns_404(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    response = client.get("/works/missing/events/stream")
+    assert response.status_code == 404
+    assert response.json() == {"detail": "workspace not found: missing"}
+
+
+def test_cli_api_contract_talk_send(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_llm(monkeypatch, reply="（模拟回复）")
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "同源对话"}).json()["id"]
+
+    api_round = client.post(
+        f"/works/{workspace_id}/talk", json={"message": "我们写一个侦探故事"}
+    )
+    assert api_round.status_code == 201
+    api_messages = api_round.json()["messages"]
+    assert [message["role"] for message in api_messages] == [
+        "author",
+        "agent",
+        "system",
+        "agent",
+        "agent",
+    ]
+    assert api_messages[1]["content"] == "（模拟回复）"
+
+    cli_round = runner.invoke(
+        cli_app, ["talk", "send", workspace_id, "第二条消息"]
+    )
+    assert cli_round.exit_code == 0, cli_round.output
+    assert "作者: 第二条消息" in cli_round.output
+    assert "总编: （模拟回复）" in cli_round.output
+
+    api_list = client.get(f"/works/{workspace_id}/talk").json()
+    cli_list = runner.invoke(cli_app, ["talk", "list", workspace_id])
+    assert cli_list.exit_code == 0, cli_list.output
+    expected_lines = cli_list.output.strip().splitlines()
+    assert [item["line"] for item in api_list] == expected_lines
+
+
+def test_cli_api_contract_draft_generate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_llm(monkeypatch, reply="正文内容")
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "同源草稿"}).json()["id"]
+
+    cli_created = runner.invoke(
+        cli_app, ["draft", "generate", workspace_id, "--title", "第一章"]
+    )
+    assert cli_created.exit_code == 0, cli_created.output
+    cli_draft_id = cli_created.output.split()[1]
+
+    api_created = client.post(
+        f"/works/{workspace_id}/drafts", json={"title": "第二章"}
+    )
+    assert api_created.status_code == 201
+    api_draft = api_created.json()
+    assert api_draft["title"] == "第二章"
+    assert api_draft["status"] == "draft"
+    assert api_draft["current_version"] == 1
+    assert api_draft["awaiting_decision"] is True
+
+    api_detail = client.get(
+        f"/works/{workspace_id}/drafts/{api_draft['id']}"
+    ).json()
+    assert api_detail["versions"][0]["content"] == "正文内容"
+    cli_show = runner.invoke(cli_app, ["draft", "show", cli_draft_id])
+    assert cli_show.exit_code == 0, cli_show.output
+    assert "正文内容" in cli_show.output
+
+    api_drafts = client.get(f"/works/{workspace_id}/drafts").json()
+    cli_list = runner.invoke(cli_app, ["draft", "list", workspace_id])
+    assert cli_list.exit_code == 0, cli_list.output
+    assert len(api_drafts) == 2
+    for item in api_drafts:
+        assert item["id"] in cli_list.output
+        assert item["status"] in cli_list.output
+
+    api_pending = client.get(f"/works/{workspace_id}/pending").json()
+    assert {item["id"] for item in api_pending} == {
+        cli_draft_id,
+        api_draft["id"],
+    }
+    cli_pending = runner.invoke(cli_app, ["decision", "pending", workspace_id])
+    assert cli_pending.exit_code == 0, cli_pending.output
+    assert cli_draft_id in cli_pending.output
+    assert api_draft["id"] in cli_pending.output
+
+
+def test_cli_api_contract_review_add(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_llm(monkeypatch, reply="正文内容")
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "同源意见"}).json()["id"]
+    draft_id = client.post(
+        f"/works/{workspace_id}/drafts", json={"title": "第一章"}
+    ).json()["id"]
+
+    cli_added = runner.invoke(
+        cli_app,
+        [
+            "review",
+            "add",
+            draft_id,
+            "--from",
+            "责编",
+            "--content",
+            "退稿：钩子不成立",
+        ],
+    )
+    assert cli_added.exit_code == 0, cli_added.output
+
+    api_added = client.post(
+        f"/works/{workspace_id}/reviews",
+        json={"draft_id": draft_id, "source": "作者", "content": "方向没问题"},
+    )
+    assert api_added.status_code == 201
+    body = api_added.json()
+    assert body["role"] == "author"
+    assert body["actor"] == "作者"
+    assert body["content"] == "方向没问题"
+
+    api_reviews = client.get(
+        f"/works/{workspace_id}/reviews", params={"draft_id": draft_id}
+    ).json()
+    cli_reviews = runner.invoke(cli_app, ["review", "list", draft_id])
+    assert cli_reviews.exit_code == 0, cli_reviews.output
+    expected_lines = cli_reviews.output.strip().splitlines()
+    assert [
+        f"[{item['role']}] {item['actor']}: {item['content']}"
+        for item in api_reviews
+    ] == expected_lines
+
+
+def test_cli_api_contract_decision_accept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_llm(monkeypatch, reply="正文内容")
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "同源拍板"}).json()["id"]
+    draft_id = client.post(
+        f"/works/{workspace_id}/drafts", json={"title": "第一章"}
+    ).json()["id"]
+
+    cli_accepted = runner.invoke(cli_app, ["decision", "accept", draft_id])
+    assert cli_accepted.exit_code == 0, cli_accepted.output
+    assert "accepted" in cli_accepted.output
+
+    api_pending = client.get(f"/works/{workspace_id}/pending").json()
+    assert api_pending == []
+    cli_pending = runner.invoke(cli_app, ["decision", "pending", workspace_id])
+    assert cli_pending.exit_code == 0, cli_pending.output
+    assert "no pending decisions" in cli_pending.output
+
+    api_decisions = client.get(
+        f"/works/{workspace_id}/drafts/{draft_id}/decisions"
+    ).json()
+    assert len(api_decisions) == 1
+    assert api_decisions[0]["action"] == "accept"
+    assert api_decisions[0]["actor"] == "作者"
+    assert api_decisions[0]["content"] == ""
+
+    cli_decisions = runner.invoke(cli_app, ["decision", "list", draft_id])
+    assert cli_decisions.exit_code == 0, cli_decisions.output
+    assert "[accept] 作者" in cli_decisions.output
+
+    api_drafts = client.get(f"/works/{workspace_id}/drafts").json()
+    assert [item["status"] for item in api_drafts] == ["accepted"]
+    cli_drafts = runner.invoke(cli_app, ["draft", "list", workspace_id])
+    assert cli_drafts.exit_code == 0, cli_drafts.output
+    assert "accepted" in cli_drafts.output
+
+
+def test_cli_api_contract_style_set(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _patch_llm(monkeypatch, reply="（模拟回复）")
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "同源风格"}).json()["id"]
+
+    cli_styled = runner.invoke(
+        cli_app,
+        [
+            "style",
+            "set",
+            workspace_id,
+            "--description",
+            "冷峻克制",
+            "--forbidden",
+            "宛如、仿佛",
+        ],
+    )
+    assert cli_styled.exit_code == 0, cli_styled.output
+
+    api_styled = client.post(
+        f"/works/{workspace_id}/style",
+        json={"description": "平实短句", "forbidden": "不禁"},
+    )
+    assert api_styled.status_code == 200
+    assert api_styled.json() == {"description": "平实短句", "forbidden_words": "不禁"}
+
+    api_style = client.get(f"/works/{workspace_id}/style").json()
+    assert api_style == {"description": "平实短句", "forbidden_words": "不禁"}
+    cli_show = runner.invoke(cli_app, ["style", "show", workspace_id])
+    assert cli_show.exit_code == 0, cli_show.output
+    assert "description: 平实短句" in cli_show.output
+    assert "forbidden: 不禁" in cli_show.output

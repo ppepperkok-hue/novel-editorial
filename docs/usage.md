@@ -2940,6 +2940,15 @@ uv run novel-editorial api serve [--host HOST] [--port PORT]
 | GET | `/works/{id}` | 作品详情 + band（agents 数组） |
 | GET | `/overview` | 跨作品聚合（`overviews` / `total` / `skipped`） |
 | GET | `/works/{id}/events` | 事件数组（新到旧） |
+| GET | `/works/{id}/events/stream` | SSE 实时事件流（见「SSE 实时事件流」） |
+| GET | `/templates` | 预设编辑部班子模板（网文 / 同人 / 正统，`name` + `description`） |
+| POST | `/works/{id}/talk` | 发消息给编辑部（body：`message`），成功 201 + 本轮对话输出（author / agent / system 消息数组） |
+| GET | `/works/{id}/talk` | 对话回放，逐条含 `mark` 与 `line`，与 `talk list` 输出逐行对齐 |
+| POST | `/works/{id}/drafts` | 生成草稿（body：`title` / `writer` 可选，走写手 + 质量门），成功 201 + 草稿摘要 |
+| POST | `/works/{id}/drafts/{draft_id}/revise` | 修订草稿（body：`reason` / `writer` 可选），版本 +1 |
+| GET | `/works/{id}/drafts/{draft_id}/decisions` | 草稿的拍板记录（action / actor / content / created_at） |
+| POST | `/works/{id}/reviews` | 加审稿意见（body：`draft_id` / `source` / `content`），成功 201 + 意见对象 |
+| POST | `/works/{id}/style` | 设置风格锚点（body：`description` / `forbidden` 可选），返回 `description` / `forbidden_words` |
 | GET | `/works/{id}/style` | 风格锚点（`description` / `forbidden_words`；未设置时返回空串，不新建行） |
 | GET | `/works/{id}/structure` | 结构节点数组（id / kind / title / parent_id / sort_order / status / draft_id） |
 
@@ -2953,9 +2962,24 @@ uv run novel-editorial api serve [--host HOST] [--port PORT]
 | 请求体非法（`USAGE_ERROR` 或 Pydantic 校验失败） | 422 |
 | 其余 `NovelError` 或未捕获异常 | 500 |
 
+### SSE 实时事件流
+
+`GET /works/{id}/events/stream` 提供该作品库的实时事件流（`text/event-stream`），事件 JSON 结构复用 `store.events` 既有契约：`id` / `workspace_id` / `type` / `time` / `actor` / `payload`。
+
+- 游标续传：SSE 事件 `id` 是该作品库事件的 rowid（只插不删、严格递增）。客户端断线重连时带 `Last-Event-ID: <rowid>`，服务端只推送严格大于该游标的事件，不丢不重。
+- 心跳：服务端每 15 秒发一条注释行（`: ping ...`）保活；服务端无状态、不维护订阅表，断线重连由 EventSource 客户端负责。
+
+```js
+const events = new EventSource(`/works/${workspaceId}/events/stream`);
+events.addEventListener("message", (event) => {
+  const record = JSON.parse(event.data);
+  console.log(record.type, record.payload);
+});
+```
+
 ### 只读红线与安全说明
 
-- 本阶段写操作只有 `POST /works`（复用 `create_workspace`）；其余路由全部只读：不落事件、不触发 proactive。
+- 写面端点逐条映射既有 CLI 命令（`works create`、`talk send`、`draft generate`、`draft revise`、`review add`、`decision` 三动作、`style set`），业务逻辑一律复用 `core` 既有函数，不在 API 层重写；其余路由全部只读：不落事件、不触发 proactive。
 - `GET /works/{id}/style` 只读查询：作品没有风格锚点时返回 `{"description": "", "forbidden_words": ""}`，绝不新建行。
 - 默认只绑定 `127.0.0.1` 且无鉴权；不要用 `--host 0.0.0.0` 或公网端口暴露服务。
 
