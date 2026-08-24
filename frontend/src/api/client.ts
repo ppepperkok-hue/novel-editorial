@@ -14,6 +14,21 @@ import type { components } from "./schema";
  */
 export type CreateWorkspaceBody = components["schemas"]["CreateWorkspaceBody"];
 
+/** Talk send body (POST /works/{id}/talk), from the generated OpenAPI types. */
+export type TalkSendBody = components["schemas"]["TalkSendBody"];
+
+/** Author empty-draft body (POST /works/{id}/drafts/new), generated type. */
+export type DraftNewBody = components["schemas"]["DraftNewBody"];
+
+/** Manual save body (PUT /works/{id}/drafts/{draft_id}/content), generated type. */
+export type DraftSaveBody = components["schemas"]["DraftSaveBody"];
+
+/** LLM generate body (POST /works/{id}/drafts), generated type. */
+export type DraftGenerateBody = components["schemas"]["DraftGenerateBody"];
+
+/** LLM revise body (POST /works/{id}/drafts/{draft_id}/revise), generated type. */
+export type DraftReviseBody = components["schemas"]["DraftReviseBody"];
+
 export interface PanelConfig {
   panel_poll_interval: number;
 }
@@ -61,6 +76,7 @@ export type DraftSummary = PendingDraft;
 
 export interface DraftVersion {
   version: number;
+  actor: string;
   reason: string;
   created_at: string;
   content: string;
@@ -75,6 +91,50 @@ export interface DraftDetail {
   updated_at: string;
   versions: DraftVersion[];
 }
+
+/**
+ * One conversation item, marked and rendered like ``talk list`` (GET
+ * /works/{id}/talk). The ``mark`` and ``line`` fields are exactly what the CLI
+ * prints; the UI renders them structurally instead of as raw text.
+ */
+export interface TalkMessage {
+  id: string;
+  role: string;
+  actor: string;
+  content: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+  mark: string | null;
+  line: string;
+}
+
+/**
+ * Result of POST /works/{id}/talk. The send response carries the new messages
+ * without the list-level ``mark``/``line`` enrichment; the UI refreshes via
+ * GET afterwards, so those stay optional here.
+ */
+export interface TalkSentMessage {
+  id: string;
+  role: string;
+  actor: string;
+  content: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+  mark?: string | null;
+  line?: string;
+}
+
+export interface TalkSendResult {
+  messages: TalkSentMessage[];
+}
+
+/**
+ * Draft write responses (new / generate / save / revise) mirror the summary
+ * plus the ``awaiting_decision`` flag the quality gate implies.
+ */
+export type DraftWriteResponse = DraftSummary & {
+  awaiting_decision: boolean;
+};
 
 export interface Review {
   id: string;
@@ -243,6 +303,82 @@ export function getPending(workspaceId: string): Promise<PendingDraft[]> {
 
 export function getDrafts(workspaceId: string): Promise<DraftSummary[]> {
   return requestJson<DraftSummary[]>(`${workspacePath(workspaceId)}/drafts`);
+}
+
+/** Send one message to the band (POST /works/{id}/talk, like ``talk send``). */
+export function sendTalk(
+  workspaceId: string,
+  body: TalkSendBody,
+): Promise<TalkSendResult> {
+  return requestJson<TalkSendResult>(`${workspacePath(workspaceId)}/talk`, {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/** Conversation for one workspace (GET /works/{id}/talk, like ``talk list``). */
+export function listTalk(workspaceId: string): Promise<TalkMessage[]> {
+  return requestJson<TalkMessage[]>(`${workspacePath(workspaceId)}/talk`);
+}
+
+/** Create an empty author-owned draft (POST /works/{id}/drafts/new). */
+export function createAuthorDraft(
+  workspaceId: string,
+  body: DraftNewBody,
+): Promise<DraftWriteResponse> {
+  return requestJson<DraftWriteResponse>(
+    `${workspacePath(workspaceId)}/drafts/new`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+}
+
+/** Generate a draft version via the LLM (POST /works/{id}/drafts). */
+export function generateDraft(
+  workspaceId: string,
+  body: DraftGenerateBody,
+): Promise<DraftWriteResponse> {
+  return requestJson<DraftWriteResponse>(`${workspacePath(workspaceId)}/drafts`, {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/** Save an author-written version (PUT /works/{id}/drafts/{draft_id}/content). */
+export function saveDraftContent(
+  workspaceId: string,
+  draftId: string,
+  body: DraftSaveBody,
+): Promise<DraftWriteResponse> {
+  return requestJson<DraftWriteResponse>(
+    `${workspacePath(workspaceId)}/drafts/${encodeURIComponent(draftId)}/content`,
+    {
+      method: "PUT",
+      body: JSON.stringify(body),
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+}
+
+/** Re-generate a draft as a new version (POST .../revise, like ``draft revise``). */
+export function reviseDraft(
+  workspaceId: string,
+  draftId: string,
+  body: DraftReviseBody,
+): Promise<DraftWriteResponse> {
+  return requestJson<DraftWriteResponse>(
+    `${workspacePath(workspaceId)}/drafts/${encodeURIComponent(draftId)}/revise`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+      headers: { "Content-Type": "application/json" },
+    },
+  );
 }
 
 export function getDraft(workspaceId: string, draftId: string): Promise<DraftDetail> {

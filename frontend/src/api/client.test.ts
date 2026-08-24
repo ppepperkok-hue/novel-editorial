@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  createAuthorDraft,
   createWorkspace,
+  generateDraft,
   getConfig,
   getDraft,
   getDrafts,
@@ -14,9 +16,13 @@ import {
   getStyle,
   getStructure,
   getWorkspace,
+  listTalk,
   listTemplates,
   listWorks,
   postDecision,
+  reviseDraft,
+  saveDraftContent,
+  sendTalk,
 } from "./client";
 
 const fetchMock = vi.fn();
@@ -272,6 +278,7 @@ describe("api client contract parsing", () => {
         versions: [
           {
             version: 1,
+            actor: "写手",
             reason: "initial",
             created_at: "2026-08-01T00:00:00+00:00",
             content: "初版正文",
@@ -282,7 +289,183 @@ describe("api client contract parsing", () => {
 
     const detail = await getDraft("w1", "d1");
     expect(detail.versions).toHaveLength(1);
+    expect(detail.versions[0].actor).toBe("写手");
     expect(detail.versions[0].content).toBe("初版正文");
+  });
+
+  it("listTalk parses conversation items with the CLI-aligned mark and line", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        {
+          id: "m1",
+          role: "author",
+          actor: "作者",
+          content: "这章钩子不够",
+          payload: {},
+          created_at: "2026-08-22T10:00:00+00:00",
+          mark: null,
+          line: "[author] 作者: 这章钩子不够",
+        },
+        {
+          id: "m2",
+          role: "agent",
+          actor: "责编",
+          content: "我来加个反转",
+          payload: { disagreement: { mark: "开篇节奏" } },
+          created_at: "2026-08-22T10:01:00+00:00",
+          mark: "agent·分歧·开篇节奏",
+          line: "[agent·分歧·开篇节奏] 责编: 我来加个反转",
+        },
+      ]),
+    );
+
+    const talk = await listTalk("w1");
+    expect(talk).toHaveLength(2);
+    expect(talk[0]).toMatchObject({
+      role: "author",
+      actor: "作者",
+      mark: null,
+      line: "[author] 作者: 这章钩子不够",
+    });
+    expect(talk[1].mark).toBe("agent·分歧·开篇节奏");
+    expect(talk[1].line).toBe("[agent·分歧·开篇节奏] 责编: 我来加个反转");
+    expect(fetchMock.mock.calls[0][0]).toBe("/works/w1/talk");
+  });
+
+  it("sendTalk posts the generated body type and parses the new messages", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          messages: [
+            {
+              id: "m9",
+              role: "author",
+              actor: "作者",
+              content: "把结局改圆一点",
+              payload: {},
+              created_at: "2026-08-22T11:00:00+00:00",
+            },
+          ],
+        },
+        201,
+      ),
+    );
+
+    const result = await sendTalk("w1", { message: "把结局改圆一点" });
+    expect(result.messages).toHaveLength(1);
+    expect(result.messages[0]).toMatchObject({
+      actor: "作者",
+      content: "把结局改圆一点",
+    });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/works/w1/talk");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(init?.body as string)).toEqual({
+      message: "把结局改圆一点",
+    });
+  });
+
+  it("createAuthorDraft posts the title body and parses awaiting_decision", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          id: "d9",
+          title: "第三章",
+          status: "draft",
+          current_version: 0,
+          updated_at: "2026-08-22T11:00:00+00:00",
+          awaiting_decision: true,
+        },
+        201,
+      ),
+    );
+
+    const created = await createAuthorDraft("w1", { title: "第三章" });
+    expect(created).toMatchObject({
+      id: "d9",
+      current_version: 0,
+      awaiting_decision: true,
+    });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/works/w1/drafts/new");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(init?.body as string)).toEqual({ title: "第三章" });
+  });
+
+  it("generateDraft posts an optional title to the generate endpoint", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          id: "d10",
+          title: "未命名章节",
+          status: "draft",
+          current_version: 1,
+          updated_at: "2026-08-22T11:00:00+00:00",
+          awaiting_decision: true,
+        },
+        201,
+      ),
+    );
+
+    const generated = await generateDraft("w1", { title: "未命名章节" });
+    expect(generated).toMatchObject({ id: "d10", current_version: 1 });
+    expect(fetchMock.mock.calls[0][0]).toBe("/works/w1/drafts");
+  });
+
+  it("saveDraftContent PUTs content and the default reason", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          id: "d1",
+          title: "第一章",
+          status: "draft",
+          current_version: 2,
+          updated_at: "2026-08-22T11:00:00+00:00",
+          awaiting_decision: true,
+        },
+        200,
+      ),
+    );
+
+    const saved = await saveDraftContent("w1", "d1", {
+      content: "新正文",
+      reason: "作者修改",
+    });
+    expect(saved).toMatchObject({ current_version: 2, awaiting_decision: true });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/works/w1/drafts/d1/content");
+    expect(init?.method).toBe("PUT");
+    expect(JSON.parse(init?.body as string)).toEqual({
+      content: "新正文",
+      reason: "作者修改",
+    });
+  });
+
+  it("reviseDraft posts the reason to the revise endpoint", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          id: "d1",
+          title: "第一章",
+          status: "draft",
+          current_version: 3,
+          updated_at: "2026-08-22T11:00:00+00:00",
+          awaiting_decision: true,
+        },
+        200,
+      ),
+    );
+
+    const revised = await reviseDraft("w1", "d1", { reason: "按意见重写" });
+    expect(revised).toMatchObject({ current_version: 3 });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/works/w1/drafts/d1/revise");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(init?.body as string)).toEqual({ reason: "按意见重写" });
   });
 
   it("getReviews parses the review list", async () => {

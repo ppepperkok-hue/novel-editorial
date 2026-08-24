@@ -146,4 +146,25 @@ describe("works detail page", () => {
     expect(await screen.findByText("班子还没有成员")).toBeInTheDocument();
     expect(screen.queryByTestId("agent-card")).not.toBeInTheDocument();
   });
+
+  it("links into the talk and writer workbenches of the current workspace", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/works/w-a") {
+        return Promise.resolve(jsonResponse(detailBody));
+      }
+      return Promise.reject(new Error(`未预期的请求：${url}`));
+    });
+    renderDetail(fetchMock);
+
+    await screen.findByRole("heading", { name: "甲书" });
+    expect(screen.getByTestId("workspace-talk-link")).toHaveAttribute(
+      "href",
+      "/works/w-a/talk",
+    );
+    expect(screen.getByTestId("workspace-writer-link")).toHaveAttribute(
+      "href",
+      "/works/w-a/writer",
+    );
+  });
 });

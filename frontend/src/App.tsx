@@ -1,6 +1,8 @@
 import { NavLink, Navigate, Outlet, Route, Routes } from "react-router-dom";
 
 import OverviewPage from "./features/overview/OverviewPage";
+import TalkPage from "./features/talk/TalkPage";
+import WriterPage from "./features/writer/WriterPage";
 import WorksCreatePage from "./features/works/WorksCreatePage";
 import WorksDetailPage from "./features/works/WorksDetailPage";
 import WorksListPage from "./features/works/WorksListPage";
@@ -29,6 +31,24 @@ function Shell() {
           >
             作品与班子
           </NavLink>
+          {currentWorkspace !== null ? (
+            <>
+              <NavLink
+                to={`/works/${encodeURIComponent(currentWorkspace.id)}/talk`}
+                end
+                className={({ isActive }) => navClassName(isActive)}
+              >
+                对话
+              </NavLink>
+              <NavLink
+                to={`/works/${encodeURIComponent(currentWorkspace.id)}/writer`}
+                end
+                className={({ isActive }) => navClassName(isActive)}
+              >
+                写作
+              </NavLink>
+            </>
+          ) : null}
         </nav>
       </aside>
       <div className="app-main">
@@ -56,6 +76,8 @@ export default function App() {
         <Route path="works" element={<WorksListPage />} />
         <Route path="works/new" element={<WorksCreatePage />} />
         <Route path="works/:workspaceId" element={<WorksDetailPage />} />
+        <Route path="works/:workspaceId/talk" element={<TalkPage />} />
+        <Route path="works/:workspaceId/writer" element={<WriterPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

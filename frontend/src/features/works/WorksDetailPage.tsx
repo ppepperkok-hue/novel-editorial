@@ -81,6 +81,22 @@ export default function WorksDetailPage() {
           返回作品列表
         </Link>
       </header>
+      <nav className="workspace-toolbar" aria-label="工作台入口">
+        <Link
+          className="text-link"
+          to={`/works/${workspaceId ?? ""}/talk`}
+          data-testid="workspace-talk-link"
+        >
+          进入对话工作台
+        </Link>
+        <Link
+          className="text-link"
+          to={`/works/${workspaceId ?? ""}/writer`}
+          data-testid="workspace-writer-link"
+        >
+          进入正文工作台
+        </Link>
+      </nav>
       {workspace.isPending ? <SkeletonRows count={5} /> : null}
       {workspace.isError ? (
         <ErrorState
