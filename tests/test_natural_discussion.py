@@ -613,6 +613,52 @@ def test_decision_reject_trigger_check_silent_without_pool_bottom(
     assert list_behavior_timeline(db, workspace_id, kind=COOLDOWN_KIND) == []
 
 
+def test_reject_after_clear_does_not_trigger_second_summon_for_new_chapter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """清零后新章节一次 reject：不立即触发第二轮召集 (M5-N29-S3-FIX).
+
+    被拒池底写手第一轮自然召集后关系组已中和、池回基线。新章节一次 reject
+    只重新攒 1 点（rejected=1、pool=3），不复活历史 4 条拒绝，也不触发
+    第二轮召集——议题级冷却无需兜底，防风暴口径一致。
+    """
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    for _ in range(4):
+        draft = _create_draft(db, workspace_id, writer.id, title="第一章")
+        decide(db, workspace_id, draft.id, action="reject")
+
+    # 第 4 次 reject 见底并自动召集：冷却落库、被拒压力清零、池回基线。
+    cooldowns = list_behavior_timeline(db, workspace_id, kind=COOLDOWN_KIND)
+    assert len(cooldowns) == 1
+    assert cooldowns[0].target == "第一章"
+    pool = patience_pool(db, workspace_id, writer.id)
+    assert pool["states"]["rejected"] == 0
+    assert pool["pool"] == 4
+    opened = [
+        m
+        for m in _messages_in_order(db, workspace_id)
+        if json.loads(m.payload).get("kind") == "discussion_open"
+    ]
+    assert len(opened) == 1
+
+    # 新章节一次 reject：只重新攒 1 点，冷却内不再召集第二轮。
+    draft_2 = _create_draft(db, workspace_id, writer.id, title="第二章")
+    decide(db, workspace_id, draft_2.id, action="reject")
+
+    pool = patience_pool(db, workspace_id, writer.id)
+    assert pool["states"]["rejected"] == 1
+    assert pool["pool"] == 3
+    assert len(list_behavior_timeline(db, workspace_id, kind=COOLDOWN_KIND)) == 1
+    opened = [
+        m
+        for m in _messages_in_order(db, workspace_id)
+        if json.loads(m.payload).get("kind") == "discussion_open"
+    ]
+    assert len(opened) == 1
+
+
 def test_talk_override_triggers_natural_summon_when_reviewer_bottomed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

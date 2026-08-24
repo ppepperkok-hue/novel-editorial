@@ -31,6 +31,7 @@ from novel_editorial.core.patience import (
     REJECTED_WEIGHT,
     RESOLVED_SOURCE,
     PatienceStateCounts,
+    clear_pool_pressure,
     count_patience_states,
     patience_consumption,
     patience_pool,
@@ -458,6 +459,63 @@ def test_resolved_marker_neutralizes_conflict_count_and_pending_days(
     assert count_patience_states(db, workspace_id, reviewer.id)["conflict"] == 0
     assert patience_pool(db, workspace_id, reviewer.id)["consumption"] == 0
     assert pending_ignore_days(db, workspace_id, reviewer.id, topic, now=now) == 0
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "decision:accept",
+        "override:reviewer_consistency",
+        "delegation:accepted",
+        "review:add",
+    ],
+)
+def test_non_reject_relationship_event_does_not_reopen_cleared_group(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source: str,
+) -> None:
+    """清零后非 reject 的 relationship 事件不复活历史拒绝 (M5-N29-S3-FIX).
+
+    4 次 reject 见底后自然召集清零（池回基线）；之后任何非 reject 的
+    relationship 行（accept / override / delegation:accepted / review:add）
+    都不参与 relationship 组的开闭判定：历史拒绝不得复活、池不得误报 0。
+    """
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = _db()
+    writer = _agent(db, workspace_id, AgentRole.WRITER)
+    for _ in range(4):
+        _insert_entry(
+            db,
+            workspace_id,
+            agent_id=writer.id,
+            kind="relationship",
+            target="作者",
+            source="decision:reject",
+            summary="稿子被退回",
+        )
+    assert patience_pool(db, workspace_id, writer.id)["pool"] == 0
+
+    assert clear_pool_pressure(
+        db, workspace_id, agent_id=writer.id, topic="第一章"
+    )
+    pool = patience_pool(db, workspace_id, writer.id)
+    assert pool["states"]["rejected"] == 0
+    assert pool["pool"] == 4
+
+    _insert_entry(
+        db,
+        workspace_id,
+        agent_id=writer.id,
+        kind="relationship",
+        target="作者",
+        source=source,
+        summary="非拒绝反馈",
+    )
+    pool = patience_pool(db, workspace_id, writer.id)
+    assert pool["states"]["rejected"] == 0
+    assert pool["pool"] == 4
+    assert pool["entries"]["rejected"] == []
 
 
 def test_patience_show_lists_pools_counts_and_real_summaries(

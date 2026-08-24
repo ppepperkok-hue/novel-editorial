@@ -7,7 +7,11 @@ query time - no new table. Three states consume patience, each weighted:
 
 - rejected: relationship rows sourced from decision:reject or
   delegation:refused. Weight 1 - a rejection is ordinary feedback and costs
-  little on its own.
+  little on its own. The relationship namespace has its own open/closed
+  rule (M5-N29-S3-FIX): only reject-source rows and
+  source=discussion:resolved neutralization records participate, so a
+  cleared group cannot be reopened by non-reject relationship events
+  (decision:accept, override:*, delegation:accepted, review:add).
 - overridden: viewpoint rows whose source starts with override:. Weight 3 -
   the author directly overrode the partner's held stance, the strongest single
   pressure; the 11-n28-checklist scenario (reviewer patience 7, three
@@ -17,12 +21,17 @@ query time - no new table. Three states consume patience, each weighted:
   divergence). Weight 1 - an unresolved disagreement keeps draining patience,
   but slower than a direct override.
 
-All three states follow the same append-only group semantics: a (agent,
-target) group is open while its newest row is not a source=discussion:resolved
-neutralization record, and closed groups stop consuming while the full history
-stays replayable. N28 closes conflict groups when the author concludes the
-round; N29-S3 reuses the same neutralization (``clear_pool_pressure``) to
-clear the summoned partner's pool (清零进冷却、未解决重新攒).
+Overridden and conflict states follow the same append-only group semantics:
+a (agent, target) group is open while its newest row is not a
+source=discussion:resolved neutralization record, and closed groups stop
+consuming while the full history stays replayable. The relationship
+namespace only lets reject-source rows and neutralization records
+participate in its group state, so a clear is not undone by later non-reject
+events (M5-N29-S3-FIX: accept/override/delegation:accepted/review:add must
+not revive historical rejections). N28 closes conflict groups when the
+author concludes the round; N29-S3 reuses the same neutralization
+(``clear_pool_pressure``) to clear the summoned partner's pool
+(清零进冷却、未解决重新攒).
 
 Pool value = clamp(effective patience - consumption, 0, 10), where effective
 patience comes from core.evolution.effective_param (baseline + drift).
@@ -113,11 +122,14 @@ def _clamp(value: int, low: int, high: int) -> int:
 def _open_targets(rows: list[BehaviorTimeline]) -> set[str]:
     """Targets whose newest row is not a neutralization record.
 
-    Group semantics shared by every pool state (N28 conflict + N29-S3 clear):
-    rows are append-only, so a (agent, target) group is open while its newest
-    row is not source=discussion:resolved. A newer neutralization closes the
-    whole group without deleting history; a newer pressure row reopens it, so
-    re-accumulated pressure starts counting again (未解决重新攒).
+    Group semantics shared by the overridden and conflict states (N28 conflict
+    + N29-S3 clear): rows are append-only, so a (agent, target) group is open
+    while its newest row is not source=discussion:resolved. A newer
+    neutralization closes the whole group without deleting history; a newer
+    pressure row reopens it, so re-accumulated pressure starts counting again
+    (未解决重新攒). The relationship namespace does not use this helper: only
+    reject-source rows and neutralization records participate there
+    (``_active_relationship_rejects``, M5-N29-S3-FIX).
     """
     latest: dict[str, str] = {}
     for row in rows:
@@ -125,17 +137,45 @@ def _open_targets(rows: list[BehaviorTimeline]) -> set[str]:
     return {target for target, source in latest.items() if source != RESOLVED_SOURCE}
 
 
+def _active_relationship_rejects(
+    rows: list[BehaviorTimeline],
+) -> dict[str, list[BehaviorTimeline]]:
+    """Return each relationship target's currently-active reject rows.
+
+    The relationship namespace has its own open/closed rule (M5-N29-S3-FIX):
+    only reject-source rows (decision:reject / delegation:refused) and
+    source=discussion:resolved neutralization records participate in the
+    group state. A neutralization starts a fresh segment for the target; a
+    newer reject reopens the group and accumulates until the next
+    neutralization; every other relationship event (decision:accept,
+    override:*, delegation:accepted, review:add) is invisible to the group
+    state - it can neither reopen a cleared group nor revive historical
+    rejections. 清零进冷却、未解决重新攒: after a clear the pool only
+    re-accumulates from rejections that arrive afterwards.
+    """
+    segments: dict[str, list[BehaviorTimeline]] = {}
+    for row in rows:
+        if row.source == RESOLVED_SOURCE:
+            segments[row.target] = []
+        elif row.source in REJECT_SOURCES:
+            segments.setdefault(row.target, []).append(row)
+    return {target: rows_ for target, rows_ in segments.items() if rows_}
+
+
 def count_patience_states(
     db: DB, workspace_id: str, agent_id: str
 ) -> PatienceStateCounts:
     """Count the three patience-consuming states for one partner (read-only).
 
-    Every state follows the same append-only group semantics: all rows of the
-    state's kind are read, and a (agent, target) group is open only while its
-    newest record is not a neutralization record (source=discussion:resolved).
-    A concluded divergence - or a naturally summoned topic (N29-S3) -
-    therefore stops consuming patience without deleting history, and a newer
-    pressure row reopens the group.
+    Overridden and conflict follow the shared append-only group semantics:
+    all rows of the state's kind are read, and a (agent, target) group is
+    open only while its newest record is not a neutralization record
+    (source=discussion:resolved). A concluded divergence - or a naturally
+    summoned topic (N29-S3) - therefore stops consuming patience without
+    deleting history, and a newer pressure row reopens the group. The
+    relationship namespace only lets reject-source rows and neutralization
+    records participate (``_active_relationship_rejects``), so a clear is
+    not undone by later non-reject events (M5-N29-S3-FIX).
     """
     with db.workspace_session(workspace_id) as session:
         relationship_rows = (
@@ -168,14 +208,10 @@ def count_patience_states(
             .order_by(_ROWID.asc())
             .all()
         )
-    open_relationships = _open_targets(relationship_rows)
+    active_relationships = _active_relationship_rejects(relationship_rows)
     open_viewpoints = _open_targets(viewpoint_rows)
     open_conflicts = _open_targets(conflict_rows)
-    rejected = sum(
-        1
-        for row in relationship_rows
-        if row.target in open_relationships and row.source in REJECT_SOURCES
-    )
+    rejected = sum(len(rows_) for rows_ in active_relationships.values())
     overridden = sum(
         1
         for row in viewpoint_rows
@@ -205,12 +241,8 @@ def _state_entries(
                 .order_by(_ROWID.asc())
                 .all()
             )
-            open_targets = _open_targets(rows)
-            return [
-                row
-                for row in rows
-                if row.target in open_targets and row.source in REJECT_SOURCES
-            ]
+            active = _active_relationship_rejects(rows)
+            return [row for rows_ in active.values() for row in rows_]
         elif state == "overridden":
             rows = (
                 query.filter(BehaviorTimeline.kind == "viewpoint")
@@ -255,8 +287,9 @@ def clear_pool_pressure(
       neutralization closes the rule group, so an override-drained partner's
       pool restores to the effective patience;
     - reject relationship rows: those rows carry no topic namespace (they
-      target the author or the delegating partner), so every open reject
-      group of the summoned partner closes.
+      target the author or the delegating partner), so every currently-active
+      reject group of the summoned partner closes; non-reject relationship
+      events never count as open pressure (M5-N29-S3-FIX).
 
     Post-hoc sediment, safe-degraded like every N3 trace: each append runs
     through ``record_behavior_entry_safe``, so a failure only warns and never
@@ -327,23 +360,19 @@ def clear_pool_pressure(
             source=RESOLVED_SOURCE,
         )
         closed = True
-    open_relationships = _open_targets(relationship_rows)
-    for target in open_relationships:
-        if any(
-            row.target == target and row.source in REJECT_SOURCES
-            for row in relationship_rows
-        ):
-            record_behavior_entry_safe(
-                db,
-                workspace_id,
-                agent_id=agent_id,
-                kind="relationship",
-                target=target,
-                summary="自然召集后被拒压力清零",
-                after_value="清零（自然召集）",
-                source=RESOLVED_SOURCE,
-            )
-            closed = True
+    active_relationships = _active_relationship_rejects(relationship_rows)
+    for target in active_relationships:
+        record_behavior_entry_safe(
+            db,
+            workspace_id,
+            agent_id=agent_id,
+            kind="relationship",
+            target=target,
+            summary="自然召集后被拒压力清零",
+            after_value="清零（自然召集）",
+            source=RESOLVED_SOURCE,
+        )
+        closed = True
     return closed
 
 
