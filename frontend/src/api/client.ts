@@ -29,6 +29,20 @@ export type DraftGenerateBody = components["schemas"]["DraftGenerateBody"];
 /** LLM revise body (POST /works/{id}/drafts/{draft_id}/revise), generated type. */
 export type DraftReviseBody = components["schemas"]["DraftReviseBody"];
 
+/** Structure node bodies (add / patch / move), generated OpenAPI types. */
+export type StructureAddBody = components["schemas"]["StructureAddBody"];
+export type StructurePatchBody = components["schemas"]["StructurePatchBody"];
+export type StructureMoveBody = components["schemas"]["StructureMoveBody"];
+
+/** Outline write body (create without reason, revise with reason), generated type. */
+export type OutlineWriteBody = components["schemas"]["OutlineWriteBody"];
+
+/** Setting write body (add without setting_id, revise with setting_id + reason). */
+export type SettingWriteBody = components["schemas"]["SettingWriteBody"];
+
+/** Inspiration add body (POST /works/{id}/inspirations), generated type. */
+export type InspirationAddBody = components["schemas"]["InspirationAddBody"];
+
 export interface PanelConfig {
   panel_poll_interval: number;
 }
@@ -175,6 +189,40 @@ export interface StructureNode {
   status: string;
   draft_id: string | null;
   created_at: string;
+}
+
+/** One outline version (GET /works/{id}/outline), mirroring ``outline show``. */
+export interface Outline {
+  id: string;
+  workspace_id: string;
+  version: number;
+  content: string;
+  reason: string | null;
+  actor: string;
+  created_at: string;
+}
+
+/** One setting entry with its latest version content (``setting list/show``). */
+export interface SettingEntry {
+  id: string;
+  kind: string;
+  name: string;
+  content: string;
+  source: string;
+  current_version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One inspiration snippet (``inspiration list/show``). */
+export interface Inspiration {
+  id: string;
+  workspace_id: string;
+  kind: string;
+  content: string;
+  source: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface DecisionBody {
@@ -430,6 +478,184 @@ export function getStyle(workspaceId: string): Promise<StyleAnchor> {
 
 export function getStructure(workspaceId: string): Promise<StructureNode[]> {
   return requestJson<StructureNode[]>(`${workspacePath(workspaceId)}/structure`);
+}
+
+/** Add a structure node (POST /works/{id}/structure, like ``structure add``). */
+export function createStructureNode(
+  workspaceId: string,
+  body: StructureAddBody,
+): Promise<StructureNode> {
+  return requestJson<StructureNode>(`${workspacePath(workspaceId)}/structure`, {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/** Rename a node or set its status (PATCH .../structure/{node_id}). */
+export function patchStructureNode(
+  workspaceId: string,
+  nodeId: string,
+  body: StructurePatchBody,
+): Promise<StructureNode> {
+  return requestJson<StructureNode>(
+    `${workspacePath(workspaceId)}/structure/${encodeURIComponent(nodeId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(body),
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+}
+
+/** Move a node to the root or under another parent (POST .../move). */
+export function moveStructureNode(
+  workspaceId: string,
+  nodeId: string,
+  body: StructureMoveBody,
+): Promise<StructureNode> {
+  return requestJson<StructureNode>(
+    `${workspacePath(workspaceId)}/structure/${encodeURIComponent(nodeId)}/move`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+}
+
+/** Remove a node and its subtree (DELETE .../structure/{node_id}). */
+export function deleteStructureNode(
+  workspaceId: string,
+  nodeId: string,
+): Promise<{ removed: number }> {
+  return requestJson<{ removed: number }>(
+    `${workspacePath(workspaceId)}/structure/${encodeURIComponent(nodeId)}`,
+    { method: "DELETE" },
+  );
+}
+
+/** Current outline version, or null when none (GET /works/{id}/outline). */
+export function getOutline(workspaceId: string): Promise<Outline | null> {
+  return requestJson<Outline | null>(
+    `${workspacePath(workspaceId)}/outline`,
+  );
+}
+
+/** Create (no reason) or revise (with reason) the outline (POST .../outline). */
+export function writeOutline(
+  workspaceId: string,
+  body: OutlineWriteBody,
+): Promise<Outline> {
+  return requestJson<Outline>(`${workspacePath(workspaceId)}/outline`, {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/** Query of GET /works/{id}/settings, from the generated OpenAPI types. */
+type SettingsListQuery =
+  operations["get_workspace_settings_works__workspace_id__settings_get"]["parameters"]["query"];
+
+/** Settings list, optionally filtered by kind label (GET /works/{id}/settings). */
+export function listSettings(
+  workspaceId: string,
+  query: SettingsListQuery = {},
+): Promise<SettingEntry[]> {
+  const params = new URLSearchParams();
+  if (query.kind) {
+    params.set("kind", query.kind);
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return requestJson<SettingEntry[]>(
+    `${workspacePath(workspaceId)}/settings${suffix}`,
+  );
+}
+
+/** One setting with its latest version content (GET .../settings/{id}). */
+export function getSetting(
+  workspaceId: string,
+  settingId: string,
+): Promise<SettingEntry> {
+  return requestJson<SettingEntry>(
+    `${workspacePath(workspaceId)}/settings/${encodeURIComponent(settingId)}`,
+  );
+}
+
+/** Add (no setting_id) or revise (setting_id + reason) a setting (POST .../settings). */
+export function writeSetting(
+  workspaceId: string,
+  body: SettingWriteBody,
+): Promise<SettingEntry> {
+  return requestJson<SettingEntry>(`${workspacePath(workspaceId)}/settings`, {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/** Stale/same-name conflict report as plain text (GET .../settings/check). */
+export function checkSettings(workspaceId: string): Promise<string> {
+  return requestText(`${workspacePath(workspaceId)}/settings/check`);
+}
+
+/** Query of GET /works/{id}/inspirations, from the generated OpenAPI types. */
+type InspirationsListQuery =
+  operations["get_workspace_inspirations_works__workspace_id__inspirations_get"]["parameters"]["query"];
+
+/** Inspirations, newest first, optionally filtered by kind / keyword. */
+export function listInspirations(
+  workspaceId: string,
+  query: InspirationsListQuery = {},
+): Promise<Inspiration[]> {
+  const params = new URLSearchParams();
+  if (query.kind) {
+    params.set("kind", query.kind);
+  }
+  if (query.keyword) {
+    params.set("keyword", query.keyword);
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return requestJson<Inspiration[]>(
+    `${workspacePath(workspaceId)}/inspirations${suffix}`,
+  );
+}
+
+/** One inspiration with its source (GET .../inspirations/{id}). */
+export function getInspiration(
+  workspaceId: string,
+  inspirationId: string,
+): Promise<Inspiration> {
+  return requestJson<Inspiration>(
+    `${workspacePath(workspaceId)}/inspirations/${encodeURIComponent(inspirationId)}`,
+  );
+}
+
+/** Add one inspiration snippet (POST /works/{id}/inspirations). */
+export function createInspiration(
+  workspaceId: string,
+  body: InspirationAddBody,
+): Promise<Inspiration> {
+  return requestJson<Inspiration>(
+    `${workspacePath(workspaceId)}/inspirations`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+}
+
+/** Remove one inspiration (DELETE .../inspirations/{id}). */
+export function deleteInspiration(
+  workspaceId: string,
+  inspirationId: string,
+): Promise<{ id: string; kind: string }> {
+  return requestJson<{ id: string; kind: string }>(
+    `${workspacePath(workspaceId)}/inspirations/${encodeURIComponent(inspirationId)}`,
+    { method: "DELETE" },
+  );
 }
 
 export function postDecision(

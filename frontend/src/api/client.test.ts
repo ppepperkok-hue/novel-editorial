@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  checkSettings,
   createAuthorDraft,
+  createInspiration,
+  createStructureNode,
   createWorkspace,
+  deleteInspiration,
+  deleteStructureNode,
   generateDraft,
   getConfig,
   getDraft,
@@ -10,20 +15,29 @@ import {
   getDrafts,
   getGlobalEvents,
   getInspect,
+  getInspiration,
   getLog,
+  getOutline,
   getOverview,
   getPending,
   getReviews,
+  getSetting,
   getStyle,
   getStructure,
   getWorkspace,
+  listInspirations,
+  listSettings,
   listTalk,
   listTemplates,
   listWorks,
+  moveStructureNode,
+  patchStructureNode,
   postDecision,
   reviseDraft,
   saveDraftContent,
   sendTalk,
+  writeOutline,
+  writeSetting,
 } from "./client";
 
 const fetchMock = vi.fn();
@@ -555,6 +569,378 @@ describe("api client contract parsing", () => {
     });
     const nodes = await getStructure("w1");
     expect(nodes[0]).toMatchObject({ kind: "volume", title: "第一卷" });
+  });
+
+  it("createStructureNode posts the generated body with the Chinese kind label", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          id: "n2",
+          kind: "chapter",
+          title: "第一章",
+          parent_id: "n1",
+          sort_order: 1,
+          status: "writing",
+          draft_id: null,
+          created_at: "2026-08-23T10:00:00+00:00",
+        },
+        201,
+      ),
+    );
+
+    const node = await createStructureNode("w1", {
+      kind: "章",
+      title: "第一章",
+      parent: "n1",
+    });
+    expect(node).toMatchObject({ id: "n2", kind: "chapter", title: "第一章" });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/works/w1/structure");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(init?.body as string)).toEqual({
+      kind: "章",
+      title: "第一章",
+      parent: "n1",
+    });
+  });
+
+  it("patchStructureNode PATCHes a title or a status label", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: "n1",
+          kind: "volume",
+          title: "第一卷·修订",
+          parent_id: null,
+          sort_order: 1,
+          status: "writing",
+          draft_id: null,
+          created_at: "2026-08-01T00:00:00+00:00",
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: "n1",
+          kind: "volume",
+          title: "第一卷·修订",
+          parent_id: null,
+          sort_order: 1,
+          status: "completed",
+          draft_id: null,
+          created_at: "2026-08-01T00:00:00+00:00",
+        }),
+      );
+
+    await patchStructureNode("w1", "n1", { title: "第一卷·修订" });
+    await patchStructureNode("w1", "n1", { status: "已完成" });
+
+    const [first, second] = fetchMock.mock.calls;
+    expect(first[0]).toBe("/works/w1/structure/n1");
+    expect(first[1]?.method).toBe("PATCH");
+    expect(JSON.parse(first[1]?.body as string)).toEqual({
+      title: "第一卷·修订",
+    });
+    expect(JSON.parse(second[1]?.body as string)).toEqual({
+      status: "已完成",
+    });
+  });
+
+  it("moveStructureNode posts a root or parent target", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: "n2",
+          kind: "chapter",
+          title: "第一章",
+          parent_id: null,
+          sort_order: 2,
+          status: "writing",
+          draft_id: null,
+          created_at: "2026-08-23T10:00:00+00:00",
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: "n2",
+          kind: "chapter",
+          title: "第一章",
+          parent_id: "n3",
+          sort_order: 1,
+          status: "writing",
+          draft_id: null,
+          created_at: "2026-08-23T10:00:00+00:00",
+        }),
+      );
+
+    await moveStructureNode("w1", "n2", { root: true });
+    await moveStructureNode("w1", "n2", { root: false, parent: "n3" });
+
+    const [first, second] = fetchMock.mock.calls;
+    expect(first[0]).toBe("/works/w1/structure/n2/move");
+    expect(first[1]?.method).toBe("POST");
+    expect(JSON.parse(first[1]?.body as string)).toEqual({ root: true });
+    expect(JSON.parse(second[1]?.body as string)).toEqual({
+      root: false,
+      parent: "n3",
+    });
+  });
+
+  it("deleteStructureNode DELETEs and parses the removed count", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ removed: 3 }));
+
+    await expect(deleteStructureNode("w1", "n1")).resolves.toEqual({
+      removed: 3,
+    });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/works/w1/structure/n1");
+    expect(init?.method).toBe("DELETE");
+  });
+
+  it("getOutline returns null when the workspace has no outline", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(null));
+
+    await expect(getOutline("w1")).resolves.toBeNull();
+    expect(fetchMock.mock.calls[0][0]).toBe("/works/w1/outline");
+  });
+
+  it("writeOutline creates without a reason and revises with one", async () => {
+    const outlineBody = {
+      id: "o1",
+      workspace_id: "w1",
+      version: 1,
+      content: "三幕结构",
+      reason: null,
+      actor: "作者",
+      created_at: "2026-08-23T10:00:00+00:00",
+    };
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(outlineBody, 201))
+      .mockResolvedValueOnce(
+        jsonResponse({ ...outlineBody, version: 2, reason: "加个尾声" }),
+      );
+
+    await writeOutline("w1", { content: "三幕结构", actor: "作者" });
+    await writeOutline("w1", {
+      content: "三幕结构加尾声",
+      reason: "加个尾声",
+      actor: "作者",
+    });
+
+    const [first, second] = fetchMock.mock.calls;
+    expect(first[0]).toBe("/works/w1/outline");
+    expect(first[1]?.method).toBe("POST");
+    expect(JSON.parse(first[1]?.body as string)).toEqual({
+      content: "三幕结构",
+      actor: "作者",
+    });
+    expect(JSON.parse(second[1]?.body as string)).toEqual({
+      content: "三幕结构加尾声",
+      reason: "加个尾声",
+      actor: "作者",
+    });
+  });
+
+  it("listSettings passes the kind label filter", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        {
+          id: "s1",
+          kind: "character",
+          name: "林晚",
+          content: "怕黑",
+          source: "作者",
+          current_version: 2,
+          created_at: "2026-08-01T00:00:00+00:00",
+          updated_at: "2026-08-22T10:00:00+00:00",
+        },
+      ]),
+    );
+
+    const entries = await listSettings("w1", { kind: "人物" });
+    expect(entries[0]).toMatchObject({ name: "林晚", current_version: 2 });
+    expect(fetchMock.mock.calls[0][0]).toBe("/works/w1/settings?kind=%E4%BA%BA%E7%89%A9");
+  });
+
+  it("getSetting parses one setting detail", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        id: "s1",
+        kind: "world",
+        name: "灵潮",
+        content: "灵气如潮汐",
+        source: "作者",
+        current_version: 1,
+        created_at: "2026-08-01T00:00:00+00:00",
+        updated_at: "2026-08-01T00:00:00+00:00",
+      }),
+    );
+
+    const entry = await getSetting("w1", "s1");
+    expect(entry).toMatchObject({ kind: "world", content: "灵气如潮汐" });
+    expect(fetchMock.mock.calls[0][0]).toBe("/works/w1/settings/s1");
+  });
+
+  it("writeSetting adds without setting_id and revises with it plus reason", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            id: "s2",
+            kind: "relation",
+            name: "师徒",
+            content: "亦师亦友",
+            source: "作者",
+            current_version: 1,
+            created_at: "2026-08-23T10:00:00+00:00",
+            updated_at: "2026-08-23T10:00:00+00:00",
+          },
+          201,
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: "s2",
+          kind: "relation",
+          name: "师徒",
+          content: "表面和睦，暗有裂痕",
+          source: "作者",
+          current_version: 2,
+          created_at: "2026-08-23T10:00:00+00:00",
+          updated_at: "2026-08-23T11:00:00+00:00",
+        }),
+      );
+
+    await writeSetting("w1", {
+      kind: "关系",
+      name: "师徒",
+      content: "亦师亦友",
+      source: "作者",
+      actor: "作者",
+    });
+    await writeSetting("w1", {
+      setting_id: "s2",
+      content: "表面和睦，暗有裂痕",
+      reason: "情节需要",
+      source: "作者",
+      actor: "作者",
+    });
+
+    const [first, second] = fetchMock.mock.calls;
+    expect(first[0]).toBe("/works/w1/settings");
+    expect(first[1]?.method).toBe("POST");
+    expect(JSON.parse(first[1]?.body as string)).toEqual({
+      kind: "关系",
+      name: "师徒",
+      content: "亦师亦友",
+      source: "作者",
+      actor: "作者",
+    });
+    expect(JSON.parse(second[1]?.body as string)).toEqual({
+      setting_id: "s2",
+      content: "表面和睦，暗有裂痕",
+      reason: "情节需要",
+      source: "作者",
+      actor: "作者",
+    });
+  });
+
+  it("checkSettings returns the plain-text report", async () => {
+    fetchMock.mockResolvedValueOnce(
+      textResponse("settings: 3 entries (1 revised)；同名冲突：无"),
+    );
+
+    await expect(checkSettings("w1")).resolves.toBe(
+      "settings: 3 entries (1 revised)；同名冲突：无",
+    );
+    expect(fetchMock.mock.calls[0][0]).toBe("/works/w1/settings/check");
+  });
+
+  it("listInspirations passes kind and keyword filters", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        {
+          id: "i1",
+          workspace_id: "w1",
+          kind: "灵感",
+          content: "雨夜路灯下的伞",
+          source: "散步",
+          created_at: "2026-08-23T10:00:00+00:00",
+          updated_at: "2026-08-23T10:00:00+00:00",
+        },
+      ]),
+    );
+
+    const items = await listInspirations("w1", { kind: "灵感", keyword: "伞" });
+    expect(items[0]).toMatchObject({ kind: "灵感", content: "雨夜路灯下的伞" });
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/works/w1/inspirations?kind=%E7%81%B5%E6%84%9F&keyword=%E4%BC%9E",
+    );
+  });
+
+  it("getInspiration parses the single item", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        id: "i1",
+        workspace_id: "w1",
+        kind: "灵感",
+        content: "雨夜路灯下的伞",
+        source: "散步",
+        created_at: "2026-08-23T10:00:00+00:00",
+        updated_at: "2026-08-23T10:00:00+00:00",
+      }),
+    );
+
+    const item = await getInspiration("w1", "i1");
+    expect(item).toMatchObject({ source: "散步" });
+    expect(fetchMock.mock.calls[0][0]).toBe("/works/w1/inspirations/i1");
+  });
+
+  it("createInspiration posts content, kind and source", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          id: "i2",
+          workspace_id: "w1",
+          kind: "灵感",
+          content: "雨夜路灯下的伞",
+          source: "散步",
+          created_at: "2026-08-23T10:00:00+00:00",
+          updated_at: "2026-08-23T10:00:00+00:00",
+        },
+        201,
+      ),
+    );
+
+    const created = await createInspiration("w1", {
+      content: "雨夜路灯下的伞",
+      kind: "灵感",
+      source: "散步",
+    });
+    expect(created).toMatchObject({ id: "i2" });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/works/w1/inspirations");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(init?.body as string)).toEqual({
+      content: "雨夜路灯下的伞",
+      kind: "灵感",
+      source: "散步",
+    });
+  });
+
+  it("deleteInspiration DELETEs and parses the removed id", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ id: "i1", kind: "灵感" }),
+    );
+
+    await expect(deleteInspiration("w1", "i1")).resolves.toEqual({
+      id: "i1",
+      kind: "灵感",
+    });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/works/w1/inspirations/i1");
+    expect(init?.method).toBe("DELETE");
   });
 
   it("postDecision sends the body as JSON", async () => {
