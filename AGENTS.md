@@ -9,6 +9,7 @@
 - 本文件：强制项（验证纪律、失败显式化、权限边界、冲突规则）常驻。
 - `docs/architecture/rules.md`：详细技术规则（按需读取，涉及实现时必读）。
 - `docs/architecture/extension.md`：功能接入规则（涉及新功能时必读）。
+- `docs/architecture/frontend-app.md`：前端大项目架构与接入规则（涉及前端时必读）。
 - `docs/project-checklist.md` 与 `docs/project-plan/`：立项范围与里程碑（涉及需求时必读）。
 
 ## 强制项（常驻）
@@ -31,6 +32,7 @@
 
 - 依赖方向：`cli → core → store / llm / quality`；禁止反向与循环依赖（有测试守卫）。
 - 验证命令：`uv run pytest`、`uv run ruff check .`、`uv run pyright`。
+- 前端验证命令（`frontend/` 下）：`npm run lint`、`npm run typecheck`、`npm test`、`npm run build`。
 - 提交信息：Conventional Commits（英文）。
 - 命令命名：动词-宾语；错误码枚举见 `src/novel_editorial/core/errors.py`。
 - 详细约定见 `docs/architecture/rules.md`。
@@ -41,6 +43,7 @@
 - [ ] 涉及实现时：`docs/architecture/rules.md`
 - [ ] 涉及新功能时：`docs/architecture/extension.md` 与 `docs/project-plan/05-executable-units.md` 对应单元
 - [ ] 涉及需求变更时：`docs/project-checklist.md`
+- [ ] 涉及前端时：`docs/architecture/frontend-app.md` 与 `docs/project-plan/13-frontend-app-checklist.md` 对应单元
 
 禁止：跳过加载直接动手、只读标题、凭记忆执行。
 
