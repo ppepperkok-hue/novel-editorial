@@ -217,8 +217,8 @@ export function getWorkspace(workspaceId: string): Promise<WorkspaceDetail> {
 
 export function createWorkspace(
   body: CreateWorkspaceBody,
-): Promise<WorkspaceDetail> {
-  return requestJson<WorkspaceDetail>("/works", {
+): Promise<WorkspaceSummary> {
+  return requestJson<WorkspaceSummary>("/works", {
     method: "POST",
     body: JSON.stringify(body),
     headers: { "Content-Type": "application/json" },

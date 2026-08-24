@@ -156,7 +156,6 @@ describe("api client contract parsing", () => {
           description: "",
           status: "writing",
           created_at: "2026-08-02T00:00:00+00:00",
-          band: [],
         },
         201,
       ),
@@ -167,7 +166,14 @@ describe("api client contract parsing", () => {
       genre: "同人",
       description: "",
     });
-    expect(created).toMatchObject({ id: "w2", title: "乙书" });
+    expect(created).toEqual({
+      id: "w2",
+      title: "乙书",
+      genre: "同人",
+      description: "",
+      status: "writing",
+      created_at: "2026-08-02T00:00:00+00:00",
+    });
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("/works");

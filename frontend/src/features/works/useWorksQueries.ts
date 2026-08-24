@@ -37,17 +37,16 @@ export function useTemplates() {
   return useQuery({ queryKey: worksQueryKeys.templates, queryFn: listTemplates });
 }
 
-/** Create a workspace (POST /works); invalidates the list and seeds the detail cache. */
+/**
+ * Create a workspace (POST /works). The create response is only a summary
+ * (no band), so the detail cache is left for GET /works/{id} to fetch.
+ */
 export function useCreateWorkspace() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (body: CreateWorkspaceBody) => createWorkspace(body),
-    onSuccess: (created) => {
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: worksQueryKeys.all });
-      void queryClient.setQueryData(
-        worksQueryKeys.detail(created.id),
-        created,
-      );
     },
   });
 }

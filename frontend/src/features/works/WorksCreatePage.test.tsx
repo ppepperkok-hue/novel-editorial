@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -24,7 +25,44 @@ const createdBody = {
   description: "一部短篇",
   status: "writing",
   created_at: "2026-08-25T00:00:00+00:00",
-  band: [],
+};
+
+const detailBody = {
+  ...createdBody,
+  band: [
+    {
+      id: "a1",
+      name: "总编",
+      role: "editor_in_chief",
+      personality: "网感敏锐",
+      stance: "留存优先",
+      values: "更新稳定",
+      aesthetic: "高信息密度",
+      emotion_baseline: "稳定",
+      mood: "干劲十足",
+      work_habits: "盯钩子",
+      weaknesses: "铺垫薄",
+      relationship_presets: "盯写手",
+      private_motive: "带出一本连载",
+      created_at: "2026-08-25T00:00:00+00:00",
+    },
+    {
+      id: "a2",
+      name: "审稿",
+      role: "reviewer",
+      personality: "冷静较真",
+      stance: "设定不打架",
+      values: "伏笔回收",
+      aesthetic: "只看逻辑",
+      emotion_baseline: "冷",
+      mood: "冷静",
+      work_habits: "每十章核对",
+      weaknesses: "对爽点容忍低",
+      relationship_presets: "与总编互相印证",
+      private_motive: "守护不崩的长篇",
+      created_at: "2026-08-25T00:00:00+00:00",
+    },
+  ],
 };
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -58,7 +96,7 @@ function createRoutes() {
       return Promise.resolve(jsonResponse(createdBody, 201));
     }
     if (url === "/works/w-new") {
-      return Promise.resolve(jsonResponse(createdBody));
+      return Promise.resolve(jsonResponse(detailBody));
     }
     return Promise.reject(new Error(`未预期的请求：${url}`));
   });
@@ -129,7 +167,10 @@ describe("works create page", () => {
     fireEvent.click(screen.getByTestId("works-submit-button"));
 
     const detailPage = await screen.findByTestId("works-detail-page");
+    await screen.findByRole("heading", { name: "乙书" });
     expect(detailPage).toHaveTextContent("乙书");
+    const agents = within(detailPage).getAllByTestId("agent-card");
+    expect(agents).toHaveLength(2);
     await waitFor(() => {
       expect(screen.getByTestId("header-workspace")).toHaveTextContent(
         "当前作品：乙书",
@@ -146,6 +187,43 @@ describe("works create page", () => {
         }),
       }),
     );
+  });
+
+  it("renders the full band from the detail fetch when the POST response has no band", async () => {
+    let resolveDetail!: (value: Response) => void;
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/templates") {
+        return Promise.resolve(jsonResponse(templatesBody));
+      }
+      if (url === "/works") {
+        return Promise.resolve(jsonResponse(createdBody, 201));
+      }
+      if (url === "/works/w-new") {
+        return new Promise<Response>((resolve) => {
+          resolveDetail = resolve;
+        });
+      }
+      return Promise.reject(new Error(`未预期的请求：${url}`));
+    });
+    renderCreatePage(fetchMock);
+    await screen.findByText("网文");
+
+    fireEvent.change(screen.getByTestId("works-title-input"), {
+      target: { value: "乙书" },
+    });
+    fireEvent.click(screen.getByTestId("works-submit-button"));
+
+    const detailPage = await screen.findByTestId("works-detail-page");
+    expect(screen.getByTestId("panel-state-loading")).toBeInTheDocument();
+
+    resolveDetail(jsonResponse(detailBody));
+
+    const agents = await within(detailPage).findAllByTestId("agent-card");
+    expect(agents).toHaveLength(2);
+    expect(agents[0]).toHaveTextContent("总编");
+    expect(agents[0]).toHaveTextContent("网感敏锐");
+    expect(agents[1]).toHaveTextContent("审稿");
   });
 
   it("keeps the form and shows an inline error when creation fails", async () => {
