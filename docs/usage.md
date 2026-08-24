@@ -3050,6 +3050,8 @@ curl http://127.0.0.1:8765/works/<作品ID>/events
 
 （`<作品ID>` 与 `<时间戳>` 换成实际输出，每次运行不同；stderr 日志已省略。PowerShell 用户可用 `Invoke-RestMethod` 等价调用。）
 
+完整主链路还能一条命令复现：`uv run python scripts/w1_demo.py`（裸 `python` 也可，缺依赖会自动改用 `uv run`）在全新临时数据目录里用 TestClient 直连 `create_app()` 走「建作品 → 对话 → 作者空稿 → 手写正文 → 待拍板 → accept → 空态」，不启动端口，全部通过输出 `DEMO OK`。
+
 ## 图形面板（N12）
 
 三扇窗一屏可达：跨作品概览、事件流（轮询）、待拍板与拍板。面板只是「窗户」不是产品本体——它只消费 N24 HTTP API，不复制业务逻辑，同一时刻与 CLI 看到的是同一份数据；写操作只有拍板三动作（accept / reject / note）。
