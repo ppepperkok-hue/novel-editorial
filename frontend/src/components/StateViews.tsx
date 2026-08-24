@@ -1,5 +1,40 @@
 import type { ReactNode } from "react";
 
+/**
+ * Three-state view baseline (shared across every workspace).
+ *
+ * Every data-driven component must render exactly one of:
+ *
+ * - loading: `SkeletonRows` (skeleton, not a spinner; keeps layout stable).
+ * - empty: `EmptyState` (guiding copy, never a bare "no data").
+ * - error: `ErrorState` (inline, with source path and a retry action).
+ *
+ * `PanelWindow` composes all three around a ready-state slot:
+ *
+ * ```tsx
+ * <PanelWindow
+ *   title="作品列表"
+ *   state={query.isPending ? "loading" : query.isError ? "error" : query.data.length === 0 ? "empty" : "ready"}
+ *   source="/works"
+ *   message={query.error?.message}
+ *   onRetry={() => void query.refetch()}
+ *   emptyTitle="还没有作品"
+ *   emptyHint="创建第一部作品"
+ * >
+ *   {query.data.map(...)}
+ * </PanelWindow>
+ * ```
+ *
+ * Props:
+ * - `SkeletonRows`: `count` (rows to render, default 3). State: loading.
+ * - `EmptyState`: `title` (required), `hint` (optional guidance). State: empty.
+ * - `ErrorState`: `source` (API path shown to the user), `message` (detail),
+ *   `onRetry` (retry callback). State: error.
+ * - `PanelWindow`: `title`, `state` ("loading" | "empty" | "error" | "ready"),
+ *   `source`, `message`, `onRetry`, `emptyTitle`, `emptyHint`, `dataTestId`,
+ *   `children` (rendered only in the ready state).
+ */
+
 export function SkeletonRows({ count = 3 }: { count?: number }) {
   return (
     <div

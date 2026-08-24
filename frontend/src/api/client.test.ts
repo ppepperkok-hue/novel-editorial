@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  createWorkspace,
   getConfig,
   getDraft,
   getDrafts,
@@ -12,6 +13,9 @@ import {
   getReviews,
   getStyle,
   getStructure,
+  getWorkspace,
+  listTemplates,
+  listWorks,
   postDecision,
 } from "./client";
 
@@ -78,6 +82,118 @@ describe("api client contract parsing", () => {
       title: "甲书",
       pending_count: 1,
     });
+  });
+
+  it("listWorks parses workspace summaries", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        {
+          id: "w1",
+          title: "甲书",
+          genre: "网文",
+          description: "一部连载",
+          status: "writing",
+          created_at: "2026-08-01T00:00:00+00:00",
+        },
+      ]),
+    );
+
+    const works = await listWorks();
+    expect(works[0]).toMatchObject({
+      id: "w1",
+      title: "甲书",
+      status: "writing",
+    });
+    expect(fetchMock.mock.calls[0][0]).toBe("/works");
+  });
+
+  it("getWorkspace parses the detail with its band profile", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        id: "w1",
+        title: "甲书",
+        genre: "网文",
+        description: "",
+        status: "writing",
+        created_at: "2026-08-01T00:00:00+00:00",
+        band: [
+          {
+            id: "a1",
+            name: "总编",
+            role: "editor_in_chief",
+            personality: "网感敏锐",
+            stance: "留存优先",
+            values: "更新稳定",
+            aesthetic: "高信息密度",
+            emotion_baseline: "稳定",
+            mood: "干劲十足",
+            work_habits: "盯章节末钩子",
+            weaknesses: "铺垫压薄",
+            relationship_presets: "盯写手最紧",
+            private_motive: "带出一本连载",
+            created_at: "2026-08-01T00:00:00+00:00",
+          },
+        ],
+      }),
+    );
+
+    const detail = await getWorkspace("w1");
+    expect(detail.title).toBe("甲书");
+    expect(detail.band[0]).toMatchObject({
+      name: "总编",
+      role: "editor_in_chief",
+    });
+    expect(fetchMock.mock.calls[0][0]).toBe("/works/w1");
+  });
+
+  it("createWorkspace posts the generated body type as JSON", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          id: "w2",
+          title: "乙书",
+          genre: "同人",
+          description: "",
+          status: "writing",
+          created_at: "2026-08-02T00:00:00+00:00",
+          band: [],
+        },
+        201,
+      ),
+    );
+
+    const created = await createWorkspace({
+      title: "乙书",
+      genre: "同人",
+      description: "",
+    });
+    expect(created).toMatchObject({ id: "w2", title: "乙书" });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/works");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(init?.body as string)).toEqual({
+      title: "乙书",
+      genre: "同人",
+      description: "",
+    });
+  });
+
+  it("listTemplates parses template names and descriptions", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        { name: "网文", description: "节奏快、钩子密" },
+        { name: "正统", description: "结构完整" },
+      ]),
+    );
+
+    const templates = await listTemplates();
+    expect(templates).toHaveLength(2);
+    expect(templates[0]).toEqual({
+      name: "网文",
+      description: "节奏快、钩子密",
+    });
+    expect(fetchMock.mock.calls[0][0]).toBe("/templates");
   });
 
   it("getGlobalEvents parses events and skipped count", async () => {

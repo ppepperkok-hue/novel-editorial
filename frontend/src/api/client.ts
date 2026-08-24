@@ -6,6 +6,14 @@
  * readable Error carrying the request path and HTTP status.
  */
 
+import type { components } from "./schema";
+
+/**
+ * Workspace creation body, taken from the generated OpenAPI types instead of
+ * being hand-written a second time.
+ */
+export type CreateWorkspaceBody = components["schemas"]["CreateWorkspaceBody"];
+
 export interface PanelConfig {
   panel_poll_interval: number;
 }
@@ -120,6 +128,41 @@ export interface DecisionResult {
   status: string;
 }
 
+export interface WorkspaceSummary {
+  id: string;
+  title: string;
+  genre: string;
+  description: string;
+  status: string;
+  created_at: string;
+}
+
+export interface BandAgent {
+  id: string;
+  name: string;
+  role: string;
+  personality: string;
+  stance: string;
+  values: string;
+  aesthetic: string;
+  emotion_baseline: string;
+  mood: string;
+  work_habits: string;
+  weaknesses: string;
+  relationship_presets: string;
+  private_motive: string;
+  created_at: string;
+}
+
+export interface WorkspaceDetail extends WorkspaceSummary {
+  band: BandAgent[];
+}
+
+export interface BandTemplate {
+  name: string;
+  description: string;
+}
+
 function workspacePath(workspaceId: string): string {
   return `/works/${encodeURIComponent(workspaceId)}`;
 }
@@ -162,6 +205,28 @@ async function requestText(path: string): Promise<string> {
 
 export function getConfig(): Promise<PanelConfig> {
   return requestJson<PanelConfig>("/config");
+}
+
+export function listWorks(): Promise<WorkspaceSummary[]> {
+  return requestJson<WorkspaceSummary[]>("/works");
+}
+
+export function getWorkspace(workspaceId: string): Promise<WorkspaceDetail> {
+  return requestJson<WorkspaceDetail>(workspacePath(workspaceId));
+}
+
+export function createWorkspace(
+  body: CreateWorkspaceBody,
+): Promise<WorkspaceDetail> {
+  return requestJson<WorkspaceDetail>("/works", {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+export function listTemplates(): Promise<BandTemplate[]> {
+  return requestJson<BandTemplate[]>("/templates");
 }
 
 export function getOverview(): Promise<Overview> {
