@@ -104,7 +104,8 @@
 
 - 包 FE-W1-S1：src/novel_editorial/api/app.py + tests/test_api.py + pyproject.toml / uv.lock（sse-starlette）+ frontend/src/api 生成类型与 gen:types 脚本 + frontend/package.json / package-lock（openapi-typescript）+ docs/usage.md HTTP API 节。
 - 包 FE-W1-S2：frontend/ 路由壳 + 状态库 + 三态基线 + works 工作台 + frontend 测试 + package.json / package-lock。
-- 包 FE-W1-S3：作者写作能力（core/draft + store/models.py + migrations/ + cli/draft.py + api 端点）+ frontend/ talk + writer 工作台 + 测试。
+- 包 FE-W1-S3a：作者写作能力（store/models.py + migrations/ + core/draft.py + cli/draft.py + api 端点 + 后端测试 + OpenAPI 重生成）。
+- 包 FE-W1-S3b：frontend/ talk + writer 工作台 + react-markdown + 测试（S3a 验收后再发）。
 - 包 FE-W1-S4：frontend/ decision 工作台 + 演示脚本 + 回归 + 审查归档。
 
 ## 变更纪律
