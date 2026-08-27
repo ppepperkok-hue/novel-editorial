@@ -104,6 +104,32 @@ describe("useEventStream", () => {
     });
   });
 
+  it("passes parsed event data to the optional onEvent callback", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const onEvent = vi.fn();
+    renderWithClient({ onEvent });
+
+    act(() => {
+      FakeEventSource.instances[0].emitMessage(
+        JSON.stringify({ id: "e1", type: "draft.created", time: "2026-08-27T10:00:00+00:00" }),
+      );
+    });
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "e1", type: "draft.created" }),
+    );
+  });
+
+  it("passes the raw string through when event data is not valid JSON", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const onEvent = vi.fn();
+    renderWithClient({ onEvent });
+
+    act(() => {
+      FakeEventSource.instances[0].emitMessage("not-json");
+    });
+    expect(onEvent).toHaveBeenCalledWith("not-json");
+  });
+
   it("shows a reconnect notice after an open drop and keeps auto-reconnect", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const { result } = renderWithClient();

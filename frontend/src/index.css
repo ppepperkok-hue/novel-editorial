@@ -571,6 +571,16 @@ textarea:focus-visible {
   gap: 8px;
 }
 
+.events-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.events-feed .event-stream-status {
+  align-self: flex-start;
+}
+
 .event-item-button {
   display: flex;
   flex-direction: column;

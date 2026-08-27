@@ -102,6 +102,25 @@ const overviewBody = {
   skipped: 0,
 };
 
+const worksBody = [
+  {
+    id: "w-a",
+    title: "甲书",
+    genre: "网文",
+    description: "",
+    status: "writing",
+    created_at: "2026-08-01T00:00:00+00:00",
+  },
+  {
+    id: "w-b",
+    title: "乙书",
+    genre: "短篇",
+    description: "",
+    status: "writing",
+    created_at: "2026-08-02T00:00:00+00:00",
+  },
+];
+
 const eventsBody = {
   events: [
     {
@@ -192,6 +211,7 @@ function fullRoutes(): Record<string, RouteBody> {
         created_at: "2026-08-01T00:00:00+00:00",
       },
     ],
+    "/works": worksBody,
   };
 }
 
@@ -303,6 +323,7 @@ describe("App three-window panel", () => {
       "/events": eventsBody,
       "/works/w-a/pending": pendingABody,
       "/works/w-b/pending": pendingBBody,
+      "/works": worksBody,
     });
     render(<App />);
 
@@ -325,6 +346,7 @@ describe("App three-window panel", () => {
       "/config": { panel_poll_interval: 3 },
       "/overview": { overviews: [], total: 0, skipped: 0 },
       "/events": { events: [], skipped: 0 },
+      "/works": [],
     });
     render(<App />);
 
@@ -339,6 +361,9 @@ describe("App three-window panel", () => {
       const url = String(input);
       if (url === "/config") {
         return Promise.resolve(jsonResponse({ panel_poll_interval: 3 }));
+      }
+      if (url === "/works") {
+        return Promise.resolve(jsonResponse(worksBody));
       }
       if (url === "/overview") {
         return Promise.resolve(jsonResponse(overviewBody));
@@ -379,6 +404,9 @@ describe("App three-window panel", () => {
       const url = String(input);
       if (url === "/config") {
         return Promise.resolve(jsonResponse({ panel_poll_interval: 3 }));
+      }
+      if (url === "/works") {
+        return Promise.resolve(jsonResponse(worksBody));
       }
       if (url === "/overview") {
         overviewCalls += 1;
@@ -435,6 +463,9 @@ describe("App three-window panel", () => {
       if (url === "/config") {
         return Promise.resolve(jsonResponse({ panel_poll_interval: 3 }));
       }
+      if (url === "/works") {
+        return Promise.resolve(jsonResponse(worksBody));
+      }
       if (url === "/overview") {
         return Promise.resolve(jsonResponse(overviewBody));
       }
@@ -481,6 +512,9 @@ describe("App three-window panel", () => {
       urls.push(url);
       if (url === "/config") {
         return Promise.resolve(jsonResponse({ panel_poll_interval: 3 }));
+      }
+      if (url === "/works") {
+        return Promise.resolve(jsonResponse(worksBody));
       }
       if (url === "/overview") {
         return Promise.resolve(jsonResponse(overviewBody));
@@ -563,6 +597,9 @@ describe("App three-window panel", () => {
       if (url === "/config") {
         return Promise.resolve(jsonResponse({ panel_poll_interval: 3 }));
       }
+      if (url === "/works") {
+        return Promise.resolve(jsonResponse(worksBody));
+      }
       if (url === "/overview") {
         return Promise.resolve(jsonResponse(overviewBody));
       }
@@ -640,6 +677,9 @@ describe("App three-window panel", () => {
       const url = String(input);
       if (url === "/config") {
         return Promise.resolve(jsonResponse({ panel_poll_interval: 3 }));
+      }
+      if (url === "/works") {
+        return Promise.resolve(jsonResponse(worksBody));
       }
       if (url === "/overview") {
         return Promise.resolve(jsonResponse(overviewBody));

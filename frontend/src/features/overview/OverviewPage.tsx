@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   getConfig,
-  getGlobalEvents,
   getOverview,
   getPending,
   type EditorialEvent,
@@ -11,11 +10,13 @@ import {
   type PendingDraft,
 } from "../../api/client";
 import EventItem from "../../components/EventItem";
+import EventStreamStatus from "../../components/EventStreamStatus";
 import PendingDraftItem from "../../components/PendingDraftItem";
-import { PanelWindow } from "../../components/StateViews";
+import { EmptyState, PanelWindow } from "../../components/StateViews";
 import WorkspaceCard from "../../components/WorkspaceCard";
 import WorkspaceDrawer from "../../components/WorkspaceDrawer";
 import { usePolling } from "../../hooks/usePolling";
+import { useOverviewEventFeed } from "./useOverviewEventFeed";
 
 const DEFAULT_POLL_INTERVAL_MS = 3000;
 
@@ -34,7 +35,9 @@ interface PendingState {
  * Cross-workspace overview: the panel MVP migrated into the routed shell.
  *
  * Keeps the three-window behavior (overview / events / pending) plus the
- * per-workspace drill-down drawer, all still polling the N24 read endpoints.
+ * per-workspace drill-down drawer. The events window is now a realtime feed:
+ * one SSE subscription per workspace merged newest-first, with the global
+ * GET /events polling kept as a degradation path.
  */
 export default function OverviewPage() {
   const [pollIntervalMs, setPollIntervalMs] = useState(DEFAULT_POLL_INTERVAL_MS);
@@ -70,7 +73,7 @@ export default function OverviewPage() {
   }, [configAttempt]);
 
   const overview = usePolling(getOverview, pollIntervalMs);
-  const events = usePolling(getGlobalEvents, pollIntervalMs);
+  const events = useOverviewEventFeed(pollIntervalMs);
 
   const overviewRef = useRef<Overview | null>(overview.data);
   overviewRef.current = overview.data;
@@ -186,31 +189,40 @@ export default function OverviewPage() {
           state={
             events.error
               ? "error"
-              : events.data === null
+              : events.loading
                 ? "loading"
-                : events.data.events.length === 0
-                  ? "empty"
-                  : "ready"
+                : "ready"
           }
-          source="/events"
+          source={events.source}
           message={events.error?.message}
           onRetry={events.reload}
-          emptyTitle="暂无事件"
-          emptyHint="编辑部还没有动静，先去写点东西吧"
           dataTestId="panel-events"
         >
-          <ul className="event-list">
-            {events.data?.events.map((event) => (
-              <EventItem
-                key={event.id}
-                event={event}
-                onClick={() => openWorkspaceFromEvent(event)}
+          <div className="events-feed">
+            <EventStreamStatus
+              status={events.streamStatus.status}
+              notice={events.streamStatus.notice}
+            />
+            {events.events.length === 0 ? (
+              <EmptyState
+                title="暂无事件"
+                hint="编辑部还没有动静，先去写点东西吧"
               />
-            ))}
-          </ul>
-          {events.data !== null && events.data.skipped > 0 ? (
+            ) : (
+              <ul className="event-list">
+                {events.events.map((event) => (
+                  <EventItem
+                    key={event.id}
+                    event={event}
+                    onClick={() => openWorkspaceFromEvent(event)}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
+          {events.skipped !== null && events.skipped > 0 ? (
             <p className="partial-failure">
-              有 {events.data.skipped} 部作品的事件读取失败（已跳过）
+              有 {events.skipped} 部作品的事件读取失败（已跳过）
             </p>
           ) : null}
         </PanelWindow>

@@ -18,6 +18,13 @@ export interface UseEventStreamOptions {
   /** Consecutive failed open attempts before falling back to polling. */
   maxFailedOpenAttempts?: number;
   /**
+   * Called with the event payload whenever the stream receives one. The hook
+   * stays feature-agnostic: the raw event data is passed through as parsed
+   * JSON (or the original string when it is not valid JSON), and callers that
+   * only need to refresh queries keep using `invalidateKeys` instead.
+   */
+  onEvent?: (data: unknown) => void;
+  /**
    * Build the query keys to invalidate when an event arrives (or a polling
    * tick fires). The hook stays feature-agnostic: each workbench injects the
    * keys for the queries it actually shows.
@@ -69,6 +76,9 @@ export function useEventStream(
 
   const invalidateKeysRef = useRef(invalidateKeys);
   invalidateKeysRef.current = invalidateKeys;
+
+  const onEventRef = useRef(options.onEvent);
+  onEventRef.current = options.onEvent;
 
   const invalidateWorkspace = useCallback(() => {
     const current = workspaceIdRef.current;
@@ -127,11 +137,20 @@ export function useEventStream(
       setNotice(null);
     };
 
-    source.onmessage = () => {
+    source.onmessage = (message) => {
       if (disposed) {
         return;
       }
       invalidateRef.current();
+      let data: unknown = message.data;
+      if (typeof message.data === "string") {
+        try {
+          data = JSON.parse(message.data);
+        } catch {
+          // Keep the raw string so callers can decide how to surface it.
+        }
+      }
+      onEventRef.current?.(data);
     };
 
     source.onerror = () => {
