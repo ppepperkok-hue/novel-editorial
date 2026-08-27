@@ -2988,6 +2988,27 @@ uv run novel-editorial api serve [--host HOST] [--port PORT]
 | GET | `/works/{id}/inspirations/{inspiration_id}` | 单条灵感（kind / content / source） |
 | POST | `/works/{id}/inspirations` | 加灵感（body：`content` 必填，`kind` 缺省「灵感」，`source` 缺省空），成功 201 |
 | DELETE | `/works/{id}/inspirations/{inspiration_id}` | 删灵感，返回 `{"id", "kind"}` |
+| POST | `/quality/calibrate` | 语料校准报告（body：`path` 必填，`apply` 可选），返回 `text/plain`，与 `quality calibrate` 同文本；`apply: true` 写入 `config.toml` 的 `quality_threshold` |
+| POST | `/quality/feedback` | 试读反馈校准报告（body：`path` 必填，`apply` 可选），返回 `text/plain`，与 `quality feedback` 同文本；`apply: true` 写入 `config.toml`，无 bad 样本时与 CLI 同样报 422 |
+| GET | `/works/{id}/drafts/{draft_id}/quality/check` | AI 味质量门报告，`text/plain`，与 `quality check` 同文本 |
+| GET | `/works/{id}/drafts/{draft_id}/quality/explain` | AI 味定位 + 改写建议 + 风格摘要 + 好句块，`text/plain`，与 `quality explain` 同文本 |
+| GET | `/works/{id}/drafts/{draft_id}/consistency` | 前后矛盾核查报告（人物缺失 / 数字冲突 / 伏笔缺失），`text/plain`，与 `consistency check` 同文本 |
+| POST | `/works/{id}/style/learn` | 参考语料风格画像与建议描述（body：`path` 必填，`apply` 可选），`text/plain`，与 `style learn` 同文本；`apply: true` 只更新锚点 `description`（`forbidden_words` 保留） |
+| GET | `/works/{id}/style/drift` | 跨章节风格漂移报告，`text/plain`，与 `style drift` 同文本 |
+| GET | `/works/{id}/motives` | 伙伴动机列表（query：`agent` 可选，id / 名字 / 角色别名），`text/plain`，与 `motives list` 同文本 |
+| DELETE | `/works/{id}/motives/{motive_id}` | 放下一条动机（写操作，追加 `author_feedback:drop` 行为轨迹），`text/plain`，与 `motives drop` 同文本 |
+| GET | `/works/{id}/patience` | 各伙伴耐心池与三态明细，`text/plain`，与 `patience show` 同文本 |
+| GET | `/works/{id}/behavior/timeline` | 行为轨迹时间线（query：`agent` 可选、`kind` 可重复、`limit` 缺省 20），`text/plain`，与 `behavior timeline` 同文本 |
+| GET | `/works/{id}/behavior` | 各伙伴当前行为状态（按 agent / kind / target 取最新一条），`text/plain`，与 `behavior show` 同文本 |
+
+### 质量风格工具与自由意志读面
+
+这批端点逐条映射 CLI 的质量 / 风格 / 一致性 / 自由意志读面命令（`quality check / explain / calibrate / feedback`、`style learn / drift`、`consistency check`、`motives list / drop`、`patience show`、`behavior timeline / show`）。报告类端点一律复用 `core` / `quality` 既有函数后按 CLI 的渲染逐行输出，返回 `text/plain`，与 CLI stdout 逐字节同源（`quality calibrate` 把 CLI 打到 stderr 的读取失败 warning 内联进响应体同一位置，避免 HTTP 通道丢诊断）。
+
+- 草稿级端点（quality check / explain、consistency）按作品隔离：草稿必须属于路径中的作品，跨作品访问返回 404（CLI 的 `find_draft_anywhere` 便利不沿用到 API）。
+- `style learn` 与 `motives drop` 是写面：`style learn --apply` 只更新锚点 `description`；`motives drop` 删除动机行并追加行为轨迹，返回文本与 CLI 一致。
+- 全局校准端点（`/quality/calibrate`、`/quality/feedback`）的 `apply: true` 写的是服务启动时读取的 `config.toml`（与 CLI 同一优先级），改动即时落盘；当前运行中的进程按启动时的阈值判定，重启后生效。
+- 错误映射沿用「错误映射」表：语料 / 反馈文件不存在 → 404；非法路径、未知 `kind` / `agent`、`limit < 1`、空 `path` → 422（与 CLI 退出码 1 / 2 对应）。
 
 ### 结构 / 大纲 / 设定 / 灵感写面
 
@@ -3051,7 +3072,7 @@ events.addEventListener("message", (event) => {
 
 ### 只读红线与安全说明
 
-- 写面端点逐条映射既有 CLI 命令（`works create`、`talk send`、`draft generate`、`draft revise`、`draft new`、`draft save`、`review add`、`decision` 三动作、`style set`、`structure add / rename / move / remove / status`、`outline create / revise`、`setting add / revise`、`inspiration add / remove`），业务逻辑一律复用 `core` 既有函数，不在 API 层重写；其余路由全部只读：不落事件、不触发 proactive。
+- 写面端点逐条映射既有 CLI 命令（`works create`、`talk send`、`draft generate`、`draft revise`、`draft new`、`draft save`、`review add`、`decision` 三动作、`style set`、`style learn --apply`、`structure add / rename / move / remove / status`、`outline create / revise`、`setting add / revise`、`inspiration add / remove`、`motives drop`、`quality calibrate --apply`、`quality feedback --apply`），业务逻辑一律复用 `core` 既有函数，不在 API 层重写；其余路由全部只读：不落事件、不触发 proactive。
 - `GET /works/{id}/style` 只读查询：作品没有风格锚点时返回 `{"description": "", "forbidden_words": ""}`，绝不新建行。
 - 默认只绑定 `127.0.0.1` 且无鉴权；不要用 `--host 0.0.0.0` 或公网端口暴露服务。
 

@@ -583,6 +583,153 @@
         }
       }
     },
+    "/works/{workspace_id}/drafts/{draft_id}/quality/check": {
+      "get": {
+        "summary": "Get Draft Quality Check",
+        "description": "AI-flavor quality gate report, same text as ``quality check``.",
+        "operationId": "get_draft_quality_check_works__workspace_id__drafts__draft_id__quality_check_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Draft Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/works/{workspace_id}/drafts/{draft_id}/quality/explain": {
+      "get": {
+        "summary": "Get Draft Quality Explain",
+        "description": "AI-flavor localization + rewrite suggestions, same text as ``quality explain``.",
+        "operationId": "get_draft_quality_explain_works__workspace_id__drafts__draft_id__quality_explain_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Draft Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/works/{workspace_id}/drafts/{draft_id}/consistency": {
+      "get": {
+        "summary": "Get Draft Consistency",
+        "description": "Contradiction report against settings/threads, same text as ``consistency check``.",
+        "operationId": "get_draft_consistency_works__workspace_id__drafts__draft_id__consistency_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Draft Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/works/{workspace_id}/reviews": {
       "get": {
         "summary": "Get Reviews",
@@ -799,6 +946,84 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/quality/calibrate": {
+      "post": {
+        "summary": "Calibrate Quality Threshold",
+        "description": "Corpus calibration report; ``apply`` writes config like the CLI.",
+        "operationId": "calibrate_quality_threshold_quality_calibrate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorpusPathBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/quality/feedback": {
+      "post": {
+        "summary": "Analyze Quality Feedback",
+        "description": "Trial-reader feedback alignment report; ``apply`` writes config.",
+        "operationId": "analyze_quality_feedback_quality_feedback_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorpusPathBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
               }
             }
           },
@@ -1243,6 +1468,96 @@
                     "type": "string"
                   },
                   "title": "Response Get Workspace Style Works  Workspace Id  Style Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/works/{workspace_id}/style/learn": {
+      "post": {
+        "summary": "Learn Workspace Style",
+        "description": "Learn a style description from reference texts (like ``style learn``).",
+        "operationId": "learn_workspace_style_works__workspace_id__style_learn_post",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorpusPathBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/works/{workspace_id}/style/drift": {
+      "get": {
+        "summary": "Get Workspace Style Drift",
+        "description": "Cross-chapter style drift report (like ``style drift``).",
+        "operationId": "get_workspace_style_drift_works__workspace_id__style_drift_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -2079,10 +2394,309 @@
           }
         }
       }
+    },
+    "/works/{workspace_id}/motives": {
+      "get": {
+        "summary": "List Workspace Motives",
+        "description": "Partner motives with kind/strength/source/last touch (like ``motives list``).",
+        "operationId": "list_workspace_motives_works__workspace_id__motives_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "agent",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Agent id or alias",
+              "title": "Agent"
+            },
+            "description": "Agent id or alias"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/works/{workspace_id}/motives/{motive_id}": {
+      "delete": {
+        "summary": "Drop Workspace Motive",
+        "description": "Drop one motive; appends the author_feedback:drop behavior trace.",
+        "operationId": "drop_workspace_motive_works__workspace_id__motives__motive_id__delete",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "motive_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Motive Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/works/{workspace_id}/patience": {
+      "get": {
+        "summary": "Get Workspace Patience",
+        "description": "Every partner's patience pool and state breakdowns (like ``patience show``).",
+        "operationId": "get_workspace_patience_works__workspace_id__patience_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/works/{workspace_id}/behavior/timeline": {
+      "get": {
+        "summary": "Get Workspace Behavior Timeline",
+        "description": "Behavior traces oldest first (like ``behavior timeline``).",
+        "operationId": "get_workspace_behavior_timeline_works__workspace_id__behavior_timeline_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "agent",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by agent alias or id",
+              "title": "Agent"
+            },
+            "description": "Filter by agent alias or id"
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Repeatable behavior kind",
+              "title": "Kind"
+            },
+            "description": "Repeatable behavior kind"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Max entries to show",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Max entries to show"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/works/{workspace_id}/behavior": {
+      "get": {
+        "summary": "Get Workspace Behavior State",
+        "description": "Each partner's current behavior state (like ``behavior show``).",
+        "operationId": "get_workspace_behavior_state_works__workspace_id__behavior_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "CorpusPathBody": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Path"
+          },
+          "apply": {
+            "type": "boolean",
+            "title": "Apply",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "title": "CorpusPathBody",
+        "description": "Corpus/feedback file path plus the CLI's ``--apply`` flag."
+      },
       "CreateWorkspaceBody": {
         "properties": {
           "title": {

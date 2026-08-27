@@ -9,7 +9,7 @@ import sys
 from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import FastAPI, Query, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -34,7 +34,13 @@ from novel_editorial.core import (
     workspace,
 )
 from novel_editorial.core.agents import resolve_agent
-from novel_editorial.core.behavior import record_behavior_entry_safe
+from novel_editorial.core.behavior import (
+    BEHAVIOR_KINDS,
+    current_behavior_state,
+    list_behavior_timeline,
+    record_behavior_entry_safe,
+)
+from novel_editorial.core.calibration import scan_corpus
 from novel_editorial.core.chat import (
     AUTHOR_ACTOR,
     MOOD_ACCEPTED,
@@ -54,16 +60,48 @@ from novel_editorial.core.chat import (
     resolve_target_role,
     update_agent_mood,
 )
-from novel_editorial.core.config import Settings, load_settings
+from novel_editorial.core.config import (
+    Settings,
+    load_settings,
+    set_quality_threshold,
+)
+from novel_editorial.core.consistency import check_consistency
 from novel_editorial.core.errors import ErrorCode, NovelError
+from novel_editorial.core.feedback import analyze_feedback, load_feedback_samples
+from novel_editorial.core.motives import clear_motive, list_motives
 from novel_editorial.core.natural_discussion import check_summon_trigger_safe
-from novel_editorial.core.style import find_style_anchor
+from novel_editorial.core.patience import STATE_KEYS, patience_pools
+from novel_editorial.core.style import (
+    extract_style_keywords,
+    find_style_anchor,
+    get_style_anchor,
+)
+from novel_editorial.core.style_drift import compute_style_drift, read_forbidden_words
+from novel_editorial.core.style_learn import (
+    build_suggested_description,
+    collect_corpus_texts,
+    compute_style_profile,
+)
 from novel_editorial.llm.client import LLMMessage, build_client
+from novel_editorial.quality.explain import (
+    explain_quality,
+    render_explanation,
+    style_consistency_summary,
+)
+from novel_editorial.quality.gate import check_quality
+from novel_editorial.quality.gems import (
+    SIGNAL_DIALOGUE,
+    SIGNAL_NUMBER_DETAIL,
+    SIGNAL_SENSORY,
+    GoodSentence,
+    find_good_sentences,
+)
 from novel_editorial.store.db import DB
 from novel_editorial.store.events import list_events, list_events_since
 from novel_editorial.store.models import (
     Agent,
     AgentRole,
+    BehaviorTimeline,
     Decision,
     Draft,
     DraftVersion,
@@ -221,6 +259,20 @@ class InspirationAddBody(BaseModel):
     content: str
     kind: str = "灵感"
     source: str = ""
+
+
+class CorpusPathBody(BaseModel):
+    """Corpus/feedback file path plus the CLI's ``--apply`` flag."""
+
+    path: str = Field(min_length=1)
+    apply: bool = False
+
+    @field_validator("path")
+    @classmethod
+    def _path_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("path must not be empty or whitespace-only")
+        return value
 
 
 def _workspace_dict(workspace: Workspace) -> dict[str, Any]:
@@ -711,6 +763,445 @@ def _style_anchor_dict(db: DB, workspace_id: str) -> dict[str, str]:
     }
 
 
+_QUALITY_SIGNAL_LABELS: dict[str, str] = {
+    SIGNAL_DIALOGUE: "对话引语",
+    SIGNAL_NUMBER_DETAIL: "数字细节",
+    SIGNAL_SENSORY: "感官细节",
+}
+_QUALITY_SIGNAL_ORDER: tuple[str, ...] = (
+    SIGNAL_DIALOGUE,
+    SIGNAL_NUMBER_DETAIL,
+    SIGNAL_SENSORY,
+)
+
+
+def _quality_score(value: float) -> str:
+    """Render a score without a trailing .0, matching ``cli/quality.py``."""
+    return f"{value:g}"
+
+
+def _quality_stats(stats: tuple[float, ...]) -> str:
+    """Render min / median / p90 / max like the CLI, or n/a when empty."""
+    if not stats:
+        return "n/a"
+    return (
+        f"min {_quality_score(stats[0])} median {_quality_score(stats[1])} "
+        f"p90 {_quality_score(stats[2])} max {_quality_score(stats[3])}"
+    )
+
+
+def _quality_agreement(agreement: float, total: int) -> str:
+    """Render an agreement fraction as percent plus an exact fraction."""
+    numerator = round(agreement * total)
+    return f"{agreement * 100:.1f}% ({numerator}/{total})"
+
+
+def _quality_good_sentences(gems: list[GoodSentence]) -> str | None:
+    """Render the good-sentences block, or None when there are no gems."""
+    if not gems:
+        return None
+    indexes = "、".join(str(gem.index) for gem in gems)
+    labels = [
+        _QUALITY_SIGNAL_LABELS[signal]
+        for signal in _QUALITY_SIGNAL_ORDER
+        if any(signal in gem.signals for gem in gems)
+    ]
+    lines = [f"good sentences: 句 {indexes}（{'、'.join(labels)}，建议保留）"]
+    lines.extend(f"  {gem.index}: {gem.snippet}" for gem in gems)
+    return "\n".join(lines)
+
+
+def _quality_check_text(
+    db: DB, workspace_id: str, draft_id: str, settings: Settings
+) -> str:
+    """Render the ``quality check`` report for one draft, byte-identical."""
+    draft_row = draft.get_draft(db, workspace_id, draft_id)
+    version = draft.get_draft_version(
+        db, workspace_id, draft_id, draft_row.current_version
+    )
+    anchor = get_style_anchor(db, workspace_id)
+    style_keywords = extract_style_keywords(anchor.description)
+    report = check_quality(
+        version.content,
+        threshold=settings.quality_threshold,
+        style_keywords=style_keywords,
+    )
+    lines = [
+        f"passed: {report.passed}",
+        f"score: {report.score} (threshold {settings.quality_threshold})",
+        f"ai word hits: {report.details['ai_word_hits']}",
+        f"modifier hits: {report.details['modifier_hits']}",
+        f"sentence repetition: {report.details['sentence_repetition']}",
+    ]
+    if style_keywords:
+        consistency = report.details["style_consistency"]
+        lines.append(
+            f"style hits: {len(report.details['style_hits'])}/{len(style_keywords)} "
+            f"(consistency {consistency:.2f})"
+        )
+    else:
+        lines.append("style hits: n/a (no style keywords)")
+    return "\n".join(lines)
+
+
+def _quality_explain_text(db: DB, workspace_id: str, draft_id: str) -> str:
+    """Render the ``quality explain`` report, byte-identical to the CLI."""
+    draft_row = draft.get_draft(db, workspace_id, draft_id)
+    version = draft.get_draft_version(
+        db, workspace_id, draft_id, draft_row.current_version
+    )
+    anchor = get_style_anchor(db, workspace_id)
+    style_keywords = extract_style_keywords(anchor.description)
+    issues = explain_quality(version.content)
+    lines: list[str] = []
+    if issues:
+        lines.append(f"{draft_row.title} (v{version.version})")
+    lines.append(render_explanation(issues))
+    summary = style_consistency_summary(version.content, style_keywords)
+    if summary is not None:
+        lines.append(summary)
+    good_block = _quality_good_sentences(find_good_sentences(version.content))
+    if good_block is not None:
+        lines.append(good_block)
+    return "\n".join(lines)
+
+
+def _quality_calibrate_text(
+    settings: Settings, path: str, apply: bool
+) -> str:
+    """Render ``quality calibrate`` output and honor the apply flag.
+
+    The CLI prints read failures on stderr; this endpoint inlines those
+    warning lines at the same position (after ``skipped``, before ``apply``)
+    so no diagnostic is lost over HTTP while the report body stays identical.
+    """
+    report = scan_corpus(path)
+    lines = [f"samples: {len(report.samples)}"]
+    for sample in report.samples:
+        lines.append(
+            f"{sample.path}: 字数 {sample.char_count} · AI 词 {sample.ai_word_hits} · "
+            f"修饰词 {sample.modifier_hits} · 句式重复 {sample.sentence_repetition} · "
+            f"score {sample.score}"
+        )
+    lines.append(
+        f"distribution: min {report.min} median {report.median} p90 {report.p90} "
+        f"p95 {report.p95} max {report.max}"
+    )
+    lines.append(f"suggested threshold: {report.suggested_threshold}")
+    if report.skipped > 0:
+        lines.append(f"skipped: {report.skipped}")
+    for error in report.errors:
+        lines.append(f"warning: {error}")
+    if apply:
+        lines.append(f"apply: quality_threshold = {report.suggested_threshold}")
+        set_quality_threshold(settings.config_path, report.suggested_threshold)
+        lines.append(f"config updated: {settings.config_path}")
+    return "\n".join(lines)
+
+
+def _quality_feedback_text(
+    settings: Settings, path: str, apply: bool
+) -> str:
+    """Render ``quality feedback`` output and honor the apply flag."""
+    samples = load_feedback_samples(path)
+    report = analyze_feedback(samples, settings.quality_threshold)
+    total = len(report.samples)
+    lines = [
+        f"samples: {total}",
+        f"bad: {report.bad_count} / good: {report.good_count}",
+        f"bad scores: {_quality_stats(report.bad_stats)}",
+        f"good scores: {_quality_stats(report.good_stats)}",
+        "agreement at threshold "
+        f"{report.threshold_used}: {_quality_agreement(report.agreement, total)}",
+    ]
+    if report.suggested_threshold is None:
+        lines.append("suggested threshold: n/a (no bad samples)")
+    else:
+        lines.append(f"suggested threshold: {report.suggested_threshold}")
+        if report.suggested_agreement is not None:
+            lines.append(
+                "agreement at suggested: "
+                f"{_quality_agreement(report.suggested_agreement, total)}"
+            )
+    if apply:
+        if report.suggested_threshold is None:
+            raise NovelError(
+                ErrorCode.USAGE_ERROR,
+                "cannot apply a suggested threshold without bad samples",
+                context={"path": path},
+            )
+        lines.append(f"apply: quality_threshold = {report.suggested_threshold}")
+        set_quality_threshold(settings.config_path, report.suggested_threshold)
+        lines.append(f"config updated: {settings.config_path}")
+    return "\n".join(lines)
+
+
+def _style_learn_text(
+    db: DB, workspace_id: str, path: str, apply: bool
+) -> str:
+    """Render ``style learn`` output; apply writes the style anchor."""
+    get_workspace_or_raise(db, workspace_id)
+    texts = collect_corpus_texts(path)
+    profile = compute_style_profile(texts)
+    description = build_suggested_description(profile)
+    lines = [
+        f"samples: {profile.samples}",
+        f"avg sentence length: {profile.avg_sentence_len:.1f} 字",
+        f"short sentence ratio: {profile.short_sentence_ratio * 100:.1f}%",
+        f"modifier per 1000 chars: {profile.modifier_per_1000:.1f}",
+    ]
+    if profile.ai_word_hits:
+        lines.append(f"ai words in corpus: {'、'.join(profile.ai_word_hits)}")
+    lines.append(f"suggested description: {description}")
+    if apply:
+        lines.append(f"apply: description = {description}")
+        anchor = get_style_anchor(db, workspace_id)
+        style.set_style_anchor(
+            db,
+            workspace_id,
+            description=description,
+            forbidden_words=anchor.forbidden_words,
+        )
+        lines.append(f"style anchor updated: {workspace_id}")
+    return "\n".join(lines)
+
+
+def _style_drift_text(db: DB, workspace_id: str) -> str:
+    """Render the ``style drift`` report, byte-identical to the CLI."""
+    get_workspace_or_raise(db, workspace_id)
+    report = compute_style_drift(db, workspace_id)
+
+    if not report.chapters and report.skipped == 0:
+        return "no chapters"
+    lines: list[str] = []
+    if len(report.chapters) < 2:
+        lines.append(f"chapters: {len(report.chapters)}")
+        if report.skipped > 0:
+            lines.append(f"skipped chapters: {report.skipped}")
+        lines.append("drift: n/a (need at least 2 chapters)")
+        return "\n".join(lines)
+
+    forbidden_words = read_forbidden_words(db, workspace_id)
+    lines.append(f"chapters: {len(report.chapters)}")
+    if report.baseline_title:
+        lines.append(f"baseline: {report.baseline_title}")
+    if report.skipped > 0:
+        lines.append(f"skipped chapters: {report.skipped}")
+    for chapter in report.chapters:
+        parts = [
+            f"len {chapter.avg_sentence_len:.1f}",
+            f"short {chapter.short_sentence_ratio * 100:.1f}%",
+            f"mod {chapter.modifier_per_1000:.1f}",
+            f"ai {chapter.ai_words_per_1000:.1f}",
+        ]
+        if chapter.style_hits is not None:
+            parts.append(f"style {chapter.style_hits}/{chapter.style_total}")
+        lines.append(
+            f"{chapter.index} {chapter.title}: {' / '.join(parts)} → drift "
+            f"{chapter.drift_score}"
+        )
+    trend = " / ".join(str(chapter.drift_score) for chapter in report.chapters)
+    lines.append(f"drift trend: {trend}")
+    if report.drifted:
+        drifted = "、".join(
+            f"{chapter.title}（{chapter.drift_score}）"
+            for chapter in report.drifted
+        )
+        lines.append(f"drifted chapters: {drifted}")
+    for chapter in report.chapters:
+        if chapter.forbidden_hits <= 0:
+            continue
+        words = "、".join(forbidden_words)
+        lines.append(
+            f"forbidden hits: {chapter.title}: {chapter.forbidden_hits}（{words}）"
+        )
+    lines.append(f"verdict: {report.verdict}")
+    return "\n".join(lines)
+
+
+def _consistency_text(db: DB, workspace_id: str, draft_id: str) -> str:
+    """Render the ``consistency check`` report, byte-identical to the CLI."""
+    draft_row = draft.get_draft(db, workspace_id, draft_id)
+    version = draft.get_draft_version(
+        db, workspace_id, draft_id, draft_row.current_version
+    )
+    report = check_consistency(db, workspace_id, version.content)
+    lines = [
+        f"settings checked: {report.settings_checked} / "
+        f"threads checked: {report.threads_checked}"
+    ]
+    for name, count in report.character_mentions.items():
+        lines.append(f"[人物] {name}：出现 {count} 次")
+    if not report.issues:
+        lines.append("no consistency issues found")
+        return "\n".join(lines)
+    for issue in report.issues:
+        if issue.kind == "number_conflict":
+            lines.append(f"[冲突] {issue.setting_name}：{issue.detail}")
+        elif issue.kind == "character_missing":
+            lines.append(f"[未提及] {issue.setting_name}：{issue.detail}")
+        else:
+            lines.append(f"[未提及] 伏笔·{issue.setting_name}：{issue.detail}")
+    return "\n".join(lines)
+
+
+def _agent_names_map(db: DB, workspace_id: str) -> dict[str, str]:
+    """Map agent id to name for one workspace (like the motives CLI helper)."""
+    with db.workspace_session(workspace_id) as session:
+        agents = session.query(Agent).filter_by(workspace_id=workspace_id).all()
+    return {agent.id: agent.name for agent in agents}
+
+
+def _motives_list_text(
+    db: DB, workspace_id: str, agent: str | None
+) -> str:
+    """Render ``motives list`` output, byte-identical to the CLI."""
+    get_workspace_or_raise(db, workspace_id)
+    agent_id: str | None = None
+    agent_name: str | None = None
+    if agent is not None:
+        resolved = resolve_agent(db, workspace_id, agent)
+        agent_id = resolved.id
+        agent_name = resolved.name
+    motives = list_motives(db, workspace_id, agent_id=agent_id)
+    if not motives:
+        if agent_name is not None:
+            return f"no motives for {agent_name}"
+        return "no motives yet"
+    names = _agent_names_map(db, workspace_id)
+    lines = []
+    for motive in motives:
+        owner = names.get(motive.agent_id, motive.agent_id)
+        touched = motive.last_touched_at.isoformat(timespec="seconds")
+        lines.append(
+            f"{motive.id} [{owner}] [{motive.kind}] strength={motive.strength} "
+            f"source={motive.source} touched={touched} {motive.content}"
+        )
+    return "\n".join(lines)
+
+
+def _patience_text(db: DB, workspace_id: str) -> str:
+    """Render ``patience show`` output, byte-identical to the CLI."""
+    get_workspace_or_raise(db, workspace_id)
+    pools = patience_pools(db, workspace_id)
+    lines: list[str] = []
+    for pool in pools:
+        states = pool["states"]
+        lines.append(
+            f"[{pool['agent_name']}] pool={pool['pool']} "
+            f"patience={pool['effective_patience']} consumed={pool['consumption']} "
+            f"rejected={states['rejected']} overridden={states['overridden']} "
+            f"conflict={states['conflict']}"
+        )
+        for state in STATE_KEYS:
+            for entry in pool["entries"][state]:
+                lines.append(
+                    f"  {state}: {entry.target}: {entry.summary} "
+                    f"(source={entry.source})"
+                )
+    return "\n".join(lines)
+
+
+def _behavior_has_change(entry: BehaviorTimeline) -> bool:
+    return bool(entry.before_value or entry.after_value)
+
+
+def _behavior_timeline_line(entry: BehaviorTimeline, agent_name: str) -> str:
+    line = (
+        f"{entry.created_at.isoformat(timespec='seconds')} [{entry.kind}] "
+        f"{agent_name} -> {entry.target}: {entry.summary}"
+    )
+    if _behavior_has_change(entry):
+        line += f" | {entry.before_value or '无'} -> {entry.after_value or '无'}"
+    if entry.source:
+        line += f" | source={entry.source}"
+    return line
+
+
+def _behavior_resolve_kinds(kinds: list[str] | None) -> list[str] | None:
+    """Validate repeated kind filters exactly like ``cli/behavior.py``."""
+    if not kinds:
+        return None
+    resolved = list(dict.fromkeys(kinds))
+    for kind in resolved:
+        if kind not in BEHAVIOR_KINDS:
+            expected = ", ".join(BEHAVIOR_KINDS)
+            raise NovelError(
+                ErrorCode.USAGE_ERROR,
+                f"unknown behavior kind: {kind} (expected one of: {expected})",
+            )
+    return resolved
+
+
+def _behavior_resolve_agent_id(
+    db: DB, workspace_id: str, target: str
+) -> str:
+    """Resolve an agent id, mapping NOT_FOUND to the CLI's usage error."""
+    try:
+        return resolve_agent(db, workspace_id, target).id
+    except NovelError as exc:
+        if exc.code is ErrorCode.NOT_FOUND:
+            raise NovelError(ErrorCode.USAGE_ERROR, f"unknown agent: {target}") from exc
+        raise
+
+
+def _behavior_timeline_text(
+    db: DB,
+    workspace_id: str,
+    *,
+    agent: str | None,
+    kinds: list[str] | None,
+    limit: int,
+) -> str:
+    """Render ``behavior timeline`` output, byte-identical to the CLI."""
+    get_workspace_or_raise(db, workspace_id)
+    agent_id = (
+        _behavior_resolve_agent_id(db, workspace_id, agent) if agent else None
+    )
+    resolved_kinds = _behavior_resolve_kinds(kinds)
+    entries = list_behavior_timeline(
+        db, workspace_id, agent_id=agent_id, kind=resolved_kinds, limit=limit
+    )
+    if not entries:
+        return "no behavior traces yet"
+    names = _agent_names_map(db, workspace_id)
+    lines = [
+        _behavior_timeline_line(entry, names.get(entry.agent_id, entry.agent_id))
+        for entry in entries
+    ]
+    return "\n".join(lines)
+
+
+def _behavior_show_text(db: DB, workspace_id: str) -> str:
+    """Render ``behavior show`` output, byte-identical to the CLI."""
+    get_workspace_or_raise(db, workspace_id)
+    state = current_behavior_state(db, workspace_id)
+    if not state:
+        return "no behavior traces yet"
+    with db.workspace_session(workspace_id) as session:
+        agents = session.query(Agent).order_by(Agent.created_at).all()
+    lines: list[str] = []
+    printed = False
+    for agent in agents:
+        entries = [
+            entry
+            for (agent_id, _kind, _target), entry in state.items()
+            if agent_id == agent.id
+        ]
+        if not entries:
+            continue
+        printed = True
+        lines.append(f"[{agent.name}]")
+        for entry in sorted(entries, key=lambda item: (item.kind, item.target)):
+            line = f"  {entry.kind} -> {entry.target}: {entry.summary}"
+            if _behavior_has_change(entry):
+                line += f"（{entry.before_value or '无'} -> {entry.after_value or '无'}）"
+            lines.append(line)
+    if not printed:
+        return "no behavior traces yet"
+    return "\n".join(lines)
+
+
 def _frontend_dist_dir() -> Path:
     """Frontend build directory: NOVEL_FRONTEND_DIST override, else repo frontend/dist."""
     raw = os.environ.get("NOVEL_FRONTEND_DIST")
@@ -938,6 +1429,48 @@ def create_app() -> FastAPI:
             media_type="text/plain",
         )
 
+    @app.get(
+        "/works/{workspace_id}/drafts/{draft_id}/quality/check",
+        response_class=PlainTextResponse,
+    )
+    def get_draft_quality_check(
+        workspace_id: str, draft_id: str
+    ) -> PlainTextResponse:
+        """AI-flavor quality gate report, same text as ``quality check``."""
+        get_workspace_or_raise(db, workspace_id)
+        return PlainTextResponse(
+            _quality_check_text(db, workspace_id, draft_id, settings),
+            media_type="text/plain",
+        )
+
+    @app.get(
+        "/works/{workspace_id}/drafts/{draft_id}/quality/explain",
+        response_class=PlainTextResponse,
+    )
+    def get_draft_quality_explain(
+        workspace_id: str, draft_id: str
+    ) -> PlainTextResponse:
+        """AI-flavor localization + rewrite suggestions, same text as ``quality explain``."""
+        get_workspace_or_raise(db, workspace_id)
+        return PlainTextResponse(
+            _quality_explain_text(db, workspace_id, draft_id),
+            media_type="text/plain",
+        )
+
+    @app.get(
+        "/works/{workspace_id}/drafts/{draft_id}/consistency",
+        response_class=PlainTextResponse,
+    )
+    def get_draft_consistency(
+        workspace_id: str, draft_id: str
+    ) -> PlainTextResponse:
+        """Contradiction report against settings/threads, same text as ``consistency check``."""
+        get_workspace_or_raise(db, workspace_id)
+        return PlainTextResponse(
+            _consistency_text(db, workspace_id, draft_id),
+            media_type="text/plain",
+        )
+
     @app.get("/works/{workspace_id}/reviews")
     def get_reviews(
         workspace_id: str, draft_id: str | None = None
@@ -990,6 +1523,32 @@ def create_app() -> FastAPI:
         return EventSourceResponse(
             _event_stream(db, workspace_id, after_rowid),
             ping=SSE_HEARTBEAT_SECONDS,
+        )
+
+    @app.post(
+        "/quality/calibrate",
+        response_class=PlainTextResponse,
+    )
+    def calibrate_quality_threshold(
+        body: CorpusPathBody,
+    ) -> PlainTextResponse:
+        """Corpus calibration report; ``apply`` writes config like the CLI."""
+        return PlainTextResponse(
+            _quality_calibrate_text(settings, body.path, body.apply),
+            media_type="text/plain",
+        )
+
+    @app.post(
+        "/quality/feedback",
+        response_class=PlainTextResponse,
+    )
+    def analyze_quality_feedback(
+        body: CorpusPathBody,
+    ) -> PlainTextResponse:
+        """Trial-reader feedback alignment report; ``apply`` writes config."""
+        return PlainTextResponse(
+            _quality_feedback_text(settings, body.path, body.apply),
+            media_type="text/plain",
         )
 
     @app.get("/templates")
@@ -1175,6 +1734,30 @@ def create_app() -> FastAPI:
         """Style anchor for one workspace: description + forbidden words (read-only)."""
         get_workspace_or_raise(db, workspace_id)
         return _style_anchor_dict(db, workspace_id)
+
+    @app.post(
+        "/works/{workspace_id}/style/learn",
+        response_class=PlainTextResponse,
+    )
+    def learn_workspace_style(
+        workspace_id: str, body: CorpusPathBody
+    ) -> PlainTextResponse:
+        """Learn a style description from reference texts (like ``style learn``)."""
+        return PlainTextResponse(
+            _style_learn_text(db, workspace_id, body.path, body.apply),
+            media_type="text/plain",
+        )
+
+    @app.get(
+        "/works/{workspace_id}/style/drift",
+        response_class=PlainTextResponse,
+    )
+    def get_workspace_style_drift(workspace_id: str) -> PlainTextResponse:
+        """Cross-chapter style drift report (like ``style drift``)."""
+        return PlainTextResponse(
+            _style_drift_text(db, workspace_id),
+            media_type="text/plain",
+        )
 
     @app.get("/works/{workspace_id}/structure")
     def get_workspace_structure(workspace_id: str) -> list[dict[str, Any]]:
@@ -1401,6 +1984,87 @@ def create_app() -> FastAPI:
         get_workspace_or_raise(db, workspace_id)
         removed = inspiration.remove_inspiration(db, workspace_id, inspiration_id)
         return {"id": removed.id, "kind": removed.kind}
+
+    @app.get(
+        "/works/{workspace_id}/motives",
+        response_class=PlainTextResponse,
+    )
+    def list_workspace_motives(
+        workspace_id: str,
+        agent: str | None = Query(None, description="Agent id or alias"),
+    ) -> PlainTextResponse:
+        """Partner motives with kind/strength/source/last touch (like ``motives list``)."""
+        return PlainTextResponse(
+            _motives_list_text(db, workspace_id, agent),
+            media_type="text/plain",
+        )
+
+    @app.delete(
+        "/works/{workspace_id}/motives/{motive_id}",
+        response_class=PlainTextResponse,
+    )
+    def drop_workspace_motive(
+        workspace_id: str, motive_id: str
+    ) -> PlainTextResponse:
+        """Drop one motive; appends the author_feedback:drop behavior trace."""
+        get_workspace_or_raise(db, workspace_id)
+        motive = clear_motive(db, workspace_id, motive_id)
+        record_behavior_entry_safe(
+            db,
+            workspace_id,
+            agent_id=motive.agent_id,
+            kind="viewpoint",
+            target=motive.content,
+            summary=f"作者放下动机 [{motive.kind}]",
+            source="author_feedback:drop",
+        )
+        return PlainTextResponse(
+            f"dropped motive {motive.id} [{motive.kind}] {motive.content}",
+            media_type="text/plain",
+        )
+
+    @app.get(
+        "/works/{workspace_id}/patience",
+        response_class=PlainTextResponse,
+    )
+    def get_workspace_patience(workspace_id: str) -> PlainTextResponse:
+        """Every partner's patience pool and state breakdowns (like ``patience show``)."""
+        return PlainTextResponse(
+            _patience_text(db, workspace_id),
+            media_type="text/plain",
+        )
+
+    @app.get(
+        "/works/{workspace_id}/behavior/timeline",
+        response_class=PlainTextResponse,
+    )
+    def get_workspace_behavior_timeline(
+        workspace_id: str,
+        agent: str | None = Query(None, description="Filter by agent alias or id"),
+        kind: Annotated[
+            list[str] | None,
+            Query(description="Repeatable behavior kind"),
+        ] = None,
+        limit: int = Query(20, ge=1, description="Max entries to show"),
+    ) -> PlainTextResponse:
+        """Behavior traces oldest first (like ``behavior timeline``)."""
+        return PlainTextResponse(
+            _behavior_timeline_text(
+                db, workspace_id, agent=agent, kinds=kind, limit=limit
+            ),
+            media_type="text/plain",
+        )
+
+    @app.get(
+        "/works/{workspace_id}/behavior",
+        response_class=PlainTextResponse,
+    )
+    def get_workspace_behavior_state(workspace_id: str) -> PlainTextResponse:
+        """Each partner's current behavior state (like ``behavior show``)."""
+        return PlainTextResponse(
+            _behavior_show_text(db, workspace_id),
+            media_type="text/plain",
+        )
 
     frontend_dist = _frontend_dist_dir()
     if frontend_dist.is_dir():

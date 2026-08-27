@@ -14,11 +14,12 @@ import pytest
 import uvicorn
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect, text
-from typer.testing import CliRunner
+from typer.testing import CliRunner, Result
 
 from novel_editorial.api import app as api_app
 from novel_editorial.api.app import create_app
 from novel_editorial.cli.app import app as cli_app
+from novel_editorial.core.behavior import record_behavior_entry_safe
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.structure import create_node
 from novel_editorial.core.style import set_style_anchor
@@ -26,7 +27,16 @@ from novel_editorial.events import EventType
 from novel_editorial.llm.client import MockLLMClient
 from novel_editorial.store.db import DB
 from novel_editorial.store.events import EventRecord, list_events_since, record_event
-from novel_editorial.store.models import Agent, Draft, DraftVersion, Event, Review, Workspace
+from novel_editorial.store.models import (
+    Agent,
+    AgentMotive,
+    Draft,
+    DraftVersion,
+    Event,
+    MotiveKind,
+    Review,
+    Workspace,
+)
 
 runner = CliRunner()
 
@@ -161,6 +171,70 @@ def _seed_review(
             )
         )
         session.commit()
+
+
+def _seed_motive(
+    db: DB,
+    workspace_id: str,
+    *,
+    agent_id: str,
+    kind: str = MotiveKind.GOAL.value,
+    content: str = "新章已交",
+    source: str = "event:draft_generated",
+    strength: int = 100,
+) -> str:
+    """Insert one motive row directly (no LLM involved)."""
+    with db.workspace_session(workspace_id) as session:
+        motive = AgentMotive(
+            workspace_id=workspace_id,
+            agent_id=agent_id,
+            kind=kind,
+            content=content,
+            source=source,
+            strength=strength,
+        )
+        session.add(motive)
+        session.commit()
+        return motive.id
+
+
+def _seed_behavior(
+    db: DB,
+    workspace_id: str,
+    *,
+    agent_id: str,
+    kind: str,
+    target: str,
+    summary: str = "",
+    before_value: str | None = None,
+    after_value: str | None = None,
+    source: str = "",
+) -> None:
+    """Append one behavior timeline row (record_behavior_entry_safe)."""
+    assert record_behavior_entry_safe(
+        db,
+        workspace_id,
+        agent_id=agent_id,
+        kind=kind,
+        target=target,
+        summary=summary,
+        before_value=before_value,
+        after_value=after_value,
+        source=source,
+    )
+
+
+def _first_agent(db: DB, workspace_id: str) -> Agent:
+    """Return the first partner of the band (creation order)."""
+    with db.workspace_session(workspace_id) as session:
+        agent = (
+            session.query(Agent)
+            .filter_by(workspace_id=workspace_id)
+            .order_by(Agent.created_at, Agent.id)
+            .first()
+        )
+        assert agent is not None, "workspace must have a band"
+        return agent
 
 
 def _patch_llm(monkeypatch: pytest.MonkeyPatch, reply: str) -> None:
@@ -2865,3 +2939,841 @@ def test_inspiration_api_errors_match_cli_and_isolation(
     cross_delete = client.delete(f"/works/{workspace_b}/inspirations/{row['id']}")
     assert cross_delete.status_code == 404
     assert client.get(f"/works/{workspace_b}/inspirations").json() == []
+
+
+# ---------------------------------------------------------------------------
+# FE-W3-S1: quality / style / consistency / free-will read-face API contract
+# ---------------------------------------------------------------------------
+
+
+def _cli_text(result: Result) -> str:
+    """Strip the trailing newline the CLI always appends (mixed stdout+stderr)."""
+    return result.output.removesuffix("\n")
+
+
+def test_cli_api_contract_quality_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "质量之书"}).json()["id"]
+    set_style_anchor(
+        db, workspace_id, description="克制、留白", forbidden_words="宛如"
+    )
+    draft_id = _seed_draft(db, workspace_id, content="雨夜开场。宛如轻纱笼罩。")
+
+    api = client.get(
+        f"/works/{workspace_id}/drafts/{draft_id}/quality/check"
+    )
+    assert api.status_code == 200
+    assert api.headers["content-type"].startswith("text/plain")
+    assert "passed: True" in api.text
+    assert "score: 6.5 (threshold 8)" in api.text
+    assert "ai word hits: ['宛如']" in api.text
+    assert "style hits: 0/2 (consistency 0.00)" in api.text
+
+    cli = runner.invoke(cli_app, ["quality", "check", draft_id])
+    assert cli.exit_code == 0, cli.output
+    assert api.text == _cli_text(cli)
+
+
+def test_cli_api_contract_quality_explain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "定位之书"}).json()["id"]
+    set_style_anchor(
+        db, workspace_id, description="克制、留白", forbidden_words="宛如"
+    )
+    content = "雨夜开场，宛如轻纱。他静静站着。夜风很冷。夜风很冷。"
+    draft_id = _seed_draft(db, workspace_id, content=content)
+
+    api = client.get(
+        f"/works/{workspace_id}/drafts/{draft_id}/quality/explain"
+    )
+    assert api.status_code == 200
+    assert api.headers["content-type"].startswith("text/plain")
+    assert "第一章 (v1)" in api.text
+    assert "[AI 词命中]「宛如」 → 用具体比喻或直接写物象" in api.text
+    assert "style: 命中 0/2；缺失：克制、留白" in api.text
+    assert "good sentences: 句 1" in api.text
+    assert "（感官细节，建议保留）" in api.text
+
+    cli = runner.invoke(cli_app, ["quality", "explain", draft_id])
+    assert cli.exit_code == 0, cli.output
+    assert api.text == _cli_text(cli)
+
+
+def test_cli_api_contract_quality_explain_clean(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "干净之书"}).json()["id"]
+    draft_id = _seed_draft(db, workspace_id, content="雨夜开场。风从巷口吹来。")
+
+    api = client.get(
+        f"/works/{workspace_id}/drafts/{draft_id}/quality/explain"
+    )
+    assert api.status_code == 200
+    assert "未发现明显 AI 味" in api.text
+    assert "good sentences:" in api.text
+
+    cli = runner.invoke(cli_app, ["quality", "explain", draft_id])
+    assert cli.exit_code == 0, cli.output
+    assert api.text == _cli_text(cli)
+
+
+def test_cli_api_contract_consistency(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from novel_editorial.core import setting
+
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "一致之书"}).json()["id"]
+    setting.add_setting(
+        db,
+        workspace_id,
+        kind="character",
+        name="沈夜",
+        content="雨夜归乡的侦探",
+    )
+    draft_id = _seed_draft(db, workspace_id, content="雨夜开场，钩子埋下。")
+
+    api = client.get(
+        f"/works/{workspace_id}/drafts/{draft_id}/consistency"
+    )
+    assert api.status_code == 200
+    assert api.headers["content-type"].startswith("text/plain")
+    assert "settings checked: 1 / threads checked: 0" in api.text
+    assert "[未提及] 沈夜：设定人物未在正文出现" in api.text
+
+    cli = runner.invoke(cli_app, ["consistency", "check", draft_id])
+    assert cli.exit_code == 0, cli.output
+    assert api.text == _cli_text(cli)
+
+
+def test_cli_api_contract_quality_calibrate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "sample.txt").write_text(
+        "雨夜开场，风从巷口吹来。\n", encoding="utf-8"
+    )
+    (corpus / "bad.txt").write_bytes(b"\xff\xfe\x00\xc3\x28")
+
+    api = client.post("/quality/calibrate", json={"path": str(corpus)})
+    assert api.status_code == 200
+    assert api.headers["content-type"].startswith("text/plain")
+    assert "samples: 1" in api.text
+    assert "suggested threshold: 1" in api.text
+    assert "skipped: 1" in api.text
+    assert "warning: corpus file is not valid UTF-8" in api.text
+
+    cli = runner.invoke(cli_app, ["quality", "calibrate", str(corpus)])
+    assert cli.exit_code == 0, cli.output
+    assert api.text == _cli_text(cli)
+
+
+def test_cli_api_contract_quality_calibrate_apply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "sample.txt").write_text("雨夜开场。", encoding="utf-8")
+
+    api = client.post(
+        "/quality/calibrate", json={"path": str(corpus), "apply": True}
+    )
+    assert api.status_code == 200
+    assert "apply: quality_threshold = 1" in api.text
+    assert "config updated:" in api.text
+    config = (tmp_path / "config.toml").read_text(encoding="utf-8")
+    assert "quality_threshold = 1" in config
+
+    cli = runner.invoke(
+        cli_app, ["quality", "calibrate", str(corpus), "--apply"]
+    )
+    assert cli.exit_code == 0, cli.output
+    assert api.text == _cli_text(cli)
+
+
+def test_quality_calibrate_error_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+
+    missing = client.post(
+        "/quality/calibrate", json={"path": str(tmp_path / "nope")}
+    )
+    assert missing.status_code == 404
+    assert "corpus path not found" in missing.json()["detail"]
+
+    (tmp_path / "notes.csv").write_text("x", encoding="utf-8")
+    single = client.post(
+        "/quality/calibrate", json={"path": str(tmp_path / "notes.csv")}
+    )
+    assert single.status_code == 422
+    assert "single-file corpus must be a non-hidden .txt/.md file" in single.json()[
+        "detail"
+    ]
+
+    empty_body = client.post("/quality/calibrate", json={})
+    assert empty_body.status_code == 422
+    blank_path = client.post("/quality/calibrate", json={"path": "  "})
+    assert blank_path.status_code == 422
+
+    cli_missing = runner.invoke(
+        cli_app, ["quality", "calibrate", str(tmp_path / "nope")]
+    )
+    assert cli_missing.exit_code == 1
+    assert "corpus path not found" in cli_missing.output
+    cli_single = runner.invoke(
+        cli_app, ["quality", "calibrate", str(tmp_path / "notes.csv")]
+    )
+    assert cli_single.exit_code == 2
+    assert "single-file corpus" in cli_single.output
+
+
+def test_cli_api_contract_quality_feedback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    feedback = tmp_path / "feedback.jsonl"
+    feedback.write_text(
+        '{"label": "bad", "text": "雨夜宛如轻纱笼罩。"}\n'
+        '{"label": "good", "text": "雨夜开场。"}\n',
+        encoding="utf-8",
+    )
+
+    api = client.post("/quality/feedback", json={"path": str(feedback)})
+    assert api.status_code == 200
+    assert api.headers["content-type"].startswith("text/plain")
+    assert "samples: 2" in api.text
+    assert "bad: 1 / good: 1" in api.text
+    assert "bad scores: min 6 median 6 p90 6 max 6" in api.text
+    assert "agreement at threshold 8: 50.0% (1/2)" in api.text
+
+    cli = runner.invoke(cli_app, ["quality", "feedback", str(feedback)])
+    assert cli.exit_code == 0, cli.output
+    assert api.text == _cli_text(cli)
+
+
+def test_cli_api_contract_quality_feedback_apply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("NOVEL_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("NOVEL_FRONTEND_DIST", str(tmp_path / "no-dist"))
+    feedback = tmp_path / "feedback.jsonl"
+    feedback.write_text(
+        '{"label": "bad", "text": "雨夜宛如轻纱，仿佛梦呓。"}\n'
+        '{"label": "bad", "text": "雨夜宛如轻纱笼罩。"}\n'
+        '{"label": "good", "text": "雨夜开场。"}\n',
+        encoding="utf-8",
+    )
+
+    # API and CLI each apply against their own config, both starting from the
+    # default threshold 8, so the report lines stay comparable while the write
+    # lands in separate files.
+    monkeypatch.setenv("NOVEL_CONFIG", str(tmp_path / "api-config.toml"))
+    client = TestClient(create_app())
+    api = client.post(
+        "/quality/feedback", json={"path": str(feedback), "apply": True}
+    )
+    assert api.status_code == 200
+
+    monkeypatch.setenv("NOVEL_CONFIG", str(tmp_path / "cli-config.toml"))
+    cli = runner.invoke(
+        cli_app, ["quality", "feedback", str(feedback), "--apply"]
+    )
+    assert cli.exit_code == 0, cli.output
+
+    api_normalized = api.text.replace(
+        str(tmp_path / "api-config.toml"), "<config>"
+    )
+    cli_normalized = _cli_text(cli).replace(
+        str(tmp_path / "cli-config.toml"), "<config>"
+    )
+    assert api_normalized == cli_normalized
+    suggested_line = next(
+        line
+        for line in cli.output.splitlines()
+        if line.startswith("suggested threshold: ")
+    )
+    suggested = suggested_line.split(": ", 1)[1]
+    assert f"apply: quality_threshold = {suggested}" in api.text
+    assert f"quality_threshold = {suggested}" in (
+        tmp_path / "api-config.toml"
+    ).read_text(encoding="utf-8")
+    assert f"quality_threshold = {suggested}" in (
+        tmp_path / "cli-config.toml"
+    ).read_text(encoding="utf-8")
+
+
+def test_quality_feedback_error_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+
+    missing = client.post(
+        "/quality/feedback", json={"path": str(tmp_path / "nope.jsonl")}
+    )
+    assert missing.status_code == 404
+    assert "feedback file not found" in missing.json()["detail"]
+
+    bad_json = tmp_path / "bad.jsonl"
+    bad_json.write_text("not json\n", encoding="utf-8")
+    invalid = client.post("/quality/feedback", json={"path": str(bad_json)})
+    assert invalid.status_code == 422
+    assert "invalid JSON" in invalid.json()["detail"]
+
+    good_only = tmp_path / "good-only.jsonl"
+    good_only.write_text('{"label": "good", "text": "雨夜开场。"}\n', encoding="utf-8")
+    no_suggestion = client.post(
+        "/quality/feedback",
+        json={"path": str(good_only), "apply": True},
+    )
+    assert no_suggestion.status_code == 422
+    assert (
+        "cannot apply a suggested threshold without bad samples"
+        in no_suggestion.json()["detail"]
+    )
+
+    cli_bad = runner.invoke(cli_app, ["quality", "feedback", str(bad_json)])
+    assert cli_bad.exit_code == 2
+    assert "invalid JSON" in cli_bad.output
+    cli_apply = runner.invoke(
+        cli_app, ["quality", "feedback", str(good_only), "--apply"]
+    )
+    assert cli_apply.exit_code == 2
+    assert "cannot apply a suggested threshold" in cli_apply.output
+
+
+def test_cli_api_contract_style_learn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "学风格之书"}).json()["id"]
+    set_style_anchor(
+        db, workspace_id, description="旧描述", forbidden_words="宛如、仿佛"
+    )
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "ref.txt").write_text(
+        "雨停了。街灯一盏盏亮起来。风里带着潮气。", encoding="utf-8"
+    )
+
+    api = client.post(
+        f"/works/{workspace_id}/style/learn", json={"path": str(corpus)}
+    )
+    assert api.status_code == 200
+    assert api.headers["content-type"].startswith("text/plain")
+    assert "samples: 1" in api.text
+    assert "suggested description: " in api.text
+
+    cli = runner.invoke(
+        cli_app, ["style", "learn", workspace_id, str(corpus)]
+    )
+    assert cli.exit_code == 0, cli.output
+    assert api.text == _cli_text(cli)
+
+
+def test_cli_api_contract_style_learn_apply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "落锚之书"}).json()["id"]
+    set_style_anchor(
+        db, workspace_id, description="旧描述", forbidden_words="宛如、仿佛"
+    )
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "ref.txt").write_text(
+        "雨停了。街灯一盏盏亮起来。", encoding="utf-8"
+    )
+
+    api = client.post(
+        f"/works/{workspace_id}/style/learn",
+        json={"path": str(corpus), "apply": True},
+    )
+    assert api.status_code == 200
+    assert "apply: description = " in api.text
+    assert f"style anchor updated: {workspace_id}" in api.text
+    shown = client.get(f"/works/{workspace_id}/style").json()
+    assert shown["description"] != "旧描述"
+    assert shown["forbidden_words"] == "宛如、仿佛"
+
+    cli = runner.invoke(
+        cli_app, ["style", "learn", workspace_id, str(corpus), "--apply"]
+    )
+    assert cli.exit_code == 0, cli.output
+    assert api.text == _cli_text(cli)
+
+
+def test_cli_api_contract_style_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "漂移之书"}).json()["id"]
+    set_style_anchor(
+        db, workspace_id, description="克制、留白", forbidden_words="宛如"
+    )
+    _seed_draft(db, workspace_id, title="第一章", content="雨夜开场。风很冷。")
+    _seed_draft(db, workspace_id, title="第二章", content="阳光明媚。鸟语花香。")
+
+    api = client.get(f"/works/{workspace_id}/style/drift")
+    assert api.status_code == 200
+    assert api.headers["content-type"].startswith("text/plain")
+    assert "chapters: 2" in api.text
+    assert "drift trend:" in api.text
+    assert "verdict:" in api.text
+
+    cli = runner.invoke(cli_app, ["style", "drift", workspace_id])
+    assert cli.exit_code == 0, cli.output
+    assert api.text == _cli_text(cli)
+
+
+def test_cli_api_contract_style_drift_no_chapters(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "空书"}).json()["id"]
+
+    api = client.get(f"/works/{workspace_id}/style/drift")
+    assert api.status_code == 200
+    assert api.text == "no chapters"
+
+    cli = runner.invoke(cli_app, ["style", "drift", workspace_id])
+    assert cli.exit_code == 0, cli.output
+    assert api.text == _cli_text(cli)
+
+
+def test_style_learn_error_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "错路径之书"}).json()["id"]
+
+    missing = client.post(
+        f"/works/{workspace_id}/style/learn",
+        json={"path": str(tmp_path / "nope")},
+    )
+    assert missing.status_code == 404
+    assert "corpus path not found" in missing.json()["detail"]
+
+    empty_corpus = tmp_path / "empty"
+    empty_corpus.mkdir()
+    no_samples = client.post(
+        f"/works/{workspace_id}/style/learn",
+        json={"path": str(empty_corpus)},
+    )
+    assert no_samples.status_code == 422
+    assert "corpus contains no readable samples" in no_samples.json()["detail"]
+
+    blank = client.post(
+        f"/works/{workspace_id}/style/learn", json={"path": "  "}
+    )
+    assert blank.status_code == 422
+
+    cli_missing = runner.invoke(
+        cli_app, ["style", "learn", workspace_id, str(tmp_path / "nope")]
+    )
+    assert cli_missing.exit_code == 1
+    assert "corpus path not found" in cli_missing.output
+
+
+def test_cli_api_contract_motives_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "动机之书"}).json()["id"]
+    agent = _first_agent(db, workspace_id)
+    _seed_motive(db, workspace_id, agent_id=agent.id)
+
+    api = client.get(f"/works/{workspace_id}/motives")
+    assert api.status_code == 200
+    assert api.headers["content-type"].startswith("text/plain")
+    assert f"[{agent.name}] [goal] strength=100" in api.text
+    assert "source=event:draft_generated" in api.text
+
+    cli = runner.invoke(cli_app, ["motives", "list", workspace_id])
+    assert cli.exit_code == 0, cli.output
+    assert api.text == _cli_text(cli)
+
+    filtered_api = client.get(
+        f"/works/{workspace_id}/motives", params={"agent": agent.name}
+    )
+    assert filtered_api.status_code == 200
+    cli_filtered = runner.invoke(
+        cli_app, ["motives", "list", workspace_id, "--agent", agent.name]
+    )
+    assert cli_filtered.exit_code == 0, cli_filtered.output
+    assert filtered_api.text == _cli_text(cli_filtered)
+
+
+def test_cli_api_contract_motives_list_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "无动机之书"}).json()["id"]
+
+    api = client.get(f"/works/{workspace_id}/motives")
+    assert api.status_code == 200
+    assert api.text == "no motives yet"
+
+    cli = runner.invoke(cli_app, ["motives", "list", workspace_id])
+    assert cli.exit_code == 0, cli.output
+    assert api.text == _cli_text(cli)
+
+
+def test_cli_api_contract_motives_drop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "放下之书"}).json()["id"]
+    agent = _first_agent(db, workspace_id)
+    cli_motive_id = _seed_motive(
+        db, workspace_id, agent_id=agent.id, content="放下的旧事"
+    )
+    api_motive_id = _seed_motive(
+        db,
+        workspace_id,
+        agent_id=agent.id,
+        content="放下的旧事",
+        source="event:review_conflict",
+    )
+
+    cli_drop = runner.invoke(
+        cli_app, ["motives", "drop", workspace_id, cli_motive_id]
+    )
+    assert cli_drop.exit_code == 0, cli_drop.output
+    api_drop = client.delete(
+        f"/works/{workspace_id}/motives/{api_motive_id}"
+    )
+    assert api_drop.status_code == 200
+    assert api_drop.headers["content-type"].startswith("text/plain")
+    assert api_drop.text == _cli_text(cli_drop).replace(
+        cli_motive_id, api_motive_id
+    )
+
+    remaining = client.get(f"/works/{workspace_id}/motives").text
+    assert cli_motive_id not in remaining
+    assert api_motive_id not in remaining
+
+    timeline = client.get(f"/works/{workspace_id}/behavior/timeline").text
+    assert "作者放下动机" in timeline
+    assert "source=author_feedback:drop" in timeline
+
+
+def test_motives_error_paths_and_isolation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_a = client.post("/works", json={"title": "甲书"}).json()["id"]
+    workspace_b = client.post("/works", json={"title": "乙书"}).json()["id"]
+    agent = _first_agent(db, workspace_a)
+    motive_id = _seed_motive(db, workspace_a, agent_id=agent.id)
+
+    missing_ws = client.get("/works/missing/motives")
+    assert missing_ws.status_code == 404
+    assert "workspace not found: missing" in missing_ws.json()["detail"]
+
+    unknown_agent = client.get(
+        f"/works/{workspace_a}/motives", params={"agent": "不存在的伙伴"}
+    )
+    assert unknown_agent.status_code == 404
+    assert "agent not found" in unknown_agent.json()["detail"]
+
+    missing_motive = client.delete(
+        f"/works/{workspace_a}/motives/missing-id"
+    )
+    assert missing_motive.status_code == 404
+    assert "motive not found: missing-id" in missing_motive.json()["detail"]
+
+    cross_drop = client.delete(
+        f"/works/{workspace_b}/motives/{motive_id}"
+    )
+    assert cross_drop.status_code == 404
+    assert client.get(f"/works/{workspace_a}/motives").status_code == 200
+
+    cli_missing = runner.invoke(cli_app, ["motives", "drop", workspace_a, "a" * 32])
+    assert cli_missing.exit_code == 1
+    assert "motive not found" in cli_missing.output
+
+
+def test_cli_api_contract_patience_show(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "耐心之书"}).json()["id"]
+    agent = _first_agent(db, workspace_id)
+    _seed_behavior(
+        db,
+        workspace_id,
+        agent_id=agent.id,
+        kind="relationship",
+        target="作者",
+        summary="拍板拒绝",
+        source="decision:reject",
+    )
+    _seed_behavior(
+        db,
+        workspace_id,
+        agent_id=agent.id,
+        kind="viewpoint",
+        target="规则A",
+        summary="作者推翻",
+        source="override:规则A",
+    )
+
+    api = client.get(f"/works/{workspace_id}/patience")
+    assert api.status_code == 200
+    assert api.headers["content-type"].startswith("text/plain")
+    assert f"[{agent.name}]" in api.text
+    assert "rejected=1" in api.text
+    assert "overridden=1" in api.text
+
+    cli = runner.invoke(cli_app, ["patience", "show", workspace_id])
+    assert cli.exit_code == 0, cli.output
+    assert api.text == _cli_text(cli)
+
+
+def test_cli_api_contract_patience_show_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "空耐心之书"}).json()["id"]
+
+    api = client.get(f"/works/{workspace_id}/patience")
+    assert api.status_code == 200
+    assert "pool=" in api.text
+
+    cli = runner.invoke(cli_app, ["patience", "show", workspace_id])
+    assert cli.exit_code == 0, cli.output
+    assert api.text == _cli_text(cli)
+
+
+def test_cli_api_contract_behavior_timeline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "行为之书"}).json()["id"]
+    agent = _first_agent(db, workspace_id)
+    _seed_behavior(
+        db,
+        workspace_id,
+        agent_id=agent.id,
+        kind="impression",
+        target="作者",
+        summary="初见印象",
+        before_value="",
+        after_value="认真",
+        source="first_meet",
+    )
+    _seed_behavior(
+        db,
+        workspace_id,
+        agent_id=agent.id,
+        kind="viewpoint",
+        target="规则B",
+        summary="坚持立场",
+        after_value="坚持该立场",
+        source="refusal:规则B",
+    )
+
+    api = client.get(f"/works/{workspace_id}/behavior/timeline")
+    assert api.status_code == 200
+    assert api.headers["content-type"].startswith("text/plain")
+    assert "[impression]" in api.text
+    assert "[viewpoint]" in api.text
+    assert "source=refusal:规则B" in api.text
+
+    cli = runner.invoke(cli_app, ["behavior", "timeline", workspace_id])
+    assert cli.exit_code == 0, cli.output
+    assert api.text == _cli_text(cli)
+
+    kind_api = client.get(
+        f"/works/{workspace_id}/behavior/timeline",
+        params=[("kind", "viewpoint")],
+    )
+    kind_cli = runner.invoke(
+        cli_app,
+        ["behavior", "timeline", workspace_id, "--kind", "viewpoint"],
+    )
+    assert kind_cli.exit_code == 0, kind_cli.output
+    assert kind_api.text == _cli_text(kind_cli)
+
+    agent_api = client.get(
+        f"/works/{workspace_id}/behavior/timeline",
+        params={"agent": agent.name},
+    )
+    agent_cli = runner.invoke(
+        cli_app,
+        ["behavior", "timeline", workspace_id, "--agent", agent.name],
+    )
+    assert agent_cli.exit_code == 0, agent_cli.output
+    assert agent_api.text == _cli_text(agent_cli)
+
+    limit_api = client.get(
+        f"/works/{workspace_id}/behavior/timeline", params={"limit": 1}
+    )
+    limit_cli = runner.invoke(
+        cli_app, ["behavior", "timeline", workspace_id, "--limit", "1"]
+    )
+    assert limit_cli.exit_code == 0, limit_cli.output
+    assert limit_api.text == _cli_text(limit_cli)
+
+
+def test_cli_api_contract_behavior_timeline_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "空行为之书"}).json()["id"]
+
+    api = client.get(f"/works/{workspace_id}/behavior/timeline")
+    assert api.status_code == 200
+    assert api.text == "no behavior traces yet"
+
+    cli = runner.invoke(cli_app, ["behavior", "timeline", workspace_id])
+    assert cli.exit_code == 0, cli.output
+    assert api.text == _cli_text(cli)
+
+
+def test_behavior_timeline_error_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "错行为之书"}).json()["id"]
+    _first_agent(db, workspace_id)
+
+    unknown_kind = client.get(
+        f"/works/{workspace_id}/behavior/timeline",
+        params=[("kind", "nonsense")],
+    )
+    assert unknown_kind.status_code == 422
+    assert "unknown behavior kind: nonsense" in unknown_kind.json()["detail"]
+
+    unknown_agent = client.get(
+        f"/works/{workspace_id}/behavior/timeline",
+        params={"agent": "不存在的人"},
+    )
+    assert unknown_agent.status_code == 422
+    assert "unknown agent: 不存在的人" in unknown_agent.json()["detail"]
+
+    bad_limit = client.get(
+        f"/works/{workspace_id}/behavior/timeline", params={"limit": 0}
+    )
+    assert bad_limit.status_code == 422
+
+    cli_kind = runner.invoke(
+        cli_app,
+        ["behavior", "timeline", workspace_id, "--kind", "nonsense"],
+    )
+    assert cli_kind.exit_code == 2
+    assert "unknown behavior kind" in cli_kind.output
+    cli_agent = runner.invoke(
+        cli_app,
+        ["behavior", "timeline", workspace_id, "--agent", "不存在的人"],
+    )
+    assert cli_agent.exit_code == 2
+    assert "unknown agent" in cli_agent.output
+
+
+def test_cli_api_contract_behavior_show(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "状态之书"}).json()["id"]
+    agent = _first_agent(db, workspace_id)
+    _seed_behavior(
+        db,
+        workspace_id,
+        agent_id=agent.id,
+        kind="viewpoint",
+        target="规则C",
+        summary="拒绝指令",
+        after_value="坚持该立场",
+        source="refusal:规则C",
+    )
+    _seed_behavior(
+        db,
+        workspace_id,
+        agent_id=agent.id,
+        kind="impression",
+        target="作者",
+        summary="认真的人",
+        source="first_meet",
+    )
+
+    api = client.get(f"/works/{workspace_id}/behavior")
+    assert api.status_code == 200
+    assert api.headers["content-type"].startswith("text/plain")
+    assert f"[{agent.name}]" in api.text
+    assert "viewpoint -> 规则C" in api.text
+    assert "impression -> 作者" in api.text
+
+    cli = runner.invoke(cli_app, ["behavior", "show", workspace_id])
+    assert cli.exit_code == 0, cli.output
+    assert api.text == _cli_text(cli)
+
+
+def test_cli_api_contract_behavior_show_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "空状态之书"}).json()["id"]
+
+    api = client.get(f"/works/{workspace_id}/behavior")
+    assert api.status_code == 200
+    assert api.text == "no behavior traces yet"
+
+    cli = runner.invoke(cli_app, ["behavior", "show", workspace_id])
+    assert cli.exit_code == 0, cli.output
+    assert api.text == _cli_text(cli)
+
+
+def test_quality_consistency_draft_cross_workspace_isolation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_a = client.post("/works", json={"title": "甲书"}).json()["id"]
+    workspace_b = client.post("/works", json={"title": "乙书"}).json()["id"]
+    draft_id = _seed_draft(db, workspace_a, content="雨夜宛如轻纱。")
+
+    for suffix in ("quality/check", "quality/explain", "consistency"):
+        api = client.get(f"/works/{workspace_b}/drafts/{draft_id}/{suffix}")
+        assert api.status_code == 404
+        assert f"draft not found: {draft_id}" in api.json()["detail"]
+
+    cli = runner.invoke(cli_app, ["quality", "check", draft_id])
+    assert cli.exit_code == 0, cli.output
+    assert "passed:" in cli.output
+
+
+def test_quality_style_read_routes_are_read_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, db = _make_client(tmp_path, monkeypatch)
+    workspace_id = _seed_workspace(client, db)
+    draft_id = _seed_draft(db, workspace_id, content="雨夜开场。宛如轻纱笼罩。")
+
+    before_counts = _table_counts(db, workspace_id)
+    events_before = client.get(f"/works/{workspace_id}/events").json()
+
+    urls = (
+        f"/works/{workspace_id}/drafts/{draft_id}/quality/check",
+        f"/works/{workspace_id}/drafts/{draft_id}/quality/explain",
+        f"/works/{workspace_id}/drafts/{draft_id}/consistency",
+        f"/works/{workspace_id}/style/drift",
+        f"/works/{workspace_id}/motives",
+        f"/works/{workspace_id}/patience",
+        f"/works/{workspace_id}/behavior",
+        f"/works/{workspace_id}/behavior/timeline",
+    )
+    for url in urls:
+        response = client.get(url)
+        assert response.status_code == 200
+
+    assert _table_counts(db, workspace_id) == before_counts
+    assert client.get(f"/works/{workspace_id}/events").json() == events_before
