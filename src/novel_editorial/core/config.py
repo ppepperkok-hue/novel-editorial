@@ -284,6 +284,9 @@ _DEFAULTS_KEY_RE = re.compile(
     r"(?P<key>[A-Za-z0-9_]+|[\"'][^\"']+[\"'])"
     r"\s*=\s*(?P<tail>.*)$"
 )
+_DEFAULTS_DOTTED_KEY_RE = re.compile(
+    r"^(?:defaults|\"defaults\"|'defaults')\s*\.\s*"
+)
 
 
 def _unquote_toml_key(key: str) -> str:
@@ -493,14 +496,31 @@ def _set_defaults_value(
         None,
     )
     if header_index is None:
-        if isinstance(parsed.get("defaults"), dict):
-            raise NovelError(
-                ErrorCode.CONFIG_ERROR,
-                "defaults is declared without a [defaults] section "
-                "(e.g. an inline table); convert it to a [defaults] section "
-                "before writing",
-                context={"path": str(path)},
-            )
+        conflict_message = (
+            "a top-level defaults assignment conflicts with the appended "
+            "[defaults] section; convert it to a [defaults] section before "
+            "writing"
+        )
+        top_level = True
+        for index, line in enumerate(lines):
+            if inside[index]:
+                continue
+            body = _strip_eol(line)
+            if _SECTION_HEADER_RE.match(body):
+                top_level = False
+                continue
+            if not top_level:
+                continue
+            match = _DEFAULTS_KEY_RE.match(body)
+            if (
+                match is not None
+                and _unquote_toml_key(match.group("key")) == "defaults"
+            ) or _DEFAULTS_DOTTED_KEY_RE.match(body.lstrip()):
+                raise NovelError(
+                    ErrorCode.CONFIG_ERROR,
+                    conflict_message,
+                    context={"path": str(path)},
+                )
         suffix = f"[defaults]{eol}{assignment}{eol}"
         new_text = raw + suffix if raw.endswith("\n") else raw + eol + suffix
         path.write_text(new_text, encoding="utf-8")

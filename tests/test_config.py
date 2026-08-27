@@ -1351,6 +1351,69 @@ def test_set_config_value_rejects_inline_defaults_table(
     }
 
 
+@pytest.mark.parametrize(
+    "original",
+    [
+        "defaults = 42\n",
+        "defaults.quality_threshold = 8\n",
+        '"defaults" = 8\n',
+        "'defaults' = 8\n",
+    ],
+)
+def test_set_config_value_rejects_top_level_defaults_assignment(
+    tmp_path: Path, original: str
+) -> None:
+    """Any top-level ``defaults`` assignment conflicts with the appended section."""
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(original, encoding="utf-8")
+    original_bytes = config_path.read_bytes()
+
+    with pytest.raises(NovelError) as exc_info:
+        set_config_value(config_path, "quality_threshold", 10)
+
+    assert exc_info.value.code is ErrorCode.CONFIG_ERROR
+    assert "convert it to a [defaults] section" in exc_info.value.message
+    assert config_path.read_bytes() == original_bytes
+
+
+def test_set_config_value_allows_subtable_header_under_defaults(
+    tmp_path: Path,
+) -> None:
+    """A ``[defaults.*]`` header stays valid TOML after appending [defaults]."""
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "[defaults.quality]\nthreshold = 8\n", encoding="utf-8"
+    )
+
+    set_config_value(config_path, "quality_threshold", 10)
+
+    content = config_path.read_text(encoding="utf-8")
+    assert content.startswith("[defaults.quality]\nthreshold = 8\n")
+    assert content.endswith("[defaults]\nquality_threshold = 10\n")
+    tomllib.loads(content)
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.quality_threshold == 10
+
+
+def test_set_config_value_ignores_defaults_key_inside_subtable(
+    tmp_path: Path,
+) -> None:
+    """A ``defaults`` key inside a subtable is not a top-level assignment."""
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "[defaults.quality]\ndefaults = 8\nthreshold = 5\n",
+        encoding="utf-8",
+    )
+
+    set_config_value(config_path, "quality_threshold", 10)
+
+    content = config_path.read_text(encoding="utf-8")
+    assert content.endswith("[defaults]\nquality_threshold = 10\n")
+    tomllib.loads(content)
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.quality_threshold == 10
+
+
 def test_set_config_value_inserts_key_into_existing_defaults(
     tmp_path: Path,
 ) -> None:
