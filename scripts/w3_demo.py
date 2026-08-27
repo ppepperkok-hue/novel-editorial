@@ -41,9 +41,13 @@ def _ensure_project_env() -> None:
 
 
 def _prepare_env(tmp: Path) -> None:
-    """Point config at the temporary directory and force the mock LLM mode."""
+    """Point config at the temporary directory and force the mock LLM mode.
+
+    Drop every caller-supplied ``NOVEL_*`` variable first so each run starts
+    from a fresh, self-contained environment.
+    """
     for key in list(os.environ):
-        if key.startswith("NOVEL_LLM_"):
+        if key.startswith("NOVEL_"):
             os.environ.pop(key, None)
     os.environ["NOVEL_DATA_DIR"] = str(tmp / "data")
     os.environ["NOVEL_CONFIG"] = str(tmp / "config.toml")
