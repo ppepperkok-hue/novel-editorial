@@ -5,6 +5,7 @@
 - 前置：N24 API 服务层（已有只读面 + 决策写面 + 面板补口）；N12 图形面板 MVP（frontend/，React 18 + Vite 6 + TypeScript + Vitest，39 用例四命令全绿）作为本项目起点并入；CLI 全能力清单（docs/usage.md）是功能地图。
 - 状态：**用户已确认本清单（2026-08-24）**；进入选技术栈。
 - W1 里程碑：**已完成（2026-08-25）**（FE-A–FE-F 全部收口，审查归档 docs/reviews/20260825-FE-W1-S*；后端 1487 测试 + 前端 120 用例全绿；演示 scripts/w1_demo.py DEMO OK）。W2–W4 待开工。
+- W2 里程碑：**已完成（2026-08-27）**（FE-G / FE-H / FE-I 收口，审查归档 docs/reviews/2026082*-FE-W2-S*；后端 1500 测试 + 前端 181 用例全绿；演示 scripts/w2_demo.py DEMO OK）。W3–W4 待开工。
 
 ## 第 1 层：核心价值（01a）
 

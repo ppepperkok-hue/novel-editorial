@@ -1,8 +1,8 @@
 # 完整进度报告（Complete Progress Report）
 
-- 报告日期：2026-08-25
-- 当前基线：后端全量 1487 测试 + 前端 120 用例（lint / typecheck / test / build 四命令）绿；ruff / pyright / 宪法校验 / smoke_m3 / stress_m3 / w1_demo 全绿
-- 远端：本地 HEAD 与 origin/main 一致（FE-W1 收口归档已推送）
+- 报告日期：2026-08-27
+- 当前基线：后端全量 1500 测试 + 前端 181 用例（lint / typecheck / test / build 四命令）绿；ruff / pyright / 宪法校验 / smoke_m3 / stress_m3 / w1_demo / w2_demo 全绿
+- 远端：本地 HEAD 与 origin/main 一致（FE-W2 收口归档已推送）
 - 完整能力清单：docs/project-plan/06-new-capability-backlog.md；可执行单元：docs/project-plan/05-executable-units.md
 - 后补项目集中清单：docs/project-plan/07-parked-backlog.md
 
@@ -37,6 +37,7 @@
 | M11 自由意志 | N28 反馈闭环与沉默 | 完成（2026-08-23） | S1–S5 归档，全量 1392 测试 |
 | M12 自由意志 | N29 编辑部自然讨论 | 完成（2026-08-24） | S1–S4 归档，全量 1440 测试 |
 | FE-W1 | 前端大项目 · 不敲 CLI 的创作闭环（作品/对话/写作/拍板工作台 + SSE + diff） | 完成（2026-08-25） | S1–S4c 归档，后端 1487 + 前端 120 用例 |
+| FE-W2 | 前端大项目 · 结构 / 大纲 / 设定 / 灵感工作台 + 总览 SSE 实时事件流 | 完成（2026-08-27） | S1–S3b 归档，后端 1500 + 前端 181 用例 |
 
 ## 二、能力清单全项（N1–N28）
 
@@ -102,6 +103,6 @@ M5（N1→N2→N3，N4/N16 并线完成）→ M6（N5→N6，N7 独立立项，�
 
 ## 七、待办与风险
 
-- 截至 2026-08-25：06 新能力清单 N1–N29 全项收官，自由意志三阶段（N27 / N28 / N29）全部收口；前端大项目 W1 已收口（13-frontend-app-checklist），下一步 W2（结构 / 设定知识 / 总览与 SSE 实时事件流）；后补项目集中清单见 07-parked-backlog。
+- 截至 2026-08-27：06 新能力清单 N1–N29 全项收官，自由意志三阶段（N27 / N28 / N29）全部收口；前端大项目 W1、W2 已收口（13-frontend-app-checklist），下一步 W3（质量风格工具与自由意志可视化）；后补项目集中清单见 07-parked-backlog。
 - 已知留档：ruff format 个别旧文件格式遗留；三项 P3（behavior 空 kind 守卫 / style 只读访问器含 style_drift 统一 / 归档 0 字节探针）已于 2026-08-22 收口（commit 3139c81，独立审查通过，见 docs/reviews/20260822-M9ENG1-initial.md）。
 - 红线（全清单强制继承）：不设强制关卡、沉淀不是前置、不工单化、只报告不代笔、体裁自适应、模板开放。
