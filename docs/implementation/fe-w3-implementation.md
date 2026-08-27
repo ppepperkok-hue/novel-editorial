@@ -79,4 +79,4 @@
 
 ## 状态
 
-- 待开工：S1 起。
+- S1 完成（2026-08-28）：质量（check / explain / calibrate / feedback）、风格（learn / drift）、一致性（check）、自由意志读面（motives / patience / behavior）十二个端点逐条映射 CLI，commit c4337c8；全量 1528 测试 + ruff / pyright / 宪法 + gen:types / typecheck 全绿；独立审查零问题收敛，归档 docs/reviews/20260828-FE-W3-S1-initial.md。待办：S2（质量风格工作台 + 自由意志可视化）。
