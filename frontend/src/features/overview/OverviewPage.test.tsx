@@ -267,6 +267,60 @@ describe("OverviewPage realtime events window", () => {
     expect(errorState).toHaveTextContent("作品列表读取失败");
   });
 
+  it("keeps live events visible when a /works poll transiently fails", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    let worksFailureCount = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/config") {
+        return Promise.resolve(jsonResponse({ panel_poll_interval: 0.05 }));
+      }
+      if (url === "/overview") {
+        return Promise.resolve(jsonResponse(overviewBody));
+      }
+      if (url === "/works") {
+        if (worksFailureCount > 0) {
+          worksFailureCount += 1;
+          return Promise.reject(new Error("作品列表瞬时失败"));
+        }
+        return Promise.resolve(jsonResponse(worksBody));
+      }
+      if (url === "/works/w-a/pending" || url === "/works/w-b/pending") {
+        return Promise.resolve(jsonResponse([]));
+      }
+      return Promise.reject(new Error(`未预期的请求：${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<OverviewPage />);
+
+    await waitFor(() => {
+      expect(FakeEventSource.instances).toHaveLength(2);
+    });
+    act(() => {
+      instanceFor("w-a").emitOpen();
+      instanceFor("w-b").emitOpen();
+      instanceFor("w-a").emitMessage(
+        JSON.stringify(
+          eventBody("e1", "w-a", "draft.created", "写手", "2026-08-27T10:00:00+00:00"),
+        ),
+      );
+    });
+
+    const eventsPanel = screen.getByTestId("panel-events");
+    expect(within(eventsPanel).getAllByTestId("event-item-button")).toHaveLength(1);
+
+    // Let the next /works poll fail once the feed already has live events.
+    worksFailureCount = 1;
+    await waitFor(() => {
+      expect(worksFailureCount).toBeGreaterThan(1);
+    });
+    expect(within(eventsPanel).getAllByTestId("event-item-button")).toHaveLength(1);
+    expect(within(eventsPanel).queryByTestId("panel-state-error")).not.toBeInTheDocument();
+    expect(within(eventsPanel).getByTestId("event-stream-status")).toHaveTextContent(
+      "2/2 部作品已连接",
+    );
+  });
+
   it("shows an error and recovers via retry when fallback polling fails", async () => {
     let failing = true;
     const fetchMock = vi.fn((input: RequestInfo | URL) => {

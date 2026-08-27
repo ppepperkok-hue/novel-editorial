@@ -180,8 +180,18 @@ export function useOverviewEventFeed(
 
   const streamValues = Object.values(multi.streams);
 
-  const error = works.error ?? (multi.degraded ? fallback.error : null);
-  const source = works.error !== null ? "/works" : "/events";
+  // Only surface a /works failure while the workspace list has never loaded
+  // (no stream is subscribed yet). Once we have data, a transient poll
+  // failure must not hide the live events; the next successful poll clears
+  // the error and keeps recovery working.
+  const error =
+    works.data === null
+      ? works.error
+      : multi.degraded
+        ? fallback.error
+        : null;
+  const source =
+    works.data === null && works.error !== null ? "/works" : "/events";
   const degraded = multi.degraded;
 
   const settling =

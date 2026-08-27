@@ -64,7 +64,14 @@ export function useMultiEventStream(
 
   const [streams, setStreams] = useState<Record<string, StreamState>>({});
   const sourcesRef = useRef(new Map<string, EventSource>());
+  // Streams that degraded to polling must not be re-attached when
+  // `workspaceIds` changes; the record lives until unmount.
+  const degradedIdsRef = useRef(new Set<string>());
   const idsKey = workspaceIds.join("\u0000");
+
+  function degradedNotice(): string {
+    return `实时通道持续失败，已切换为轮询（${Math.round(pollIntervalMsRef.current / 1000)} 秒）`;
+  }
 
   // Keep one state entry per current workspace; drop entries for removed ids.
   useEffect(() => {
@@ -72,7 +79,13 @@ export function useMultiEventStream(
     setStreams((prev) => {
       const next: Record<string, StreamState> = {};
       for (const id of ids) {
-        next[id] = prev[id] ?? { status: "connecting", notice: null };
+        if (prev[id] !== undefined) {
+          next[id] = prev[id];
+        } else if (degradedIdsRef.current.has(id)) {
+          next[id] = { status: "polling", notice: degradedNotice() };
+        } else {
+          next[id] = { status: "connecting", notice: null };
+        }
       }
       return next;
     });
@@ -118,7 +131,7 @@ export function useMultiEventStream(
     }
 
     for (const id of ids) {
-      if (sources.has(id)) {
+      if (degradedIdsRef.current.has(id) || sources.has(id)) {
         continue;
       }
       sources.set(id, attachStream(id));
@@ -134,6 +147,7 @@ export function useMultiEventStream(
         source.close();
       }
       sources.clear();
+      degradedIdsRef.current.clear();
     };
   }, []);
 
@@ -183,10 +197,8 @@ export function useMultiEventStream(
         if (failedOpens >= maxFailedOpenAttemptsRef.current) {
           source.close();
           sourcesRef.current.delete(id);
-          update({
-            status: "polling",
-            notice: `实时通道持续失败，已切换为轮询（${Math.round(pollIntervalMsRef.current / 1000)} 秒）`,
-          });
+          degradedIdsRef.current.add(id);
+          update({ status: "polling", notice: degradedNotice() });
         }
         return;
       }

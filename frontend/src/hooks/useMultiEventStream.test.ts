@@ -136,6 +136,68 @@ describe("useMultiEventStream", () => {
     expect(instanceFor("w-c").url).toBe("/works/w-c/events/stream");
   });
 
+  it("does not re-attach a degraded stream when ids grow", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const { result, rerender } = renderMulti(["w-a", "w-b"], {
+      pollIntervalMs: 1000,
+      maxFailedOpenAttempts: 2,
+    });
+
+    act(() => {
+      instanceFor("w-a").emitOpen();
+      instanceFor("w-b").emitError();
+      instanceFor("w-b").emitError();
+    });
+    const firstB = instanceFor("w-b");
+    expect(result.current.streams["w-b"].status).toBe("polling");
+    expect(result.current.degraded).toBe(true);
+    expect(firstB.closed).toBe(true);
+
+    rerender({ ids: ["w-a", "w-b", "w-c"] });
+
+    // Only w-c gets a new EventSource; w-b stays degraded and polling.
+    expect(FakeEventSource.instances).toHaveLength(3);
+    const wbInstances = FakeEventSource.instances.filter(
+      (instance) => instance.url === "/works/w-b/events/stream",
+    );
+    expect(wbInstances).toHaveLength(1);
+    expect(wbInstances[0]).toBe(firstB);
+    expect(result.current.streams["w-b"].status).toBe("polling");
+    expect(result.current.degraded).toBe(true);
+    expect(result.current.streams["w-c"].status).toBe("connecting");
+  });
+
+  it("keeps a degraded stream degraded when its id leaves and returns", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const { result, rerender } = renderMulti(["w-a", "w-b"], {
+      pollIntervalMs: 1000,
+      maxFailedOpenAttempts: 2,
+    });
+
+    act(() => {
+      instanceFor("w-b").emitError();
+      instanceFor("w-b").emitError();
+    });
+    expect(result.current.streams["w-b"].status).toBe("polling");
+
+    rerender({ ids: ["w-a"] });
+    expect(result.current.streams["w-b"]).toBeUndefined();
+
+    rerender({ ids: ["w-a", "w-b"] });
+
+    // The persistent degraded record survives id churn: no second EventSource,
+    // state is restored as polling instead of flipping back to live.
+    expect(FakeEventSource.instances).toHaveLength(2);
+    const wbInstances = FakeEventSource.instances.filter(
+      (instance) => instance.url === "/works/w-b/events/stream",
+    );
+    expect(wbInstances).toHaveLength(1);
+    expect(wbInstances[0].closed).toBe(true);
+    expect(result.current.streams["w-b"].status).toBe("polling");
+    expect(result.current.streams["w-b"].notice).toContain("轮询");
+    expect(result.current.degraded).toBe(true);
+  });
+
   it("closes every stream on unmount", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const { unmount } = renderMulti(["w-a", "w-b"]);
