@@ -9,6 +9,7 @@ import {
   within,
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "../../App";
@@ -32,6 +33,16 @@ const timelineText =
 const behaviorStateText =
   "[总编] state=active\n[写手] state=cooldown";
 
+const workspaceBodyB = {
+  id: "w-b",
+  title: "乙书",
+  genre: "网文",
+  description: "",
+  status: "writing",
+  created_at: "2026-08-02T00:00:00+00:00",
+  band: [],
+};
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -54,6 +65,15 @@ function renderFreewill(fetchMock: ReturnType<typeof vi.fn>) {
         <App />
       </MemoryRouter>
     </QueryClientProvider>,
+  );
+}
+
+function SwitchWorkspaceButton({ to }: { to: string }) {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate(to)}>
+      {to}
+    </button>
   );
 }
 
@@ -277,5 +297,99 @@ describe("freewill visualization", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("动机不存在");
     expect(screen.getByTestId("motive-groups")).toBeInTheDocument();
+  });
+
+  it("resets behavior timeline filters when switching workspaces", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/works/w-a") {
+        return Promise.resolve(jsonResponse(workspaceBody));
+      }
+      if (url === "/works/w-b") {
+        return Promise.resolve(jsonResponse(workspaceBodyB));
+      }
+      if (url.startsWith("/works/w-a/motives")) {
+        return Promise.resolve(textResponse(motivesText));
+      }
+      if (url.startsWith("/works/w-a/patience")) {
+        return Promise.resolve(textResponse(patienceText));
+      }
+      if (url.startsWith("/works/w-a/behavior/timeline")) {
+        return Promise.resolve(textResponse(timelineText));
+      }
+      if (url.startsWith("/works/w-a/behavior")) {
+        return Promise.resolve(textResponse(behaviorStateText));
+      }
+      if (url.startsWith("/works/w-b/motives")) {
+        return Promise.resolve(textResponse("no motives"));
+      }
+      if (url.startsWith("/works/w-b/patience")) {
+        return Promise.resolve(textResponse("[总编] pool=0.5"));
+      }
+      if (url.startsWith("/works/w-b/behavior/timeline")) {
+        // A partner from another work would be rejected by the backend, so a
+        // stale filter must never reach the new workspace.
+        if (url.includes("agent=") || url.includes("kind=")) {
+          return Promise.resolve(jsonResponse({ detail: "伙伴不存在" }, 422));
+        }
+        return Promise.resolve(textResponse(timelineText));
+      }
+      if (url.startsWith("/works/w-b/behavior")) {
+        return Promise.resolve(textResponse("[总编] state=active"));
+      }
+      return Promise.reject(new Error(`未预期的请求：${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/works/w-a/freewill"]}>
+          <App />
+          <SwitchWorkspaceButton to="/works/w-b/freewill" />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    const panel = await screen.findByTestId("behavior-timeline");
+    fireEvent.change(within(panel).getByLabelText("行为伙伴过滤"), {
+      target: { value: "总编" },
+    });
+    fireEvent.click(within(panel).getByRole("checkbox", { name: "冲突" }));
+    fireEvent.click(within(panel).getByRole("button", { name: "应用过滤" }));
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([url]) =>
+          String(url).startsWith(
+            "/works/w-a/behavior/timeline?agent=%E6%80%BB%E7%BC%96",
+          ),
+        ),
+      ).toBe(true);
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "/works/w-b/freewill" }),
+    );
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          ([url]) => String(url) === "/works/w-b/behavior/timeline",
+        ),
+      ).toBe(true);
+    });
+    expect(await screen.findByTestId("timeline-report")).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("behavior-timeline")).getByLabelText(
+        "行为伙伴过滤",
+      ),
+    ).toHaveValue("");
+    expect(
+      within(screen.getByTestId("behavior-timeline")).getByRole("checkbox", {
+        name: "冲突",
+      }),
+    ).not.toBeChecked();
   });
 });

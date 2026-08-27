@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { TextReportPanel } from "../../components/TextReportPanel";
@@ -162,6 +162,16 @@ function BehaviorTimelinePanel({ workspaceId }: { workspaceId: string }) {
   const [kindsDraft, setKindsDraft] = useState<string[]>([]);
   const [agent, setAgent] = useState("");
   const [kinds, setKinds] = useState<string[]>([]);
+
+  // Reset filters (applied values and drafts) when switching workspaces so a
+  // stale partner / kind selection is not applied to the new work.
+  useEffect(() => {
+    setAgentDraft("");
+    setKindsDraft([]);
+    setAgent("");
+    setKinds([]);
+  }, [workspaceId]);
+
   const timeline = useBehaviorTimeline(workspaceId, {
     ...(agent === "" ? {} : { agent }),
     ...(kinds.length > 0 ? { kind: kinds } : {}),

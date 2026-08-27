@@ -299,8 +299,12 @@ export default function QualityPage() {
         />
       </div>
       <div className="quality-tools-layout">
-        <StylePanel workspaceId={workspaceIdValue} />
-        <CalibrationPanel />
+        {/* Remount per workspace so corpus paths / apply flags never carry over. */}
+        <StylePanel
+          key={`${workspaceIdValue}-style`}
+          workspaceId={workspaceIdValue}
+        />
+        <CalibrationPanel key={`${workspaceIdValue}-calibrate`} />
       </div>
     </section>
   );
