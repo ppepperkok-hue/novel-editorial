@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  analyzeQualityFeedback,
+  calibrateQuality,
   checkSettings,
   createAuthorDraft,
   createInspiration,
@@ -8,9 +10,13 @@ import {
   createWorkspace,
   deleteInspiration,
   deleteStructureNode,
+  dropMotive,
   generateDraft,
+  getBehaviorState,
+  getBehaviorTimeline,
   getConfig,
   getDraft,
+  getDraftConsistency,
   getDraftDiff,
   getDrafts,
   getGlobalEvents,
@@ -19,13 +25,18 @@ import {
   getLog,
   getOutline,
   getOverview,
+  getPatience,
   getPending,
+  getQualityCheck,
   getReviews,
   getSetting,
   getStyle,
+  getStyleDrift,
   getStructure,
   getWorkspace,
+  learnStyle,
   listInspirations,
+  listMotives,
   listSettings,
   listTalk,
   listTemplates,
@@ -958,6 +969,145 @@ describe("api client contract parsing", () => {
       action: "accept",
     });
     expect(init?.headers).toBeInstanceOf(Headers);
+  });
+
+  it("getQualityCheck returns the CLI-aligned gate report as plain text", async () => {
+    fetchMock.mockResolvedValueOnce(
+      textResponse("score: 8 (threshold 6)\nverdict: pass"),
+    );
+
+    await expect(getQualityCheck("w1", "d1")).resolves.toBe(
+      "score: 8 (threshold 6)\nverdict: pass",
+    );
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/works/w1/drafts/d1/quality/check",
+    );
+  });
+
+  it("getDraftConsistency returns the contradiction report as plain text", async () => {
+    fetchMock.mockResolvedValueOnce(
+      textResponse("settings checked: 2 / threads checked: 1\n[冲突] 灵潮：数值矛盾"),
+    );
+
+    await expect(getDraftConsistency("w1", "d1")).resolves.toContain(
+      "[冲突] 灵潮",
+    );
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/works/w1/drafts/d1/consistency",
+    );
+  });
+
+  it("calibrateQuality posts path and apply, consuming the text report", async () => {
+    fetchMock.mockResolvedValueOnce(
+      textResponse("samples: 10\nsuggested threshold: 7\napply: quality_threshold = 7"),
+    );
+
+    await expect(
+      calibrateQuality({ path: "data/corpus.txt", apply: true }),
+    ).resolves.toContain("suggested threshold: 7");
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/quality/calibrate");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(init?.body as string)).toEqual({
+      path: "data/corpus.txt",
+      apply: true,
+    });
+    expect(init?.headers).toBeInstanceOf(Headers);
+  });
+
+  it("analyzeQualityFeedback posts path and apply to the feedback endpoint", async () => {
+    fetchMock.mockResolvedValueOnce(
+      textResponse("bad: 2 / good: 8\nagreement at threshold 6: 80%"),
+    );
+
+    await analyzeQualityFeedback({ path: "data/feedback.txt", apply: false });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/quality/feedback");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(init?.body as string)).toEqual({
+      path: "data/feedback.txt",
+      apply: false,
+    });
+  });
+
+  it("learnStyle posts the corpus body under the workspace style path", async () => {
+    fetchMock.mockResolvedValueOnce(
+      textResponse("samples: 3\nsuggested description: 冷峻克制"),
+    );
+
+    await learnStyle("w1", { path: "data/refs.txt", apply: true });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/works/w1/style/learn");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(init?.body as string)).toEqual({
+      path: "data/refs.txt",
+      apply: true,
+    });
+  });
+
+  it("getStyleDrift returns the cross-chapter drift report as plain text", async () => {
+    fetchMock.mockResolvedValueOnce(
+      textResponse("chapters: 3\nverdict: stable"),
+    );
+
+    await expect(getStyleDrift("w1")).resolves.toBe(
+      "chapters: 3\nverdict: stable",
+    );
+    expect(fetchMock.mock.calls[0][0]).toBe("/works/w1/style/drift");
+  });
+
+  it("listMotives adds the agent filter when given", async () => {
+    fetchMock.mockResolvedValueOnce(
+      textResponse("m1 [总编] [ambition] strength=0.8 source=对话 touched=2026-08-28T10:00:00 带出一本连载"),
+    );
+
+    const text = await listMotives("w1", "总编");
+    expect(text).toContain("strength=0.8");
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/works/w1/motives?agent=%E6%80%BB%E7%BC%96",
+    );
+  });
+
+  it("dropMotive DELETEs the motive and consumes the text response", async () => {
+    fetchMock.mockResolvedValueOnce(
+      textResponse("dropped motive m1"),
+    );
+
+    await expect(dropMotive("w1", "m1")).resolves.toBe("dropped motive m1");
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/works/w1/motives/m1");
+    expect(init?.method).toBe("DELETE");
+  });
+
+  it("getPatience and getBehaviorState return their plain-text reports", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        textResponse("[总编] pool=0.8 patience=0.7 consumed=0.1 rejected=0 overridden=0 conflict=0"),
+      )
+      .mockResolvedValueOnce(
+        textResponse("[总编] state=active"),
+      );
+
+    await expect(getPatience("w1")).resolves.toContain("pool=0.8");
+    await expect(getBehaviorState("w1")).resolves.toContain("state=active");
+    expect(fetchMock.mock.calls[0][0]).toBe("/works/w1/patience");
+    expect(fetchMock.mock.calls[1][0]).toBe("/works/w1/behavior");
+  });
+
+  it("getBehaviorTimeline passes agent, repeated kinds and limit", async () => {
+    fetchMock.mockResolvedValueOnce(
+      textResponse("2026-08-28T10:00:00 [impression] 总编 -> 写手: 初印象"),
+    );
+
+    await getBehaviorTimeline("w1", {
+      agent: "总编",
+      kind: ["impression", "conflict"],
+      limit: 20,
+    });
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/works/w1/behavior/timeline?agent=%E6%80%BB%E7%BC%96&kind=impression&kind=conflict&limit=20",
+    );
   });
 
   it("postDecision accepts a 201 response and exposes the resulting status", async () => {

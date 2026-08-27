@@ -29,6 +29,9 @@ export type DraftGenerateBody = components["schemas"]["DraftGenerateBody"];
 /** LLM revise body (POST /works/{id}/drafts/{draft_id}/revise), generated type. */
 export type DraftReviseBody = components["schemas"]["DraftReviseBody"];
 
+/** Corpus/feedback path plus the CLI's ``--apply`` flag (POST .../calibrate etc.). */
+export type CorpusPathBody = components["schemas"]["CorpusPathBody"];
+
 /** Structure node bodies (add / patch / move), generated OpenAPI types. */
 export type StructureAddBody = components["schemas"]["StructureAddBody"];
 export type StructurePatchBody = components["schemas"]["StructurePatchBody"];
@@ -301,10 +304,12 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-async function requestText(path: string): Promise<string> {
-  const headers = new Headers();
-  headers.set("Accept", "text/plain");
-  const response = await fetch(path, { headers });
+async function requestText(path: string, init?: RequestInit): Promise<string> {
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Accept")) {
+    headers.set("Accept", "text/plain");
+  }
+  const response = await fetch(path, { ...init, headers });
   if (!response.ok) {
     throw await toReadableError(response, path);
   }
@@ -667,4 +672,134 @@ export function postDecision(
     body: JSON.stringify(body),
     headers: { "Content-Type": "application/json" },
   });
+}
+
+/** AI-flavor quality gate report (GET .../quality/check, like ``quality check``). */
+export function getQualityCheck(
+  workspaceId: string,
+  draftId: string,
+): Promise<string> {
+  return requestText(
+    `${workspacePath(workspaceId)}/drafts/${encodeURIComponent(draftId)}/quality/check`,
+  );
+}
+
+/** AI-flavor localization + rewrite suggestions (GET .../quality/explain). */
+export function getQualityExplain(
+  workspaceId: string,
+  draftId: string,
+): Promise<string> {
+  return requestText(
+    `${workspacePath(workspaceId)}/drafts/${encodeURIComponent(draftId)}/quality/explain`,
+  );
+}
+
+/** Contradiction report against settings/threads (GET .../consistency). */
+export function getDraftConsistency(
+  workspaceId: string,
+  draftId: string,
+): Promise<string> {
+  return requestText(
+    `${workspacePath(workspaceId)}/drafts/${encodeURIComponent(draftId)}/consistency`,
+  );
+}
+
+/**
+ * Corpus calibration report; ``apply`` writes the config threshold like the
+ * CLI (POST /quality/calibrate).
+ */
+export function calibrateQuality(body: CorpusPathBody): Promise<string> {
+  return requestText("/quality/calibrate", {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/**
+ * Trial-reader feedback alignment report; ``apply`` writes config (POST
+ * /quality/feedback).
+ */
+export function analyzeQualityFeedback(body: CorpusPathBody): Promise<string> {
+  return requestText("/quality/feedback", {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/** Learn a style description from reference texts (POST .../style/learn). */
+export function learnStyle(
+  workspaceId: string,
+  body: CorpusPathBody,
+): Promise<string> {
+  return requestText(`${workspacePath(workspaceId)}/style/learn`, {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/** Cross-chapter style drift report (GET .../style/drift, like ``style drift``). */
+export function getStyleDrift(workspaceId: string): Promise<string> {
+  return requestText(`${workspacePath(workspaceId)}/style/drift`);
+}
+
+/** Partner motives as CLI-aligned text (GET /works/{id}/motives). */
+export function listMotives(
+  workspaceId: string,
+  agent?: string,
+): Promise<string> {
+  const params = new URLSearchParams();
+  if (agent !== undefined && agent !== "") {
+    params.set("agent", agent);
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return requestText(`${workspacePath(workspaceId)}/motives${suffix}`);
+}
+
+/** Drop one motive; appends an author feedback trace (DELETE .../motives/{id}). */
+export function dropMotive(
+  workspaceId: string,
+  motiveId: string,
+): Promise<string> {
+  return requestText(
+    `${workspacePath(workspaceId)}/motives/${encodeURIComponent(motiveId)}`,
+    { method: "DELETE" },
+  );
+}
+
+/** Every partner's patience pool and state breakdowns (GET .../patience). */
+export function getPatience(workspaceId: string): Promise<string> {
+  return requestText(`${workspacePath(workspaceId)}/patience`);
+}
+
+/** Query of GET /works/{id}/behavior/timeline, from the generated types. */
+export type BehaviorTimelineQuery =
+  operations["get_workspace_behavior_timeline_works__workspace_id__behavior_timeline_get"]["parameters"]["query"];
+
+/** Behavior traces oldest first, filtered by agent / kinds (GET .../timeline). */
+export function getBehaviorTimeline(
+  workspaceId: string,
+  query: BehaviorTimelineQuery = {},
+): Promise<string> {
+  const params = new URLSearchParams();
+  if (typeof query.agent === "string" && query.agent !== "") {
+    params.set("agent", query.agent);
+  }
+  for (const kind of query.kind ?? []) {
+    params.append("kind", kind);
+  }
+  if (query.limit !== undefined) {
+    params.set("limit", String(query.limit));
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return requestText(
+    `${workspacePath(workspaceId)}/behavior/timeline${suffix}`,
+  );
+}
+
+/** Each partner's current behavior state (GET /works/{id}/behavior). */
+export function getBehaviorState(workspaceId: string): Promise<string> {
+  return requestText(`${workspacePath(workspaceId)}/behavior`);
 }

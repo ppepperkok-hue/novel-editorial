@@ -1,7 +1,9 @@
 import { NavLink, Navigate, Outlet, Route, Routes } from "react-router-dom";
 
 import DecisionPage from "./features/decision/DecisionPage";
+import FreewillPage from "./features/freewill/FreewillPage";
 import OverviewPage from "./features/overview/OverviewPage";
+import QualityPage from "./features/quality/QualityPage";
 import SettingsPage from "./features/settings/SettingsPage";
 import StructurePage from "./features/structure/StructurePage";
 import TalkPage from "./features/talk/TalkPage";
@@ -71,6 +73,20 @@ function Shell() {
               >
                 设定
               </NavLink>
+              <NavLink
+                to={`/works/${encodeURIComponent(currentWorkspace.id)}/quality`}
+                end
+                className={({ isActive }) => navClassName(isActive)}
+              >
+                质量
+              </NavLink>
+              <NavLink
+                to={`/works/${encodeURIComponent(currentWorkspace.id)}/freewill`}
+                end
+                className={({ isActive }) => navClassName(isActive)}
+              >
+                编辑部
+              </NavLink>
             </>
           ) : null}
         </nav>
@@ -113,6 +129,11 @@ export default function App() {
         <Route
           path="works/:workspaceId/settings"
           element={<SettingsPage />}
+        />
+        <Route path="works/:workspaceId/quality" element={<QualityPage />} />
+        <Route
+          path="works/:workspaceId/freewill"
+          element={<FreewillPage />}
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
