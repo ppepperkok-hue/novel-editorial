@@ -2955,9 +2955,13 @@ uv run novel-editorial api serve [--host HOST] [--port PORT]
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/health` | 健康检查，返回 `{"status": "ok"}` |
+| GET | `/config` | 全量非敏感配置快照（只读，`restart_required: false`，永不包含 `llm_api_key`） |
+| PUT | `/config` | 写一个白名单配置键（body：`key` / `value`），成功 200 + 更新后完整快照 + `restart_required: true`；重启 api 服务后生效 |
 | GET | `/works` | 作品数组（id / title / genre / description / status / created_at），按创建时间与 ID 升序 |
 | POST | `/works` | 建作品（body：`title` 必填，`genre` / `description` 可选），成功 201 + 作品对象 |
+| POST | `/works/import` | multipart 上传作品归档 ZIP（字段名 `file`），成功 201 + 新作品对象（永远生成新 id，不覆盖） |
 | GET | `/works/{id}` | 作品详情 + band（agents 数组） |
+| GET | `/works/{id}/export` | 下载作品归档 ZIP（`application/zip`，文件名 `<id前8位>-<YYYYMMDD-HHMMSS>.zip`） |
 | GET | `/overview` | 跨作品聚合（`overviews` / `total` / `skipped`） |
 | GET | `/works/{id}/events` | 事件数组（新到旧） |
 | GET | `/works/{id}/events/stream` | SSE 实时事件流（见「SSE 实时事件流」） |
@@ -3045,6 +3049,34 @@ curl -X POST http://127.0.0.1:8765/works/<作品ID>/inspirations \
 # {"id":"<灵感ID>","workspace_id":"<作品ID>","kind":"意象","content":"码头雾气与旧钟","source":"","created_at":"<时间戳>","updated_at":"<时间戳>"}
 ```
 
+### 数据管理与配置（导出 / 导入 / 配置写面）
+
+这批端点把 `works export` / `works import` 与配置写面搬上 HTTP，业务一律复用 `core.archive` 与 `core.config` 既有函数：同一份数据同一时刻 API 与 CLI 结果一致，错误映射与 CLI 退出码对齐。
+
+- `GET /works/{id}/export` 等价于 `works export <id> <目录>`：返回 `application/zip` 归档，`Content-Disposition` 文件名用 `<id前8位>-<YYYYMMDD-HHMMSS>.zip`（ASCII 安全化）。归档内容与 CLI 产物同源，可被 `works import` 或 `POST /works/import` 再次导入。
+- `POST /works/import` 等价于 `works import <归档>`：multipart 表单字段名 `file`，上传 ZIP 后作为全新 workspace 导入（新 id、不覆盖、登记 `workspace_imported` 事件），成功 201 返回新作品对象。无效归档（非 ZIP / 空文件 / 校验失败）映射到 422，与 CLI 用法错误语义一致。
+- `GET /config` 返回全部非敏感 Settings 字段（`data_dir` / `config_path` 为字符串，`panel_poll_interval` 保留兼容），附加 `"restart_required": false`；`llm_api_key` 永不出现。
+- `PUT /config` 只接受白名单键：`quality_threshold` / `panel_poll_interval` / `freedom_dial` / `freedom_seed` / `proactive_enabled` / `proactive_max_per_agent` / `motive_llm_enabled`。`int` 键接受整数或数字字符串，`freedom_dial` 限 0..1，`bool` 键接受布尔或 `true/false/1/0/yes/no/on/off`；白名单外键与非法值一律 422。写盘走 `set_config_value`（保留注释、幂等、同值不写），响应返回更新后的完整快照 + `"restart_required": true`，提示「api 重启后生效」。被环境变量覆盖的键写入 TOML 后，快照仍如实反映环境变量值（`load_settings` 的读取顺序：环境变量 > TOML > 默认值）。
+
+mock 下 curl 示例（`<作品ID>` 换成实际值）：
+
+```bash
+curl -o export.zip http://127.0.0.1:8765/works/<作品ID>/export
+# 保存为 <id前8位>-<YYYYMMDD-HHMMSS>.zip（application/zip）
+
+curl -X POST http://127.0.0.1:8765/works/import \
+  -F "file=@export.zip;type=application/zip"
+# {"id":"<新作品ID>","title":"<标题>","genre":"...","description":"...","status":"writing","created_at":"<时间戳>"}
+
+curl http://127.0.0.1:8765/config
+# {"data_dir":"...","config_path":"...","quality_threshold":8,"panel_poll_interval":3,...,"restart_required":false}
+
+curl -X PUT http://127.0.0.1:8765/config \
+  -H "Content-Type: application/json" \
+  -d '{"key":"freedom_dial","value":0.5}'
+# {"...":"...","freedom_dial":0.5,"restart_required":true,"message":"config updated; api 重启后生效"}
+```
+
 ### 错误映射
 
 响应体统一为 `{"detail": ...}`：
@@ -3072,7 +3104,7 @@ events.addEventListener("message", (event) => {
 
 ### 只读红线与安全说明
 
-- 写面端点逐条映射既有 CLI 命令（`works create`、`talk send`、`draft generate`、`draft revise`、`draft new`、`draft save`、`review add`、`decision` 三动作、`style set`、`style learn --apply`、`structure add / rename / move / remove / status`、`outline create / revise`、`setting add / revise`、`inspiration add / remove`、`motives drop`、`quality calibrate --apply`、`quality feedback --apply`），业务逻辑一律复用 `core` 既有函数，不在 API 层重写；其余路由全部只读：不落事件、不触发 proactive。
+- 写面端点逐条映射既有 CLI 命令（`works create`、`works import`、`works export`、`talk send`、`draft generate`、`draft revise`、`draft new`、`draft save`、`review add`、`decision` 三动作、`style set`、`style learn --apply`、`structure add / rename / move / remove / status`、`outline create / revise`、`setting add / revise`、`inspiration add / remove`、`motives drop`、`quality calibrate --apply`、`quality feedback --apply`、`PUT /config`），业务逻辑一律复用 `core` 既有函数，不在 API 层重写；其余路由全部只读：不落事件、不触发 proactive。导出只读源数据（走 `core.archive` 快照）；导入与配置写面只接受白名单输入，敏感键（`llm_api_key`）永不读写。
 - `GET /works/{id}/style` 只读查询：作品没有风格锚点时返回 `{"description": "", "forbidden_words": ""}`，绝不新建行。
 - 默认只绑定 `127.0.0.1` 且无鉴权；不要用 `--host 0.0.0.0` 或公网端口暴露服务。
 

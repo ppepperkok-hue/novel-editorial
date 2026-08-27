@@ -3,7 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from novel_editorial.core.config import load_settings, set_quality_threshold
+from novel_editorial.core.config import (
+    WRITABLE_CONFIG_KEYS,
+    load_settings,
+    set_config_value,
+    set_quality_threshold,
+)
 from novel_editorial.core.errors import ErrorCode, NovelError
 
 
@@ -1143,3 +1148,254 @@ def test_set_quality_threshold_replaces_multiline_string_value_with_escaped_trip
     tomllib.loads(content)
     settings = load_settings({"NOVEL_CONFIG": str(config_path)})
     assert settings.quality_threshold == 15
+
+
+def test_writable_config_keys_whitelist() -> None:
+    assert WRITABLE_CONFIG_KEYS == frozenset(
+        {
+            "quality_threshold",
+            "panel_poll_interval",
+            "freedom_dial",
+            "freedom_seed",
+            "proactive_enabled",
+            "proactive_max_per_agent",
+            "motive_llm_enabled",
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "key,value,expected",
+    [
+        ("quality_threshold", 12, 12),
+        ("panel_poll_interval", 7, 7),
+        ("freedom_dial", 0.5, 0.5),
+        ("freedom_seed", -3, -3),
+        ("proactive_enabled", False, False),
+        ("proactive_max_per_agent", 0, 0),
+        ("motive_llm_enabled", True, True),
+    ],
+)
+def test_set_config_value_writes_each_writable_key(
+    tmp_path: Path, key: str, value: object, expected: object
+) -> None:
+    config_path = tmp_path / "config.toml"
+
+    set_config_value(config_path, key, value)
+
+    content = config_path.read_text(encoding="utf-8")
+    assert content.startswith("[defaults]\n")
+    assert f"{key} = " in content
+    tomllib.loads(content)
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert getattr(settings, key) == expected
+
+
+@pytest.mark.parametrize(
+    "key,value,expected",
+    [
+        ("quality_threshold", "9", 9),
+        ("panel_poll_interval", "5", 5),
+        ("freedom_dial", "0.25", 0.25),
+        ("freedom_seed", "-1", -1),
+        ("proactive_max_per_agent", "2", 2),
+        ("proactive_enabled", "off", False),
+        ("proactive_enabled", "1", True),
+        ("motive_llm_enabled", "yes", True),
+        ("motive_llm_enabled", "FALSE", False),
+    ],
+)
+def test_set_config_value_accepts_string_forms(
+    tmp_path: Path, key: str, value: str, expected: object
+) -> None:
+    config_path = tmp_path / "config.toml"
+
+    set_config_value(config_path, key, value)
+
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert getattr(settings, key) == expected
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("quality_threshold", -1),
+        ("quality_threshold", 3.5),
+        ("quality_threshold", "high"),
+        ("panel_poll_interval", 0),
+        ("panel_poll_interval", 301),
+        ("freedom_dial", 2),
+        ("freedom_dial", -0.1),
+        ("freedom_dial", "nan"),
+        ("freedom_seed", "3.5"),
+        ("proactive_enabled", "maybe"),
+        ("proactive_enabled", 1),
+        ("proactive_max_per_agent", -1),
+        ("motive_llm_enabled", "2"),
+    ],
+)
+def test_set_config_value_rejects_invalid_values(
+    tmp_path: Path, key: str, value: object
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("[defaults]\nquality_threshold = 8\n", encoding="utf-8")
+    before = config_path.read_bytes()
+
+    with pytest.raises(NovelError) as info:
+        set_config_value(config_path, key, value)
+
+    assert info.value.code is ErrorCode.USAGE_ERROR
+    assert config_path.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "key", ["llm_api_key", "embedding_model", "api_port", "data_dir", "defaults"]
+)
+def test_set_config_value_rejects_unknown_or_read_only_keys(
+    tmp_path: Path, key: str
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("[defaults]\nquality_threshold = 8\n", encoding="utf-8")
+    before = config_path.read_bytes()
+
+    with pytest.raises(NovelError) as info:
+        set_config_value(config_path, key, 1)
+
+    assert info.value.code is ErrorCode.USAGE_ERROR
+    assert "config key" in info.value.message
+    assert config_path.read_bytes() == before
+
+
+def test_set_config_value_is_idempotent(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    set_config_value(config_path, "freedom_dial", 0.5)
+    first = config_path.read_bytes()
+
+    set_config_value(config_path, "freedom_dial", 0.5)
+
+    assert config_path.read_bytes() == first
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.freedom_dial == 0.5
+
+
+def test_set_config_value_float_accepts_integer_spelling(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("[defaults]\nfreedom_dial = 0\n", encoding="utf-8")
+    before = config_path.read_bytes()
+
+    set_config_value(config_path, "freedom_dial", 0.0)
+
+    assert config_path.read_bytes() == before
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.freedom_dial == 0.0
+
+
+def test_set_config_value_replaces_value_keeping_comments_and_other_keys(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "# top comment\n"
+        "[defaults]\n"
+        "quality_threshold = 8  # keep me\n"
+        "proactive_enabled = false\n"
+        "[logging]\n"
+        'level = "DEBUG"  # log note\n',
+        encoding="utf-8",
+    )
+
+    set_config_value(config_path, "quality_threshold", 15)
+
+    content = config_path.read_text(encoding="utf-8")
+    assert "quality_threshold = 15  # keep me" in content
+    assert "proactive_enabled = false" in content
+    assert "# top comment" in content
+    assert '[logging]\nlevel = "DEBUG"  # log note' in content
+    assert content.count("quality_threshold") == 1
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.quality_threshold == 15
+
+
+def test_set_config_value_appends_defaults_section_when_missing(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text('[logging]\nlevel = "INFO"\n', encoding="utf-8")
+
+    set_config_value(config_path, "freedom_dial", 0.4)
+
+    content = config_path.read_text(encoding="utf-8")
+    assert content.endswith("[defaults]\nfreedom_dial = 0.4\n")
+    assert 'level = "INFO"' in content
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.freedom_dial == 0.4
+
+
+def test_set_config_value_inserts_key_into_existing_defaults(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "# c\n[defaults]\nproactive_enabled = true\n",
+        encoding="utf-8",
+    )
+
+    set_config_value(config_path, "motive_llm_enabled", True)
+
+    content = config_path.read_text(encoding="utf-8")
+    assert "motive_llm_enabled = true" in content
+    assert "proactive_enabled = true" in content
+    assert content.startswith("# c\n[defaults]\n")
+    tomllib.loads(content)
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.motive_llm_enabled is True
+
+
+def test_set_config_value_preserves_quoted_key_spelling(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text('[defaults]\n"freedom_dial" = 0.5\n', encoding="utf-8")
+
+    set_config_value(config_path, "freedom_dial", 0.7)
+
+    content = config_path.read_text(encoding="utf-8")
+    assert '"freedom_dial" = 0.7' in content
+    assert "freedom_dial = 0.7" not in content
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.freedom_dial == 0.7
+
+
+def test_set_config_value_ignores_multiline_string_content(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "[defaults]\n"
+        "desc = \"\"\"\n"
+        "freedom_dial = 5\n"
+        "[foo]\n"
+        "\"\"\"\n"
+        "proactive_enabled = true\n",
+        encoding="utf-8",
+    )
+
+    set_config_value(config_path, "freedom_dial", 0.3)
+
+    content = config_path.read_text(encoding="utf-8")
+    assert "freedom_dial = 0.3" in content
+    assert 'desc = """' in content
+    assert "freedom_dial = 5" in content
+    tomllib.loads(content)
+    settings = load_settings({"NOVEL_CONFIG": str(config_path)})
+    assert settings.freedom_dial == 0.3
+
+
+def test_set_config_value_rejects_invalid_toml(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("[defaults\n", encoding="utf-8")
+
+    with pytest.raises(NovelError) as info:
+        set_config_value(config_path, "quality_threshold", 10)
+
+    assert info.value.code is ErrorCode.CONFIG_ERROR
+    assert str(config_path) in info.value.message
+    assert config_path.read_text(encoding="utf-8") == "[defaults\n"

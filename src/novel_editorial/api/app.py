@@ -5,17 +5,20 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import sys
+import tempfile
 from collections.abc import AsyncIterator
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import FastAPI, Query, Request, Response
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi import FastAPI, File, Query, Request, Response, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from sse_starlette.sse import EventSourceResponse
+from starlette.background import BackgroundTask
 
 from novel_editorial.core import (
     decision,
@@ -34,6 +37,10 @@ from novel_editorial.core import (
     workspace,
 )
 from novel_editorial.core.agents import resolve_agent
+from novel_editorial.core.archive import (
+    export_workspace_archive,
+    import_workspace_archive,
+)
 from novel_editorial.core.behavior import (
     BEHAVIOR_KINDS,
     current_behavior_state,
@@ -63,6 +70,7 @@ from novel_editorial.core.chat import (
 from novel_editorial.core.config import (
     Settings,
     load_settings,
+    set_config_value,
     set_quality_threshold,
 )
 from novel_editorial.core.consistency import check_consistency
@@ -275,6 +283,13 @@ class CorpusPathBody(BaseModel):
         return value
 
 
+class ConfigWriteBody(BaseModel):
+    """One whitelisted config key/value pair for ``PUT /config``."""
+
+    key: str = Field(min_length=1)
+    value: Any
+
+
 def _workspace_dict(workspace: Workspace) -> dict[str, Any]:
     return {field: getattr(workspace, field) for field in _WORKSPACE_FIELDS}
 
@@ -286,6 +301,43 @@ def _agent_dict(agent: Agent) -> dict[str, Any]:
 def _iso(value: datetime) -> str:
     """Render a datetime with the same seconds precision the CLI uses."""
     return value.isoformat(timespec="seconds")
+
+
+def _ascii_slug(value: str) -> str:
+    """Keep only ASCII letters/digits, the safe charset for filenames."""
+    return "".join(ch for ch in value if ch.isascii() and ch.isalnum())
+
+
+def _config_snapshot(settings: Settings) -> dict[str, Any]:
+    """Full non-sensitive settings snapshot; never includes the LLM key.
+
+    ``data_dir`` / ``config_path`` are exposed as plain strings. The raw
+    ``defaults`` table is intentionally excluded: it is a source mirror
+    rather than an effective setting and would go stale after a write.
+    """
+    return {
+        "data_dir": str(settings.data_dir),
+        "config_path": str(settings.config_path),
+        "llm_base_url": settings.llm_base_url,
+        "llm_model": settings.llm_model,
+        "log_level": settings.log_level,
+        "quality_threshold": settings.quality_threshold,
+        "memory_decay_per_day": settings.memory_decay_per_day,
+        "memory_rehearsal_boost": settings.memory_rehearsal_boost,
+        "memory_archive_threshold": settings.memory_archive_threshold,
+        "proactive_enabled": settings.proactive_enabled,
+        "proactive_max_per_agent": settings.proactive_max_per_agent,
+        "freedom_dial": settings.freedom_dial,
+        "freedom_seed": settings.freedom_seed,
+        "motive_llm_enabled": settings.motive_llm_enabled,
+        "embedding_backend": settings.embedding_backend,
+        "embedding_model": settings.embedding_model,
+        "embedding_dim": settings.embedding_dim,
+        "embedding_top_k": settings.embedding_top_k,
+        "api_host": settings.api_host,
+        "api_port": settings.api_port,
+        "panel_poll_interval": settings.panel_poll_interval,
+    }
 
 
 def _event_dict(event: Event) -> dict[str, Any]:
@@ -1245,9 +1297,21 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     @app.get("/config")
-    def get_config() -> dict[str, int]:
-        """Panel configuration consumed by the frontend (read-only)."""
-        return {"panel_poll_interval": settings.panel_poll_interval}
+    def get_config() -> dict[str, Any]:
+        """Full non-sensitive settings snapshot consumed by the frontend."""
+        current = load_settings()
+        return {**_config_snapshot(current), "restart_required": False}
+
+    @app.put("/config")
+    def update_config_route(body: ConfigWriteBody) -> dict[str, Any]:
+        """Write one whitelisted config key; restart the API server to apply."""
+        set_config_value(settings.config_path, body.key, body.value)
+        current = load_settings()
+        return {
+            **_config_snapshot(current),
+            "restart_required": True,
+            "message": "config updated; api 重启后生效",
+        }
 
     @app.get("/works")
     def list_works() -> list[dict[str, Any]]:
@@ -1269,6 +1333,27 @@ def create_app() -> FastAPI:
         )
         return _workspace_dict(created)
 
+    @app.post("/works/import", status_code=201)
+    async def import_workspace_route(
+        file: Annotated[UploadFile, File()],
+    ) -> dict[str, Any]:
+        """Import an exported workspace ZIP as a brand-new workspace.
+
+        Mirrors ``works import``: the archive is validated by core.archive and
+        always lands under a fresh workspace id (never overwrites). Invalid
+        archives surface the NovelError through the shared exception handler.
+        """
+        fd, tmp_name = tempfile.mkstemp(prefix="novel-api-import-", suffix=".zip")
+        tmp_path = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "wb") as raw:
+                while chunk := await file.read(1024 * 1024):
+                    raw.write(chunk)
+            workspace_row = import_workspace_archive(db, tmp_path)
+        finally:
+            tmp_path.unlink(missing_ok=True)
+        return _workspace_dict(workspace_row)
+
     @app.get("/works/{workspace_id}")
     def show_workspace(workspace_id: str) -> dict[str, Any]:
         with db.global_session() as session:
@@ -1283,6 +1368,28 @@ def create_app() -> FastAPI:
             agents = session.query(Agent).order_by(Agent.created_at, Agent.id).all()
         result["band"] = [_agent_dict(agent) for agent in agents]
         return result
+
+    @app.get("/works/{workspace_id}/export")
+    def export_workspace_route(workspace_id: str) -> FileResponse:
+        """Download one workspace as a verifiable ZIP archive.
+
+        Mirrors ``works export`` into a fresh temporary directory; the temp
+        dir is removed after the response is sent, or on any failure.
+        """
+        tmp_dir = Path(tempfile.mkdtemp(prefix="novel-api-export-"))
+        try:
+            archive_path = export_workspace_archive(db, workspace_id, tmp_dir)
+        except Exception:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            raise
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        filename = f"{_ascii_slug(workspace_id)[:8]}-{stamp}.zip"
+        return FileResponse(
+            archive_path,
+            media_type="application/zip",
+            filename=filename,
+            background=BackgroundTask(shutil.rmtree, tmp_dir, ignore_errors=True),
+        )
 
     @app.get("/overview")
     def get_overview() -> dict[str, Any]:

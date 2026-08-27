@@ -14,6 +14,28 @@ from novel_editorial.core.errors import ErrorCode, NovelError
 _TRUE_ENABLED_VALUES = frozenset({"1", "true", "yes", "on"})
 _FALSE_ENABLED_VALUES = frozenset({"0", "false", "no", "off"})
 
+#: Keys PUT /config may write; everything else is read-only over HTTP.
+WRITABLE_CONFIG_KEYS = frozenset(
+    {
+        "quality_threshold",
+        "panel_poll_interval",
+        "freedom_dial",
+        "freedom_seed",
+        "proactive_enabled",
+        "proactive_max_per_agent",
+        "motive_llm_enabled",
+    }
+)
+
+_INT_CONFIG_RANGES: dict[str, tuple[int | None, int | None]] = {
+    "quality_threshold": (0, None),
+    "panel_poll_interval": (1, 300),
+    "freedom_seed": (None, None),
+    "proactive_max_per_agent": (0, None),
+}
+_FLOAT_CONFIG_KEYS = frozenset({"freedom_dial"})
+_BOOL_CONFIG_KEYS = frozenset({"proactive_enabled", "motive_llm_enabled"})
+
 
 def _parse_enabled(value: str, *, label: str = "enabled") -> bool:
     lowered = value.strip().lower()
@@ -257,11 +279,18 @@ _DEFAULTS_HEADER_RE = re.compile(
     r"^\s*\[\s*(?P<key>defaults|[\"']defaults[\"'])\s*\]\s*(?:#.*)?$"
 )
 _SECTION_HEADER_RE = re.compile(r"^\s*\[{1,2}[^\[\]]+\]{1,2}\s*(?:#.*)?$")
-_QUALITY_THRESHOLD_RE = re.compile(
+_DEFAULTS_KEY_RE = re.compile(
     r"^(?P<indent>\s*)"
-    r"(?P<key>quality_threshold|[\"']quality_threshold[\"'])"
+    r"(?P<key>[A-Za-z0-9_]+|[\"'][^\"']+[\"'])"
     r"\s*=\s*(?P<tail>.*)$"
 )
+
+
+def _unquote_toml_key(key: str) -> str:
+    """Strip the quotes from a quoted TOML key (bare keys pass through)."""
+    if len(key) >= 2 and key[0] in ("\"", "'") and key[-1] == key[0]:
+        return key[1:-1]
+    return key
 
 
 def _line_eol(line: str) -> str:
@@ -391,8 +420,28 @@ def _tail_comment(tail: str) -> str:
     return tail[value_end:]
 
 
-def set_quality_threshold(config_path: Path, value: int) -> None:
-    """Write quality_threshold under [defaults], preserving all other content.
+def _same_config_value(current: object, expected: object) -> bool:
+    """True when the parsed TOML value already equals the intended one.
+
+    Floats accept integer spellings (``freedom_dial = 0`` equals ``0.0``) so
+    repeated writes never rewrite a semantically identical file; bools and
+    ints must match exactly.
+    """
+    if isinstance(expected, bool):
+        return type(current) is bool and current == expected
+    if isinstance(expected, float):
+        return (
+            isinstance(current, (int, float))
+            and not isinstance(current, bool)
+            and float(current) == expected
+        )
+    return type(current) is int and current == expected
+
+
+def _set_defaults_value(
+    config_path: Path, key: str, rendered: str, expected: object
+) -> None:
+    """Write one ``[defaults]`` key, preserving all other content.
 
     Creates the file when missing, appends a [defaults] section when absent,
     inserts the key into an existing section when missing, and otherwise
@@ -405,9 +454,9 @@ def set_quality_threshold(config_path: Path, value: int) -> None:
     value leave the file byte-for-byte unchanged (idempotent).
     """
     path = Path(config_path)
-    rendered = f"quality_threshold = {value}"
+    assignment = f"{key} = {rendered}"
     if not path.exists():
-        path.write_text(f"[defaults]\n{rendered}\n", encoding="utf-8")
+        path.write_text(f"[defaults]\n{assignment}\n", encoding="utf-8")
         return
 
     raw = path.read_text(encoding="utf-8")
@@ -421,16 +470,14 @@ def set_quality_threshold(config_path: Path, value: int) -> None:
         ) from exc
 
     if not raw:
-        path.write_text(f"[defaults]\n{rendered}\n", encoding="utf-8")
+        path.write_text(f"[defaults]\n{assignment}\n", encoding="utf-8")
         return
 
     defaults_table = parsed.get("defaults", {})
     current = (
-        defaults_table.get("quality_threshold")
-        if isinstance(defaults_table, dict)
-        else None
+        defaults_table.get(key) if isinstance(defaults_table, dict) else None
     )
-    if type(current) is int and current == value:
+    if _same_config_value(current, expected):
         return
 
     lines = raw.splitlines(keepends=True)
@@ -446,7 +493,7 @@ def set_quality_threshold(config_path: Path, value: int) -> None:
         None,
     )
     if header_index is None:
-        suffix = f"[defaults]{eol}{rendered}{eol}"
+        suffix = f"[defaults]{eol}{assignment}{eol}"
         new_text = raw + suffix if raw.endswith("\n") else raw + eol + suffix
         path.write_text(new_text, encoding="utf-8")
         return
@@ -462,16 +509,17 @@ def set_quality_threshold(config_path: Path, value: int) -> None:
             continue
         line = lines[index]
         body = _strip_eol(line)
-        match = _QUALITY_THRESHOLD_RE.match(body)
-        if match is None:
+        match = _DEFAULTS_KEY_RE.match(body)
+        if match is None or _unquote_toml_key(match.group("key")) != key:
             continue
         indent = match.group("indent")
-        key = match.group("key")
+        key_text = match.group("key")
         tail = match.group("tail")
         state_after, depth_after, _ = _scan_chunk(tail, None, 0)
         if state_after is None and depth_after == 0:
             lines[index] = (
-                f"{indent}{key} = {value}{_tail_comment(tail)}{_line_eol(line)}"
+                f"{indent}{key_text} = {rendered}{_tail_comment(tail)}"
+                f"{_line_eol(line)}"
             )
             path.write_text("".join(lines), encoding="utf-8")
             return
@@ -493,14 +541,114 @@ def set_quality_threshold(config_path: Path, value: int) -> None:
                 close_eol = _line_eol(lines[close_index]) or eol
                 break
         lines[index : close_index + 1] = [
-            f"{indent}{key} = {value}{comment}{close_eol}"
+            f"{indent}{key_text} = {rendered}{comment}{close_eol}"
         ]
         path.write_text("".join(lines), encoding="utf-8")
         return
 
     if _line_eol(lines[header_index]):
-        lines.insert(header_index + 1, f"{rendered}{eol}")
+        lines.insert(header_index + 1, f"{assignment}{eol}")
     else:
         lines[header_index] = lines[header_index] + eol
-        lines.insert(header_index + 1, f"{rendered}{eol}")
+        lines.insert(header_index + 1, f"{assignment}{eol}")
     path.write_text("".join(lines), encoding="utf-8")
+
+
+def set_quality_threshold(config_path: Path, value: int) -> None:
+    """Write quality_threshold under [defaults], preserving all other content.
+
+    See :func:`_set_defaults_value` for the fidelity guarantees: comments
+    kept, tomllib validation first, idempotent byte-for-byte writes.
+    """
+    _set_defaults_value(config_path, "quality_threshold", str(value), value)
+
+
+def _coerce_config_value(key: str, value: object) -> int | float | bool:
+    """Validate one writable key/value pair; return its canonical TOML value.
+
+    Raises NovelError(USAGE_ERROR) for unknown/read-only keys and for values
+    that do not match the key's type or range, mirroring the CLI's
+    usage-error semantics (HTTP 422). Int keys accept ints and numeric
+    strings; the float key accepts 0..1 floats (or ints/strings that parse to
+    one); bool keys accept bools or ``true/false/1/0/yes/no/on/off`` strings.
+    """
+    if key not in WRITABLE_CONFIG_KEYS:
+        raise NovelError(
+            ErrorCode.USAGE_ERROR, f"unknown or read-only config key: {key}"
+        )
+
+    def invalid() -> NovelError:
+        return NovelError(ErrorCode.USAGE_ERROR, f"invalid {key}: {value!r}")
+
+    if key in _BOOL_CONFIG_KEYS:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in _TRUE_ENABLED_VALUES:
+                return True
+            if lowered in _FALSE_ENABLED_VALUES:
+                return False
+        raise invalid()
+
+    if key in _FLOAT_CONFIG_KEYS:
+        if isinstance(value, bool):
+            raise invalid()
+        if isinstance(value, (int, float)):
+            parsed = float(value)
+        elif isinstance(value, str):
+            try:
+                parsed = float(value.strip())
+            except ValueError as exc:
+                raise invalid() from exc
+        else:
+            raise invalid()
+        if not 0.0 <= parsed <= 1.0:
+            raise invalid()
+        return parsed
+
+    min_value, max_value = _INT_CONFIG_RANGES[key]
+    if isinstance(value, bool):
+        raise invalid()
+    if isinstance(value, int):
+        parsed = value
+    elif isinstance(value, str):
+        try:
+            parsed = int(value.strip())
+        except ValueError as exc:
+            raise invalid() from exc
+    else:
+        raise invalid()
+    if (min_value is not None and parsed < min_value) or (
+        max_value is not None and parsed > max_value
+    ):
+        raise invalid()
+    return parsed
+
+
+def _render_config_value(value: int | float | bool) -> str:
+    """Render a canonical value as a TOML literal for the [defaults] table."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, float):
+        return repr(value)
+    return str(value)
+
+
+def set_config_value(config_path: Path, key: str, value: object) -> None:
+    """Write one whitelisted config key under [defaults], preserving content.
+
+    Only keys in :data:`WRITABLE_CONFIG_KEYS` are accepted; anything else and
+    any value that fails the key's type/range check raises
+    NovelError(USAGE_ERROR). The write reuses the fidelity strategy of
+    :func:`set_quality_threshold`: comments preserved, tomllib validation
+    first, idempotent (the same value leaves the file byte-for-byte
+    unchanged).
+    """
+    canonical = _coerce_config_value(key, value)
+    _set_defaults_value(
+        config_path,
+        key,
+        _render_config_value(canonical),
+        canonical,
+    )

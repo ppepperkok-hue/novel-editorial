@@ -302,7 +302,9 @@ def test_config_default_poll_interval(
     client, _ = _make_client(tmp_path, monkeypatch)
     response = client.get("/config")
     assert response.status_code == 200
-    assert response.json() == {"panel_poll_interval": 3}
+    data = response.json()
+    assert data["panel_poll_interval"] == 3
+    assert data["restart_required"] is False
 
 
 def test_config_reflects_env_override(
@@ -312,7 +314,9 @@ def test_config_reflects_env_override(
     client, _ = _make_client(tmp_path, monkeypatch)
     response = client.get("/config")
     assert response.status_code == 200
-    assert response.json() == {"panel_poll_interval": 7}
+    data = response.json()
+    assert data["panel_poll_interval"] == 7
+    assert data["restart_required"] is False
 
 
 def test_works_list_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -3777,3 +3781,242 @@ def test_quality_style_read_routes_are_read_only(
 
     assert _table_counts(db, workspace_id) == before_counts
     assert client.get(f"/works/{workspace_id}/events").json() == events_before
+
+
+def test_config_snapshot_is_full_and_non_sensitive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("NOVEL_LLM_API_KEY", "sk-secret")
+    client, _ = _make_client(tmp_path, monkeypatch)
+
+    response = client.get("/config")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["restart_required"] is False
+    assert "llm_api_key" not in data
+    for field in (
+        "data_dir",
+        "config_path",
+        "llm_base_url",
+        "llm_model",
+        "log_level",
+        "quality_threshold",
+        "memory_decay_per_day",
+        "memory_rehearsal_boost",
+        "memory_archive_threshold",
+        "proactive_enabled",
+        "proactive_max_per_agent",
+        "freedom_dial",
+        "freedom_seed",
+        "motive_llm_enabled",
+        "embedding_backend",
+        "embedding_model",
+        "embedding_dim",
+        "embedding_top_k",
+        "api_host",
+        "api_port",
+        "panel_poll_interval",
+    ):
+        assert field in data, field
+    assert data["data_dir"] == str(tmp_path)
+    assert data["config_path"] == str(tmp_path / "config.toml")
+
+
+@pytest.mark.parametrize(
+    "key,value,expected",
+    [
+        ("quality_threshold", 10, 10),
+        ("panel_poll_interval", 5, 5),
+        ("freedom_dial", 0.5, 0.5),
+        ("freedom_seed", 7, 7),
+        ("proactive_enabled", False, False),
+        ("proactive_max_per_agent", 4, 4),
+        ("motive_llm_enabled", True, True),
+    ],
+)
+def test_config_put_each_writable_key_reads_back(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    key: str,
+    value: object,
+    expected: object,
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+
+    response = client.put("/config", json={"key": key, "value": value})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data[key] == expected
+    assert data["restart_required"] is True
+    assert "重启后生效" in data["message"]
+    snapshot = client.get("/config").json()
+    assert snapshot[key] == expected
+    assert snapshot["restart_required"] is False
+
+
+@pytest.mark.parametrize(
+    "key,value,expected",
+    [
+        ("quality_threshold", "9", 9),
+        ("freedom_dial", "0.25", 0.25),
+        ("proactive_enabled", "off", False),
+        ("motive_llm_enabled", "yes", True),
+    ],
+)
+def test_config_put_accepts_string_values(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    key: str,
+    value: str,
+    expected: object,
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+
+    response = client.put("/config", json={"key": key, "value": value})
+
+    assert response.status_code == 200
+    assert response.json()[key] == expected
+
+
+def test_config_put_idempotent_same_value_keeps_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    first = client.put("/config", json={"key": "quality_threshold", "value": 11})
+    assert first.status_code == 200
+    config_path = tmp_path / "config.toml"
+    before = config_path.read_bytes()
+
+    again = client.put("/config", json={"key": "quality_threshold", "value": 11})
+
+    assert again.status_code == 200
+    assert config_path.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"key": "llm_api_key", "value": "sk-secret"},
+        {"key": "embedding_model", "value": "x"},
+        {"key": "quality_threshold", "value": -1},
+        {"key": "quality_threshold", "value": 3.5},
+        {"key": "freedom_dial", "value": 2},
+        {"key": "proactive_enabled", "value": "maybe"},
+        {"key": "panel_poll_interval", "value": 0},
+    ],
+)
+def test_config_put_invalid_key_or_value_422(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, payload: dict
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+
+    response = client.put("/config", json=payload)
+
+    assert response.status_code == 422
+    assert not (tmp_path / "config.toml").exists()
+
+
+def test_config_put_env_overridden_key_snapshot_still_shows_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("NOVEL_QUALITY_THRESHOLD", "5")
+    client, _ = _make_client(tmp_path, monkeypatch)
+
+    response = client.put("/config", json={"key": "quality_threshold", "value": 10})
+
+    assert response.status_code == 200
+    assert response.json()["quality_threshold"] == 5
+    assert client.get("/config").json()["quality_threshold"] == 5
+    assert (tmp_path / "config.toml").read_text(
+        encoding="utf-8"
+    ) == "[defaults]\nquality_threshold = 10\n"
+
+
+def test_export_download_and_cli_import_roundtrip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "导出之书"}).json()["id"]
+
+    response = client.get(f"/works/{workspace_id}/export")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/zip")
+    disposition = response.headers["content-disposition"]
+    assert f"{workspace_id[:8]}-" in disposition
+    assert disposition.endswith('.zip"')
+
+    archive = tmp_path / "api-export.zip"
+    archive.write_bytes(response.content)
+
+    imported = runner.invoke(cli_app, ["works", "import", str(archive)])
+    assert imported.exit_code == 0, imported.output
+    assert "导出之书" in imported.output
+    imported_id = imported.output.split()[2].rstrip(":")
+    assert imported_id != workspace_id
+    works = client.get("/works").json()
+    assert any(item["id"] == imported_id for item in works)
+
+
+def test_cli_export_and_api_import_roundtrip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+    workspace_id = client.post("/works", json={"title": "导入之书"}).json()["id"]
+    export_dir = tmp_path / "cli-exports"
+    export_dir.mkdir()
+
+    exported = runner.invoke(
+        cli_app, ["works", "export", workspace_id, str(export_dir)]
+    )
+    assert exported.exit_code == 0, exported.output
+    archives = list(export_dir.glob("novel-export-*.zip"))
+    assert len(archives) == 1
+
+    response = client.post(
+        "/works/import",
+        files={"file": ("workspace.zip", archives[0].read_bytes(), "application/zip")},
+    )
+
+    assert response.status_code == 201
+    imported = response.json()
+    assert imported["id"] != workspace_id
+    assert imported["title"] == "导入之书"
+    events = client.get(f"/works/{imported['id']}/events").json()
+    imported_events = [
+        event
+        for event in events
+        if event["payload"].get("kind") == "workspace_imported"
+    ]
+    assert len(imported_events) == 1
+    assert imported_events[0]["payload"]["source_id"] == workspace_id
+
+
+@pytest.mark.parametrize("content", [b"not a zip", b""])
+def test_import_invalid_archive_422(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    content: bytes,
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/works/import",
+        files={"file": ("broken.zip", content, "application/zip")},
+    )
+
+    assert response.status_code == 422
+    assert "invalid archive" in response.json()["detail"]
+
+
+def test_export_missing_workspace_404(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = _make_client(tmp_path, monkeypatch)
+
+    response = client.get("/works/missing/export")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "workspace not found: missing"}

@@ -30,10 +30,14 @@ export interface paths {
         };
         /**
          * Get Config
-         * @description Panel configuration consumed by the frontend (read-only).
+         * @description Full non-sensitive settings snapshot consumed by the frontend.
          */
         get: operations["get_config_config_get"];
-        put?: never;
+        /**
+         * Update Config Route
+         * @description Write one whitelisted config key; restart the API server to apply.
+         */
+        put: operations["update_config_route_config_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -59,6 +63,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/works/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Workspace Route
+         * @description Import an exported workspace ZIP as a brand-new workspace.
+         *
+         *     Mirrors ``works import``: the archive is validated by core.archive and
+         *     always lands under a fresh workspace id (never overwrites). Invalid
+         *     archives surface the NovelError through the shared exception handler.
+         */
+        post: operations["import_workspace_route_works_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/works/{workspace_id}": {
         parameters: {
             query?: never;
@@ -68,6 +96,29 @@ export interface paths {
         };
         /** Show Workspace */
         get: operations["show_workspace_works__workspace_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/works/{workspace_id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Workspace Route
+         * @description Download one workspace as a verifiable ZIP archive.
+         *
+         *     Mirrors ``works export`` into a fresh temporary directory; the temp
+         *     dir is removed after the response is sent, or on any failure.
+         */
+        get: operations["export_workspace_route_works__workspace_id__export_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -939,6 +990,21 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Body_import_workspace_route_works_import_post */
+        Body_import_workspace_route_works_import_post: {
+            /** File */
+            file: string;
+        };
+        /**
+         * ConfigWriteBody
+         * @description One whitelisted config key/value pair for ``PUT /config``.
+         */
+        ConfigWriteBody: {
+            /** Key */
+            key: string;
+            /** Value */
+            value: unknown;
+        };
         /**
          * CorpusPathBody
          * @description Corpus/feedback file path plus the CLI's ``--apply`` flag.
@@ -1191,8 +1257,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: number;
+                        [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    update_config_route_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigWriteBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -1254,6 +1355,41 @@ export interface operations {
             };
         };
     };
+    import_workspace_route_works_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_import_workspace_route_works_import_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     show_workspace_works__workspace_id__get: {
         parameters: {
             query?: never;
@@ -1274,6 +1410,37 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_workspace_route_works__workspace_id__export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

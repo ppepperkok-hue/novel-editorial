@@ -30,7 +30,7 @@
     "/config": {
       "get": {
         "summary": "Get Config",
-        "description": "Panel configuration consumed by the frontend (read-only).",
+        "description": "Full non-sensitive settings snapshot consumed by the frontend.",
         "operationId": "get_config_config_get",
         "responses": {
           "200": {
@@ -38,11 +38,48 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "integer"
-                  },
+                  "additionalProperties": true,
                   "type": "object",
                   "title": "Response Get Config Config Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update Config Route",
+        "description": "Write one whitelisted config key; restart the API server to apply.",
+        "operationId": "update_config_route_config_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigWriteBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Update Config Route Config Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -111,6 +148,47 @@
         }
       }
     },
+    "/works/import": {
+      "post": {
+        "summary": "Import Workspace Route",
+        "description": "Import an exported workspace ZIP as a brand-new workspace.\n\nMirrors ``works import``: the archive is validated by core.archive and\nalways lands under a fresh workspace id (never overwrites). Invalid\narchives surface the NovelError through the shared exception handler.",
+        "operationId": "import_workspace_route_works_import_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_import_workspace_route_works_import_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Import Workspace Route Works Import Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/works/{workspace_id}": {
       "get": {
         "summary": "Show Workspace",
@@ -136,6 +214,44 @@
                   "additionalProperties": true,
                   "title": "Response Show Workspace Works  Workspace Id  Get"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/works/{workspace_id}/export": {
+      "get": {
+        "summary": "Export Workspace Route",
+        "description": "Download one workspace as a verifiable ZIP archive.\n\nMirrors ``works export`` into a fresh temporary directory; the temp\ndir is removed after the response is sent, or on any failure.",
+        "operationId": "export_workspace_route_works__workspace_id__export_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workspace Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -2677,6 +2793,39 @@
   },
   "components": {
     "schemas": {
+      "Body_import_workspace_route_works_import_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_import_workspace_route_works_import_post"
+      },
+      "ConfigWriteBody": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Key"
+          },
+          "value": {
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "value"
+        ],
+        "title": "ConfigWriteBody",
+        "description": "One whitelisted config key/value pair for ``PUT /config``."
+      },
       "CorpusPathBody": {
         "properties": {
           "path": {
