@@ -1331,6 +1331,26 @@ def test_set_config_value_appends_defaults_section_when_missing(
     assert settings.freedom_dial == 0.4
 
 
+def test_set_config_value_rejects_inline_defaults_table(
+    tmp_path: Path,
+) -> None:
+    """An inline ``defaults`` table must never be appended to into invalid TOML."""
+    config_path = tmp_path / "config.toml"
+    original = "defaults = { quality_threshold = 8 }\n"
+    config_path.write_text(original, encoding="utf-8")
+    original_bytes = config_path.read_bytes()
+
+    with pytest.raises(NovelError) as exc_info:
+        set_config_value(config_path, "quality_threshold", 10)
+
+    assert exc_info.value.code is ErrorCode.CONFIG_ERROR
+    assert "convert it to a [defaults] section" in exc_info.value.message
+    assert config_path.read_bytes() == original_bytes
+    assert tomllib.loads(config_path.read_text(encoding="utf-8")) == {
+        "defaults": {"quality_threshold": 8}
+    }
+
+
 def test_set_config_value_inserts_key_into_existing_defaults(
     tmp_path: Path,
 ) -> None:

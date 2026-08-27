@@ -1369,7 +1369,18 @@ def create_app() -> FastAPI:
         result["band"] = [_agent_dict(agent) for agent in agents]
         return result
 
-    @app.get("/works/{workspace_id}/export")
+    @app.get(
+        "/works/{workspace_id}/export",
+        responses={
+            200: {
+                "content": {
+                    "application/zip": {
+                        "schema": {"type": "string", "format": "binary"}
+                    }
+                }
+            }
+        },
+    )
     def export_workspace_route(workspace_id: str) -> FileResponse:
         """Download one workspace as a verifiable ZIP archive.
 

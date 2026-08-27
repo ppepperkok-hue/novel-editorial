@@ -1441,6 +1441,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                    "application/zip": string;
                 };
             };
             /** @description Validation Error */

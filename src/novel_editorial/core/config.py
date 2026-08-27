@@ -493,6 +493,14 @@ def _set_defaults_value(
         None,
     )
     if header_index is None:
+        if isinstance(parsed.get("defaults"), dict):
+            raise NovelError(
+                ErrorCode.CONFIG_ERROR,
+                "defaults is declared without a [defaults] section "
+                "(e.g. an inline table); convert it to a [defaults] section "
+                "before writing",
+                context={"path": str(path)},
+            )
         suffix = f"[defaults]{eol}{assignment}{eol}"
         new_text = raw + suffix if raw.endswith("\n") else raw + eol + suffix
         path.write_text(new_text, encoding="utf-8")

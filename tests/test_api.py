@@ -1004,6 +1004,18 @@ def test_openapi_draft_diff_200_is_text_plain(
     assert "application/json" not in responses["content"]
 
 
+def test_openapi_export_200_is_application_zip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The export endpoint must advertise application/zip, not application/json."""
+    _make_client(tmp_path, monkeypatch)
+    content = create_app().openapi()["paths"][
+        "/works/{workspace_id}/export"
+    ]["get"]["responses"]["200"]["content"]
+    assert "application/zip" in content
+    assert content["application/zip"]["schema"]["format"] == "binary"
+
+
 def test_openapi_outline_settings_post_declare_201(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
