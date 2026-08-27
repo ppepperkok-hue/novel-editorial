@@ -81,3 +81,4 @@
 
 - S1 完成（2026-08-28）：质量（check / explain / calibrate / feedback）、风格（learn / drift）、一致性（check）、自由意志读面（motives / patience / behavior）十二个端点逐条映射 CLI，commit c4337c8；全量 1528 测试 + ruff / pyright / 宪法 + gen:types / typecheck 全绿；独立审查零问题收敛，归档 docs/reviews/20260828-FE-W3-S1-initial.md。待办：S2（质量风格工作台 + 自由意志可视化）。
 - S2 完成（2026-08-28）：质量工作台（草稿选择 / 质量报告 / 风格学习与漂移 / 校准与试读反馈）+ 自由意志可视化（动机 / 耐心 / 行为时间线 / 状态），commits b60be12 / 841d2f8；前端 211 用例四命令全绿；独立审查 2 条 P3 已修复复核收敛，归档 docs/reviews/20260828-FE-W3-S2-initial.md。待办：S3（演示脚本 + 全量回归 + 审查归档 + W3 收口）。
+- S3 完成（2026-08-28）：scripts/w3_demo.py 一条命令复现 W3 全链路（140fd56）；独立审查 1 条 P3（demo 环境隔离）修复复核收敛（d93c57d）；全量回归 后端 1528 测试 + 前端 211 用例 + smoke_m3 / stress_m3 / ruff / pyright / 宪法 / w1-w3 demo 全绿，归档 docs/reviews/20260828-FE-W3-S3-initial.md 与 docs/reviews/20260828-FE-W3-S3b-initial.md。**FE-W3 里程碑完成**。下一步：FE-W4（数据管理 / 设计与 QA / Electron 桌面壳）。
