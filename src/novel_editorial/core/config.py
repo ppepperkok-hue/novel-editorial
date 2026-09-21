@@ -441,6 +441,27 @@ def _same_config_value(current: object, expected: object) -> bool:
     return type(current) is int and current == expected
 
 
+def _write_config_text(path: Path, text: str) -> None:
+    """Validate ``text`` with tomllib before writing; never write invalid TOML.
+
+    The existing file is validated before any edit, but an edit can still
+    produce invalid TOML when an unguarded structural conflict slips through
+    the line scanner (e.g. a top-level ``[[defaults]]`` array of tables or an
+    escaped key spelling ``defaults``). This is the last line of defense:
+    parse the candidate text, and on ``tomllib.TOMLDecodeError`` refuse to
+    write, keeping the file byte-for-byte untouched (rolled back).
+    """
+    try:
+        tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise NovelError(
+            ErrorCode.CONFIG_ERROR,
+            f"refusing to write invalid config (rolled back): {path}: {exc}",
+            context={"path": str(path)},
+        ) from exc
+    path.write_text(text, encoding="utf-8")
+
+
 def _set_defaults_value(
     config_path: Path, key: str, rendered: str, expected: object
 ) -> None:
@@ -459,7 +480,7 @@ def _set_defaults_value(
     path = Path(config_path)
     assignment = f"{key} = {rendered}"
     if not path.exists():
-        path.write_text(f"[defaults]\n{assignment}\n", encoding="utf-8")
+        _write_config_text(path, f"[defaults]\n{assignment}\n")
         return
 
     raw = path.read_text(encoding="utf-8")
@@ -473,7 +494,7 @@ def _set_defaults_value(
         ) from exc
 
     if not raw:
-        path.write_text(f"[defaults]\n{assignment}\n", encoding="utf-8")
+        _write_config_text(path, f"[defaults]\n{assignment}\n")
         return
 
     defaults_table = parsed.get("defaults", {})
@@ -523,7 +544,7 @@ def _set_defaults_value(
                 )
         suffix = f"[defaults]{eol}{assignment}{eol}"
         new_text = raw + suffix if raw.endswith("\n") else raw + eol + suffix
-        path.write_text(new_text, encoding="utf-8")
+        _write_config_text(path, new_text)
         return
 
     section_end = len(lines)
@@ -549,7 +570,7 @@ def _set_defaults_value(
                 f"{indent}{key_text} = {rendered}{_tail_comment(tail)}"
                 f"{_line_eol(line)}"
             )
-            path.write_text("".join(lines), encoding="utf-8")
+            _write_config_text(path, "".join(lines))
             return
 
         # The value spans several lines (e.g. a multiline string or array);
@@ -571,7 +592,7 @@ def _set_defaults_value(
         lines[index : close_index + 1] = [
             f"{indent}{key_text} = {rendered}{comment}{close_eol}"
         ]
-        path.write_text("".join(lines), encoding="utf-8")
+        _write_config_text(path, "".join(lines))
         return
 
     if _line_eol(lines[header_index]):
@@ -579,7 +600,7 @@ def _set_defaults_value(
     else:
         lines[header_index] = lines[header_index] + eol
         lines.insert(header_index + 1, f"{assignment}{eol}")
-    path.write_text("".join(lines), encoding="utf-8")
+    _write_config_text(path, "".join(lines))
 
 
 def set_quality_threshold(config_path: Path, value: int) -> None:

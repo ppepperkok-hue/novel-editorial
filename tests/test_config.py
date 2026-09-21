@@ -1414,6 +1414,57 @@ def test_set_config_value_ignores_defaults_key_inside_subtable(
     assert settings.quality_threshold == 10
 
 
+def test_set_config_value_rejects_defaults_array_of_tables(
+    tmp_path: Path,
+) -> None:
+    """A ``[[defaults]]`` array of tables must not be appended into invalid TOML."""
+    config_path = tmp_path / "config.toml"
+    original = "[[defaults]]\nx = 1\n"
+    config_path.write_text(original, encoding="utf-8")
+    original_bytes = config_path.read_bytes()
+
+    with pytest.raises(NovelError) as exc_info:
+        set_config_value(config_path, "quality_threshold", 10)
+
+    assert exc_info.value.code is ErrorCode.CONFIG_ERROR
+    assert "rolled back" in exc_info.value.message
+    assert config_path.read_bytes() == original_bytes
+
+
+def test_set_config_value_rejects_escaped_defaults_key(
+    tmp_path: Path,
+) -> None:
+    """An escaped quoted key spelling ``defaults`` must still be refused."""
+    config_path = tmp_path / "config.toml"
+    original = '"def\\u0061ults" = 1\n'
+    config_path.write_text(original, encoding="utf-8")
+    original_bytes = config_path.read_bytes()
+
+    with pytest.raises(NovelError) as exc_info:
+        set_config_value(config_path, "quality_threshold", 10)
+
+    assert exc_info.value.code is ErrorCode.CONFIG_ERROR
+    assert "rolled back" in exc_info.value.message
+    assert config_path.read_bytes() == original_bytes
+
+
+def test_set_config_value_rejects_indented_top_level_dotted_key(
+    tmp_path: Path,
+) -> None:
+    """An indented top-level ``defaults.*`` dotted key is still a conflict."""
+    config_path = tmp_path / "config.toml"
+    original = "  defaults.foo = 1\n"
+    config_path.write_text(original, encoding="utf-8")
+    original_bytes = config_path.read_bytes()
+
+    with pytest.raises(NovelError) as exc_info:
+        set_config_value(config_path, "quality_threshold", 10)
+
+    assert exc_info.value.code is ErrorCode.CONFIG_ERROR
+    assert "convert it to a [defaults] section" in exc_info.value.message
+    assert config_path.read_bytes() == original_bytes
+
+
 def test_set_config_value_inserts_key_into_existing_defaults(
     tmp_path: Path,
 ) -> None:
