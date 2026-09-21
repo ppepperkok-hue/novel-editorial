@@ -37,4 +37,5 @@ Ready to merge: **Yes**
 
 ## 处理记录
 
-- 待总监提交 + 全量回归 + 推送归档。
+- 总监核实：R3 修复正确，全量回归通过——后端 pytest **1608 passed**、前端四命令 **211 用例**、smoke_m3 / stress_m3、w1~w3 demo 全部 OK。
+- 代码提交 a1b4912（R3 修复）；归档提交 31731be；已推送 origin/main，main 与 origin/main 一致。
