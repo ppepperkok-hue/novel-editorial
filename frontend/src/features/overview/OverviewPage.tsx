@@ -150,11 +150,30 @@ export default function OverviewPage() {
           ? "empty"
           : "ready";
 
+  const pendingCount =
+    pending?.groups.reduce((sum, group) => sum + group.drafts.length, 0) ?? 0;
+
   return (
     <>
-      <main className="panel-grid">
+      <header className="overview-hero">
+        <p className="kicker">编辑部</p>
+        <h1 className="overview-title">跨作品概览</h1>
+        <p className="overview-stats">
+          <span className="overview-stat">
+            <strong>{pendingCount}</strong> 待拍板
+          </span>
+          <span className="overview-stat">
+            <strong>{overview.data?.overviews.length ?? 0}</strong> 部作品
+          </span>
+          <span className="overview-stat">
+            <strong>{events.events.length}</strong> 条动态
+          </span>
+        </p>
+      </header>
+      <div className="overview-layout">
+        <div className="overview-primary">
         <PanelWindow
-          title="跨作品概览"
+          title="作品"
           state={
             overview.error
               ? "error"
@@ -183,9 +202,11 @@ export default function OverviewPage() {
             ))}
           </ul>
         </PanelWindow>
+        </div>
 
+        <div className="overview-secondary">
         <PanelWindow
-          title="事件流"
+          title="最近动态"
           state={
             events.error
               ? "error"
@@ -263,7 +284,8 @@ export default function OverviewPage() {
             </p>
           ) : null}
         </PanelWindow>
-      </main>
+        </div>
+      </div>
       <footer className="status-line" data-testid="status-line" aria-live="polite">
         {configError ? (
           <>

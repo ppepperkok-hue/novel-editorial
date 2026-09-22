@@ -1,28 +1,32 @@
 :root {
-  /* Swiss editorial：墨底 + 朱红单 accent。刻意避开 AI 默认（紫蓝渐变 / 暖金 brass）。 */
-  --bg: #0d0e10;
-  --surface: #141517;
-  --surface-raised: #1a1c1f;
-  --surface-hover: #202226;
-  --border: #26282c;
-  --border-strong: #35383d;
-  --text: #e7e7e5;
-  --text-muted: #8c8e93;
-  --text-dim: #5f6166;
-  --accent: #e0524a;
-  --accent-strong: #ec6a62;
-  --accent-weak: rgba(224, 82, 74, 0.13);
-  --accent-ink: #ffffff;
-  --danger: #e0524a;
-  --ok: #4f9d7a;
-  --radius: 3px;
-  --radius-lg: 5px;
+  /* v3：杂志/编辑风。暖墨底 + terracotta 单 accent + 衬线标题。 */
+  --bg: #121110;
+  --surface: #191817;
+  --surface-raised: #201f1e;
+  --surface-hover: #272625;
+  --border: #2b2a28;
+  --border-strong: #3a3936;
+  --text: #f2efe9;
+  --text-muted: #9a958d;
+  --text-dim: #6b675f;
+  --accent: #d97757;
+  --accent-strong: #e58a6c;
+  --accent-weak: rgba(217, 119, 87, 0.14);
+  --accent-ink: #1a120d;
+  --danger: #d97757;
+  --ok: #6b9e7a;
+  --radius: 2px;
+  --radius-lg: 3px;
   --shadow: none;
-  --fs-label: 10.5px;
+  --fs-kicker: 10.5px;
   --fs-meta: 11.5px;
-  --fs-body: 13.5px;
-  --fs-title: 15px;
-  --fs-page: 21px;
+  --fs-body: 14px;
+  --fs-title: 17px;
+  --fs-h2: 22px;
+  --fs-page: 34px;
+  --font-serif: Georgia, "Times New Roman", "Songti SC", "SimSun", serif;
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", system-ui, sans-serif;
   --mono: "Cascadia Mono", "JetBrains Mono", ui-monospace, Consolas, monospace;
 }
 
@@ -2628,4 +2632,261 @@ body {
   border-radius: var(--radius);
   background: var(--surface-raised);
   font-size: var(--fs-body);
+}
+
+/* === v3 视觉系统：杂志/编辑风（衬线标题 + 编辑元素 + 强留白）=== */
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app-content {
+  padding: 28px 32px 56px;
+  max-width: 1320px;
+}
+
+/* 编辑元素：kicker（小号大写标签） */
+.kicker {
+  margin: 0 0 8px;
+  font-size: var(--fs-kicker);
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* 页面壳：杂志式页头（大衬线标题 + 细线） */
+.page-header {
+  padding-bottom: 16px;
+  margin-bottom: 26px;
+  border-bottom: 1px solid var(--border);
+}
+.page-header h2 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--fs-h2);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+/* 总览：页头 + 两栏（作品主导 / 待拍板优先） */
+.overview-hero {
+  padding: 4px 0 22px;
+  margin-bottom: 30px;
+  border-bottom: 1px solid var(--border);
+}
+.overview-title {
+  margin: 0 0 16px;
+  font-family: var(--font-serif);
+  font-size: var(--fs-page);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.08;
+}
+.overview-stats {
+  display: flex;
+  gap: 30px;
+  margin: 0;
+}
+.overview-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--fs-meta);
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+.overview-stat strong {
+  font-family: var(--font-serif);
+  font-size: 27px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+}
+.overview-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(290px, 1fr);
+  gap: 34px;
+  align-items: start;
+}
+.overview-primary,
+.overview-secondary {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  min-width: 0;
+}
+.overview-secondary > [data-testid="panel-pending"] {
+  order: -1;
+}
+
+/* panel：去卡片化，改成 section（大写标签 + 1px 线） */
+.panel {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  min-height: 0;
+}
+.panel-header {
+  padding: 0 0 10px;
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+}
+.panel-header h2,
+.panel-header h3 {
+  font-size: var(--fs-kicker);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.panel-body {
+  padding: 14px 0 0;
+}
+.panel-state {
+  min-height: 120px;
+}
+
+/* 作品列表：编辑式条目（衬线标题 + 等宽元信息） */
+.workspace-grid {
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+.workspace-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  padding: 14px 2px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+}
+.workspace-card:hover,
+.workspace-card--selected {
+  background: transparent;
+  border-bottom-color: var(--accent);
+}
+.workspace-card-title {
+  flex-basis: 100%;
+  margin-bottom: 3px;
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.workspace-card-meta {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.01em;
+  color: var(--text-dim);
+}
+
+/* 主按钮：terracotta 实色、小圆角 */
+.primary-button {
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: background 0.12s ease;
+}
+.primary-button:hover:not(:disabled) {
+  background: var(--accent-strong);
+  filter: none;
+  transform: none;
+}
+.text-link {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* 输入 */
+.form-field input,
+.form-field textarea,
+.form-field select,
+.talk-input,
+.editor-textarea {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  font-size: var(--fs-body);
+}
+.form-field input:focus,
+.form-field textarea:focus,
+.form-field select:focus,
+.talk-input:focus,
+.editor-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: none;
+}
+.form-label {
+  font-size: var(--fs-kicker);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* 班子档案：编辑式条目 */
+.agent-grid {
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 0;
+}
+.agent-card {
+  padding: 16px 2px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+.agent-card-head {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.agent-card-head h4 {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 600;
+}
+.agent-role {
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-size: var(--fs-kicker);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.agent-field {
+  grid-template-columns: 72px 1fr;
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+}
+.agent-field-label {
+  font-size: var(--fs-kicker);
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+}
+.agent-field-value {
+  font-size: var(--fs-body);
+  line-height: 1.6;
+}
+
+/* 侧栏：更安静，选中用 accent 左条 */
+.app-nav-link {
+  border-radius: 0;
+}
+.app-nav-link--active,
+.app-nav-link--active:hover {
+  border-left-color: var(--accent);
+  background: var(--accent-weak);
+  color: var(--text);
 }
