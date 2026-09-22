@@ -596,6 +596,28 @@ export default function WriterPage() {
           返回作品
         </Link>
       </header>
+      <div className="kpi-row">
+        <div className="kpi">
+          <span className="kpi-value">{drafts.data?.length ?? 0}</span>
+          <span className="kpi-label">草稿</span>
+        </div>
+        <div className="kpi kpi--accent">
+          <span className="kpi-value">
+            {(drafts.data ?? []).filter(
+              (draft) => draft.status === "draft" && draft.current_version > 0,
+            ).length}
+          </span>
+          <span className="kpi-label">待拍板</span>
+        </div>
+        <div className="kpi">
+          <span className="kpi-value">
+            {(drafts.data ?? []).filter(
+              (draft) => draft.status === "accepted",
+            ).length}
+          </span>
+          <span className="kpi-label">已接受</span>
+        </div>
+      </div>
       <div className="writer-layout">
         <aside className="writer-side" data-testid="writer-sidebar">
           <section className="panel writer-drafts-panel" data-testid="draft-list-panel">
