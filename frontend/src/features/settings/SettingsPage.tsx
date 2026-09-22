@@ -633,6 +633,8 @@ export default function SettingsPage() {
   const { workspaceId } = useParams();
   useWorkspaceSelection(workspaceId);
   const workspaceIdValue = workspaceId ?? "";
+  const settings = useSettings(workspaceId);
+  const inspirations = useInspirations(workspaceId);
 
   return (
     <section
@@ -646,6 +648,16 @@ export default function SettingsPage() {
           返回作品
         </Link>
       </header>
+      <div className="kpi-row">
+        <div className="kpi">
+          <span className="kpi-value">{settings.data?.length ?? 0}</span>
+          <span className="kpi-label">设定条目</span>
+        </div>
+        <div className="kpi">
+          <span className="kpi-value">{inspirations.data?.length ?? 0}</span>
+          <span className="kpi-label">灵感素材</span>
+        </div>
+      </div>
       <InspectPanel workspaceId={workspaceIdValue} />
       <div className="settings-layout">
         <SettingsPanel workspaceId={workspaceIdValue} />

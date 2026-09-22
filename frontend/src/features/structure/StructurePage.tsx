@@ -627,6 +627,34 @@ export default function StructurePage() {
           返回作品
         </Link>
       </header>
+      <div className="kpi-row">
+        <div className="kpi">
+          <span className="kpi-value">{structure.data?.length ?? 0}</span>
+          <span className="kpi-label">结构节点</span>
+        </div>
+        <div className="kpi">
+          <span className="kpi-value">
+            {(structure.data ?? []).filter((node) => node.kind === "volume")
+              .length}
+          </span>
+          <span className="kpi-label">卷</span>
+        </div>
+        <div className="kpi">
+          <span className="kpi-value">
+            {(structure.data ?? []).filter((node) => node.kind === "chapter")
+              .length}
+          </span>
+          <span className="kpi-label">章</span>
+        </div>
+        <div className="kpi kpi--accent">
+          <span className="kpi-value">
+            {(structure.data ?? []).filter(
+              (node) => node.status === "completed",
+            ).length}
+          </span>
+          <span className="kpi-label">已完成</span>
+        </div>
+      </div>
       <div className="structure-layout">
         <section className="panel structure-panel" data-testid="structure-panel">
           <header className="panel-header">

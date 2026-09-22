@@ -264,6 +264,38 @@ export default function QualityPage() {
           返回作品
         </Link>
       </header>
+      <div className="kpi-row">
+        <div
+          className={`kpi${
+            check.data !== undefined && /^passed:\s*True/m.test(check.data)
+              ? " kpi--accent"
+              : ""
+          }`}
+        >
+          <span className="kpi-value">
+            {selectedDraftId === null
+              ? "—"
+              : check.data === undefined
+                ? "…"
+                : /^passed:\s*True/m.test(check.data)
+                  ? "通过"
+                  : "未过"}
+          </span>
+          <span className="kpi-label">质量门</span>
+        </div>
+        <div className="kpi">
+          <span className="kpi-value">
+            {/^score:\s*([\d.]+)/m.exec(check.data ?? "")?.[1] ?? "—"}
+          </span>
+          <span className="kpi-label">AI 味分</span>
+        </div>
+        <div className="kpi">
+          <span className="kpi-value">
+            {/threshold\s+([\d.]+)/.exec(check.data ?? "")?.[1] ?? "—"}
+          </span>
+          <span className="kpi-label">阈值</span>
+        </div>
+      </div>
       <DraftSelector
         workspaceId={workspaceIdValue}
         selectedId={selectedDraftId}
