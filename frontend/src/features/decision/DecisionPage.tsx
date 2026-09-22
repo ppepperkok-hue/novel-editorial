@@ -59,6 +59,31 @@ export default function DecisionPage() {
           </Link>
         </div>
       </header>
+      <div className="kpi-row">
+        <div className="kpi kpi--accent">
+          <span className="kpi-value">{pending.data?.length ?? 0}</span>
+          <span className="kpi-label">待拍板草稿</span>
+        </div>
+        <div className="kpi">
+          <span className="kpi-value">
+            {(pending.data ?? []).reduce(
+              (sum, draft) => sum + draft.current_version,
+              0,
+            )}
+          </span>
+          <span className="kpi-label">累计版本</span>
+        </div>
+        <div className="kpi">
+          <span className="kpi-value">
+            {(pending.data ?? []).reduce(
+              (max, draft) => Math.max(max, draft.current_version),
+              0,
+            )}
+          </span>
+          <span className="kpi-label">最高版本</span>
+        </div>
+      </div>
+
       <section className="panel decision-panel" data-testid="decision-panel">
         <header className="panel-header">
           <h3>待拍板草稿</h3>

@@ -2681,3 +2681,85 @@ body {
   background: var(--surface-hover);
   color: var(--text-muted);
 }
+
+/* —— 拍板：决策台 —— */
+.pending-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pending-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+.pending-item-open {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.pending-item-title {
+  font-size: var(--fs-title);
+  font-weight: 600;
+}
+.pending-item-workspace {
+  color: var(--text-muted);
+  font-size: var(--fs-meta);
+}
+.pending-item-meta {
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+}
+.pending-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pending-action {
+  padding: 6px 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-meta);
+  cursor: pointer;
+}
+.pending-action--accept {
+  border-color: rgba(62, 207, 142, 0.35);
+  color: var(--accent);
+}
+.pending-action--reject {
+  border-color: rgba(229, 72, 77, 0.35);
+  color: #e5484d;
+}
+.pending-action--confirm {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+.pending-note {
+  display: flex;
+  gap: 8px;
+}
+.pending-note input {
+  flex: 1;
+  padding: 7px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--fs-meta);
+}
