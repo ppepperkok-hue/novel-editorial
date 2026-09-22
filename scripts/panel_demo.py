@@ -221,8 +221,9 @@ def main() -> int:
         )
 
     tmp = Path(tempfile.mkdtemp(prefix="panel-demo-"))
-    for llm_key in ("NOVEL_LLM_API_KEY", "NOVEL_LLM_BASE_URL", "NOVEL_LLM_MODEL"):
-        os.environ.pop(llm_key, None)
+    for key in list(os.environ):
+        if key.startswith("NOVEL_"):
+            os.environ.pop(key, None)
     os.environ["NOVEL_DATA_DIR"] = str(tmp / "data")
     os.environ["NOVEL_CONFIG"] = str(tmp / "config.toml")
     os.environ["NOVEL_FRONTEND_DIST"] = str(FRONTEND_DIST)
