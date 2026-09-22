@@ -14,15 +14,16 @@ const path = require('path');
 
 const isWin = process.platform === 'win32';
 
-// 与后端同源：NOVEL_API_HOST / NOVEL_API_PORT（传给 api serve 也会被 load_settings
-// 读取），默认 127.0.0.1:8765。注意 config.toml 里的 api_host/api_port 若改了，
-// 桌面壳需要用同名环境变量保持一致（见 docs/usage.md 桌面壳节）。
-const API_HOST = process.env.NOVEL_API_HOST || '127.0.0.1';
+// 绑定地址与连接地址分离：NOVEL_API_HOST 只决定后端绑定地址（env 继承 process.env
+// 传给 api serve，load_settings 读取）；桌面壳本地连接固定 127.0.0.1，避免把
+// 0.0.0.0 之类绑定地址当连接地址而失败。默认 127.0.0.1:8765；config.toml 改了
+// api_host/api_port 时，桌面壳需用同名环境变量保持一致（见 docs/usage.md 桌面壳节）。
+const BIND_HOST = process.env.NOVEL_API_HOST || '127.0.0.1';
 const API_PORT = (() => {
   const parsed = Number.parseInt(process.env.NOVEL_API_PORT, 10);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 8765;
 })();
-const BASE_URL = `http://${API_HOST}:${API_PORT}`;
+const BASE_URL = `http://127.0.0.1:${API_PORT}`;
 
 const READY_TIMEOUT_MS = 30000;
 const POLL_INTERVAL_MS = 500;
@@ -31,10 +32,35 @@ let mainWindow = null;
 let backend = null;
 let backendStopped = false;
 let quitting = false;
+let backendExitCode = null; // 后端退出码快照：backend 置 null 后仍可读（waitForReady 报错用）
 
 function log(...args) {
   // 主进程日志（stdout）；后端输出另加 [api] 前缀。
   console.log('[desktop]', ...args);
+}
+
+// —— 外链与同源判断 ——
+function isHttpUrl(url) {
+  return /^https?:/i.test(url);
+}
+
+// 同源判断：解析后的 origin 精确比较，堵住 127.0.0.1:87650 / 127.0.0.1:8765.evil.com
+// 之类前缀绕过。解析失败按非同源处理（拦截，但非 http(s) 不会开外链）。
+function isSameOrigin(url) {
+  try {
+    return new URL(url).origin === new URL(BASE_URL).origin;
+  } catch {
+    return false;
+  }
+}
+
+function openExternal(url) {
+  if (!isHttpUrl(url)) return;
+  try {
+    shell.openExternal(url);
+  } catch (err) {
+    log('openExternal 失败：', err.message);
+  }
 }
 
 // 定位项目根：优先 NOVEL_APP_ROOT；否则从 exe 所在目录（打包态）或 app.getAppPath()
@@ -83,7 +109,7 @@ function walkUpForPyproject(start) {
 
 function startBackend(projectRoot) {
   const args = ['run', 'novel-editorial', 'api', 'serve'];
-  log(`启动后端：uv ${args.join(' ')}（cwd=${projectRoot}）`);
+  log(`启动后端：uv ${args.join(' ')}（cwd=${projectRoot}，绑定 ${BIND_HOST}:${API_PORT}）`);
 
   // Windows 下 uv 可能是 uv.exe 或 .cmd 垫片：走 shell 让 cmd.exe 解析 PATH/PATHEXT，
   // windowsHide 避免弹出控制台窗口；args 无空格，无引号坑。其余平台直接 spawn。
@@ -95,8 +121,8 @@ function startBackend(projectRoot) {
     windowsHide: true,
   });
 
-  backend.stdout.on('data', (chunk) => process.stdout.write(`[api] ${chunk}`));
-  backend.stderr.on('data', (chunk) => process.stderr.write(`[api] ${chunk}`));
+  backend.stdout.on('data', (chunk) => process.stdout.write(`[api] ${chunk.toString()}`));
+  backend.stderr.on('data', (chunk) => process.stderr.write(`[api] ${chunk.toString()}`));
 
   backend.on('error', (err) => {
     // ENOENT：找不到 uv。
@@ -111,6 +137,8 @@ function startBackend(projectRoot) {
   });
 
   backend.on('exit', (code, signal) => {
+    // 先保存退出码：backend 随即置 null，后续 waitForReady 仍要用到真实退出码。
+    backendExitCode = code;
     log(`后端进程退出 code=${code} signal=${signal}`);
     backend = null;
     if (!quitting && mainWindow) {
@@ -126,6 +154,8 @@ function killBackend() {
   const child = backend;
   if (isWin && child.pid) {
     // taskkill /T /F 杀整棵进程树，避免残留 uvicorn 子进程。
+    // taskkill 是独立进程，Electron 主进程退出后它仍会执行完杀树，异步 spawn 足够，
+    // 无需 spawnSync 阻塞退出。
     try {
       const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
         stdio: 'ignore',
@@ -177,8 +207,8 @@ function waitForReady() {
         .then(() => resolve())
         .catch(() => {
           if (backend === null || backend.exitCode !== null) {
-            // 后端已退出（或没起来），直接失败。
-            return reject(new Error(`后端提前退出（exit ${backend && backend.exitCode}）`));
+            // 后端已退出（或没起来），直接失败；退出码用退出回调里保存的快照。
+            return reject(new Error(`后端提前退出（exit ${backendExitCode ?? 'unknown'}）`));
           }
           if (Date.now() >= deadline) {
             return reject(new Error(`后端就绪超时（${READY_TIMEOUT_MS / 1000}s）`));
@@ -205,15 +235,23 @@ function createWindow() {
 
   // 新窗口（target=_blank / window.open）一律拦截，外链交给系统浏览器。
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/i.test(url)) shell.openExternal(url);
+    openExternal(url);
     return { action: 'deny' };
   });
 
   // 页面跳转到非同源地址时拦截，外链交给系统浏览器。
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (!url.startsWith(BASE_URL)) {
+    if (!isSameOrigin(url)) {
       event.preventDefault();
-      if (/^https?:/i.test(url)) shell.openExternal(url);
+      openExternal(url);
+    }
+  });
+
+  // 服务端重定向逃逸到外链时同样拦截（will-navigate 不覆盖 302 重定向）。
+  mainWindow.webContents.on('will-redirect', (event, url) => {
+    if (!isSameOrigin(url)) {
+      event.preventDefault();
+      openExternal(url);
     }
   });
 
