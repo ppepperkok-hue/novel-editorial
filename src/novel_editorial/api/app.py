@@ -13,9 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import FastAPI, File, Query, Request, Response, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from sse_starlette.sse import EventSourceResponse
 from starlette.background import BackgroundTask
@@ -2192,10 +2191,21 @@ def create_app() -> FastAPI:
 
     frontend_dist = _frontend_dist_dir()
     if frontend_dist.is_dir():
-        app.mount(
-            "/",
-            StaticFiles(directory=frontend_dist, html=True),
-            name="frontend",
-        )
+        _dist_root = frontend_dist.resolve()
+
+        @app.get("/{full_path:path}", include_in_schema=False)
+        async def serve_frontend(full_path: str) -> FileResponse:
+            """SPA history fallback: static asset if present, else index.html."""
+            candidate = (_dist_root / full_path).resolve()
+            if (
+                full_path
+                and candidate.is_file()
+                and candidate.is_relative_to(_dist_root)
+            ):
+                return FileResponse(candidate)
+            index = _dist_root / "index.html"
+            if index.is_file():
+                return FileResponse(index)
+            raise HTTPException(status_code=404, detail="Not found")
 
     return app

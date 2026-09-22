@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 from sqlalchemy import create_engine, text
@@ -38,7 +39,23 @@ def list_workspace_ids(settings: Settings) -> list[str]:
 
 def _engine(path: Path) -> Engine:
     path.parent.mkdir(parents=True, exist_ok=True)
-    return create_engine(f"sqlite:///{path}", connect_args={"check_same_thread": False})
+    engine = create_engine(
+        f"sqlite:///{path}",
+        connect_args={"check_same_thread": False, "timeout": 30},
+    )
+    # WAL journal mode lets readers run during a writer, and the 30s busy
+    # timeout makes concurrent writers wait instead of failing immediately
+    # with "database is locked" (the API serves the panel concurrently).
+    with engine.connect() as conn:
+        conn.execute(text("PRAGMA journal_mode=WAL"))
+        conn.commit()
+    return engine
+
+
+#: Alembic's ``command.upgrade`` is not thread-safe; concurrent writers (the
+#: API serves the panel over a thread pool) race on the migration chain and
+#: emit "table already exists". Serialize every schema migration.
+_migration_lock = threading.Lock()
 
 
 def run_migrations(url: str) -> None:
@@ -46,9 +63,10 @@ def run_migrations(url: str) -> None:
     from alembic import command
     from alembic.config import Config
 
-    config = Config(str(_ALEMBIC_INI))
-    config.set_main_option("sqlalchemy.url", url)
-    command.upgrade(config, "head")
+    with _migration_lock:
+        config = Config(str(_ALEMBIC_INI))
+        config.set_main_option("sqlalchemy.url", url)
+        command.upgrade(config, "head")
 
 
 class DB:
