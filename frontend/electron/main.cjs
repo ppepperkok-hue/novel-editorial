@@ -33,6 +33,8 @@ let backend = null;
 let backendStopped = false;
 let quitting = false;
 let backendExitCode = null; // 后端退出码快照：backend 置 null 后仍可读（waitForReady 报错用）
+let backendExitSignal = null; // 后端退出信号快照：code 为 null（被信号杀死）时用
+let pendingFocus = false; // second-instance 早于窗口创建时置位，bootstrap 开窗后补聚焦
 
 function log(...args) {
   // 主进程日志（stdout）；后端输出另加 [api] 前缀。
@@ -44,11 +46,21 @@ function isHttpUrl(url) {
   return /^https?:/i.test(url);
 }
 
-// 同源判断：解析后的 origin 精确比较，堵住 127.0.0.1:87650 / 127.0.0.1:8765.evil.com
-// 之类前缀绕过。解析失败按非同源处理（拦截，但非 http(s) 不会开外链）。
+// hostname 等价归一化：127.0.0.1 与 localhost 视为同源，其余精确比较。
+function isEquivalentHostname(a, b) {
+  if (a === b) return true;
+  const norm = (h) => (h === '127.0.0.1' || h === 'localhost' ? 'localhost' : h);
+  return norm(a) === norm(b);
+}
+
+// 同源判断：protocol + port 精确比较，hostname 做 localhost 等价归一化，堵住
+// 127.0.0.1:87650 / 127.0.0.1:8765.evil.com 之类前缀绕过。解析失败按非同源处理。
 function isSameOrigin(url) {
   try {
-    return new URL(url).origin === new URL(BASE_URL).origin;
+    const target = new URL(url);
+    const base = new URL(BASE_URL);
+    if (target.protocol !== base.protocol || target.port !== base.port) return false;
+    return isEquivalentHostname(target.hostname, base.hostname);
   } catch {
     return false;
   }
@@ -137,8 +149,9 @@ function startBackend(projectRoot) {
   });
 
   backend.on('exit', (code, signal) => {
-    // 先保存退出码：backend 随即置 null，后续 waitForReady 仍要用到真实退出码。
+    // 先保存退出码与信号快照：backend 随即置 null，后续 waitForReady 仍要读到。
     backendExitCode = code;
+    backendExitSignal = signal;
     log(`后端进程退出 code=${code} signal=${signal}`);
     backend = null;
     if (!quitting && mainWindow) {
@@ -208,7 +221,7 @@ function waitForReady() {
         .catch(() => {
           if (backend === null || backend.exitCode !== null) {
             // 后端已退出（或没起来），直接失败；退出码用退出回调里保存的快照。
-            return reject(new Error(`后端提前退出（exit ${backendExitCode ?? 'unknown'}）`));
+            return reject(new Error(`后端提前退出（exit ${backendExitCode ?? 'signal ' + backendExitSignal}）`));
           }
           if (Date.now() >= deadline) {
             return reject(new Error(`后端就绪超时（${READY_TIMEOUT_MS / 1000}s）`));
@@ -281,6 +294,12 @@ function bootstrap() {
     .then(() => {
       log('后端就绪，开窗');
       createWindow();
+      if (pendingFocus) {
+        // 开窗前有 second-instance 触发过：补聚焦并复位。
+        pendingFocus = false;
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+      }
     })
     .catch((err) => {
       log('启动失败：', err.message);
@@ -300,6 +319,9 @@ if (!gotLock) {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
+    } else {
+      // bootstrap 尚未开窗：记下待聚焦，开窗后再补。
+      pendingFocus = true;
     }
   });
 
