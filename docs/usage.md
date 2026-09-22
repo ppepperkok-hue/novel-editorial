@@ -3269,6 +3269,54 @@ uv run novel-editorial decision pending <作品ID>
 
 面板与 CLI 读同一份数据：拍板前 `pending` 里有一个草稿，accept 后面板与 CLI 同时看到空态。
 
+## 桌面壳（Electron，FE-N）
+
+不想敲命令时，用 Electron 桌面壳双击启动：它拉起本地 API 服务、等就绪后开窗直连 `http://127.0.0.1:8765`，界面与浏览器版完全一致（web 同源，复用 `frontend/dist`，不复制前端代码）。主进程在 `frontend/electron/`，与前端主包（`frontend/`）彼此独立。
+
+### 前置条件
+
+桌面壳是「启动器」不是自包含安装包：运行时需要项目根目录（含 `pyproject.toml` 与已构建的 `frontend/dist`）以及 `uv` 在 PATH 中。
+
+- 同步后端环境：项目根运行 `uv sync`。
+- 构建前端产物（生成 `frontend/dist`）：`cd frontend && npm install && npm run build`。
+
+### 开发运行
+
+```bash
+cd frontend/electron
+npm install
+npm start
+```
+
+`npm start` 先定位项目根（优先 `NOVEL_APP_ROOT`，否则从 Electron 主进程 / exe 所在目录逐级上溯，找含 `pyproject.toml` 的目录），再 `spawn("uv", ["run", "novel-editorial", "api", "serve"])` 拉起后端，每 500ms 轮询 `GET /health`，就绪后开 1280×800 窗口指向 `http://127.0.0.1:8765`；30 秒未就绪弹错误对话框并退出。后端 stdout / stderr 转发到主进程日志（`[api]` 前缀），便于诊断。
+
+### 打包（Windows）
+
+```bash
+cd frontend/electron
+npm run dist        # 等价 electron-builder；也可 npm run dist:win（electron-builder --win）
+```
+
+产物在 `frontend/electron/release/`：NSIS 安装器（`Novel Editorial Setup <version>.exe`）与 portable 单文件（`Novel Editorial <version>.exe`，双击即用、无需安装）。产物只含 Electron 主进程文件（`main.cjs` + `package.json`），不含 `frontend/dist` 与后端：运行时仍需 `uv` + 项目根（`pyproject.toml` + `frontend/dist`）。跨机器分发时把项目根一并带上并设 `NOVEL_APP_ROOT`，或把 portable exe 放进项目根目录，让它自动上溯定位。
+
+### 退出与进程清理
+
+关闭窗口即退出：Windows 用 `taskkill /pid <后端PID> /T /F` 杀整棵进程树（避免残留 uvicorn 子进程），macOS / Linux 用 `child.kill()`；`app.on("before-quit")` 兜底，退出后无残留进程。重复启动命中单实例锁，自动聚焦已有窗口；窗口外链（`target=_blank` 等）交给系统浏览器打开。
+
+### 配置
+
+| 配置 | 作用 | 默认值 |
+| --- | --- | --- |
+| `NOVEL_APP_ROOT` | 桌面壳定位的项目根目录 | 自动上溯 |
+| `NOVEL_API_HOST` | 桌面壳直连的 API 地址 | `127.0.0.1` |
+| `NOVEL_API_PORT` | 桌面壳直连的 API 端口 | `8765` |
+
+`NOVEL_API_HOST` / `NOVEL_API_PORT` 与后端同源（环境变量会传给 `api serve` 并被 `load_settings` 读取）；若在 `config.toml` 里改了 `api_host` / `api_port`，桌面壳需要用同名 `NOVEL_*` 环境变量保持一致，否则默认仍连 `127.0.0.1:8765`。
+
+### macOS / Linux 限制
+
+electron-builder 已配置 `mac.dmg` 与 `linux.AppImage` 目标，但本里程碑未在 macOS / Linux 实机验证（Windows portable + NSIS 优先）。macOS 上退出清理走 `child.kill()`，若仍有后端子进程残留需手工 `pkill -f "novel-editorial api serve"`。自动更新、代码签名、安装器之外的发布渠道不在本次范围。
+
 ## 导入导出与备份（N25）
 
 `works export <作品ID> <目标路径>` 把一部作品连同编辑部设置（班子、风格锚点、设定库、结构、草稿与版本、消息、事件流）打包成一个可校验的 ZIP；`works import <归档路径>` 把它恢复成一部全新作品。换设备、迁移、备份都走这两条命令。
