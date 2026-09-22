@@ -1,15 +1,22 @@
 :root {
-  --accent: #3b63e0;
-  --accent-weak: rgba(59, 99, 224, 0.14);
-  --bg: #10141c;
-  --surface: #171c27;
-  --surface-raised: #1e2532;
-  --border: #2a3342;
-  --text: #e8ecf3;
-  --text-muted: #9aa6b8;
-  --danger: #ff6b6b;
-  --radius: 10px;
-  --shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  /* 墨色书卷：暖调深底 + 铜金主色，贴合文学编辑部气质（非科技蓝紫）。 */
+  --accent: #c8a86a;
+  --accent-strong: #dcc188;
+  --accent-weak: rgba(200, 168, 106, 0.13);
+  --accent-ink: #191309;
+  --bg: #0f1115;
+  --surface: #16191f;
+  --surface-raised: #1d2128;
+  --surface-hover: #232831;
+  --border: #262b33;
+  --border-strong: #363d48;
+  --text: #eae7e1;
+  --text-muted: #9a958c;
+  --text-dim: #6f6a63;
+  --danger: #d97b7b;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.28);
 }
 
 * {
@@ -2121,4 +2128,263 @@ textarea:focus-visible {
   .freewill-layout {
     grid-template-columns: 1fr;
   }
+}
+
+/* === FE-M 设计打磨：视觉系统精修（墨色书卷 + 铜金）=== */
+
+/* 品牌区：印章式标记 + 双行文字 */
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 6px 12px;
+}
+.app-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: linear-gradient(150deg, var(--accent), var(--accent-strong));
+  color: var(--accent-ink);
+  font-size: 15px;
+  font-weight: 700;
+}
+.app-brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+.app-brand-text strong {
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.app-brand-text small {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+/* 导航分组标题 + 选中态左竖条 */
+.app-nav-group {
+  margin: 14px 0 4px;
+  padding: 0 10px;
+  color: var(--text-dim);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.app-nav-link {
+  padding: 7px 10px 7px 12px;
+  border-left: 2px solid transparent;
+  border-radius: 7px;
+  font-size: 13.5px;
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+}
+.app-nav-link:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.app-nav-link--active,
+.app-nav-link--active:hover {
+  background: var(--accent-weak);
+  border-left-color: var(--accent);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+/* 顶栏改为细上下文条（品牌已移至侧栏，去重复大标题） */
+.app-header {
+  padding: 9px 24px;
+  align-items: center;
+  background: var(--bg);
+}
+.header-workspace {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* 总览三窗比例：给跨作品列表更多横向空间 */
+.panel-grid {
+  grid-template-columns: minmax(300px, 1.4fr) 1fr 0.82fr;
+  gap: 14px;
+}
+
+/* 面板：更大圆角 + 阴影 + 标题底色 */
+.panel {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+.panel-header {
+  background: linear-gradient(180deg, var(--surface-raised), var(--surface));
+}
+.panel-header h2,
+.panel-header h3 {
+  font-size: 14px;
+  letter-spacing: 0.02em;
+}
+
+/* 作品卡：抬升与描边过渡 */
+.works-card {
+  background: var(--surface-raised);
+  transition: border-color 0.14s ease, background 0.14s ease, transform 0.14s ease;
+}
+.works-card:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+  transform: translateY(-1px);
+}
+
+/* 班子档案卡：加大行距、字段分隔，提升可读性 */
+.agent-grid {
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 14px;
+}
+.agent-card {
+  padding: 16px 18px;
+  gap: 9px;
+  border-radius: var(--radius-lg);
+}
+.agent-role {
+  padding: 2px 9px;
+  background: var(--accent-weak);
+  color: var(--accent-strong);
+  border: 1px solid rgba(200, 168, 106, 0.22);
+}
+.agent-field {
+  display: grid;
+  grid-template-columns: 74px 1fr;
+  align-items: baseline;
+  gap: 2px 10px;
+  padding: 6px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.035);
+}
+.agent-field:first-of-type {
+  border-top: none;
+}
+.agent-field-label {
+  color: var(--text-dim);
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.agent-field-value {
+  font-size: 13.5px;
+  line-height: 1.65;
+}
+
+/* 主按钮：铜金渐变 + 深墨字 */
+.primary-button {
+  padding: 9px 18px;
+  background: linear-gradient(150deg, var(--accent), var(--accent-strong));
+  color: var(--accent-ink);
+  font-size: 13.5px;
+  font-weight: 600;
+  transition: filter 0.14s ease, transform 0.14s ease;
+}
+.primary-button:hover:not(:disabled) {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+/* 输入框：focus 环 */
+.form-field input,
+.form-field textarea,
+.form-field select {
+  background: var(--bg);
+  border-radius: var(--radius);
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+.form-field input:focus,
+.form-field textarea:focus,
+.form-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-weak);
+}
+
+/* 内容区留白 */
+.app-content {
+  padding: 20px 28px;
+}
+
+/* 总览作品卡：标题独占一行，meta 横向自适应排列，减少垂直占用 */
+.workspace-card {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 12px;
+  padding: 12px 14px;
+}
+.workspace-card-title {
+  flex-basis: 100%;
+  margin-bottom: 2px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.workspace-card-meta {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* 概览作品卡容器：加宽最小宽度，meta 更易排成整齐一行 */
+.workspace-grid {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+/* 文件选择：统一为描边按钮风格，替换浏览器原生外观 */
+input[type="file"] {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+input[type="file"]::file-selector-button,
+input[type="file"]::-webkit-file-upload-button {
+  margin-right: 10px;
+  padding: 8px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+input[type="file"]::file-selector-button:hover,
+input[type="file"]::-webkit-file-upload-button:hover {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+
+/* 导入文件选择：label 承载自定义按钮脸，隐藏原生控件 */
+.file-picker {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+.file-picker input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.file-picker-face {
+  padding: 8px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: 13px;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+.file-picker:hover .file-picker-face {
+  border-color: var(--accent);
+  background: var(--surface-hover);
 }

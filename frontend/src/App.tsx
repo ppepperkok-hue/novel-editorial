@@ -25,8 +25,17 @@ function Shell() {
   return (
     <div className="app">
       <aside className="app-sidebar">
-        <div className="app-brand">Novel Editorial</div>
+        <div className="app-brand">
+          <span className="app-brand-mark" aria-hidden="true">
+            编
+          </span>
+          <span className="app-brand-text">
+            <strong>Novel Editorial</strong>
+            <small>AI 文学编辑部</small>
+          </span>
+        </div>
         <nav className="app-nav" aria-label="工作台">
+          <p className="app-nav-group">全局</p>
           <NavLink to="/" end className={({ isActive }) => navClassName(isActive)}>
             总览
           </NavLink>
@@ -39,6 +48,7 @@ function Shell() {
           </NavLink>
           {currentWorkspace !== null ? (
             <>
+              <p className="app-nav-group">当前作品</p>
               <NavLink
                 to={`/works/${encodeURIComponent(currentWorkspace.id)}/talk`}
                 end
@@ -101,12 +111,11 @@ function Shell() {
       </aside>
       <div className="app-main">
         <header className="app-header">
-          <h1>Novel Editorial</h1>
-          {currentWorkspace !== null ? (
-            <span className="header-workspace" data-testid="header-workspace">
-              当前作品：{currentWorkspace.title}
-            </span>
-          ) : null}
+          <span className="header-workspace" data-testid="header-workspace">
+            {currentWorkspace !== null
+              ? `当前作品：${currentWorkspace.title}`
+              : "未选择作品"}
+          </span>
         </header>
         <main className="app-content">
           <Outlet />

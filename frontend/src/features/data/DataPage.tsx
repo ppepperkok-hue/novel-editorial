@@ -178,13 +178,18 @@ function ImportPanel() {
         <p className="panel-hint">
           上传之前导出的 ZIP，作为一部全新作品导入，不会覆盖现有作品。
         </p>
-        <input
-          type="file"
-          accept=".zip"
-          onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-          data-testid="import-file-input"
-          aria-label="选择 ZIP 文件"
-        />
+        <label className="file-picker">
+          <input
+            type="file"
+            accept=".zip"
+            onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+            data-testid="import-file-input"
+            aria-label="选择 ZIP 文件"
+          />
+          <span className="file-picker-face">
+            {file === null ? "选择 ZIP 文件" : file.name}
+          </span>
+        </label>
         <button
           type="button"
           className="primary-button"
