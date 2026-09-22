@@ -2751,35 +2751,38 @@ body {
   min-height: 120px;
 }
 
-/* 作品列表：编辑式条目（衬线标题 + 等宽元信息） */
+/* 作品：封面墙网格（保持杂志风：衬线书名 + 细线边框） */
 .workspace-grid {
-  grid-template-columns: 1fr;
-  gap: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 .workspace-card {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 14px;
-  padding: 14px 2px;
-  border: none;
-  border-bottom: 1px solid var(--border);
-  border-radius: 0;
-  background: transparent;
+  flex-direction: column;
+  gap: 5px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
   text-align: left;
+  transition: border-color 0.14s ease, background 0.14s ease;
 }
 .workspace-card:hover,
 .workspace-card--selected {
-  background: transparent;
-  border-bottom-color: var(--accent);
+  border-color: var(--accent);
+  background: var(--surface-raised);
 }
 .workspace-card-title {
-  flex-basis: 100%;
-  margin-bottom: 3px;
+  margin-bottom: 2px;
   font-family: var(--font-serif);
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 600;
   letter-spacing: -0.01em;
+  line-height: 1.25;
 }
 .workspace-card-meta {
   font-family: var(--mono);
@@ -2889,4 +2892,28 @@ body {
   border-left-color: var(--accent);
   background: var(--accent-weak);
   color: var(--text);
+}
+
+/* 作品页封面卡：与总览封面墙同款（衬线书名 + 等宽元信息） */
+.works-card {
+  gap: 5px;
+  padding: 16px;
+  border-radius: var(--radius);
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+.works-card:hover {
+  border-color: var(--accent);
+  background: var(--surface-raised);
+}
+.works-card-title {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+.works-card-meta {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  color: var(--text-dim);
 }
