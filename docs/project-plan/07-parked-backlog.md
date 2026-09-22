@@ -14,21 +14,15 @@
 | --- | --- | --- |
 | ruff format 对个别旧文件的既有格式遗留（验收只要求 ruff check） | P3 | progress-summary「已留档的待办项」 |
 | N10 O1 初始审查报告未单独归档（结论并入 20260820-M5N10O2-initial.md 说明） | 记录 | docs/reviews/20260820-M5N10O2-initial.md |
-| API 层 talk / draft / style 编排胶水与 cli 层重复（应下沉 core，待 S3 动 core/draft 时合并） | P3 | FE-W1 S1 总监记录 |
-| CLI `talk send` 允许空消息，与 API 空白校验不同源（建议 CLI 同步为用法错误） | P3 | FE-W1 S1 修复偏离点 |
-| CLI `draft list` / `draft show` 对 writer_id 为空的作者稿回退显示默认写手名（应显示「作者」） | P3 | FE-W1 S3a 收口记录 |
-| API 的 inspect / workspace_log 两个 text/plain 端点缺 response_class 声明（OpenAPI 记成 application/json），待统一补齐 | P3 | FE-W1 S4a 修复偏离点 |
-| w1_demo / w2_demo / panel_demo 的 _prepare_env 只清 NOVEL_LLM_*，其余 NOVEL_* 会漏入演示（w3_demo 已在 FE-W3 S3 修复） | P3 | docs/reviews/20260828-FE-W3-S3-initial.md |
-| exportWorkspace 的 decodeURIComponent 未捕获 URIError（后端当前 ASCII 文件名不可达，可 try/catch 回退 raw） | P3 | FE-W4 S2 复审 |
-| 前端配置表单无客户端数值范围校验（非法值直发后端靠 422 兜底） | P3 | FE-W4 S2 初审 |
-| Electron isSameOrigin 不认 localhost（127.0.0.1 与 localhost origin 不同，当前无触发路径） | P3 | FE-W4 S3 复审 |
-| Electron 退出码快照只存 code 不存 signal（被信号杀死显示 unknown，日志行仍可追溯） | P3 | FE-W4 S3 复审 |
+| API 层 talk / draft / style 编排胶水与 cli 层重复（应下沉 core） | P3 | FE-W1 S1 总监记录 |
 | Electron mac/linux child.kill() 不杀 uvicorn 孙进程（usage.md 已文档化 pkill 兜底） | P3 | FE-W4 S3 初审 |
-| Electron second-instance 在 bootstrap 完成前触发时静默退出（UX 边界） | P3 | FE-W4 S3 初审 |
-| TalkPage / WriterPage 共 5 处内联错误缺 role="alert"（pre-flight §2 已记录，未修） | P3 | FE-W4 S4 pre-flight |
 | Playwright E2E 实跑需 Windows 实机（chromium 下载受沙箱 CDN 限制） | 记录 | FE-W4 S4 |
+| draft 悬空 writer_id（agent 已删）也回退「作者」而非「未知写手」（理论边界，当前无删除命令不可达） | P3 | FE-W4 P3 审查 |
+| exportWorkspace decodeURIComponent 回退路径缺测试（代码已修，测试待补） | P3 | FE-W4 P3 审查 |
 
 2026-08-22 收口：`core/behavior.py` 空 kind 守卫 / style 只读访问器（含 style_drift 统一）/ 归档 0 字节 SQLite 探针 三项 P3 已随 commit 3139c81 完成，独立审查通过（docs/reviews/20260822-M9ENG1-initial.md），文档同步后从本表移除。
+
+2026-09-22 收口：本轮 P3 批量修复已随 commit e9de054 / 96b87b2 / e5fdb9e / 7dd013e 完成——talk 空消息、draft 作者稿显示、API response_class、前端 decode 兜底 / 配置范围校验 / 5 处 role=alert / vite test.include、Electron localhost / signal 快照 / second-instance 竞态、demo _prepare_env 全清 NOVEL_*，共 10 项；审查 Ready to merge: Yes，已从本表移除。
 
 ## 明确不做边界（引用 06，不展开）
 
