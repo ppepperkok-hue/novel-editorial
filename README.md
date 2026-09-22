@@ -210,9 +210,38 @@ npm run dev
 
 开发期四命令（与 CI 同一套）：`npm run lint`、`npm run typecheck`、`npm test`、`npm run build`。端到端演示脚本 `python scripts/panel_demo.py` 自动起服断言三扇窗与拍板流转，全部通过输出 `PANEL DEMO PASS`。详细说明见 [docs/usage.md](docs/usage.md) 的「图形面板（N12）」。
 
+**数据管理（工作台）**
+
+面板里新增「数据」工作台，把作品数据的进出与配置收在一处，与 CLI 同源：
+
+- **导出**：`GET /works/{id}/export` 产出作品 ZIP（对应 CLI `works export`）。
+- **导入**：`POST /works/import`，multipart 上传 ZIP，生成全新 workspace，永不覆盖既有数据（对应 CLI `works import`）。
+- **配置**：`GET /config` 返回完整只读快照；`PUT /config` 只写白名单键——`quality_threshold`、`panel_poll_interval`、`freedom_dial`、`freedom_seed`、`proactive_enabled`、`proactive_max_per_agent`、`motive_llm_enabled`。写后需重启 `api` 生效。
+
+**桌面应用（Electron）**
+
+除浏览器面板外，还提供 Electron 桌面壳（`frontend/electron/`）：主进程 spawn `uv run novel-editorial api serve` 拉起后端，轮询 `/health` 就绪后开窗直连 `http://127.0.0.1:8765`，复用 `frontend/dist`（web 同源，不复制前端代码）。
+
+开发运行（前置：`uv sync` + `cd frontend && npm run build` 生成 dist）：
+
+```bash
+cd frontend/electron
+npm install
+npm start
+```
+
+打包：
+
+```bash
+cd frontend/electron
+npm run dist
+```
+
+产物在 `frontend/electron/release/`：Windows NSIS 安装包 + portable。已知限制：electron 原生二进制下载体大，在无网络沙箱受限，打包与双击验证需 Windows 实机；macOS/Linux 尽力而为。
+
 ## 命令速查
 
-- `works`：`create`（创建作品）/ `list` / `show`
+- `works`：`create`（创建作品）/ `list` / `show` / `export`（导出 ZIP）/ `import`（导入 ZIP）
 - `agents`：`show`（完整档案与当前状态）/ `edit`（改档案字段）
 - `talk`：`send`（说话，`@别名` 指定对象）/ `list`（对话记录）
 - `style`：`set`（风格与禁忌词）/ `show`
