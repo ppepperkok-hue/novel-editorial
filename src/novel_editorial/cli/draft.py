@@ -47,12 +47,18 @@ def _resolve_writer_option(
 
 
 def _writer_name(db: DB, workspace_id: str, draft: Draft) -> str:
-    """Return the draft writer's name, or ``作者`` for author-written drafts."""
-    if draft.writer_id is not None:
-        agent = get_agent_by_id(db, workspace_id, draft.writer_id)
-        if agent is not None:
-            return agent.name
-    return "作者"
+    """Return the draft writer's name, or a fallback when it cannot resolve.
+
+    ``writer_id is None`` marks an author-written draft (``作者``). A non-None
+    ``writer_id`` whose agent no longer exists is ``未知写手``, distinct from an
+    author draft so a dangling reference never masquerades as author-written.
+    """
+    if draft.writer_id is None:
+        return "作者"
+    agent = get_agent_by_id(db, workspace_id, draft.writer_id)
+    if agent is None:
+        return "未知写手"
+    return agent.name
 
 
 def _revision_is_rebuttal(db: DB, workspace_id: str, draft_id: str) -> bool:

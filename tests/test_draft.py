@@ -1122,6 +1122,32 @@ def test_draft_author_draft_shows_author_as_writer(
     assert "writer: 作者" in shown.output
 
 
+def test_draft_with_dangling_writer_shows_unknown_writer(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A draft whose writer_id no longer resolves renders 未知写手, not 作者."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    db = DB(load_settings())
+    with db.workspace_session(workspace_id) as session:
+        draft = Draft(
+            workspace_id=workspace_id,
+            title="悬空写手",
+            writer_id="no-such-agent",
+        )
+        session.add(draft)
+        session.commit()
+        draft_id = draft.id
+
+    listing = runner.invoke(app, ["draft", "list", workspace_id])
+    assert listing.exit_code == 0, listing.output
+    assert "（未知写手）" in listing.output
+    assert "（作者）" not in listing.output
+
+    shown = runner.invoke(app, ["draft", "show", draft_id])
+    assert shown.exit_code == 0, shown.output
+    assert "writer: 未知写手" in shown.output
+
+
 def test_draft_save_cli_rejects_blank_content(
     tmp_path: Path, monkeypatch
 ) -> None:

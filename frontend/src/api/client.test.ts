@@ -224,6 +224,81 @@ describe("api client contract parsing", () => {
     createElement.mockRestore();
   });
 
+  it("exportWorkspace decodes an RFC5987 percent-encoded filename", async () => {
+    const blob = new Blob(["zip"], { type: "application/zip" });
+    fetchMock.mockResolvedValueOnce(
+      new Response(blob, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/zip",
+          "Content-Disposition":
+            "attachment; filename*=UTF-8''%E4%BD%9C%E8%80%85.zip",
+        },
+      }),
+    );
+    const createObjectURL = vi.fn(() => "blob:mock-url");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+    const originalCreateElement = document.createElement.bind(document);
+    const anchors: HTMLAnchorElement[] = [];
+    const createElement = vi
+      .spyOn(document, "createElement")
+      .mockImplementation((tagName: string) => {
+        const element = originalCreateElement(tagName);
+        if (tagName === "a") {
+          anchors.push(element as HTMLAnchorElement);
+        }
+        return element;
+      });
+
+    await exportWorkspace("w-a");
+
+    expect(anchors).toHaveLength(1);
+    expect(anchors[0].download).toBe("作者.zip");
+    click.mockRestore();
+    createElement.mockRestore();
+  });
+
+  it("exportWorkspace falls back to the raw filename on a malformed percent sequence", async () => {
+    const blob = new Blob(["zip"], { type: "application/zip" });
+    fetchMock.mockResolvedValueOnce(
+      new Response(blob, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/zip",
+          "Content-Disposition": "attachment; filename*=UTF-8''bad%zz.zip",
+        },
+      }),
+    );
+    const createObjectURL = vi.fn(() => "blob:mock-url");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+    const originalCreateElement = document.createElement.bind(document);
+    const anchors: HTMLAnchorElement[] = [];
+    const createElement = vi
+      .spyOn(document, "createElement")
+      .mockImplementation((tagName: string) => {
+        const element = originalCreateElement(tagName);
+        if (tagName === "a") {
+          anchors.push(element as HTMLAnchorElement);
+        }
+        return element;
+      });
+
+    await expect(exportWorkspace("w-a")).resolves.toBeUndefined();
+
+    expect(anchors).toHaveLength(1);
+    expect(anchors[0].download).toBe("bad%zz.zip");
+    click.mockRestore();
+    createElement.mockRestore();
+  });
+
   it("getOverview parses the cross-workspace overview", async () => {
     const body = {
       overviews: [
