@@ -50,28 +50,44 @@ function markKind(mark: string): MarkKind {
   return "other";
 }
 
+const MARK_LABELS: Record<MarkKind, string> = {
+  disagreement: "分歧",
+  discussion: "讨论",
+  collaboration: "互委",
+  proactive: "主动",
+  other: "标记",
+};
+
 function TalkItem({ message }: { message: TalkMessage }) {
-  const roleClass = ROLE_LABELS[message.role] !== undefined ? `--${message.role}` : "";
+  const roleClass =
+    ROLE_LABELS[message.role] !== undefined ? `--${message.role}` : "";
+  const kind = message.mark ? markKind(message.mark) : null;
   return (
     <li
       className={`talk-item${roleClass}`}
       data-testid="talk-item"
       data-role={message.role}
     >
-      <div className="talk-item-head">
-        <span className="talk-actor">{message.actor}</span>
-        <span className="talk-role">{roleLabel(message.role)}</span>
-        {message.mark ? (
-          <span
-            className={`talk-mark talk-mark--${markKind(message.mark)}`}
-            data-testid="talk-mark"
-          >
-            {message.mark}
-          </span>
-        ) : null}
-        <span className="talk-time">{formatDateTime(message.created_at)}</span>
+      <span className="talk-avatar" aria-hidden="true">
+        {message.actor.slice(0, 1)}
+      </span>
+      <div className="talk-bubble">
+        <div className="talk-item-head">
+          <span className="talk-actor">{message.actor}</span>
+          <span className="talk-role">{roleLabel(message.role)}</span>
+          {kind !== null ? (
+            <span
+              className={`talk-mark talk-mark--${kind}`}
+              data-testid="talk-mark"
+              title={MARK_LABELS[kind]}
+            >
+              {message.mark}
+            </span>
+          ) : null}
+          <span className="talk-time">{formatDateTime(message.created_at)}</span>
+        </div>
+        <p className="talk-content">{message.content}</p>
       </div>
-      <p className="talk-content">{message.content}</p>
     </li>
   );
 }
@@ -87,6 +103,12 @@ export default function TalkPage() {
   const [message, setMessage] = useState("");
 
   const canSend = message.trim().length > 0 && !sendTalkMutation.isPending;
+
+  const messages = talk.data ?? [];
+  const actors = new Set(
+    messages.filter((item) => item.role !== "author").map((item) => item.actor),
+  );
+  const markCount = messages.filter((item) => Boolean(item.mark)).length;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -113,6 +135,22 @@ export default function TalkPage() {
           </Link>
         </div>
       </header>
+
+      <div className="kpi-row">
+        <div className="kpi">
+          <span className="kpi-value">{messages.length}</span>
+          <span className="kpi-label">条发言</span>
+        </div>
+        <div className="kpi">
+          <span className="kpi-value">{actors.size}</span>
+          <span className="kpi-label">参与的伙伴</span>
+        </div>
+        <div className="kpi kpi--accent">
+          <span className="kpi-value">{markCount}</span>
+          <span className="kpi-label">分歧 / 标记</span>
+        </div>
+      </div>
+
       <section className="panel talk-panel" data-testid="talk-panel">
         <header className="panel-header">
           <h3>编辑部对话</h3>
