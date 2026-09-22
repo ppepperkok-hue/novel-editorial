@@ -16,6 +16,9 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./e2e",
   reporter: "list",
+  // The backend migration path is serialized (store/db.py `_migration_lock`),
+  // so specs can run in parallel again.
+  fullyParallel: false,
   use: {
     baseURL: "http://127.0.0.1:8765",
     trace: "on-first-retry",

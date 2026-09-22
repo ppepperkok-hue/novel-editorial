@@ -13,8 +13,10 @@ import { expect, test } from "@playwright/test";
 test("create a work, then walk the talk, writer and decision workbenches", async ({
   page,
 }) => {
-  // ── Create work: works list → create page ──
-  await page.goto("/works");
+  // ── Create work: overview → works list → create page ──
+  await page.goto("/");
+  await page.getByRole("link", { name: "作品与班子" }).click();
+  await expect(page.getByTestId("works-page")).toBeVisible();
   await page.getByRole("link", { name: "创建作品" }).click();
   await expect(page.getByTestId("works-create-page")).toBeVisible();
 

@@ -47,7 +47,7 @@ test("config form saves and shows config-updated", async ({ page }) => {
   await expect(page.getByTestId("config-panel")).toBeVisible();
 
   // Default key is quality_threshold, rendered as a numeric text input.
-  await page.getByPlaceholder("数值").fill("0.75");
+  await page.getByPlaceholder("数值").fill("10");
   await page.getByRole("button", { name: "保存" }).click();
   await expect(page.getByTestId("config-updated")).toBeVisible();
 });
