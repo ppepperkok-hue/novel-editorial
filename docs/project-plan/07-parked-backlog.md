@@ -21,6 +21,10 @@
 | w1_demo / w2_demo / panel_demo 的 _prepare_env 只清 NOVEL_LLM_*，其余 NOVEL_* 会漏入演示（w3_demo 已在 FE-W3 S3 修复） | P3 | docs/reviews/20260828-FE-W3-S3-initial.md |
 | exportWorkspace 的 decodeURIComponent 未捕获 URIError（后端当前 ASCII 文件名不可达，可 try/catch 回退 raw） | P3 | FE-W4 S2 复审 |
 | 前端配置表单无客户端数值范围校验（非法值直发后端靠 422 兜底） | P3 | FE-W4 S2 初审 |
+| Electron isSameOrigin 不认 localhost（127.0.0.1 与 localhost origin 不同，当前无触发路径） | P3 | FE-W4 S3 复审 |
+| Electron 退出码快照只存 code 不存 signal（被信号杀死显示 unknown，日志行仍可追溯） | P3 | FE-W4 S3 复审 |
+| Electron mac/linux child.kill() 不杀 uvicorn 孙进程（usage.md 已文档化 pkill 兜底） | P3 | FE-W4 S3 初审 |
+| Electron second-instance 在 bootstrap 完成前触发时静默退出（UX 边界） | P3 | FE-W4 S3 初审 |
 
 2026-08-22 收口：`core/behavior.py` 空 kind 守卫 / style 只读访问器（含 style_drift 统一）/ 归档 0 字节 SQLite 探针 三项 P3 已随 commit 3139c81 完成，独立审查通过（docs/reviews/20260822-M9ENG1-initial.md），文档同步后从本表移除。
 
