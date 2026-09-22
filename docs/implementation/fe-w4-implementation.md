@@ -24,7 +24,7 @@
 
 - 配置写面只开放白名单键：quality_threshold / panel_poll_interval / freedom_dial / freedom_seed / proactive_enabled / proactive_max_per_agent / motive_llm_enabled；其余只读，敏感键（LLM key）永不读写。写入 config.toml 后需重启 api 生效，与 CLI `--apply` 语义一致并在响应中提示。
 - 导入永不覆盖：与 CLI 一致，生成全新 workspace id 并登记注册表；HTTP 导入用 multipart 上传 ZIP。
-- 备份 = 导出归档 + 命名约定：默认目录 `data/backups/<workspace-id>-<YYYYMMDD-HHMMSS>.zip`，前端只做目录与命名，业务仍走导出端点。
+- 备份复用导出端点，浏览器下载留档；前端不写后端文件系统。
 - Electron：web 同源，复用 frontend/dist，不复制前端代码；无自动更新、无代码签名；Windows portable + NSIS 优先，macOS / Linux 尽力而为。
 - Playwright E2E：FE-M 收口时补，Windows Chromium 主链路 + 数据管理链路 + CLI/UI 同源对照。
 
@@ -49,7 +49,7 @@
 
 ### 做什么
 
-- features/data：作品导出（下载 ZIP，文件名含作品与日期）、导入（上传校验 + 结果页）、备份（导出到约定目录与命名）、配置界面（白名单键表单 + 只读快照 + 重启生效提示 + 三态）。
+- features/data：作品导出（下载 ZIP，文件名含作品与日期）、导入（上传校验 + 结果页）、备份 = 导出 ZIP 下载留档（浏览器前端不写后端目录；服务端目录备份不在本里程碑）、配置界面（白名单键表单 + 只读快照 + 重启生效提示 + 三态）。
 - 路由与侧栏入口；与 CLI 同源断言。
 
 ### 验收标准

@@ -144,7 +144,6 @@ describe("data page", () => {
       "/works/w-a/data",
     );
     expect(screen.getByTestId("export-panel")).toBeInTheDocument();
-    expect(screen.getByTestId("backup-panel")).toBeInTheDocument();
     expect(screen.getByTestId("import-panel")).toBeInTheDocument();
   });
 
@@ -159,9 +158,8 @@ describe("data page", () => {
     });
     fireEvent.click(within(panel).getByRole("button", { name: "保存" }));
 
-    expect(await screen.findByTestId("config-updated")).toHaveTextContent(
-      "config updated; api 重启后生效",
-    );
+    const configUpdated = await screen.findByTestId("config-updated");
+    expect(configUpdated.textContent).toBe("config updated; api 重启后生效");
     const put = fetchMock.mock.calls.find(
       ([url, init]) => String(url) === "/config" && init?.method === "PUT",
     );

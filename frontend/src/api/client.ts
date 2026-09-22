@@ -362,8 +362,12 @@ function parseContentDispositionFilename(disposition: string): string | null {
   if (match === null) {
     return null;
   }
-  const filename = match[1] ?? match[2] ?? match[3];
-  return filename !== undefined && filename !== "" ? filename.trim() : null;
+  const raw = match[1] ?? match[2] ?? match[3];
+  if (raw === undefined || raw === "") {
+    return null;
+  }
+  const filename = match[1] !== undefined ? decodeURIComponent(raw) : raw;
+  return filename.trim();
 }
 
 /**
@@ -387,9 +391,12 @@ export async function exportWorkspace(workspaceId: string): Promise<void> {
   anchor.href = url;
   anchor.download = filename;
   document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+  try {
+    anchor.click();
+  } finally {
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
 }
 
 /**

@@ -173,6 +173,8 @@ describe("api client contract parsing", () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toBe("/works/import");
     expect(init?.method).toBe("POST");
+    const headers = init?.headers as Headers;
+    expect(headers.has("Content-Type")).toBe(false);
     const form = init?.body as FormData;
     expect(form.get("file")).toBe(file);
   });
@@ -195,6 +197,17 @@ describe("api client contract parsing", () => {
     const click = vi
       .spyOn(HTMLAnchorElement.prototype, "click")
       .mockImplementation(() => {});
+    const originalCreateElement = document.createElement.bind(document);
+    const anchors: HTMLAnchorElement[] = [];
+    const createElement = vi
+      .spyOn(document, "createElement")
+      .mockImplementation((tagName: string) => {
+        const element = originalCreateElement(tagName);
+        if (tagName === "a") {
+          anchors.push(element as HTMLAnchorElement);
+        }
+        return element;
+      });
 
     await exportWorkspace("w-a");
 
@@ -205,7 +218,10 @@ describe("api client contract parsing", () => {
     expect(createObjectURL).toHaveBeenCalled();
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:mock-url");
     expect(click).toHaveBeenCalled();
+    expect(anchors).toHaveLength(1);
+    expect(anchors[0].download).toBe("7178737e-20260922-011400.zip");
     click.mockRestore();
+    createElement.mockRestore();
   });
 
   it("getOverview parses the cross-workspace overview", async () => {

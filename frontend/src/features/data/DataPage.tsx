@@ -76,7 +76,8 @@ function ExportPanel({ workspaceId }: { workspaceId: string }) {
       </header>
       <div className="panel-body">
         <p className="panel-hint">
-          把整部作品（班子、草稿、设定、意见、日志）打包成可校验的 ZIP。
+          把整部作品（班子、草稿、设定、意见、日志）打包成可校验的 ZIP；
+          导出 ZIP 即本地备份留档，文件名含日期。
         </p>
         <button
           type="button"
@@ -89,51 +90,6 @@ function ExportPanel({ workspaceId }: { workspaceId: string }) {
         {error ? (
           <p className="inline-error" role="alert">
             导出失败：{error}
-          </p>
-        ) : null}
-      </div>
-    </section>
-  );
-}
-
-function BackupPanel({ workspaceId }: { workspaceId: string }) {
-  const [backingUp, setBackingUp] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function runBackup() {
-    setBackingUp(true);
-    setError(null);
-    try {
-      await exportWorkspace(workspaceId);
-    } catch (backupError) {
-      setError(
-        backupError instanceof Error ? backupError.message : String(backupError),
-      );
-    } finally {
-      setBackingUp(false);
-    }
-  }
-
-  return (
-    <section className="panel data-panel" data-testid="backup-panel">
-      <header className="panel-header">
-        <h3>备份</h3>
-      </header>
-      <div className="panel-body">
-        <p className="panel-hint">
-          导出一份同名归档到本地，文件名已含日期，作为手动备份留存。
-        </p>
-        <button
-          type="button"
-          className="primary-button"
-          onClick={() => void runBackup()}
-          disabled={backingUp}
-        >
-          {backingUp ? "备份中…" : "备份到本地"}
-        </button>
-        {error ? (
-          <p className="inline-error" role="alert">
-            备份失败：{error}
           </p>
         ) : null}
       </div>
@@ -298,7 +254,6 @@ function ConfigPanel() {
                 data-testid="config-updated"
               >
                 {update.data.message}
-                {update.data.restart_required ? "（api 重启后生效）" : ""}
               </p>
             ) : null}
             <pre className="plain-output" data-testid="config-snapshot">
@@ -330,7 +285,6 @@ export default function DataPage() {
       </header>
       <div className="data-layout">
         <ExportPanel workspaceId={workspaceIdValue} />
-        <BackupPanel workspaceId={workspaceIdValue} />
         <ImportPanel />
       </div>
       <ConfigPanel />
