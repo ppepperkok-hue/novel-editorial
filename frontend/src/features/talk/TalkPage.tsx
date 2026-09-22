@@ -154,7 +154,7 @@ export default function TalkPage() {
           data-testid="talk-message-input"
         />
         {sendTalkMutation.isError ? (
-          <p className="inline-error" data-testid="talk-send-error">
+          <p className="inline-error" role="alert" data-testid="talk-send-error">
             {sendTalkMutation.error.message}
           </p>
         ) : null}

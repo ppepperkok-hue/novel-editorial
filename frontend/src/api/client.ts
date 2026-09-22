@@ -366,7 +366,16 @@ function parseContentDispositionFilename(disposition: string): string | null {
   if (raw === undefined || raw === "") {
     return null;
   }
-  const filename = match[1] !== undefined ? decodeURIComponent(raw) : raw;
+  let filename = raw;
+  if (match[1] !== undefined) {
+    try {
+      filename = decodeURIComponent(raw);
+    } catch (error) {
+      if (!(error instanceof URIError)) {
+        throw error;
+      }
+    }
+  }
   return filename.trim();
 }
 

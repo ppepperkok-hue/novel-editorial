@@ -208,7 +208,7 @@ function DraftEditor({
         </button>
       </div>
       {saveMutation.isError ? (
-        <p className="inline-error" data-testid="save-error">
+        <p className="inline-error" role="alert" data-testid="save-error">
           {saveMutation.error.message}
         </p>
       ) : null}
@@ -294,7 +294,7 @@ function ReviseForm({
         </p>
       ) : null}
       {reviseMutation.isError ? (
-        <p className="inline-error" data-testid="revise-error">
+        <p className="inline-error" role="alert" data-testid="revise-error">
           {reviseMutation.error.message}
         </p>
       ) : null}
@@ -650,12 +650,12 @@ export default function WriterPage() {
                 </button>
               </form>
               {createMutation.isError ? (
-                <p className="inline-error" data-testid="new-draft-error">
+                <p className="inline-error" role="alert" data-testid="new-draft-error">
                   {createMutation.error.message}
                 </p>
               ) : null}
               {generateMutation.isError ? (
-                <p className="inline-error" data-testid="generate-error">
+                <p className="inline-error" role="alert" data-testid="generate-error">
                   {generateMutation.error.message}
                 </p>
               ) : null}

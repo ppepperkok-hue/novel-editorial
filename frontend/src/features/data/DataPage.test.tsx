@@ -169,6 +169,26 @@ describe("data page", () => {
     });
   });
 
+  it("blocks an out-of-range value without calling updateConfig and shows an alert", async () => {
+    const fetchMock = baseRoutes();
+    renderData(fetchMock);
+
+    await screen.findByTestId("config-snapshot");
+    const panel = screen.getByTestId("config-panel");
+    fireEvent.change(within(panel).getByPlaceholderText("数值"), {
+      target: { value: "-1" },
+    });
+    fireEvent.click(within(panel).getByRole("button", { name: "保存" }));
+
+    const alert = await within(panel).findByRole("alert");
+    expect(alert).toHaveTextContent("quality_threshold 必须是 ≥0 的整数");
+    expect(
+      fetchMock.mock.calls.some(
+        ([url, init]) => String(url) === "/config" && init?.method === "PUT",
+      ),
+    ).toBe(false);
+  });
+
   it("exports the workspace when the export button is clicked", async () => {
     const fetchMock = baseRoutes();
     renderData(fetchMock);

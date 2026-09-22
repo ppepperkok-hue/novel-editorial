@@ -39,16 +39,63 @@ const BOOL_KEYS = new Set<WritableKey>([
 
 const FLOAT_KEYS = new Set<WritableKey>(["freedom_dial"]);
 
-function coerceConfigValue(key: WritableKey, raw: string): unknown {
+interface IntRule {
+  min?: number;
+  max?: number;
+  message: string;
+}
+
+type IntKey = Exclude<
+  WritableKey,
+  "freedom_dial" | "proactive_enabled" | "motive_llm_enabled"
+>;
+
+const INT_KEY_RULES: Record<IntKey, IntRule> = {
+  quality_threshold: {
+    min: 0,
+    message: "quality_threshold 必须是 ≥0 的整数",
+  },
+  panel_poll_interval: {
+    min: 1,
+    max: 300,
+    message: "panel_poll_interval 必须是 1–300 的整数",
+  },
+  freedom_seed: {
+    message: "freedom_seed 必须是整数",
+  },
+  proactive_max_per_agent: {
+    min: 0,
+    message: "proactive_max_per_agent 必须是 ≥0 的整数",
+  },
+};
+
+type ConfigValidation =
+  | { ok: true; value: number | boolean }
+  | { ok: false; message: string };
+
+function validateConfigValue(key: WritableKey, raw: string): ConfigValidation {
   if (BOOL_KEYS.has(key)) {
-    return raw === "true";
+    return { ok: true, value: raw === "true" };
   }
   if (FLOAT_KEYS.has(key)) {
-    const parsed = Number.parseFloat(raw.trim());
-    return Number.isNaN(parsed) ? raw.trim() : parsed;
+    const parsed = Number(raw);
+    if (Number.isNaN(parsed) || parsed < 0 || parsed > 1) {
+      return { ok: false, message: "freedom_dial 必须是 0–1 之间的数值" };
+    }
+    return { ok: true, value: parsed };
   }
-  const parsed = Number.parseInt(raw.trim(), 10);
-  return Number.isNaN(parsed) ? raw.trim() : parsed;
+  const rule = INT_KEY_RULES[key as IntKey];
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed)) {
+    return { ok: false, message: rule.message };
+  }
+  if (rule.min !== undefined && parsed < rule.min) {
+    return { ok: false, message: rule.message };
+  }
+  if (rule.max !== undefined && parsed > rule.max) {
+    return { ok: false, message: rule.message };
+  }
+  return { ok: true, value: parsed };
 }
 
 function ExportPanel({ workspaceId }: { workspaceId: string }) {
@@ -167,15 +214,23 @@ function ConfigPanel() {
   const update = useUpdateConfig();
   const [selectedKey, setSelectedKey] = useState<WritableKey>(WRITABLE_KEYS[0]);
   const [value, setValue] = useState("");
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   function submitUpdate(event: FormEvent) {
     event.preventDefault();
-    if (value.trim() === "") {
+    const trimmed = value.trim();
+    if (trimmed === "") {
       return;
     }
+    const result = validateConfigValue(selectedKey, trimmed);
+    if (!result.ok) {
+      setValidationError(result.message);
+      return;
+    }
+    setValidationError(null);
     update.mutate({
       key: selectedKey,
-      value: coerceConfigValue(selectedKey, value),
+      value: result.value,
     });
   }
 
@@ -206,6 +261,7 @@ function ConfigPanel() {
                   onChange={(event) => {
                     setSelectedKey(event.target.value as WritableKey);
                     setValue("");
+                    setValidationError(null);
                   }}
                 >
                   {WRITABLE_KEYS.map((key) => (
@@ -220,7 +276,10 @@ function ConfigPanel() {
                 {BOOL_KEYS.has(selectedKey) ? (
                   <select
                     value={value}
-                    onChange={(event) => setValue(event.target.value)}
+                    onChange={(event) => {
+                      setValue(event.target.value);
+                      setValidationError(null);
+                    }}
                   >
                     <option value="">请选择</option>
                     <option value="true">true</option>
@@ -229,7 +288,10 @@ function ConfigPanel() {
                 ) : (
                   <input
                     value={value}
-                    onChange={(event) => setValue(event.target.value)}
+                    onChange={(event) => {
+                      setValue(event.target.value);
+                      setValidationError(null);
+                    }}
                     placeholder="数值"
                   />
                 )}
@@ -242,6 +304,15 @@ function ConfigPanel() {
                 {update.isPending ? "保存中…" : "保存"}
               </button>
             </form>
+            {validationError !== null ? (
+              <p
+                className="inline-error"
+                role="alert"
+                data-testid="config-validation-error"
+              >
+                {validationError}
+              </p>
+            ) : null}
             {update.isError ? (
               <p className="inline-error" role="alert">
                 保存失败：{update.error.message}
