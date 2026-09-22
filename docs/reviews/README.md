@@ -89,3 +89,4 @@ Ready to merge: Yes | No | With fixes
 - [20260828 FE-W3-S3 审查](20260828-FE-W3-S3-initial.md)
 - [20260828 FE-W3-S3b 收口记录](20260828-FE-W3-S3b-initial.md)
 - [20260922 FE-W4-S1-R3 收敛审查](20260922-FE-W4-S1-R3-initial.md)
+- [20260922 FE-W4-S2 审查](20260922-FE-W4-S2-initial.md)

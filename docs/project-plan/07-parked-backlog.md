@@ -19,6 +19,8 @@
 | CLI `draft list` / `draft show` 对 writer_id 为空的作者稿回退显示默认写手名（应显示「作者」） | P3 | FE-W1 S3a 收口记录 |
 | API 的 inspect / workspace_log 两个 text/plain 端点缺 response_class 声明（OpenAPI 记成 application/json），待统一补齐 | P3 | FE-W1 S4a 修复偏离点 |
 | w1_demo / w2_demo / panel_demo 的 _prepare_env 只清 NOVEL_LLM_*，其余 NOVEL_* 会漏入演示（w3_demo 已在 FE-W3 S3 修复） | P3 | docs/reviews/20260828-FE-W3-S3-initial.md |
+| exportWorkspace 的 decodeURIComponent 未捕获 URIError（后端当前 ASCII 文件名不可达，可 try/catch 回退 raw） | P3 | FE-W4 S2 复审 |
+| 前端配置表单无客户端数值范围校验（非法值直发后端靠 422 兜底） | P3 | FE-W4 S2 初审 |
 
 2026-08-22 收口：`core/behavior.py` 空 kind 守卫 / style 只读访问器（含 style_drift 统一）/ 归档 0 字节 SQLite 探针 三项 P3 已随 commit 3139c81 完成，独立审查通过（docs/reviews/20260822-M9ENG1-initial.md），文档同步后从本表移除。
 
