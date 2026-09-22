@@ -22,9 +22,9 @@
 
 ## 遗留（非阻塞）
 
-- `test_sse` 4 用例环境 flaky（uvicorn daemon thread + 本地代理 7897 失效，revert 至 P3 前仍复现，非代码回归），记 07-parked-backlog。
-- 全量回归：后端 1606 passed + test_defaults（config.toml 被 E2E 写面污染 8→10，已恢复）；前端四命令 219 用例全绿。
+- `test_sse` 根因已闭环：非代码回归，而是操作残留（残留 python 进程 + config.toml 被 E2E 写面污染 8→10）；清理后 test_sse 5 passed、后端全量 pytest 1612 passed 全绿。
+- Electron 双击验证已闭环：`npm start` 定位项目根 → spawn 后端 → 轮询 health → 开窗（标题「Novel Editorial 面板」）；`CloseMainWindow` 正常关闭后 electron 与后端进程树零残留。
 
 ## 处理记录
 
-- 代码提交 73d6c0b（SPA fallback + 迁移锁）、8a23e86（E2E spec 修复）、9474f21（gitignore + electron lockfile），已推送 origin/main。
+- 代码提交 73d6c0b（SPA fallback + 迁移锁）、8a23e86（E2E spec 修复）、9474f21（gitignore + electron lockfile）、0561a2f（P3 remainder），已推送 origin/main。
