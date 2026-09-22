@@ -5,7 +5,7 @@ from __future__ import annotations
 import typer
 
 from novel_editorial.core import proactive
-from novel_editorial.core.agents import get_agent_by_id, get_default_writer, resolve_agent
+from novel_editorial.core.agents import get_agent_by_id, resolve_agent
 from novel_editorial.core.chat import get_workspace_or_raise
 from novel_editorial.core.config import load_settings
 from novel_editorial.core.draft import (
@@ -47,12 +47,12 @@ def _resolve_writer_option(
 
 
 def _writer_name(db: DB, workspace_id: str, draft: Draft) -> str:
-    """Return the draft writer's name, falling back to the default writer."""
+    """Return the draft writer's name, or ``作者`` for author-written drafts."""
     if draft.writer_id is not None:
         agent = get_agent_by_id(db, workspace_id, draft.writer_id)
         if agent is not None:
             return agent.name
-    return get_default_writer(db, workspace_id).name
+    return "作者"
 
 
 def _revision_is_rebuttal(db: DB, workspace_id: str, draft_id: str) -> bool:

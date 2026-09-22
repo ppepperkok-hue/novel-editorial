@@ -1004,6 +1004,18 @@ def test_openapi_draft_diff_200_is_text_plain(
     assert "application/json" not in responses["content"]
 
 
+def test_openapi_inspect_and_log_200_are_text_plain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """inspect and log endpoints must advertise text/plain, not application/json."""
+    _make_client(tmp_path, monkeypatch)
+    paths = create_app().openapi()["paths"]
+    for route in ("/works/{workspace_id}/inspect", "/works/{workspace_id}/log"):
+        responses = paths[route]["get"]["responses"]["200"]
+        assert "text/plain" in responses["content"]
+        assert "application/json" not in responses["content"]
+
+
 def test_openapi_export_200_is_application_zip(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

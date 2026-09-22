@@ -180,6 +180,8 @@ def talk_send(
     db.init_schema()
     workspace = get_workspace_or_raise(db, workspace_id)
 
+    if not message.strip():
+        raise NovelError(ErrorCode.USAGE_ERROR, "message 不能为空")
     target_role = resolve_target_role(message)
     agent = get_agent(db, workspace_id, target_role)
     rule = check_refusal(agent, message)

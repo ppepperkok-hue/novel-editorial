@@ -1471,7 +1471,10 @@ def create_app() -> FastAPI:
         )
         return {"id": updated.id, "status": updated.status}
 
-    @app.get("/works/{workspace_id}/inspect")
+    @app.get(
+        "/works/{workspace_id}/inspect",
+        response_class=PlainTextResponse,
+    )
     def inspect_workspace(
         workspace_id: str, keyword: str | None = None
     ) -> PlainTextResponse:
@@ -1609,7 +1612,10 @@ def create_app() -> FastAPI:
             for review_row in review.list_reviews(db, workspace_id, draft_id)
         ]
 
-    @app.get("/works/{workspace_id}/log")
+    @app.get(
+        "/works/{workspace_id}/log",
+        response_class=PlainTextResponse,
+    )
     def get_workspace_log(workspace_id: str) -> PlainTextResponse:
         """Full workflow log text, same source as the ``log`` CLI command."""
         return PlainTextResponse(

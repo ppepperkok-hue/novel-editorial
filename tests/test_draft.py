@@ -1101,6 +1101,27 @@ def test_draft_v0_empty_state_show_and_usage_errors(
     assert "作者亲笔正文" in shown.output
 
 
+def test_draft_author_draft_shows_author_as_writer(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Author drafts (writer_id=None) render as 作者, not the default writer."""
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    created = runner.invoke(
+        app, ["draft", "new", workspace_id, "--title", "作者章"]
+    )
+    assert created.exit_code == 0, created.output
+    draft_id = created.output.split()[1]
+
+    listing = runner.invoke(app, ["draft", "list", workspace_id])
+    assert listing.exit_code == 0, listing.output
+    assert "（作者）" in listing.output
+    assert "（写手）" not in listing.output
+
+    shown = runner.invoke(app, ["draft", "show", draft_id])
+    assert shown.exit_code == 0, shown.output
+    assert "writer: 作者" in shown.output
+
+
 def test_draft_save_cli_rejects_blank_content(
     tmp_path: Path, monkeypatch
 ) -> None:

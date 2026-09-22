@@ -347,6 +347,14 @@ def test_talk_send_unknown_alias(tmp_path: Path, monkeypatch) -> None:
     assert "unknown partner alias" in result.output
 
 
+def test_talk_send_rejects_empty_message(tmp_path: Path, monkeypatch) -> None:
+    workspace_id = _create_workspace(tmp_path, monkeypatch)
+    result = runner.invoke(app, ["talk", "send", workspace_id, "   "])
+    assert result.exit_code == 2
+    assert "message 不能为空" in result.output
+    assert list_messages(DB(load_settings()), workspace_id) == []
+
+
 def test_talk_send_failure_leaves_no_messages(tmp_path: Path, monkeypatch) -> None:
     workspace_id = _create_workspace(tmp_path, monkeypatch)
     settings = load_settings()
