@@ -1,33 +1,32 @@
 :root {
-  /* v3：杂志/编辑风。暖墨底 + terracotta 单 accent + 衬线标题。 */
-  --bg: #121110;
-  --surface: #191817;
-  --surface-raised: #201f1e;
-  --surface-hover: #272625;
-  --border: #2b2a28;
-  --border-strong: #3a3936;
-  --text: #f2efe9;
-  --text-muted: #9a958d;
-  --text-dim: #6b675f;
-  --accent: #d97757;
-  --accent-strong: #e58a6c;
-  --accent-weak: rgba(217, 119, 87, 0.14);
-  --accent-ink: #1a120d;
-  --danger: #d97757;
-  --ok: #6b9e7a;
-  --radius: 2px;
-  --radius-lg: 3px;
+  /* Ghost 式深色后台：中性灰阶 + 绿 accent + 信息密集（编辑部监控室） */
+  --bg: #15171a;
+  --surface: #1b1e22;
+  --surface-raised: #212529;
+  --surface-hover: #292d33;
+  --border: #26292e;
+  --border-strong: #33383f;
+  --text: #e6e8ea;
+  --text-muted: #8a9099;
+  --text-dim: #5f656e;
+  --accent: #3ecf8e;
+  --accent-strong: #55dda0;
+  --accent-weak: rgba(62, 207, 142, 0.12);
+  --accent-ink: #0c1512;
+  --danger: #e5484d;
+  --ok: #3ecf8e;
+  --radius: 6px;
+  --radius-lg: 8px;
   --shadow: none;
-  --fs-kicker: 10.5px;
-  --fs-meta: 11.5px;
-  --fs-body: 14px;
-  --fs-title: 17px;
-  --fs-h2: 22px;
-  --fs-page: 34px;
-  --font-serif: Georgia, "Times New Roman", "Songti SC", "SimSun", serif;
+  --fs-label: 11px;
+  --fs-meta: 12px;
+  --fs-body: 13.5px;
+  --fs-title: 15px;
+  --fs-h2: 20px;
+  --fs-page: 24px;
   --font-sans: "Segoe UI Variable Text", "Segoe UI", "PingFang SC",
     "Microsoft YaHei", system-ui, sans-serif;
-  --mono: "Cascadia Mono", "JetBrains Mono", ui-monospace, Consolas, monospace;
+  --mono: "Cascadia Mono", ui-monospace, Consolas, monospace;
 }
 
 * {
@@ -2141,425 +2140,155 @@ textarea:focus-visible {
   }
 }
 
-/* === FE-M 设计打磨：视觉系统精修（墨色书卷 + 铜金）=== */
-
-/* 品牌区：印章式标记 + 双行文字 */
-.app-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 2px 6px 12px;
-}
-.app-brand-mark {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
-  background: linear-gradient(150deg, var(--accent), var(--accent-strong));
-  color: var(--accent-ink);
-  font-size: 15px;
-  font-weight: 700;
-}
-.app-brand-text {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.3;
-}
-.app-brand-text strong {
-  font-size: 13.5px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
-.app-brand-text small {
-  color: var(--text-dim);
-  font-size: 11px;
-}
-
-/* 导航分组标题 + 选中态左竖条 */
-.app-nav-group {
-  margin: 14px 0 4px;
-  padding: 0 10px;
-  color: var(--text-dim);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-.app-nav-link {
-  padding: 7px 10px 7px 12px;
-  border-left: 2px solid transparent;
-  border-radius: 7px;
-  font-size: 13.5px;
-  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
-}
-.app-nav-link:hover {
-  background: var(--surface-hover);
-  color: var(--text);
-}
-.app-nav-link--active,
-.app-nav-link--active:hover {
-  background: var(--accent-weak);
-  border-left-color: var(--accent);
-  color: var(--accent-strong);
-  font-weight: 600;
-}
-
-/* 顶栏改为细上下文条（品牌已移至侧栏，去重复大标题） */
-.app-header {
-  padding: 9px 24px;
-  align-items: center;
-  background: var(--bg);
-}
-.header-workspace {
-  font-size: 12.5px;
-  color: var(--text-muted);
-}
-
-/* 总览三窗比例：给跨作品列表更多横向空间 */
-.panel-grid {
-  grid-template-columns: minmax(300px, 1.4fr) 1fr 0.82fr;
-  gap: 14px;
-}
-
-/* 面板：更大圆角 + 阴影 + 标题底色 */
-.panel {
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
-}
-.panel-header {
-  background: linear-gradient(180deg, var(--surface-raised), var(--surface));
-}
-.panel-header h2,
-.panel-header h3 {
-  font-size: 14px;
-  letter-spacing: 0.02em;
-}
-
-/* 作品卡：抬升与描边过渡 */
-.works-card {
-  background: var(--surface-raised);
-  transition: border-color 0.14s ease, background 0.14s ease, transform 0.14s ease;
-}
-.works-card:hover {
-  border-color: var(--border-strong);
-  background: var(--surface-hover);
-  transform: translateY(-1px);
-}
-
-/* 班子档案卡：加大行距、字段分隔，提升可读性 */
-.agent-grid {
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 14px;
-}
-.agent-card {
-  padding: 16px 18px;
-  gap: 9px;
-  border-radius: var(--radius-lg);
-}
-.agent-role {
-  padding: 2px 9px;
-  background: var(--accent-weak);
-  color: var(--accent-strong);
-  border: 1px solid rgba(200, 168, 106, 0.22);
-}
-.agent-field {
-  display: grid;
-  grid-template-columns: 74px 1fr;
-  align-items: baseline;
-  gap: 2px 10px;
-  padding: 6px 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.035);
-}
-.agent-field:first-of-type {
-  border-top: none;
-}
-.agent-field-label {
-  color: var(--text-dim);
-  font-size: 10.5px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-}
-.agent-field-value {
-  font-size: 13.5px;
-  line-height: 1.65;
-}
-
-/* 主按钮：铜金渐变 + 深墨字 */
-.primary-button {
-  padding: 9px 18px;
-  background: linear-gradient(150deg, var(--accent), var(--accent-strong));
-  color: var(--accent-ink);
-  font-size: 13.5px;
-  font-weight: 600;
-  transition: filter 0.14s ease, transform 0.14s ease;
-}
-.primary-button:hover:not(:disabled) {
-  filter: brightness(1.06);
-  transform: translateY(-1px);
-}
-
-/* 输入框：focus 环 */
-.form-field input,
-.form-field textarea,
-.form-field select {
-  background: var(--bg);
-  border-radius: var(--radius);
-  transition: border-color 0.14s ease, box-shadow 0.14s ease;
-}
-.form-field input:focus,
-.form-field textarea:focus,
-.form-field select:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-weak);
-}
-
-/* 内容区留白 */
-.app-content {
-  padding: 20px 28px;
-}
-
-/* 总览作品卡：标题独占一行，meta 横向自适应排列，减少垂直占用 */
-.workspace-card {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 3px 12px;
-  padding: 12px 14px;
-}
-.workspace-card-title {
-  flex-basis: 100%;
-  margin-bottom: 2px;
-  font-size: 14px;
-  font-weight: 600;
-}
-.workspace-card-meta {
-  font-size: 12px;
-  color: var(--text-dim);
-}
-
-/* 概览作品卡容器：加宽最小宽度，meta 更易排成整齐一行 */
-.workspace-grid {
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-}
-
-/* 文件选择：统一为描边按钮风格，替换浏览器原生外观 */
-input[type="file"] {
-  font-size: 13px;
-  color: var(--text-muted);
-}
-input[type="file"]::file-selector-button,
-input[type="file"]::-webkit-file-upload-button {
-  margin-right: 10px;
-  padding: 8px 14px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface-raised);
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  transition: border-color 0.14s ease, background 0.14s ease;
-}
-input[type="file"]::file-selector-button:hover,
-input[type="file"]::-webkit-file-upload-button:hover {
-  border-color: var(--accent);
-  background: var(--surface-hover);
-}
-
-/* 导入文件选择：label 承载自定义按钮脸，隐藏原生控件 */
-.file-picker {
-  display: inline-flex;
-  align-items: center;
-  cursor: pointer;
-}
-.file-picker input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  border: 0;
-}
-.file-picker-face {
-  padding: 8px 14px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface-raised);
-  color: var(--text);
-  font-size: 13px;
-  transition: border-color 0.14s ease, background 0.14s ease;
-}
-.file-picker:hover .file-picker-face {
-  border-color: var(--accent);
-  background: var(--surface-hover);
-}
-
-/* === v2 视觉系统：Swiss editorial（墨 + 朱红单 accent）===
-   覆盖上一版：去渐变、去阴影、收圆角、建立字号层级与结构权重。 */
+/* === Ghost 式：编辑部监控室（结构层级）=== */
 
 body {
-  font-family:
-    "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei",
-    system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-size: var(--fs-body);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
 
-/* 品牌区：方形墨标 + 字标（无渐变） */
-.app-brand {
-  gap: 9px;
-  padding: 2px 8px 14px;
-}
-.app-brand-mark {
-  width: 26px;
-  height: 26px;
-  border-radius: 2px;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-size: 13px;
-  font-weight: 700;
-}
-.app-brand-text strong {
-  font-size: 13px;
-  font-weight: 650;
-  letter-spacing: 0;
-}
-.app-brand-text small {
-  font-size: 10.5px;
-  letter-spacing: 0.02em;
-}
-
-/* 侧栏：更紧、左竖条选中、无气泡圆角 */
-.app-sidebar {
-  width: 212px;
-  gap: 0;
-  padding: 14px 0 10px;
-}
-.app-nav {
-  gap: 1px;
-  padding: 0 8px;
-}
-.app-nav-group {
-  margin: 16px 0 5px;
-  padding: 0 8px;
-  font-size: var(--fs-label);
-  letter-spacing: 0.12em;
-}
-.app-nav-link {
-  padding: 6px 10px;
-  border-left: 2px solid transparent;
-  border-radius: 2px;
-  font-size: var(--fs-body);
-}
-.app-nav-link--active,
-.app-nav-link--active:hover {
-  border-left-color: var(--accent);
-  background: var(--accent-weak);
-  color: var(--text);
-  font-weight: 600;
-}
-
-/* 顶栏：最低限度上下文条，等宽字体强化「仪表」感 */
-.app-header {
-  padding: 10px 26px;
-  background: transparent;
-}
-.header-workspace {
-  font-family: var(--mono);
-  font-size: 11.5px;
-  letter-spacing: 0.02em;
-}
 .app-content {
-  padding: 22px 26px 40px;
+  padding: 24px 28px 48px;
+  max-width: 1400px;
 }
 
-/* 页面标题：与正文拉开权重 */
+/* 页头：标题 + 元信息 */
+.page-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
 .page-header h2 {
+  margin: 0;
   font-size: var(--fs-page);
   font-weight: 650;
   letter-spacing: -0.01em;
 }
 
-/* 面板：1px 边框、无阴影、标题改为小号大写标签 */
-.panel {
+/* KPI 行：Ghost 式指标卡 */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+  gap: 12px;
+  margin-bottom: 22px;
+}
+.kpi {
+  padding: 15px 17px;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   background: var(--surface);
-  box-shadow: none;
+}
+.kpi-value {
+  display: block;
+  font-size: 27px;
+  font-weight: 650;
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+}
+.kpi-label {
+  display: block;
+  margin-top: 4px;
+  font-size: var(--fs-meta);
+  color: var(--text-muted);
+}
+.kpi--accent {
+  border-color: rgba(62, 207, 142, 0.35);
+}
+.kpi--accent .kpi-value {
+  color: var(--accent);
+}
+
+/* 两栏：主区（行动） + 侧栏（动态） */
+.overview-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(300px, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.overview-primary,
+.overview-secondary {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+/* 面板：Ghost 式卡片（1px 边框 + 圆角，无阴影） */
+.panel {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
 }
 .panel-header {
-  padding: 11px 14px;
-  background: transparent;
+  padding: 13px 16px;
   border-bottom: 1px solid var(--border);
 }
 .panel-header h2,
 .panel-header h3 {
-  font-size: var(--fs-label);
+  margin: 0;
+  font-size: var(--fs-title);
   font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-muted);
 }
 .panel-body {
-  padding: 14px;
-}
-.panel-grid {
-  grid-template-columns: minmax(320px, 1.5fr) 1fr 0.8fr;
-  gap: 12px;
+  padding: 14px 16px;
 }
 
-/* 作品列表：行式分隔（border-bottom）而非卡片堆砌 */
+/* 作品封面墙 */
 .workspace-grid {
-  grid-template-columns: 1fr;
-  gap: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 .workspace-card {
-  padding: 10px 4px;
-  border: none;
-  border-bottom: 1px solid var(--border);
-  border-radius: 0;
-  background: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  text-align: left;
+  transition: border-color 0.12s ease, background 0.12s ease;
 }
 .workspace-card:hover,
 .workspace-card--selected {
+  border-color: var(--accent);
   background: var(--surface-hover);
-  border-color: var(--border);
 }
 .workspace-card-title {
-  font-size: var(--fs-body);
+  font-size: var(--fs-title);
   font-weight: 600;
 }
 .workspace-card-meta {
-  font-family: var(--mono);
   font-size: var(--fs-meta);
-  color: var(--text-dim);
+  color: var(--text-muted);
 }
 
-/* 主按钮：实色 accent、无渐变、小圆角 */
+/* 主按钮：Ghost 式实色 */
 .primary-button {
-  padding: 7px 14px;
+  padding: 8px 15px;
+  border: none;
   border-radius: var(--radius);
   background: var(--accent);
   color: var(--accent-ink);
   font-size: var(--fs-body);
   font-weight: 600;
-  letter-spacing: 0;
-  transition: background 0.12s ease;
 }
 .primary-button:hover:not(:disabled) {
   background: var(--accent-strong);
-  filter: none;
-  transform: none;
 }
 
-/* 输入：1px 边框 + accent focus 描边（无光晕） */
+/* 输入 */
 .form-field input,
 .form-field textarea,
 .form-field select {
@@ -2574,346 +2303,55 @@ body {
 .form-field select:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: none;
-}
-.form-label {
-  font-size: var(--fs-label);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-dim);
 }
 
-/* 班子档案：label 左、值右，靠字重与颜色分层 */
-.agent-grid {
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 12px;
-}
-.agent-card {
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: transparent;
-}
-.agent-card-head {
-  padding-bottom: 9px;
-  border-bottom: 1px solid var(--border);
-}
-.agent-card-head h4 {
-  font-size: var(--fs-title);
-  font-weight: 650;
-}
-.agent-role {
-  border: none;
-  background: var(--accent-weak);
-  color: var(--accent-strong);
-  font-size: var(--fs-label);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.agent-field {
-  grid-template-columns: 68px 1fr;
-  padding: 5px 0;
-  border-top: 1px solid var(--border);
-}
-.agent-field-label {
-  font-size: var(--fs-label);
-  letter-spacing: 0.1em;
-  color: var(--text-dim);
-}
-.agent-field-value {
-  font-size: var(--fs-body);
-  line-height: 1.55;
-}
-
-/* 文件选择按钮 */
-.file-picker-face {
-  padding: 7px 13px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface-raised);
-  font-size: var(--fs-body);
-}
-
-/* === v3 视觉系统：杂志/编辑风（衬线标题 + 编辑元素 + 强留白）=== */
-
-body {
-  font-family: var(--font-sans);
-  font-size: var(--fs-body);
-  line-height: 1.65;
-  -webkit-font-smoothing: antialiased;
-}
-
-.app-content {
-  padding: 28px 32px 56px;
-  max-width: 1320px;
-}
-
-/* 编辑元素：kicker（小号大写标签） */
-.kicker {
-  margin: 0 0 8px;
-  font-size: var(--fs-kicker);
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--accent);
-}
-
-/* 页面壳：杂志式页头（大衬线标题 + 细线） */
-.page-header {
-  padding-bottom: 16px;
-  margin-bottom: 26px;
-  border-bottom: 1px solid var(--border);
-}
-.page-header h2 {
-  margin: 0;
-  font-family: var(--font-serif);
-  font-size: var(--fs-h2);
-  font-weight: 700;
-  letter-spacing: -0.015em;
-}
-
-/* 总览：页头 + 两栏（作品主导 / 待拍板优先） */
-.overview-hero {
-  padding: 4px 0 22px;
-  margin-bottom: 30px;
-  border-bottom: 1px solid var(--border);
-}
-.overview-title {
-  margin: 0 0 16px;
-  font-family: var(--font-serif);
-  font-size: var(--fs-page);
-  font-weight: 700;
-  letter-spacing: -0.025em;
-  line-height: 1.08;
-}
-.overview-stats {
+/* 侧栏：品牌 + 分组导航 */
+.app-brand {
   display: flex;
-  gap: 30px;
-  margin: 0;
+  align-items: center;
+  gap: 9px;
+  padding: 2px 8px 14px;
 }
-.overview-stat {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: var(--fs-meta);
-  letter-spacing: 0.03em;
-  color: var(--text-muted);
-}
-.overview-stat strong {
-  font-family: var(--font-serif);
-  font-size: 27px;
-  font-weight: 700;
-  line-height: 1;
-  color: var(--text);
-}
-.overview-layout {
+.app-brand-mark {
   display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(290px, 1fr);
-  gap: 34px;
-  align-items: start;
-}
-.overview-primary,
-.overview-secondary {
-  display: flex;
-  flex-direction: column;
-  gap: 26px;
-  min-width: 0;
-}
-.overview-secondary > [data-testid="panel-pending"] {
-  order: -1;
-}
-
-/* panel：去卡片化，改成 section（大写标签 + 1px 线） */
-.panel {
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  min-height: 0;
-}
-.panel-header {
-  padding: 0 0 10px;
-  background: transparent;
-  border-bottom: 1px solid var(--border);
-}
-.panel-header h2,
-.panel-header h3 {
-  font-size: var(--fs-kicker);
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-.panel-body {
-  padding: 14px 0 0;
-}
-.panel-state {
-  min-height: 120px;
-}
-
-/* 作品：封面墙网格（保持杂志风：衬线书名 + 细线边框） */
-.workspace-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
-  gap: 14px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.workspace-card {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  text-align: left;
-  transition: border-color 0.14s ease, background 0.14s ease;
-}
-.workspace-card:hover,
-.workspace-card--selected {
-  border-color: var(--accent);
-  background: var(--surface-raised);
-}
-.workspace-card-title {
-  margin-bottom: 2px;
-  font-family: var(--font-serif);
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 1.25;
-}
-.workspace-card-meta {
-  font-family: var(--mono);
-  font-size: var(--fs-meta);
-  letter-spacing: 0.01em;
-  color: var(--text-dim);
-}
-
-/* 主按钮：terracotta 实色、小圆角 */
-.primary-button {
-  padding: 8px 16px;
-  border-radius: var(--radius);
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 6px;
   background: var(--accent);
   color: var(--accent-ink);
-  font-size: var(--fs-meta);
+  font-size: 13px;
+  font-weight: 700;
+}
+.app-brand-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.3;
+}
+.app-brand-text strong {
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.02em;
-  transition: background 0.12s ease;
 }
-.primary-button:hover:not(:disabled) {
-  background: var(--accent-strong);
-  filter: none;
-  transform: none;
-}
-.text-link {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-/* 输入 */
-.form-field input,
-.form-field textarea,
-.form-field select,
-.talk-input,
-.editor-textarea {
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--bg);
-  font-size: var(--fs-body);
-}
-.form-field input:focus,
-.form-field textarea:focus,
-.form-field select:focus,
-.talk-input:focus,
-.editor-textarea:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: none;
-}
-.form-label {
-  font-size: var(--fs-kicker);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+.app-brand-text small {
+  font-size: 11px;
   color: var(--text-dim);
 }
-
-/* 班子档案：编辑式条目 */
-.agent-grid {
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 0;
-}
-.agent-card {
-  padding: 16px 2px;
-  border: none;
-  border-bottom: 1px solid var(--border);
-  border-radius: 0;
-  background: transparent;
-}
-.agent-card-head {
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border);
-}
-.agent-card-head h4 {
-  font-family: var(--font-serif);
-  font-size: 18px;
+.app-nav-group {
+  margin: 16px 0 4px;
+  padding: 0 10px;
+  color: var(--text-dim);
+  font-size: var(--fs-label);
   font-weight: 600;
-}
-.agent-role {
-  border: none;
-  background: transparent;
-  color: var(--accent);
-  font-size: var(--fs-kicker);
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-.agent-field {
-  grid-template-columns: 72px 1fr;
-  padding: 7px 0;
-  border-top: 1px solid var(--border);
-}
-.agent-field-label {
-  font-size: var(--fs-kicker);
   letter-spacing: 0.1em;
-  color: var(--text-dim);
+  text-transform: uppercase;
 }
-.agent-field-value {
-  font-size: var(--fs-body);
-  line-height: 1.6;
-}
-
-/* 侧栏：更安静，选中用 accent 左条 */
 .app-nav-link {
-  border-radius: 0;
+  border-radius: var(--radius);
 }
 .app-nav-link--active,
 .app-nav-link--active:hover {
-  border-left-color: var(--accent);
   background: var(--accent-weak);
-  color: var(--text);
-}
-
-/* 作品页封面卡：与总览封面墙同款（衬线书名 + 等宽元信息） */
-.works-card {
-  gap: 5px;
-  padding: 16px;
-  border-radius: var(--radius);
-  transition: border-color 0.14s ease, background 0.14s ease;
-}
-.works-card:hover {
-  border-color: var(--accent);
-  background: var(--surface-raised);
-}
-.works-card-title {
-  font-family: var(--font-serif);
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 1.25;
-}
-.works-card-meta {
-  font-family: var(--mono);
-  font-size: var(--fs-meta);
-  color: var(--text-dim);
+  color: var(--accent);
 }

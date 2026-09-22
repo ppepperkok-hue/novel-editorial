@@ -155,135 +155,146 @@ export default function OverviewPage() {
 
   return (
     <>
-      <header className="overview-hero">
-        <p className="kicker">编辑部</p>
-        <h1 className="overview-title">跨作品概览</h1>
-        <p className="overview-stats">
-          <span className="overview-stat">
-            <strong>{pendingCount}</strong> 待拍板
-          </span>
-          <span className="overview-stat">
-            <strong>{overview.data?.overviews.length ?? 0}</strong> 部作品
-          </span>
-          <span className="overview-stat">
-            <strong>{events.events.length}</strong> 条动态
-          </span>
-        </p>
+      <header className="page-header">
+        <h2>总览</h2>
+        <span className="page-meta">
+          跨 {overview.data?.overviews.length ?? 0} 部作品
+        </span>
       </header>
+
+      <div className="kpi-row">
+        <div className="kpi kpi--accent">
+          <span className="kpi-value">{pendingCount}</span>
+          <span className="kpi-label">待拍板</span>
+        </div>
+        <div className="kpi">
+          <span className="kpi-value">
+            {overview.data?.overviews.length ?? 0}
+          </span>
+          <span className="kpi-label">作品</span>
+        </div>
+        <div className="kpi">
+          <span className="kpi-value">{events.events.length}</span>
+          <span className="kpi-label">最近动态</span>
+        </div>
+        <div className="kpi">
+          <span className="kpi-value">
+            {(overview.data?.overviews.length ?? 0) * 4}
+          </span>
+          <span className="kpi-label">编辑部伙伴</span>
+        </div>
+      </div>
+
       <div className="overview-layout">
         <div className="overview-primary">
-        <PanelWindow
-          title="作品"
-          state={
-            overview.error
-              ? "error"
-              : overview.data === null
-                ? "loading"
-                : overview.data.overviews.length === 0
-                  ? "empty"
-                  : "ready"
-          }
-          source="/overview"
-          message={overview.error?.message}
-          onRetry={overview.reload}
-          emptyTitle="还没有作品"
-          emptyHint="在 CLI 里创建第一部作品，它就会出现在这里"
-          dataTestId="panel-overview"
-        >
-          <ul className="workspace-grid">
-            {overview.data?.overviews.map((item) => (
-              <li key={item.workspace_id}>
-                <WorkspaceCard
-                  item={item}
-                  selected={item.workspace_id === selectedWorkspaceId}
-                  onClick={() => setSelectedWorkspaceId(item.workspace_id)}
-                />
-              </li>
-            ))}
-          </ul>
-        </PanelWindow>
+          <PanelWindow
+            title="待拍板"
+            state={pendingWindowState}
+            source="/works/{id}/pending"
+            message={
+              pendingError?.message ??
+              (overview.error ? "概览未就绪，无法聚合待拍板" : undefined)
+            }
+            onRetry={() => {
+              overview.reload();
+              reloadPending();
+            }}
+            emptyTitle="没有待拍板"
+            emptyHint="所有草稿都已处理，轻松一下"
+            dataTestId="panel-pending"
+          >
+            <ul className="pending-list">
+              {pending?.groups.map((group) =>
+                group.drafts.map((draft) => (
+                  <PendingDraftItem
+                    key={`${group.workspaceId}-${draft.id}`}
+                    workspaceId={group.workspaceId}
+                    workspaceTitle={group.workspaceTitle}
+                    draft={draft}
+                    onOpenWorkspace={() =>
+                      setSelectedWorkspaceId(group.workspaceId)
+                    }
+                    onDecided={handleDecided}
+                  />
+                )),
+              )}
+            </ul>
+            {pending !== null && pending.failedWorkspaces > 0 ? (
+              <p className="partial-failure">
+                {pending.failedWorkspaces} 部作品的待拍板读取失败（已跳过）
+              </p>
+            ) : null}
+          </PanelWindow>
+
+          <PanelWindow
+            title="作品"
+            state={
+              overview.error
+                ? "error"
+                : overview.data === null
+                  ? "loading"
+                  : overview.data.overviews.length === 0
+                    ? "empty"
+                    : "ready"
+            }
+            source="/overview"
+            message={overview.error?.message}
+            onRetry={overview.reload}
+            emptyTitle="还没有作品"
+            emptyHint="创建第一部作品，它就会出现在这里"
+            dataTestId="panel-overview"
+          >
+            <ul className="workspace-grid">
+              {overview.data?.overviews.map((item) => (
+                <li key={item.workspace_id}>
+                  <WorkspaceCard
+                    item={item}
+                    selected={item.workspace_id === selectedWorkspaceId}
+                    onClick={() => setSelectedWorkspaceId(item.workspace_id)}
+                  />
+                </li>
+              ))}
+            </ul>
+          </PanelWindow>
         </div>
 
         <div className="overview-secondary">
-        <PanelWindow
-          title="最近动态"
-          state={
-            events.error
-              ? "error"
-              : events.loading
-                ? "loading"
-                : "ready"
-          }
-          source={events.source}
-          message={events.error?.message}
-          onRetry={events.reload}
-          dataTestId="panel-events"
-        >
-          <div className="events-feed">
-            <EventStreamStatus
-              status={events.streamStatus.status}
-              notice={events.streamStatus.notice}
-            />
-            {events.events.length === 0 ? (
-              <EmptyState
-                title="暂无事件"
-                hint="编辑部还没有动静，先去写点东西吧"
+          <PanelWindow
+            title="编辑部动态"
+            state={events.error ? "error" : events.loading ? "loading" : "ready"}
+            source={events.source}
+            message={events.error?.message}
+            onRetry={events.reload}
+            dataTestId="panel-events"
+          >
+            <div className="events-feed">
+              <EventStreamStatus
+                status={events.streamStatus.status}
+                notice={events.streamStatus.notice}
               />
-            ) : (
-              <ul className="event-list">
-                {events.events.map((event) => (
-                  <EventItem
-                    key={event.id}
-                    event={event}
-                    onClick={() => openWorkspaceFromEvent(event)}
-                  />
-                ))}
-              </ul>
-            )}
-          </div>
-          {events.skipped !== null && events.skipped > 0 ? (
-            <p className="partial-failure">
-              有 {events.skipped} 部作品的事件读取失败（已跳过）
-            </p>
-          ) : null}
-        </PanelWindow>
-
-        <PanelWindow
-          title="待拍板"
-          state={pendingWindowState}
-          source="/works/{id}/pending"
-          message={
-            pendingError?.message ??
-            (overview.error ? "概览未就绪，无法聚合待拍板" : undefined)
-          }
-          onRetry={() => {
-            overview.reload();
-            reloadPending();
-          }}
-          emptyTitle="没有待拍板"
-          emptyHint="所有草稿都已处理，轻松一下"
-          dataTestId="panel-pending"
-        >
-          <ul className="pending-list">
-            {pending?.groups.map((group) =>
-              group.drafts.map((draft) => (
-                <PendingDraftItem
-                  key={`${group.workspaceId}-${draft.id}`}
-                  workspaceId={group.workspaceId}
-                  workspaceTitle={group.workspaceTitle}
-                  draft={draft}
-                  onOpenWorkspace={() => setSelectedWorkspaceId(group.workspaceId)}
-                  onDecided={handleDecided}
+              {events.events.length === 0 ? (
+                <EmptyState
+                  title="暂无事件"
+                  hint="编辑部还没有动静，先去写点东西吧"
                 />
-              )),
-            )}
-          </ul>
-          {pending !== null && pending.failedWorkspaces > 0 ? (
-            <p className="partial-failure">
-              {pending.failedWorkspaces} 部作品的待拍板读取失败（已跳过）
-            </p>
-          ) : null}
-        </PanelWindow>
+              ) : (
+                <ul className="event-list">
+                  {events.events.map((event) => (
+                    <EventItem
+                      key={event.id}
+                      event={event}
+                      onClick={() => openWorkspaceFromEvent(event)}
+                    />
+                  ))}
+                </ul>
+              )}
+            </div>
+            {events.skipped !== null && events.skipped > 0 ? (
+              <p className="partial-failure">
+                有 {events.skipped} 部作品的事件读取失败（已跳过）
+              </p>
+            ) : null}
+          </PanelWindow>
         </div>
       </div>
       <footer className="status-line" data-testid="status-line" aria-live="polite">
