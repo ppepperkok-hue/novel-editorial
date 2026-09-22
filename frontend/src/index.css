@@ -2494,3 +2494,91 @@ body {
   font-size: var(--fs-meta);
   line-height: 1.55;
 }
+
+/* —— 编辑部：行为时间线 + 伙伴状态 —— */
+.timeline-list,
+.state-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.timeline-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.timeline-entry:last-child {
+  border-bottom: none;
+}
+.timeline-entry-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.timeline-kind {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-weak);
+  color: var(--accent);
+  font-size: var(--fs-label);
+}
+.timeline-actor {
+  font-size: var(--fs-meta);
+  font-weight: 600;
+}
+.timeline-arrow {
+  color: var(--text-dim);
+}
+.timeline-target {
+  color: var(--text-muted);
+  font-size: var(--fs-meta);
+}
+.timeline-at {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+}
+.timeline-content {
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: 1.6;
+}
+.timeline-source {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-label);
+}
+.state-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.state-actor {
+  margin: 0 0 6px;
+  color: var(--accent);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+}
+.state-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+}
+.state-target {
+  color: var(--text-muted);
+  font-size: var(--fs-meta);
+}
+.state-content {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-meta);
+  line-height: 1.55;
+}

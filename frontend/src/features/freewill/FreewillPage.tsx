@@ -9,6 +9,12 @@ import {
 } from "../../components/StateViews";
 import { useWorkspaceSelection } from "../../hooks/useWorkspaceSelection";
 import {
+  behaviorKindLabel,
+  groupBehaviorStateByActor,
+  parseBehaviorStateText,
+  parseTimelineText,
+} from "./behaviorText";
+import {
   groupMotivesByOwner,
   parseMotiveText,
   type MotiveEntry,
@@ -163,8 +169,6 @@ function BehaviorTimelinePanel({ workspaceId }: { workspaceId: string }) {
   const [agent, setAgent] = useState("");
   const [kinds, setKinds] = useState<string[]>([]);
 
-  // Reset filters (applied values and drafts) when switching workspaces so a
-  // stale partner / kind selection is not applied to the new work.
   useEffect(() => {
     setAgentDraft("");
     setKindsDraft([]);
@@ -189,6 +193,9 @@ function BehaviorTimelinePanel({ workspaceId }: { workspaceId: string }) {
     setAgent("");
     setKinds([]);
   }
+
+  const text = timeline.data ?? "";
+  const entries = parseTimelineText(text);
 
   return (
     <section className="panel behavior-timeline-panel" data-testid="behavior-timeline">
@@ -245,16 +252,47 @@ function BehaviorTimelinePanel({ workspaceId }: { workspaceId: string }) {
             onRetry={() => void timeline.refetch()}
           />
         ) : null}
-        {timeline.isSuccess && (timeline.data ?? "") === "" ? (
+        {timeline.isSuccess && text === "" ? (
           <EmptyState
             title="暂无行为记录"
             hint="伙伴的行为轨迹会按时间顺序出现在这里"
           />
         ) : null}
-        {timeline.isSuccess && (timeline.data ?? "") !== "" ? (
-          <pre className="plain-output" data-testid="timeline-report">
-            {timeline.data}
-          </pre>
+        {timeline.isSuccess && text !== "" ? (
+          <>
+            {entries.length > 0 ? (
+              <ol className="timeline-list">
+                {entries.map((entry, index) => (
+                  <li
+                    className="timeline-entry"
+                    key={`${entry.at}-${index}`}
+                  >
+                    <div className="timeline-entry-head">
+                      <span className="timeline-kind">
+                        {behaviorKindLabel(entry.kind)}
+                      </span>
+                      <span className="timeline-actor">{entry.actor}</span>
+                      <span className="timeline-arrow">→</span>
+                      <span className="timeline-target">{entry.target}</span>
+                      <time className="timeline-at">
+                        {entry.at.slice(5, 16).replace("T", " ")}
+                      </time>
+                    </div>
+                    <p className="timeline-content">{entry.content}</p>
+                    {entry.source !== "" ? (
+                      <p className="timeline-source">来源 {entry.source}</p>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+            ) : null}
+            <details className="motive-raw">
+              <summary>CLI 原文</summary>
+              <pre className="plain-output" data-testid="timeline-report">
+                {text}
+              </pre>
+            </details>
+          </>
         ) : null}
       </div>
     </section>
@@ -263,16 +301,67 @@ function BehaviorTimelinePanel({ workspaceId }: { workspaceId: string }) {
 
 function BehaviorStatePanel({ workspaceId }: { workspaceId: string }) {
   const state = useBehaviorState(workspaceId);
+  const text = state.data ?? "";
+  const groups = groupBehaviorStateByActor(parseBehaviorStateText(text));
+
   return (
-    <TextReportPanel
-      title="当前状态"
-      source={`/works/${workspaceId}/behavior`}
-      query={state}
-      disabled={false}
-      emptyTitle="暂无状态数据"
-      emptyHint="每位伙伴当前的耐心、关系与立场状态在这里"
-      dataTestId="behavior-state"
-    />
+    <section className="panel behavior-state-panel" data-testid="behavior-state">
+      <header className="panel-header">
+        <h3>当前状态</h3>
+      </header>
+      <div className="panel-body">
+        {state.isPending ? <SkeletonRows count={4} /> : null}
+        {state.isError ? (
+          <ErrorState
+            source={`/works/${workspaceId}/behavior`}
+            message={state.error.message}
+            onRetry={() => void state.refetch()}
+          />
+        ) : null}
+        {state.isSuccess && text.trim() === "" ? (
+          <EmptyState
+            title="暂无状态数据"
+            hint="每位伙伴当前的耐心、关系与立场状态在这里"
+          />
+        ) : null}
+        {state.isSuccess && text.trim() !== "" ? (
+          <>
+            {groups.length > 0 ? (
+              <div className="state-groups">
+                {groups.map((group) => (
+                  <div className="state-group" key={group.actor}>
+                    <h4 className="state-actor">{group.actor}</h4>
+                    <ul className="state-list">
+                      {group.entries.map((entry, index) => (
+                        <li
+                          className="state-entry"
+                          key={`${entry.kind}-${index}`}
+                        >
+                          <span className="timeline-kind">
+                            {behaviorKindLabel(entry.kind)}
+                          </span>
+                          <span className="state-target">{entry.target}</span>
+                          <p className="state-content">{entry.content}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <details className="motive-raw">
+              <summary>CLI 原文</summary>
+              <pre
+                className="plain-output"
+                data-testid="behavior-state-report"
+              >
+                {text}
+              </pre>
+            </details>
+          </>
+        ) : null}
+      </div>
+    </section>
   );
 }
 
@@ -280,6 +369,16 @@ export default function FreewillPage() {
   const { workspaceId } = useParams();
   useWorkspaceSelection(workspaceId);
   const workspaceIdValue = workspaceId ?? "";
+
+  const state = useBehaviorState(workspaceIdValue);
+  const timeline = useBehaviorTimeline(workspaceIdValue, {});
+  const motives = useMotives(workspaceIdValue);
+
+  const timelineEntries = parseTimelineText(timeline.data ?? "");
+  const stateGroups = groupBehaviorStateByActor(
+    parseBehaviorStateText(state.data ?? ""),
+  );
+  const motiveCount = parseMotiveText(motives.data ?? "").length;
 
   return (
     <section
@@ -302,13 +401,31 @@ export default function FreewillPage() {
           </Link>
         </div>
       </header>
-      <div className="freewill-layout">
-        <MotivesPanel workspaceId={workspaceIdValue} />
-        <PatiencePanel workspaceId={workspaceIdValue} />
+
+      <div className="kpi-row">
+        <div className="kpi">
+          <span className="kpi-value">{stateGroups.length}</span>
+          <span className="kpi-label">有位伙伴的状态</span>
+        </div>
+        <div className="kpi">
+          <span className="kpi-value">{timelineEntries.length}</span>
+          <span className="kpi-label">行为记录</span>
+        </div>
+        <div className="kpi kpi--accent">
+          <span className="kpi-value">{motiveCount}</span>
+          <span className="kpi-label">动机</span>
+        </div>
       </div>
-      <div className="freewill-layout">
-        <BehaviorTimelinePanel workspaceId={workspaceIdValue} />
-        <BehaviorStatePanel workspaceId={workspaceIdValue} />
+
+      <div className="overview-layout">
+        <div className="overview-primary">
+          <BehaviorTimelinePanel workspaceId={workspaceIdValue} />
+        </div>
+        <div className="overview-secondary">
+          <BehaviorStatePanel workspaceId={workspaceIdValue} />
+          <MotivesPanel workspaceId={workspaceIdValue} />
+          <PatiencePanel workspaceId={workspaceIdValue} />
+        </div>
       </div>
     </section>
   );
