@@ -100,4 +100,5 @@
 - S1 已完成（后端契约：导出 / 导入 / 配置白名单写面；审查收敛 R3 落盘前 TOML 复核，全量回归 1608 测试 + 前端 211 用例全绿）。
 - S2 已完成（前端数据管理界面：导出 / 导入 / 配置工作台；审查收敛 1c99848，前端四命令 218 用例全绿）。
 - S3 已完成（Electron 桌面壳：`frontend/electron/` 主进程 + electron-builder Windows nsis/portable；`node --check` 与前端 typecheck 绿；打包与双击验证待 Windows 实机，见 docs/usage.md「桌面壳（Electron，FE-N）」节）。
-- 待办：S4（QA 收口：pre-flight 清单 + Playwright E2E + scripts/w4_demo.py + README 更新 + 审查归档）。
+- S4 已完成（QA 收口：pre-flight 清单 + Playwright E2E 配置 + scripts/w4_demo.py + README 更新；全量回归后端 1608 + 前端 218 + smoke/stress + w1-w4 demo 全绿；Playwright/Electron 实机验证待 Windows）。
+- W4 四个子阶段（S1–S4）全部收口。

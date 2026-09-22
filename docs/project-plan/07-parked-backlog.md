@@ -25,6 +25,8 @@
 | Electron 退出码快照只存 code 不存 signal（被信号杀死显示 unknown，日志行仍可追溯） | P3 | FE-W4 S3 复审 |
 | Electron mac/linux child.kill() 不杀 uvicorn 孙进程（usage.md 已文档化 pkill 兜底） | P3 | FE-W4 S3 初审 |
 | Electron second-instance 在 bootstrap 完成前触发时静默退出（UX 边界） | P3 | FE-W4 S3 初审 |
+| TalkPage / WriterPage 共 5 处内联错误缺 role="alert"（pre-flight §2 已记录，未修） | P3 | FE-W4 S4 pre-flight |
+| Playwright E2E 实跑需 Windows 实机（chromium 下载受沙箱 CDN 限制） | 记录 | FE-W4 S4 |
 
 2026-08-22 收口：`core/behavior.py` 空 kind 守卫 / style 只读访问器（含 style_drift 统一）/ 归档 0 字节 SQLite 探针 三项 P3 已随 commit 3139c81 完成，独立审查通过（docs/reviews/20260822-M9ENG1-initial.md），文档同步后从本表移除。
 
