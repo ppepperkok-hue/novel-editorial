@@ -22,37 +22,51 @@ function roleLabel(role: string): string {
   return ROLE_LABELS[role] ?? role;
 }
 
-interface AgentProfileFieldProps {
-  label: string;
-  value: string;
-}
-
-function AgentProfileField({ label, value }: AgentProfileFieldProps) {
-  return (
-    <p className="agent-field">
-      <span className="agent-field-label">{label}</span>
-      <span className="agent-field-value">{value}</span>
-    </p>
-  );
-}
+const WORKBENCHES: ReadonlyArray<readonly [string, string]> = [
+  ["对话", "talk"],
+  ["写作", "writer"],
+  ["拍板", "decisions"],
+  ["结构", "structure"],
+  ["设定", "settings"],
+  ["质量", "quality"],
+  ["编辑部", "freewill"],
+];
 
 function AgentCard({ agent }: { agent: BandAgent }) {
   return (
     <li className="agent-card" data-testid="agent-card">
-      <header className="agent-card-head">
-        <h4>{agent.name}</h4>
-        <span className="agent-role">{roleLabel(agent.role)}</span>
+      <header className="agent-head">
+        <span className="agent-avatar" aria-hidden="true">
+          {agent.name.slice(0, 1)}
+        </span>
+        <div className="agent-identity">
+          <h4>{agent.name}</h4>
+          <span className="agent-role">{roleLabel(agent.role)}</span>
+        </div>
+        <span className="agent-mood">{agent.mood}</span>
       </header>
-      <AgentProfileField label="性格" value={agent.personality} />
-      <AgentProfileField label="立场" value={agent.stance} />
-      <AgentProfileField label="价值观" value={agent.values} />
-      <AgentProfileField label="审美" value={agent.aesthetic} />
-      <AgentProfileField label="情绪基线" value={agent.emotion_baseline} />
-      <AgentProfileField label="心情" value={agent.mood} />
-      <AgentProfileField label="工作习惯" value={agent.work_habits} />
-      <AgentProfileField label="弱点" value={agent.weaknesses} />
-      <AgentProfileField label="人际预设" value={agent.relationship_presets} />
-      <AgentProfileField label="私心" value={agent.private_motive} />
+      <p className="agent-stance">{agent.stance}</p>
+      <details className="agent-profile">
+        <summary>完整档案</summary>
+        <dl className="agent-fields">
+          <dt>性格</dt>
+          <dd>{agent.personality}</dd>
+          <dt>价值观</dt>
+          <dd>{agent.values}</dd>
+          <dt>审美</dt>
+          <dd>{agent.aesthetic}</dd>
+          <dt>情绪基线</dt>
+          <dd>{agent.emotion_baseline}</dd>
+          <dt>工作习惯</dt>
+          <dd>{agent.work_habits}</dd>
+          <dt>弱点</dt>
+          <dd>{agent.weaknesses}</dd>
+          <dt>人际预设</dt>
+          <dd>{agent.relationship_presets}</dd>
+          <dt>私心</dt>
+          <dd>{agent.private_motive}</dd>
+        </dl>
+      </details>
     </li>
   );
 }
@@ -76,27 +90,12 @@ export default function WorksDetailPage() {
   return (
     <section className="works-page" data-testid="works-detail-page">
       <header className="page-header">
-        <h2>作品详情</h2>
+        <h2>{workspace.data?.title ?? "作品详情"}</h2>
         <Link className="text-link" to="/works">
           返回作品列表
         </Link>
       </header>
-      <nav className="workspace-toolbar" aria-label="工作台入口">
-        <Link
-          className="text-link"
-          to={`/works/${workspaceId ?? ""}/talk`}
-          data-testid="workspace-talk-link"
-        >
-          进入对话工作台
-        </Link>
-        <Link
-          className="text-link"
-          to={`/works/${workspaceId ?? ""}/writer`}
-          data-testid="workspace-writer-link"
-        >
-          进入正文工作台
-        </Link>
-      </nav>
+
       {workspace.isPending ? <SkeletonRows count={5} /> : null}
       {workspace.isError ? (
         <ErrorState
@@ -105,35 +104,73 @@ export default function WorksDetailPage() {
           onRetry={() => void workspace.refetch()}
         />
       ) : null}
+
       {workspace.isSuccess ? (
         <>
-          <section className="works-overview" data-testid="works-overview">
-            <h3>{workspace.data.title}</h3>
-            <p className="works-overview-meta">
-              类型：{workspace.data.genre || "未设定"} · 状态：
-              {workspace.data.status}
+          <div className="kpi-row">
+            <div className="kpi">
+              <span className="kpi-value">
+                {workspace.data.genre || "未设定"}
+              </span>
+              <span className="kpi-label">类型</span>
+            </div>
+            <div className="kpi">
+              <span className="kpi-value">{workspace.data.status}</span>
+              <span className="kpi-label">状态</span>
+            </div>
+            <div className="kpi kpi--accent">
+              <span className="kpi-value">{workspace.data.band.length}</span>
+              <span className="kpi-label">编辑部伙伴</span>
+            </div>
+            <div className="kpi">
+              <span className="kpi-value">
+                {formatDateTime(workspace.data.created_at).slice(0, 5)}
+              </span>
+              <span className="kpi-label">创建于</span>
+            </div>
+          </div>
+
+          {workspace.data.description ? (
+            <p className="works-desc" data-testid="works-overview">
+              {workspace.data.description}
             </p>
-            {workspace.data.description ? (
-              <p className="works-overview-desc">
-                {workspace.data.description}
-              </p>
-            ) : null}
-            <p className="works-overview-meta">
-              创建于 {formatDateTime(workspace.data.created_at)}
-            </p>
-          </section>
+          ) : null}
+
+          <nav className="workspace-toolbar" aria-label="工作台入口">
+            {WORKBENCHES.map(([label, path]) => (
+              <Link
+                key={path}
+                className="workbench-link"
+                to={`/works/${workspaceId ?? ""}/${path}`}
+                data-testid={
+                  path === "talk"
+                    ? "workspace-talk-link"
+                    : path === "writer"
+                      ? "workspace-writer-link"
+                      : undefined
+                }
+              >
+                {label}
+              </Link>
+            ))}
+          </nav>
+
           <section className="band-section" data-testid="band-section">
-            <h3>班子档案</h3>
+            <header className="panel-header">
+              <h3>编辑部</h3>
+            </header>
             {workspace.data.band.length === 0 ? (
-              <EmptyState title="班子还没有成员" hint="创建作品后默认班子会自动就位" />
-            ) : null}
-            {workspace.data.band.length > 0 ? (
+              <EmptyState
+                title="班子还没有成员"
+                hint="创建作品后默认班子会自动就位"
+              />
+            ) : (
               <ul className="agent-grid">
                 {workspace.data.band.map((agent) => (
                   <AgentCard key={agent.id} agent={agent} />
                 ))}
               </ul>
-            ) : null}
+            )}
           </section>
         </>
       ) : null}
