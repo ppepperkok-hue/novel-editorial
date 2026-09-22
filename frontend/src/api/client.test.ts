@@ -11,6 +11,7 @@ import {
   deleteInspiration,
   deleteStructureNode,
   dropMotive,
+  exportWorkspace,
   generateDraft,
   getBehaviorState,
   getBehaviorTimeline,
@@ -34,6 +35,7 @@ import {
   getStyleDrift,
   getStructure,
   getWorkspace,
+  importWorkspace,
   learnStyle,
   listInspirations,
   listMotives,
@@ -47,6 +49,7 @@ import {
   reviseDraft,
   saveDraftContent,
   sendTalk,
+  updateConfig,
   writeOutline,
   writeSetting,
 } from "./client";
@@ -77,14 +80,132 @@ afterEach(() => {
 });
 
 describe("api client contract parsing", () => {
-  it("getConfig parses the panel poll interval", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse({ panel_poll_interval: 5 }));
+  it("getConfig parses the full config snapshot", async () => {
+    const snapshot = {
+      data_dir: "/data",
+      config_path: "/config.toml",
+      llm_base_url: "https://api.deepseek.com",
+      llm_model: "deepseek-chat",
+      log_level: "INFO",
+      quality_threshold: 8,
+      memory_decay_per_day: 0.05,
+      memory_rehearsal_boost: 1.0,
+      memory_archive_threshold: 30,
+      proactive_enabled: true,
+      proactive_max_per_agent: 3,
+      freedom_dial: 0.4,
+      freedom_seed: 7,
+      motive_llm_enabled: false,
+      embedding_backend: "none",
+      embedding_model: "",
+      embedding_dim: 0,
+      embedding_top_k: 5,
+      api_host: "127.0.0.1",
+      api_port: 8765,
+      panel_poll_interval: 5,
+      restart_required: false,
+    };
+    fetchMock.mockResolvedValueOnce(jsonResponse(snapshot));
 
-    await expect(getConfig()).resolves.toEqual({ panel_poll_interval: 5 });
+    const config = await getConfig();
+    expect(config.panel_poll_interval).toBe(5);
+    expect(config.restart_required).toBe(false);
     expect(fetchMock).toHaveBeenCalledWith(
       "/config",
       expect.objectContaining({ headers: expect.any(Headers) }),
     );
+  });
+
+  it("updateConfig sends a PUT with the key and value", async () => {
+    const snapshot = {
+      data_dir: "/data",
+      config_path: "/config.toml",
+      llm_base_url: "https://api.deepseek.com",
+      llm_model: "deepseek-chat",
+      log_level: "INFO",
+      quality_threshold: 9,
+      memory_decay_per_day: 0.05,
+      memory_rehearsal_boost: 1.0,
+      memory_archive_threshold: 30,
+      proactive_enabled: true,
+      proactive_max_per_agent: 3,
+      freedom_dial: 0.4,
+      freedom_seed: 7,
+      motive_llm_enabled: false,
+      embedding_backend: "none",
+      embedding_model: "",
+      embedding_dim: 0,
+      embedding_top_k: 5,
+      api_host: "127.0.0.1",
+      api_port: 8765,
+      panel_poll_interval: 5,
+      restart_required: true,
+      message: "config updated; api 重启后生效",
+    };
+    fetchMock.mockResolvedValueOnce(jsonResponse(snapshot));
+
+    const result = await updateConfig({ key: "quality_threshold", value: 9 });
+    expect(result.restart_required).toBe(true);
+    expect(result.message).toBe("config updated; api 重启后生效");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/config",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({ key: "quality_threshold", value: 9 }),
+      }),
+    );
+  });
+
+  it("importWorkspace posts a multipart file and returns the new workspace", async () => {
+    const workspace = {
+      id: "w-new",
+      title: "导入书",
+      genre: "悬疑",
+      description: "",
+      status: "writing",
+      created_at: "2026-09-22T00:00:00+00:00",
+    };
+    fetchMock.mockResolvedValueOnce(jsonResponse(workspace, 201));
+
+    const file = new File(["zip"], "archive.zip", { type: "application/zip" });
+    await expect(importWorkspace(file)).resolves.toEqual(workspace);
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe("/works/import");
+    expect(init?.method).toBe("POST");
+    const form = init?.body as FormData;
+    expect(form.get("file")).toBe(file);
+  });
+
+  it("exportWorkspace downloads a blob using the Content-Disposition filename", async () => {
+    const blob = new Blob(["zip"], { type: "application/zip" });
+    fetchMock.mockResolvedValueOnce(
+      new Response(blob, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/zip",
+          "Content-Disposition":
+            'attachment; filename="7178737e-20260922-011400.zip"',
+        },
+      }),
+    );
+    const createObjectURL = vi.fn(() => "blob:mock-url");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+
+    await exportWorkspace("w-a");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/works/w-a/export",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(createObjectURL).toHaveBeenCalled();
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:mock-url");
+    expect(click).toHaveBeenCalled();
+    click.mockRestore();
   });
 
   it("getOverview parses the cross-workspace overview", async () => {

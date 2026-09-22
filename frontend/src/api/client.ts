@@ -32,6 +32,9 @@ export type DraftReviseBody = components["schemas"]["DraftReviseBody"];
 /** Corpus/feedback path plus the CLI's ``--apply`` flag (POST .../calibrate etc.). */
 export type CorpusPathBody = components["schemas"]["CorpusPathBody"];
 
+/** One whitelisted config key/value pair (PUT /config), generated type. */
+export type ConfigWriteBody = components["schemas"]["ConfigWriteBody"];
+
 /** Structure node bodies (add / patch / move), generated OpenAPI types. */
 export type StructureAddBody = components["schemas"]["StructureAddBody"];
 export type StructurePatchBody = components["schemas"]["StructurePatchBody"];
@@ -46,8 +49,30 @@ export type SettingWriteBody = components["schemas"]["SettingWriteBody"];
 /** Inspiration add body (POST /works/{id}/inspirations), generated type. */
 export type InspirationAddBody = components["schemas"]["InspirationAddBody"];
 
-export interface PanelConfig {
+export interface ConfigSnapshot {
+  data_dir: string;
+  config_path: string;
+  llm_base_url: string;
+  llm_model: string;
+  log_level: string;
+  quality_threshold: number;
+  memory_decay_per_day: number;
+  memory_rehearsal_boost: number;
+  memory_archive_threshold: number;
+  proactive_enabled: boolean;
+  proactive_max_per_agent: number;
+  freedom_dial: number;
+  freedom_seed: number;
+  motive_llm_enabled: boolean;
+  embedding_backend: string;
+  embedding_model: string;
+  embedding_dim: number;
+  embedding_top_k: number;
+  api_host: string;
+  api_port: number;
   panel_poll_interval: number;
+  restart_required: boolean;
+  message?: string;
 }
 
 export interface OverviewItem {
@@ -316,8 +341,68 @@ async function requestText(path: string, init?: RequestInit): Promise<string> {
   return response.text();
 }
 
-export function getConfig(): Promise<PanelConfig> {
-  return requestJson<PanelConfig>("/config");
+export function getConfig(): Promise<ConfigSnapshot> {
+  return requestJson<ConfigSnapshot>("/config");
+}
+
+/** Write one whitelisted config key (PUT /config); restart the API to apply. */
+export function updateConfig(body: ConfigWriteBody): Promise<ConfigSnapshot> {
+  return requestJson<ConfigSnapshot>("/config", {
+    method: "PUT",
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function parseContentDispositionFilename(disposition: string): string | null {
+  const match =
+    /filename\*=UTF-8''([^;]+)|filename="([^"]*)"|filename=([^;]+)/i.exec(
+      disposition,
+    );
+  if (match === null) {
+    return null;
+  }
+  const filename = match[1] ?? match[2] ?? match[3];
+  return filename !== undefined && filename !== "" ? filename.trim() : null;
+}
+
+/**
+ * Download one workspace as a verifiable ZIP archive (GET .../export). The
+ * filename comes from Content-Disposition, falling back to the workspace id.
+ */
+export async function exportWorkspace(workspaceId: string): Promise<void> {
+  const path = `${workspacePath(workspaceId)}/export`;
+  const response = await fetch(path, {
+    headers: new Headers({ Accept: "application/zip" }),
+  });
+  if (!response.ok) {
+    throw await toReadableError(response, path);
+  }
+  const blob = await response.blob();
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const filename =
+    parseContentDispositionFilename(disposition) ?? `${workspaceId}.zip`;
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Import an exported workspace ZIP as a brand-new workspace (POST /works/import,
+ * multipart). The browser sets the multipart boundary; do not set Content-Type.
+ */
+export function importWorkspace(file: File): Promise<WorkspaceSummary> {
+  const form = new FormData();
+  form.append("file", file);
+  return requestJson<WorkspaceSummary>("/works/import", {
+    method: "POST",
+    body: form,
+  });
 }
 
 export function listWorks(): Promise<WorkspaceSummary[]> {

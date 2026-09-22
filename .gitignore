@@ -6,7 +6,7 @@ __pycache__/
 .pyright/
 .coverage
 .htmlcov/
-data/
+/data/
 .env
 config.toml
 *.log

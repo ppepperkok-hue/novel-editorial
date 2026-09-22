@@ -1,5 +1,6 @@
 import { NavLink, Navigate, Outlet, Route, Routes } from "react-router-dom";
 
+import DataPage from "./features/data/DataPage";
 import DecisionPage from "./features/decision/DecisionPage";
 import FreewillPage from "./features/freewill/FreewillPage";
 import OverviewPage from "./features/overview/OverviewPage";
@@ -87,6 +88,13 @@ function Shell() {
               >
                 编辑部
               </NavLink>
+              <NavLink
+                to={`/works/${encodeURIComponent(currentWorkspace.id)}/data`}
+                end
+                className={({ isActive }) => navClassName(isActive)}
+              >
+                数据
+              </NavLink>
             </>
           ) : null}
         </nav>
@@ -135,6 +143,7 @@ export default function App() {
           path="works/:workspaceId/freewill"
           element={<FreewillPage />}
         />
+        <Route path="works/:workspaceId/data" element={<DataPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
