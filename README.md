@@ -1,5 +1,12 @@
 # Novel Editorial
 
+<!-- moe-counter:start -->
+<p align="center">
+  <a href="https://github.com/journey-ad/Moe-Counter"><img src="https://count.getloli.com/get/@ppepperkok-hue.novel-editorial?theme=asoul" alt="README views" width="360" /></a>
+  <br /><sub>README views · Image requests, not unique visitors.</sub>
+</p>
+<!-- moe-counter:end -->
+
 > 分层 AI 文学编辑部：总编、责编、写手、审稿各司其职，作者在关键处拍板，产出「没有 AI 味」的正文。
 
 当前版本 `0.1.0`，CLI 与图形面板（三扇窗）双通道：CLI 完整覆盖全部能力，面板做观察、穿透与拍板，同一时刻两者看到同一份数据。
