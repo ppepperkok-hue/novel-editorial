@@ -1,11 +1,13 @@
+<div align="center">
+
 # Novel Editorial
 
 <!-- moe-counter:start -->
-<p align="center">
-  <a href="https://github.com/journey-ad/Moe-Counter"><img src="https://count.getloli.com/get/@ppepperkok-hue.novel-editorial?theme=asoul" alt="README views" width="360" /></a>
-  <br /><sub>README views · Image requests, not unique visitors.</sub>
-</p>
+<a href="https://github.com/journey-ad/Moe-Counter"><img src="https://count.getloli.com/get/@ppepperkok-hue.novel-editorial?theme=asoul" alt="README views" width="360" /></a>
+<br /><sub>README 阅读 · 按图片请求计数</sub>
 <!-- moe-counter:end -->
+
+</div>
 
 > 分层 AI 文学编辑部：总编、责编、写手、审稿各司其职，作者在关键处拍板，产出「没有 AI 味」的正文。
 
