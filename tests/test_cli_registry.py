@@ -71,15 +71,16 @@ def test_every_command_registered_and_documented(args: list[str], label: str) ->
     assert result.exit_code == 0, f"{label}: {result.output}"
 
 
-def test_works_create_help_lists_template_option() -> None:
-    # A fixed console width keeps rich from ellipsizing option names on narrow
-    # terminals, where "--template" would render as "--te…" even though the
-    # option is registered.
+def test_works_create_help_lists_template_option(plain_cli_text) -> None:
+    # CI exports GITHUB_ACTIONS, which makes Typer/Rich force a colour terminal
+    # even under pytest capture; the option name then arrives split into styled
+    # spans ("-", "-template"). COLUMNS only pins the table layout, so strip the
+    # ANSI escapes before matching the option name a user sees.
     result = runner.invoke(
         app, ["works", "create", "--help"], env={"COLUMNS": "120"}
     )
     assert result.exit_code == 0, result.output
-    assert "--template" in result.output
+    assert "--template" in plain_cli_text(result.output)
 
 
 @pytest.mark.smoke
