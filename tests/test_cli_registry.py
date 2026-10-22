@@ -72,7 +72,12 @@ def test_every_command_registered_and_documented(args: list[str], label: str) ->
 
 
 def test_works_create_help_lists_template_option() -> None:
-    result = runner.invoke(app, ["works", "create", "--help"])
+    # A fixed console width keeps rich from ellipsizing option names on narrow
+    # terminals, where "--template" would render as "--te…" even though the
+    # option is registered.
+    result = runner.invoke(
+        app, ["works", "create", "--help"], env={"COLUMNS": "120"}
+    )
     assert result.exit_code == 0, result.output
     assert "--template" in result.output
 

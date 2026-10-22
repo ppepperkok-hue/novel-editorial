@@ -189,6 +189,25 @@ def test_derive_draft_generated_writer_goal(tmp_path: Path, monkeypatch) -> None
     db = _db()
     writer = _agent(db, workspace_id, AgentRole.WRITER)
 
+    class TickingDateTime(datetime):
+        """Clock that advances one microsecond per now() call.
+
+        Linux clocks have microsecond granularity, so two independent column
+        defaults would differ; a ticking clock reproduces that deterministically
+        instead of relying on the host's clock resolution.
+        """
+
+        ticks = 0
+
+        @classmethod
+        def now(cls, tz=None) -> datetime:
+            cls.ticks += 1
+            return datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC) + timedelta(
+                microseconds=cls.ticks
+            )
+
+    monkeypatch.setattr("novel_editorial.store.models.datetime", TickingDateTime)
+
     motives = derive_motives(
         db, workspace_id, "draft_generated", {"agent_id": writer.id}
     )
@@ -1120,6 +1139,25 @@ def test_upsert_motive_feedback_creates_then_strengthens(
     db = _db()
     writer = _agent(db, workspace_id, AgentRole.WRITER)
 
+    class TickingDateTime(datetime):
+        """Clock that advances one microsecond per now() call.
+
+        Linux clocks have microsecond granularity, so two independent column
+        defaults would differ; a ticking clock reproduces that deterministically
+        instead of relying on the host's clock resolution.
+        """
+
+        ticks = 0
+
+        @classmethod
+        def now(cls, tz=None) -> datetime:
+            cls.ticks += 1
+            return datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC) + timedelta(
+                microseconds=cls.ticks
+            )
+
+    monkeypatch.setattr("novel_editorial.store.models.datetime", TickingDateTime)
+
     first = upsert_motive_feedback(
         db,
         workspace_id,
@@ -1131,6 +1169,8 @@ def test_upsert_motive_feedback_creates_then_strengthens(
 
     assert first.strength == 100
     assert first.source == "decision:reject"
+    # One clock: creation touches the motive, both timestamps come from it.
+    assert first.created_at == first.last_touched_at
     with db.workspace_session(workspace_id) as session:
         stored = session.get(AgentMotive, first.id)
         assert stored is not None

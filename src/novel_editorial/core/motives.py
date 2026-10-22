@@ -309,12 +309,18 @@ def derive_motives(
         )
         if strengthened is not None:
             return [strengthened]
+        # One timestamp feeds both columns: a motive is touched exactly when it
+        # is created, and two independent column defaults drift apart by
+        # microseconds on clocks with sub-millisecond resolution.
+        created_at = datetime.now(UTC)
         motive = AgentMotive(
             workspace_id=workspace_id,
             agent_id=agent_id,
             kind=rule.kind,
             content=content,
             source=source,
+            created_at=created_at,
+            last_touched_at=created_at,
         )
         session.add(motive)
         try:
@@ -385,12 +391,17 @@ def upsert_motive_feedback(
             _apply_strength_delta(existing, FEEDBACK_MOTIVE_BOOST, datetime.now(UTC))
             session.commit()
             return existing
+        # Same single-timestamp creation as derive_motives: a motive is touched
+        # exactly when it is created.
+        created_at = datetime.now(UTC)
         motive = AgentMotive(
             workspace_id=workspace_id,
             agent_id=agent_id,
             kind=kind,
             content=content,
             source=source,
+            created_at=created_at,
+            last_touched_at=created_at,
         )
         session.add(motive)
         try:

@@ -497,7 +497,12 @@ def test_load_and_analyze_are_read_only(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_quality_feedback_registered_and_documented() -> None:
-    result = runner.invoke(app, ["quality", "feedback", "--help"])
+    # A fixed console width keeps rich from ellipsizing option names on narrow
+    # terminals, where "--apply" would render as "--ap…" even though the
+    # option is registered.
+    result = runner.invoke(
+        app, ["quality", "feedback", "--help"], env={"COLUMNS": "120"}
+    )
 
     assert result.exit_code == 0, result.output
     assert "feedback" in result.output
