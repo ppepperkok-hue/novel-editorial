@@ -17,6 +17,7 @@ from novel_editorial.core.archive import (
     ARCHIVE_FORMAT,
     ARCHIVE_VERSION,
     _is_sqlite_database,
+    _validate_manifest,
     export_workspace_archive,
     import_workspace_archive,
 )
@@ -448,6 +449,85 @@ def test_import_unsupported_version_rejected(tmp_path: Path, monkeypatch) -> Non
     assert exc_info.value.code is ErrorCode.USAGE_ERROR
     assert "version" in exc_info.value.message
     assert set(list_workspace_ids(db.settings)) == {workspace_id}
+
+
+def test_validate_manifest_rejects_boolean_version() -> None:
+    manifest = {
+        "format": ARCHIVE_FORMAT,
+        "version": True,
+        "workspace": {
+            "id": "a" * 32,
+            "title": "源",
+            "genre": "",
+            "description": "",
+            "status": "writing",
+            "created_at": "2026-08-21T00:00:00+00:00",
+        },
+        "files": {"data.db": "0" * 64},
+    }
+
+    with pytest.raises(NovelError) as exc_info:
+        _validate_manifest(manifest)
+
+    assert exc_info.value.code is ErrorCode.USAGE_ERROR
+    assert "version" in exc_info.value.message
+
+
+def test_validate_manifest_accepts_integer_version() -> None:
+    manifest = {
+        "format": ARCHIVE_FORMAT,
+        "version": ARCHIVE_VERSION,
+        "workspace": {
+            "id": "a" * 32,
+            "title": "源",
+            "genre": "",
+            "description": "",
+            "status": "writing",
+            "created_at": "2026-08-21T00:00:00+00:00",
+        },
+        "files": {"data.db": "0" * 64},
+    }
+
+    _validate_manifest(manifest)
+
+
+def test_validate_manifest_accepts_legacy_float_version() -> None:
+    manifest = {
+        "format": ARCHIVE_FORMAT,
+        "version": float(ARCHIVE_VERSION),
+        "workspace": {
+            "id": "a" * 32,
+            "title": "源",
+            "genre": "",
+            "description": "",
+            "status": "writing",
+            "created_at": "2026-08-21T00:00:00+00:00",
+        },
+        "files": {"data.db": "0" * 64},
+    }
+
+    _validate_manifest(manifest)
+
+
+@pytest.mark.parametrize("version", [False, "1", 2])
+def test_validate_manifest_rejects_other_version_values(version: object) -> None:
+    manifest = {"format": ARCHIVE_FORMAT, "version": version}
+
+    with pytest.raises(NovelError) as exc_info:
+        _validate_manifest(manifest)
+
+    assert exc_info.value.code is ErrorCode.USAGE_ERROR
+    assert "version" in exc_info.value.message
+
+
+def test_validate_manifest_rejects_missing_version() -> None:
+    manifest = {"format": ARCHIVE_FORMAT}
+
+    with pytest.raises(NovelError) as exc_info:
+        _validate_manifest(manifest)
+
+    assert exc_info.value.code is ErrorCode.USAGE_ERROR
+    assert "version" in exc_info.value.message
 
 
 def test_import_sha_mismatch_rejected(tmp_path: Path, monkeypatch) -> None:

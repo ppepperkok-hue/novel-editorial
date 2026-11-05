@@ -195,10 +195,11 @@ def _validate_manifest(manifest: dict) -> None:
             ErrorCode.USAGE_ERROR,
             f"invalid archive: unsupported format {manifest.get('format')!r}",
         )
-    if manifest.get("version") != ARCHIVE_VERSION:
+    version = manifest.get("version")
+    if isinstance(version, bool) or version != ARCHIVE_VERSION:
         raise NovelError(
             ErrorCode.USAGE_ERROR,
-            f"invalid archive: unsupported version {manifest.get('version')!r}",
+            f"invalid archive: unsupported version {version!r}",
         )
     workspace = manifest.get("workspace")
     if not isinstance(workspace, dict) or any(
